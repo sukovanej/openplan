@@ -1,0 +1,17 @@
+[package]
+name = "op-task"
+description = "Task file model: frontmatter + body, id/title conventions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+op-md.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "op-api"
+description = "Shared wire types: DTOs, matrix, presence, change events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+op-task.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

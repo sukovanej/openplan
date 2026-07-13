@@ -1,0 +1,33 @@
+[package]
+name = "op-cli"
+description = "The oplan binary: CLI surface, realtime daemon, and merge driver"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "oplan"
+path = "src/main.rs"
+
+[dependencies]
+op-store.workspace = true
+op-git.workspace = true
+op-api.workspace = true
+op-watch.workspace = true
+op-server.workspace = true
+op-md.workspace = true
+op-task.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "op-watch"
+description = "Filesystem + git watchers producing debounced change events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+op-git.workspace = true
+op-api.workspace = true
+notify.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "op-index"
+description = "Aggregation engine: maintains the live task×branch matrix"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+op-store.workspace = true
+op-git.workspace = true
+op-task.workspace = true
+op-api.workspace = true
+
+[lints]
+workspace = true

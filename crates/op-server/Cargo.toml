@@ -1,0 +1,24 @@
+[package]
+name = "op-server"
+description = "axum HTTP + WebSocket API and embedded SPA"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+op-index.workspace = true
+op-presence.workspace = true
+op-api.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+rust-embed.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+http-body-util.workspace = true
+
+[lints]
+workspace = true
