@@ -19,6 +19,7 @@ rust-embed.workspace = true
 [dev-dependencies]
 tower.workspace = true
 http-body-util.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

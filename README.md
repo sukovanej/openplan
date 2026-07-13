@@ -21,7 +21,9 @@ cargo clippy -- -D warnings
 
 ```sh
 oplan list                       # tasks in ./.plan
-oplan serve                      # realtime API + web UI on 127.0.0.1:7373
+oplan server start               # background daemon: realtime API + web UI on 127.0.0.1:7373
+oplan server ping                # report daemon status
+oplan server stop                # stop the background daemon
 oplan merge-driver <O> <A> <B>   # git merge driver for .plan/**.md
 ```
 

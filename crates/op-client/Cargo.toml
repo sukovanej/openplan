@@ -1,0 +1,19 @@
+[package]
+name = "op-client"
+description = "Blocking HTTP client for talking to a running oplan daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+op-api.workspace = true
+reqwest.workspace = true
+
+[dev-dependencies]
+op-server.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -15,6 +15,7 @@ op-task = { path = "crates/op-task" }
 op-store = { path = "crates/op-store" }
 op-git = { path = "crates/op-git" }
 op-api = { path = "crates/op-api" }
+op-client = { path = "crates/op-client" }
 op-watch = { path = "crates/op-watch" }
 op-index = { path = "crates/op-index" }
 op-presence = { path = "crates/op-presence" }
@@ -33,16 +34,17 @@ pulldown-cmark = { version = "0.13", default-features = false }
 
 gix = "0.85" # default features provide the sha1 object hash
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs"] }
 axum = "0.8"
 tower-http = { version = "0.7", features = ["trace"] }
 rust-embed = "8"
 
 notify = "8"
 fs2 = "0.4"
+nix = { version = "0.31", features = ["signal", "process"] }
 
 clap = { version = "4", features = ["derive"] }
-reqwest = { version = "0.13", default-features = false, features = ["json"] } # http only, no TLS
+reqwest = { version = "0.13", default-features = false, features = ["json", "blocking"] } # http only, no TLS
 
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }

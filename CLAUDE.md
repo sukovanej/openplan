@@ -18,6 +18,13 @@ rather than writing the prose.
 - Exempt, because they are product UI rather than documentation: CLI `--help`
   text (clap `///` / `about`) and user-facing error/log messages.
 
+## Tests
+
+Tests live in a crate's `tests/` directory, never inside `src/`. Do not add
+`#[cfg(test)] mod tests` blocks or `#[test]` functions to source files. To
+exercise crate-private items, widen their visibility (e.g. `pub(crate)`) so a
+`tests/` file can reach them.
+
 ## Checks
 
 ```sh

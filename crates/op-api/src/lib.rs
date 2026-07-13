@@ -2,6 +2,16 @@ use serde::{Deserialize, Serialize};
 
 pub use op_task::Status;
 
+pub const ADMIN_HEADER: &str = "x-oplan-admin";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonInfo {
+    pub pid: u32,
+    pub port: u16,
+    pub version: String,
+    pub started_at: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskSummary {
     pub id: String,
