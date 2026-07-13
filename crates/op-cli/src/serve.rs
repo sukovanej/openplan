@@ -43,13 +43,17 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
     };
     home.write_info(&info)?;
 
-    let state = AppState::default().with_health(info.clone());
+    let store = Store::discover(root).ok();
+    let mut state = AppState::default().with_health(info.clone());
+    if let Some(store) = &store {
+        state = state.with_store(store.clone());
+    }
     let (tx, rx) = std::sync::mpsc::channel();
-    let _watcher = match Store::discover(root) {
-        Ok(store) => Watcher::start(store.plan_dir(), tx)
+    let _watcher = match &store {
+        Some(store) => Watcher::start(store.plan_dir(), tx)
             .inspect_err(|e| tracing::warn!("watch disabled: {e}"))
             .ok(),
-        Err(_) => {
+        None => {
             tracing::warn!("no .plan/ store found; watch disabled");
             None
         }

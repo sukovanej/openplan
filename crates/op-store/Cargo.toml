@@ -9,8 +9,10 @@ repository.workspace = true
 
 [dependencies]
 op-task.workspace = true
+op-md.workspace = true
 fs2.workspace = true
 thiserror.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

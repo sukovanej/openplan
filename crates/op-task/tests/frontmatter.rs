@@ -14,6 +14,7 @@ fn frontmatter_roundtrips() {
             status: Status::InProgress,
             parent: Some("epic-42".to_owned()),
             deps: vec!["task-1".to_owned(), "task-2#Design".to_owned()],
+            extra: Default::default(),
         },
         "# Title\n\nbody\n",
     );
@@ -30,6 +31,7 @@ fn minimal_frontmatter_is_just_status() {
             status: Status::Todo,
             parent: None,
             deps: vec![],
+            extra: Default::default(),
         },
         "# Title\n",
     )
@@ -51,6 +53,24 @@ fn parses_crlf_frontmatter_and_preserves_body() {
 }
 
 #[test]
+fn unknown_frontmatter_keys_are_preserved() {
+    let text = "---\nstatus: todo\nrank: 3.5\nassignee: milan\n---\n# Task C\n";
+    let mut parsed = Task::from_file_string(text).unwrap();
+    parsed.set_status(Status::Done);
+
+    let written = parsed.to_file_string().unwrap();
+    assert!(
+        written.contains("rank: 3.5"),
+        "rank must survive: {written}"
+    );
+    assert!(
+        written.contains("assignee: milan"),
+        "assignee must survive: {written}"
+    );
+    assert!(written.contains("status: done"));
+}
+
+#[test]
 fn missing_closing_fence_is_rejected() {
     assert!(Task::from_file_string("---\nstatus: todo\n").is_err());
     assert!(Task::from_file_string("no frontmatter here\n").is_err());
@@ -63,6 +83,7 @@ fn task_file_roundtrips_with_title() {
             status: Status::Todo,
             parent: None,
             deps: vec![],
+            extra: Default::default(),
         },
         "# Ship it\n\nbody text\n",
     );

@@ -11,15 +11,20 @@ repository.workspace = true
 op-index.workspace = true
 op-presence.workspace = true
 op-api.workspace = true
+op-store.workspace = true
+op-task.workspace = true
 axum.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 rust-embed.workspace = true
+serde.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tower.workspace = true
 http-body-util.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
