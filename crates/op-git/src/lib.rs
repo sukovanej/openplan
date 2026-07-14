@@ -59,6 +59,12 @@ impl Repo {
         op_markers_present(self.repo().git_dir())
     }
 
+    // The shared `.git` directory (identical for the main checkout and every linked worktree), where
+    // `refs/`, `packed-refs`, `HEAD`, and `worktrees/` live — the git-side change sources to watch.
+    pub fn git_common_dir(&self) -> PathBuf {
+        self.repo().common_dir().to_path_buf()
+    }
+
     // Every worktree (main + linked) with a working copy on disk, paired with its checked-out
     // branch. A branch appears at most once — git allows it checked out in one worktree only.
     pub fn worktrees(&self) -> Result<Vec<Worktree>, GitError> {
