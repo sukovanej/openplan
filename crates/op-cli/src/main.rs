@@ -8,7 +8,7 @@ use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use op_api::{CreateTask, Matrix, MatrixCell, TaskSummary, TaskView};
+use op_api::{BranchMark, ChangeKind, CreateTask, Matrix, MatrixCell, TaskSummary, TaskView};
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
@@ -421,12 +421,12 @@ fn show_branches(root: &Path, id: &str) -> Result<()> {
     for version in &view.versions {
         let short = &version.blob_oid[..version.blob_oid.len().min(12)];
         println!(
-            "  {short}  {:<11} {}{}",
+            "  {short}  {:<11} {}",
             version.summary.status.as_str(),
             version.summary.title,
-            version_flags(version),
         );
-        println!("    branches: {}", version.branches.join(", "));
+        let branches: Vec<String> = version.branches.iter().map(mark_label).collect();
+        println!("    branches: {}", branches.join(", "));
     }
     Ok(())
 }
@@ -456,6 +456,9 @@ fn print_summaries(summaries: &[TaskSummary]) {
 
 fn cell_flags(cell: &MatrixCell) -> String {
     let mut flags = Vec::new();
+    if cell.kind != ChangeKind::Base {
+        flags.push(kind_str(cell.kind));
+    }
     if cell.dirty {
         flags.push("dirty");
     }
@@ -466,15 +469,27 @@ fn cell_flags(cell: &MatrixCell) -> String {
     }
 }
 
-fn version_flags(version: &op_api::TaskVersion) -> String {
-    let mut flags = Vec::new();
-    if version.dirty {
-        flags.push("dirty");
+fn mark_label(mark: &BranchMark) -> String {
+    let mut notes = Vec::new();
+    if mark.kind != ChangeKind::Base {
+        notes.push(kind_str(mark.kind));
     }
-    if flags.is_empty() {
-        String::new()
+    if mark.dirty {
+        notes.push("dirty");
+    }
+    if notes.is_empty() {
+        mark.branch.clone()
     } else {
-        format!("  [{}]", flags.join(", "))
+        format!("{} ({})", mark.branch, notes.join(", "))
+    }
+}
+
+fn kind_str(kind: ChangeKind) -> &'static str {
+    match kind {
+        ChangeKind::Base => "base",
+        ChangeKind::Added => "added",
+        ChangeKind::Modified => "modified",
+        ChangeKind::Deleted => "deleted",
     }
 }
 

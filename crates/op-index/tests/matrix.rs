@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use op_api::Status;
+use op_api::{ChangeKind, Status};
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
@@ -20,10 +20,19 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
+fn task(root: &Path, id: &str, contents: &str) {
+    write(&root.join(format!(".plan/tasks/{id}.md")), contents);
+}
+
 fn init(root: &Path) {
     git(root, &["init", "-q", "-b", "main"]);
     git(root, &["config", "user.email", "t@example.com"]);
     git(root, &["config", "user.name", "Test"]);
+}
+
+fn commit(root: &Path, message: &str) {
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", message]);
 }
 
 fn built(root: &Path) -> Index {
@@ -34,59 +43,141 @@ fn built(root: &Path) -> Index {
     index
 }
 
+fn find<'a>(index: &'a Index, branch: &str, id: &str) -> Option<&'a op_api::MatrixCell> {
+    index
+        .matrix()
+        .cells
+        .iter()
+        .find(|c| c.branch == branch && c.task.id == id)
+}
+
 #[test]
-fn matrix_rows_per_task_branch_with_blob_dedup() {
+fn a_branch_unchanged_against_main_is_not_listed() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
 
-    // `shared` is byte-identical on both branches (feature forks before `only-main` is added),
-    // so it is one blob shared by two branches — it must parse exactly once.
-    write(
-        &root.join(".plan/tasks/shared.md"),
-        "---\nstatus: todo\n---\n# Shared\n",
-    );
-    git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "add shared"]);
+    task(root, "shared", "---\nstatus: todo\n---\n# Shared\n");
+    commit(root, "add shared");
     git(root, &["branch", "feature"]);
-    write(
-        &root.join(".plan/tasks/only-main.md"),
-        "---\nstatus: done\n---\n# Only main\n",
-    );
-    git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "add only-main"]);
+    task(root, "only-main", "---\nstatus: done\n---\n# Only main\n");
+    commit(root, "add only-main");
 
     let index = built(root);
     let cells = &index.matrix().cells;
 
-    assert_eq!(cells.len(), 3, "shared×2 branches + only-main×1: {cells:?}");
+    // `feature` forked before `only-main` and never touched `shared`, so it diverges from main on
+    // nothing — it contributes no cells. Only main's two Base rows remain.
     assert!(
-        index.cached_versions() < cells.len(),
-        "identical blob parsed once: {} cached < {} rows",
-        index.cached_versions(),
-        cells.len()
+        cells.iter().all(|c| c.branch == "main"),
+        "no feature rows: {cells:?}"
     );
-
-    let shared: Vec<_> = cells.iter().filter(|c| c.task.id == "shared").collect();
-    assert_eq!(shared.len(), 2);
-    assert_eq!(
-        shared[0].blob_oid, shared[1].blob_oid,
-        "identical versions share a blob OID"
-    );
-    assert!(shared.iter().all(|c| !c.dirty));
+    assert_eq!(cells.len(), 2, "two Base rows on main: {cells:?}");
+    assert!(cells.iter().all(|c| c.kind == ChangeKind::Base));
 }
 
 #[test]
-fn working_tree_overlay_marks_dirty_in_a_linked_worktree() {
+fn a_committed_edit_on_a_branch_is_modified() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    write(
-        &root.join(".plan/tasks/t.md"),
-        "---\nstatus: todo\n---\n# T\n",
+    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    commit(root, "add a");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    task(root, "a", "---\nstatus: done\n---\n# A done\n");
+    commit(root, "edit a");
+    git(root, &["checkout", "-q", "main"]);
+
+    let index = built(root);
+
+    let main = find(&index, "main", "a").expect("main base row");
+    assert_eq!(main.kind, ChangeKind::Base);
+    assert_eq!(main.task.status, Status::Todo);
+
+    let feature = find(&index, "feature", "a").expect("feature row");
+    assert_eq!(feature.kind, ChangeKind::Modified);
+    assert_eq!(feature.task.status, Status::Done);
+    assert_eq!(feature.task.title, "A done");
+    assert!(!feature.dirty);
+}
+
+#[test]
+fn a_new_task_on_a_branch_is_added() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    commit(root, "add a");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    task(root, "new", "---\nstatus: todo\n---\n# New\n");
+    commit(root, "add new");
+    git(root, &["checkout", "-q", "main"]);
+
+    let index = built(root);
+
+    assert!(find(&index, "main", "new").is_none(), "new is not on main");
+    let feature = find(&index, "feature", "new").expect("feature added row");
+    assert_eq!(feature.kind, ChangeKind::Added);
+    // `a` is unchanged on feature, so it is not repeated there.
+    assert!(find(&index, "feature", "a").is_none());
+}
+
+#[test]
+fn a_deletion_is_tagged_while_main_still_has_the_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    task(root, "b", "---\nstatus: in_progress\n---\n# B\n");
+    commit(root, "add a and b");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    std::fs::remove_file(root.join(".plan/tasks/b.md")).unwrap();
+    commit(root, "remove b");
+    git(root, &["checkout", "-q", "main"]);
+
+    let index = built(root);
+
+    let deleted = find(&index, "feature", "b").expect("feature deletion row");
+    assert_eq!(deleted.kind, ChangeKind::Deleted);
+    assert!(!deleted.dirty, "a committed removal is not dirty");
+    // The row carries the pre-deletion version, so the UI can show what is being removed.
+    assert_eq!(deleted.task.status, Status::InProgress);
+    assert_eq!(deleted.task.title, "B");
+
+    // A deleted task is not "on" the branch for a plain per-branch listing.
+    let summaries = index.branch_summaries("feature");
+    assert!(summaries.iter().all(|s| s.id != "b"), "{summaries:?}");
+}
+
+#[test]
+fn a_deletion_main_already_made_is_suppressed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "x", "---\nstatus: todo\n---\n# X\n");
+    commit(root, "add x");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    std::fs::remove_file(root.join(".plan/tasks/x.md")).unwrap();
+    commit(root, "feature removes x");
+    git(root, &["checkout", "-q", "main"]);
+    std::fs::remove_file(root.join(".plan/tasks/x.md")).unwrap();
+    commit(root, "main removes x too");
+
+    let index = built(root);
+    assert!(
+        index.matrix().cells.is_empty(),
+        "settled deletion shows nowhere: {:?}",
+        index.matrix().cells
     );
-    git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "add t"]);
+}
+
+#[test]
+fn an_uncommitted_edit_on_a_feature_worktree_is_modified_and_dirty() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "t", "---\nstatus: todo\n---\n# T\n");
+    commit(root, "add t");
     git(root, &["branch", "feature"]);
 
     let wt = tempfile::tempdir().unwrap();
@@ -101,39 +192,202 @@ fn working_tree_overlay_marks_dirty_in_a_linked_worktree() {
             "feature",
         ],
     );
-    // Uncommitted edit in the feature worktree — the effective state must overlay this.
-    write(
-        &wt_path.join(".plan/tasks/t.md"),
-        "---\nstatus: in_progress\n---\n# T edited\n",
-    );
+    // The feature commit still matches main, but the working copy is edited. Divergence is judged
+    // on the effective (working) state, so this surfaces as a dirty Modified — not hidden until
+    // commit (the app's `oplan set` edits are uncommitted by nature).
+    task(&wt_path, "t", "---\nstatus: in_progress\n---\n# T edited\n");
 
-    let repo = Repo::discover(root).unwrap();
     let index = built(root);
-    let cells = &index.matrix().cells;
-
-    let feature = cells
-        .iter()
-        .find(|c| c.task.id == "t" && c.branch == "feature")
-        .expect("feature cell");
-    assert!(feature.dirty, "uncommitted worktree edit is dirty");
+    let feature = find(&index, "feature", "t").expect("uncommitted WIP must surface");
+    assert_eq!(feature.kind, ChangeKind::Modified);
+    assert!(feature.dirty, "uncommitted edit is dirty");
     assert_eq!(feature.task.status, Status::InProgress);
     assert_eq!(feature.task.title, "T edited");
+    let main = find(&index, "main", "t").expect("main base row");
+    assert_eq!(main.kind, ChangeKind::Base);
+}
 
-    let main = cells
-        .iter()
-        .find(|c| c.branch == "main")
-        .expect("main cell");
-    assert!(!main.dirty);
-    assert_eq!(main.task.status, Status::Todo);
+#[test]
+fn an_uncommitted_deletion_on_a_feature_worktree_is_deleted_and_dirty() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "t", "---\nstatus: in_progress\n---\n# T\n");
+    commit(root, "add t");
+    git(root, &["branch", "feature"]);
 
-    let raw = index
-        .effective_raw(&repo, "t", "feature")
-        .unwrap()
-        .expect("effective feature version");
-    assert!(
-        raw.contains("in_progress"),
-        "dirty read is the working copy: {raw}"
+    let wt = tempfile::tempdir().unwrap();
+    let wt_path = wt.path().join("feature");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            wt_path.to_str().unwrap(),
+            "feature",
+        ],
     );
+    // The commit still has `t`; only the working tree removed it. Effective state is absent, so it
+    // surfaces as a dirty Deleted (pre-deletion version shown), consistent with uncommitted edits.
+    std::fs::remove_file(wt_path.join(".plan/tasks/t.md")).unwrap();
+
+    let index = built(root);
+    let feature = find(&index, "feature", "t").expect("uncommitted deletion must surface");
+    assert_eq!(feature.kind, ChangeKind::Deleted);
+    assert!(
+        feature.dirty,
+        "working-tree removal without commit is dirty"
+    );
+    assert_eq!(
+        feature.task.status,
+        Status::InProgress,
+        "pre-deletion version"
+    );
+    assert!(find(&index, "main", "t").is_some(), "main still carries t");
+}
+
+#[test]
+fn a_criss_cross_history_does_not_mislabel_an_unchanged_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "t", "---\nstatus: todo\n---\n# T\n");
+    write(&root.join("other.txt"), "o0\n");
+    commit(root, "c0");
+    git(root, &["branch", "a"]);
+    git(root, &["branch", "b"]);
+
+    // `a` edits the task; `b` edits an unrelated file. The two edits are disjoint, so the branches
+    // merge without conflict and share two merge-bases (a1 and b1) — a criss-cross.
+    git(root, &["checkout", "-q", "a"]);
+    task(root, "t", "---\nstatus: done\n---\n# T done\n");
+    commit(root, "a1: edit task");
+    git(root, &["checkout", "-q", "b"]);
+    write(&root.join("other.txt"), "oB\n");
+    commit(root, "b1: edit other");
+    git(root, &["checkout", "-q", "a"]);
+    git(root, &["merge", "-q", "--no-edit", "b"]);
+    git(root, &["checkout", "-q", "b"]);
+    git(root, &["merge", "-q", "--no-edit", "a"]);
+    // main fast-forwards to the merged tip: `t` is now identical on main and on `a`.
+    git(root, &["checkout", "-q", "main"]);
+    git(root, &["merge", "-q", "--ff-only", "b"]);
+
+    let index = built(root);
+    // `a`'s task blob matches one of the two merge-bases, so it is unchanged — not `Modified`,
+    // which a single-arbitrary-merge-base comparison would wrongly report.
+    assert!(
+        find(&index, "a", "t").is_none(),
+        "unchanged across a criss-cross must not read as modified: {:?}",
+        index.matrix().cells
+    );
+    let main = find(&index, "main", "t").expect("main base row");
+    assert_eq!(main.task.status, Status::Done);
+}
+
+#[test]
+fn without_a_default_branch_headline_prefers_the_checked_out_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    // No main/master exists, so there is no default branch to anchor the headline.
+    git(root, &["init", "-q", "-b", "alpha"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    task(root, "t", "---\nstatus: todo\n---\n# T\n");
+    commit(root, "add t on alpha");
+    git(root, &["checkout", "-q", "-b", "zeta"]);
+    task(root, "t", "---\nstatus: done\n---\n# T done\n");
+    commit(root, "edit t on zeta");
+    // Serve root stays on `zeta`, which sorts after `alpha`.
+
+    let index = built(root);
+    let items = index.aggregated_tasks();
+    let item = items.iter().find(|i| i.id == "t").expect("task t");
+    // The headline reflects the checked-out branch (zeta), not the alphabetically-first (alpha).
+    assert_eq!(item.status, Status::Done);
+    assert_eq!(item.title, "T done");
+}
+
+#[test]
+fn an_uncommitted_change_on_the_default_branch_is_dirty() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "t", "---\nstatus: todo\n---\n# T\n");
+    commit(root, "add t");
+    // Serve root is checked out on main, so its working copy overlays the base row.
+    task(root, "t", "---\nstatus: in_progress\n---\n# T edited\n");
+
+    let index = built(root);
+    let main = find(&index, "main", "t").expect("main base row");
+    assert_eq!(main.kind, ChangeKind::Base);
+    assert!(main.dirty, "uncommitted working-copy edit is dirty");
+    assert_eq!(main.task.status, Status::InProgress);
+    assert_eq!(main.task.title, "T edited");
+}
+
+#[test]
+fn a_new_uncommitted_task_on_the_default_branch_appears() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    commit(root, "add a");
+    // A freshly created (still uncommitted) task must show up right away, not vanish until commit.
+    task(root, "fresh", "---\nstatus: todo\n---\n# Fresh\n");
+
+    let index = built(root);
+    let fresh = find(&index, "main", "fresh").expect("uncommitted new task row");
+    assert_eq!(fresh.kind, ChangeKind::Base);
+    assert!(fresh.dirty);
+}
+
+#[test]
+fn oplan_default_branch_config_overrides_autodetect() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    commit(root, "add a");
+    git(root, &["checkout", "-q", "-b", "dev"]);
+    task(root, "a", "---\nstatus: done\n---\n# A done\n");
+    commit(root, "edit a on dev");
+    git(root, &["checkout", "-q", "main"]);
+    git(root, &["config", "oplan.defaultBranch", "dev"]);
+
+    let index = built(root);
+
+    // dev is now the baseline; main is unchanged since the fork, so it contributes nothing.
+    let dev = find(&index, "dev", "a").expect("dev base row");
+    assert_eq!(dev.kind, ChangeKind::Base);
+    assert_eq!(dev.task.status, Status::Done);
+    assert!(find(&index, "main", "a").is_none(), "main unchanged vs dev");
+}
+
+#[test]
+fn without_a_default_branch_every_branch_is_a_presence_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "trunk"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    commit(root, "add a");
+    git(root, &["checkout", "-q", "-b", "other"]);
+    task(root, "a", "---\nstatus: done\n---\n# A done\n");
+    commit(root, "edit a on other");
+    git(root, &["checkout", "-q", "trunk"]);
+
+    let index = built(root);
+
+    // No main/master and no config → nothing to diff against, so both branches list their tasks.
+    let trunk = find(&index, "trunk", "a").expect("trunk row");
+    let other = find(&index, "other", "a").expect("other row");
+    assert_eq!(trunk.kind, ChangeKind::Base);
+    assert_eq!(other.kind, ChangeKind::Base);
+    assert_eq!(trunk.task.status, Status::Todo);
+    assert_eq!(other.task.status, Status::Done);
 }
 
 #[test]
@@ -141,18 +395,15 @@ fn unparseable_frontmatter_does_not_abort_rebuild() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    // Markers in the body: frontmatter still parses.
     write(
         &root.join(".plan/tasks/body.md"),
         "---\nstatus: todo\n---\n# Body\n\n## Plan\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> other\n",
     );
-    // Markers straddling the frontmatter fence: parsing fails, so the fallback summary is used.
     write(
         &root.join(".plan/tasks/head.md"),
         "---\n<<<<<<< HEAD\nstatus: todo\n=======\nstatus: done\n>>>>>>> other\n---\n# Head\n",
     );
-    git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "broken frontmatter"]);
+    commit(root, "broken frontmatter");
 
     let index = built(root);
     let cells = &index.matrix().cells;
@@ -160,39 +411,6 @@ fn unparseable_frontmatter_does_not_abort_rebuild() {
 
     let body = cells.iter().find(|c| c.task.id == "body").unwrap();
     assert_eq!(body.task.title, "Body");
-
     let head = cells.iter().find(|c| c.task.id == "head").unwrap();
     assert_eq!(head.task.title, "Head", "best-effort title survives");
-}
-
-#[test]
-fn no_worktree_uses_committed_blobs() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    init(root);
-    write(
-        &root.join(".plan/tasks/a.md"),
-        "---\nstatus: todo\n---\n# A\n",
-    );
-    git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "add a"]);
-    // Diverge `a` on feature without ever checking it out.
-    git(root, &["checkout", "-q", "-b", "feature"]);
-    write(
-        &root.join(".plan/tasks/a.md"),
-        "---\nstatus: done\n---\n# A done\n",
-    );
-    git(root, &["commit", "-qam", "edit a"]);
-    git(root, &["checkout", "-q", "main"]);
-
-    let index = built(root);
-    let feature = index
-        .matrix()
-        .cells
-        .iter()
-        .find(|c| c.branch == "feature")
-        .expect("feature cell from the object DB, no checkout");
-    assert!(!feature.dirty);
-    assert_eq!(feature.task.status, Status::Done);
-    assert_eq!(feature.task.title, "A done");
 }

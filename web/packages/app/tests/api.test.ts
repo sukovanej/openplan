@@ -27,7 +27,7 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
         id: "a-1",
         title: "First",
         status: "todo",
-        branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false }],
+        branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" }],
       },
       {
         id: "b-2",
@@ -35,8 +35,8 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
         status: "in_progress",
         parent: "a-1",
         branches: [
-          { branch: "main", status: "todo", blob_oid: "bbb", dirty: false },
-          { branch: "feature", status: "in_progress", blob_oid: "ccc", dirty: true },
+          { branch: "main", status: "todo", blob_oid: "bbb", dirty: false, kind: "base" },
+          { branch: "feature", status: "in_progress", blob_oid: "ccc", dirty: true, kind: "modified" },
         ],
       },
     ])
