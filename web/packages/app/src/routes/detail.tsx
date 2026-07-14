@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useRef } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 
 import { BranchSwitcher } from "@/components/branch-switcher"
@@ -10,7 +10,7 @@ import { errorText } from "@/lib/format"
 import { taskQuery, useQuery } from "@/lib/store"
 
 export function DetailRoute() {
-  const { id } = useParams()
+  const { id = "" } = useParams()
   // The selected branch lives in the URL (`?branch=`), so it is shareable and resets to the
   // headline on navigation without a render lag; absent means the headline (current-worktree)
   // version.
@@ -19,17 +19,27 @@ export function DetailRoute() {
   const onSelect = (next: string | undefined) =>
     setParams(next === undefined ? {} : { branch: next }, { replace: true })
 
-  const task = useQuery(useMemo(() => taskQuery(id ?? "", branch), [id, branch]))
-  switch (task._tag) {
-    case "loading":
-      return <DetailSkeleton />
-    case "failure":
-      return task.error instanceof TaskNotFound
-        ? <NotFound id={task.error.id} />
-        : <Message title="Could not load task" detail={errorText(task.error)} />
-    case "success":
-      return <TaskDetailView task={task.value} selected={branch} onSelect={onSelect} />
+  const task = useQuery(useMemo(() => taskQuery(id, branch), [id, branch]))
+
+  // Switching branch mints a fresh query that starts in `loading`. Keep the last loaded version on
+  // screen while it resolves — a branch click updates the card in place instead of flashing the
+  // skeleton. Only a first load, or a different task, falls back to the skeleton.
+  const lastShown = useRef<{ id: string; value: TaskDetail } | null>(null)
+  if (task._tag === "success") lastShown.current = { id, value: task.value }
+
+  if (task._tag === "failure") {
+    return task.error instanceof TaskNotFound
+      ? <NotFound id={task.error.id} />
+      : <Message title="Could not load task" detail={errorText(task.error)} />
   }
+  const shown = task._tag === "success"
+    ? task.value
+    : lastShown.current?.id === id
+    ? lastShown.current.value
+    : null
+  return shown === null
+    ? <DetailSkeleton />
+    : <TaskDetailView task={shown} selected={branch} onSelect={onSelect} />
 }
 
 function TaskDetailView(
