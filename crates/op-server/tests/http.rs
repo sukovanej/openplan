@@ -7,17 +7,27 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 async fn get(uri: &str) -> axum::response::Response {
-    app(AppState::default())
+    let (_dir, state) = store_state();
+    app(state)
         .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
         .await
         .unwrap()
 }
 
+// A git-backed store whose serve root is checked out on `main` with a birthing commit, so reads
+// route through the branch-aware index and writes have a live worktree to land in. This is the
+// shape the daemon always serves — a repo is a precondition, not a fallback.
 fn store_state() -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
-    let store = op_store::Store::open(dir.path()).unwrap();
-    (dir, AppState::default().with_store(store))
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    (dir, AppState::new(repo, store))
 }
 
 async fn send(state: &AppState, method: &str, uri: &str, body: Option<Value>) -> Response {
@@ -66,7 +76,8 @@ async fn health_reports_identity_when_set() {
         version: "9.9.9".to_owned(),
         started_at: 5,
     };
-    let response = app(AppState::default().with_health(info.clone()))
+    let (_dir, state) = store_state();
+    let response = app(state.with_health(info.clone()))
         .oneshot(
             Request::builder()
                 .uri("/health")
@@ -83,7 +94,8 @@ async fn health_reports_identity_when_set() {
 
 #[tokio::test]
 async fn admin_shutdown_returns_ok_with_admin_header() {
-    let response = app(AppState::default())
+    let (_dir, state) = store_state();
+    let response = app(state)
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -99,7 +111,8 @@ async fn admin_shutdown_returns_ok_with_admin_header() {
 
 #[tokio::test]
 async fn admin_shutdown_forbidden_without_admin_header() {
-    let response = app(AppState::default())
+    let (_dir, state) = store_state();
+    let response = app(state)
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -225,13 +238,10 @@ async fn malformed_json_body_is_400() {
 async fn serve_stops_on_external_shutdown() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-    let server = tokio::spawn(op_server::serve(
-        listener,
-        AppState::default(),
-        async move {
-            let _ = rx.await;
-        },
-    ));
+    let (_dir, state) = store_state();
+    let server = tokio::spawn(op_server::serve(listener, state, async move {
+        let _ = rx.await;
+    }));
 
     tx.send(()).unwrap();
     server.await.unwrap().unwrap();
@@ -422,7 +432,8 @@ fn git(dir: &std::path::Path, args: &[&str]) {
 }
 
 // A git-backed store whose `alpha` task is `todo` on the checked-out main branch and `done` on a
-// non-checked-out feature branch, so the matrix and cross-branch reads have something to resolve.
+// non-checked-out feature branch, which edited it later — so latest-change-wins headlines `done`.
+// Commit dates are explicit so the ordering never hinges on same-second wall-clock ties.
 fn git_state() -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -430,26 +441,17 @@ fn git_state() -> (tempfile::TempDir, AppState) {
     git(root, &["config", "user.email", "t@example.com"]);
     git(root, &["config", "user.name", "Test"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
-    std::fs::write(
-        root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: todo\n---\n# Alpha\n",
-    )
-    .unwrap();
+    write_alpha(root, "todo", "Alpha");
     git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "init"]);
+    git_commit_at(root, 1_000_000_000, "init");
     git(root, &["checkout", "-q", "-b", "feature"]);
-    std::fs::write(
-        root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: done\n---\n# Alpha done\n",
-    )
-    .unwrap();
-    git(root, &["commit", "-qam", "edit alpha"]);
+    write_alpha(root, "done", "Alpha done");
+    git_commit_at(root, 1_000_000_100, "edit alpha");
     git(root, &["checkout", "-q", "main"]);
 
     let store = op_store::Store::open(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let state = AppState::default().with_store(store).with_repo(repo);
-    (dir, state)
+    (dir, AppState::new(repo, store))
 }
 
 #[tokio::test]
@@ -464,9 +466,13 @@ async fn list_tasks_is_branch_aware() {
     assert_eq!(items.len(), 1, "one entry per logical task: {items:?}");
     let alpha = &items[0];
     assert_eq!(alpha["id"], "alpha");
-    // Headline is the checked-out (main) version.
-    assert_eq!(alpha["status"], "todo");
-    assert_eq!(alpha["title"], "Alpha");
+    // Headline follows the most recently changed branch: `feature` edited alpha after main's init.
+    assert_eq!(alpha["status"], "done");
+    assert_eq!(alpha["title"], "Alpha done");
+    assert_eq!(
+        alpha["headline"], "feature",
+        "the row names its headline branch"
+    );
 
     let branches = alpha["branches"].as_array().unwrap();
     assert_eq!(branches.len(), 2, "carries both branches: {branches:?}");
@@ -488,9 +494,9 @@ async fn cross_branch_task_read_reflects_the_other_branch() {
     assert_eq!(view["status"], "done");
     assert_eq!(view["title"], "Alpha done");
 
-    // Omitting the branch keeps the local current-worktree read (main: todo).
+    // Omitting the branch headlines the most recently changed version, which here is feature's.
     let local = send(&state, "GET", "/api/tasks/alpha", None).await;
-    assert_eq!(body_json(local).await["status"], "todo");
+    assert_eq!(body_json(local).await["status"], "done");
 }
 
 #[tokio::test]
@@ -500,4 +506,240 @@ async fn cross_branch_read_missing_id_or_branch_is_404() {
     assert_eq!(missing_branch.status(), StatusCode::NOT_FOUND);
     let missing_id = send(&state, "GET", "/api/tasks/ghost?branch=feature", None).await;
     assert_eq!(missing_id.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn branchless_get_carries_the_branch_set() {
+    let (_dir, state) = git_state();
+    let response = send(&state, "GET", "/api/tasks/alpha", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let view = body_json(response).await;
+    // Headline is the most recently changed version (feature), flattened alongside the branch set.
+    assert_eq!(view["status"], "done");
+    assert_eq!(view["title"], "Alpha done");
+    assert_eq!(
+        view["headline"], "feature",
+        "names the branch the headline resolves to"
+    );
+    let names: Vec<&str> = view["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["branch"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["feature", "main"], "every branch it lives on");
+}
+
+#[tokio::test]
+async fn write_to_a_branch_without_a_live_worktree_is_refused() {
+    let (_dir, state) = git_state();
+    // `feature` exists but is not checked out in any worktree, so the server cannot write to it
+    // without fabricating a commit — which it refuses to do.
+    let patch = send(
+        &state,
+        "PATCH",
+        "/api/tasks/alpha?branch=feature",
+        Some(json!({ "status": "done" })),
+    )
+    .await;
+    assert_eq!(patch.status(), StatusCode::CONFLICT);
+
+    let delete = send(&state, "DELETE", "/api/tasks/alpha?branch=feature", None).await;
+    assert_eq!(delete.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn delete_is_local_to_the_in_view_branch() {
+    let (_dir, state) = git_state();
+    // Delete on the current (main) worktree removes only main's copy; `feature` still carries it,
+    // so the task survives in the list.
+    let deleted = send(&state, "DELETE", "/api/tasks/alpha", None).await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let list = send(&state, "GET", "/api/tasks", None).await;
+    let items = body_json(list).await;
+    let alpha = items
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == "alpha")
+        .expect("alpha survives on feature");
+    let names: Vec<&str> = alpha["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["branch"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["feature"], "only feature retains alpha");
+}
+
+// Like `git_state`, but `feature` is checked out in a live linked worktree so writes to it land,
+// and its `alpha` diverges to `done` over main's `todo`.
+fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(
+        root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: todo\n---\n# Alpha\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+
+    let wt = root.join(".worktrees/feature");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+        ],
+    );
+    std::fs::write(
+        wt.join(".plan/tasks/alpha.md"),
+        "---\nstatus: done\n---\n# Alpha\n",
+    )
+    .unwrap();
+    git(&wt, &["commit", "-qam", "feature: alpha done"]);
+
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    (dir, AppState::new(repo, store))
+}
+
+#[tokio::test]
+async fn patch_reverting_a_branch_to_its_base_echoes_the_written_task() {
+    let (_dir, state) = git_state_live_feature();
+    // feature's alpha is `done`; main's base is `todo`. Reverting feature back to `todo` makes it
+    // match the base, so feature no longer diverges and drops out of the matrix — the write must
+    // still succeed and echo the task, not 404.
+    let patch = send(
+        &state,
+        "PATCH",
+        "/api/tasks/alpha?branch=feature",
+        Some(json!({ "status": "todo" })),
+    )
+    .await;
+    assert_eq!(patch.status(), StatusCode::OK);
+    let view = body_json(patch).await;
+    assert_eq!(view["id"], "alpha");
+    assert_eq!(view["status"], "todo");
+    assert_eq!(view["title"], "Alpha");
+}
+
+#[tokio::test]
+async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(
+        root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: todo\n---\n# Alpha\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    std::fs::remove_file(root.join(".plan/tasks/alpha.md")).unwrap();
+    git(root, &["commit", "-qam", "feature: drop alpha"]);
+    git(root, &["checkout", "-q", "main"]);
+    // main's working tree also drops it (uncommitted), so no live branch carries alpha — its only
+    // matrix cell is feature's committed deletion.
+    std::fs::remove_file(root.join(".plan/tasks/alpha.md")).unwrap();
+
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = AppState::new(repo, store);
+
+    let list = send(&state, "GET", "/api/tasks", None).await;
+    let items = body_json(list).await;
+    assert!(
+        items.as_array().unwrap().iter().any(|i| i["id"] == "alpha"),
+        "the pending deletion still lists: {items}"
+    );
+
+    // A task the list still shows must open, not 404: the branchless headline falls back to the
+    // deletion's last-known blob.
+    let response = send(&state, "GET", "/api/tasks/alpha", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let view = body_json(response).await;
+    assert_eq!(view["title"], "Alpha");
+}
+
+fn write_alpha(root: &std::path::Path, status: &str, title: &str) {
+    std::fs::write(
+        root.join(".plan/tasks/alpha.md"),
+        format!("---\nstatus: {status}\n---\n# {title}\n"),
+    )
+    .unwrap();
+}
+
+fn git_commit_at(root: &std::path::Path, secs: i64, msg: &str) {
+    let date = format!("@{secs} +0000");
+    let status = std::process::Command::new("git")
+        .current_dir(root)
+        .args(["commit", "-qam", msg])
+        .env("GIT_AUTHOR_DATE", &date)
+        .env("GIT_COMMITTER_DATE", &date)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git commit failed");
+}
+
+#[tokio::test]
+async fn headline_follows_the_most_recent_change_even_on_the_default_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+
+    // main creates alpha=todo (t0); feature diverges it to in_progress (t1); then main advances it
+    // to done (t2), the newest change of all. Latest-change-wins must headline main's done over
+    // feature's older in_progress — proving the default branch competes on time, and isn't ignored
+    // just because a feature branch also diverged. (git_state proves the reverse direction.)
+    write_alpha(root, "todo", "Alpha");
+    git(root, &["add", "."]);
+    git_commit_at(root, 1_000_000_000, "init");
+
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write_alpha(root, "in_progress", "Alpha wip");
+    git_commit_at(root, 1_000_000_100, "feature wip");
+
+    git(root, &["checkout", "-q", "main"]);
+    write_alpha(root, "done", "Alpha done");
+    git_commit_at(root, 1_000_000_200, "main done");
+
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = AppState::new(repo, store);
+
+    let list = send(&state, "GET", "/api/tasks", None).await;
+    let alpha = body_json(list).await;
+    let alpha = alpha
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "alpha")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        alpha["status"], "done",
+        "main's newer change headlines over feature's older one"
+    );
+    assert_eq!(alpha["title"], "Alpha done");
+
+    let detail = send(&state, "GET", "/api/tasks/alpha", None).await;
+    assert_eq!(body_json(detail).await["status"], "done");
 }

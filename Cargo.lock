@@ -2110,8 +2110,11 @@ name = "op-client"
 version = "0.1.0"
 dependencies = [
  "op-api",
+ "op-git",
  "op-server",
+ "op-store",
  "reqwest",
+ "tempfile",
  "tokio",
 ]
 

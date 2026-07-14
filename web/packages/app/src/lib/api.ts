@@ -22,26 +22,31 @@ export const BranchState = Schema.Struct({
 })
 export type BranchState = typeof BranchState.Type
 
-// One logical task aggregated across branches: the headline fields mirror the current worktree's
-// branch, and `branches` carries every branch it lives on for badges and divergence.
+// One logical task aggregated across branches: `status`/`title` come from the `headline` branch (the
+// most recently changed one), and `branches` carries every branch it lives on for badges/divergence.
 export const TaskListItem = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
   status: Status,
   parent: Schema.optionalKey(Schema.String),
+  headline: Schema.String,
   branches: Schema.Array(BranchState),
 })
 export type TaskListItem = typeof TaskListItem.Type
 
-export const TaskView = Schema.Struct({
+// A task's view on one branch plus every branch it lives on, so the detail page can render a
+// branch switcher even when loaded cold (no list in memory).
+export const TaskDetail = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
   status: Status,
   parent: Schema.optionalKey(Schema.String),
   deps: Schema.optionalKey(Schema.Array(Schema.String)),
   body: Schema.String,
+  headline: Schema.String,
+  branches: Schema.Array(BranchState),
 })
-export type TaskView = typeof TaskView.Type
+export type TaskDetail = typeof TaskDetail.Type
 
 const TaskListItems = Schema.Array(TaskListItem)
 
@@ -68,16 +73,20 @@ export const listTasks: Effect.Effect<
   return yield* HttpClientResponse.schemaBodyJson(TaskListItems)(response)
 }).pipe(Effect.scoped)
 
+// Omitting `branch` returns the headline (current-worktree) version; passing one returns that
+// branch's version. Either way the response carries every branch the task lives on.
 export const getTask = (
   id: string,
-): Effect.Effect<TaskView, TaskError, HttpClient.HttpClient> =>
+  branch?: string,
+): Effect.Effect<TaskDetail, TaskError, HttpClient.HttpClient> =>
   Effect.gen(function*() {
     const client = yield* HttpClient.HttpClient
     const base = yield* ApiBaseUrl
-    const response = yield* client.get(`${base}/api/tasks/${encodeURIComponent(id)}`)
+    const query = branch === undefined ? "" : `?branch=${encodeURIComponent(branch)}`
+    const response = yield* client.get(`${base}/api/tasks/${encodeURIComponent(id)}${query}`)
     if (response.status === 404) {
       return yield* Effect.fail(new TaskNotFound({ id }))
     }
     const ok = yield* HttpClientResponse.filterStatusOk(response)
-    return yield* HttpClientResponse.schemaBodyJson(TaskView)(ok)
+    return yield* HttpClientResponse.schemaBodyJson(TaskDetail)(ok)
   }).pipe(Effect.scoped)
