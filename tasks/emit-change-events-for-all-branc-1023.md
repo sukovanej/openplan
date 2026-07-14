@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_review
 ---
 # Emit change events for all branches and worktrees
 
