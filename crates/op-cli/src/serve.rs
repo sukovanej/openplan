@@ -20,10 +20,15 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
         .try_init()
         .ok();
 
-    // With the subscriber up, lifecycle failures go through tracing for consistent formatting
-    // instead of the CLI's plain `error: ...` stderr line.
     serve(home, port, root).await.inspect_err(|err| {
-        tracing::error!(error = format!("{err:#}"), "daemon exited with error");
+        // With the subscriber up, lifecycle failures go through tracing for consistent formatting
+        // instead of the CLI's plain `error: ...` stderr line; fall back to stderr when ERROR is
+        // filtered out (e.g. RUST_LOG=off) so a failed startup is never silent.
+        if tracing::enabled!(tracing::Level::ERROR) {
+            tracing::error!(error = format!("{err:#}"), "daemon exited with error");
+        } else {
+            eprintln!("error: {err:#}");
+        }
     })
 }
 

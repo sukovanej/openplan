@@ -108,16 +108,23 @@ pub fn app(state: AppState) -> Router {
                         .extensions()
                         .get::<MatchedPath>()
                         .map_or_else(|| request.uri().path(), MatchedPath::as_str);
-                    tracing::info_span!(
+                    // ERROR level so the span (and its route/id fields) stays enabled at any
+                    // RUST_LOG that shows failures; `error` is filled in later on a 5xx.
+                    tracing::error_span!(
                         "request",
                         request_id,
                         method = %request.method(),
                         path = %request.uri().path(),
                         route = %route,
+                        error = tracing::field::Empty,
                     )
                 })
                 .on_request(())
                 .on_response(|response: &Response, latency: Duration, _: &Span| {
+                    // A 5xx is reported once by on_failure; skip it here to keep one line/request.
+                    if response.status().is_server_error() {
+                        return;
+                    }
                     let status = response.status().as_u16();
                     let latency_ms = latency.as_millis();
                     if latency >= SLOW_REQUEST {
@@ -256,10 +263,10 @@ impl IntoResponse for ApiError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         };
-        // The failure line from TraceLayer only sees the status code; log the cause here, inside
-        // the request span, so the ERROR record carries route + request id + why.
+        // TraceLayer's failure line only sees the status code; record the cause onto the request
+        // span so its single ERROR line carries route + request id + why, without a second event.
         if status.is_server_error() {
-            tracing::error!(error = %self.0, "request handler failed");
+            Span::current().record("error", tracing::field::display(&self.0));
         }
         (status, self.0.to_string()).into_response()
     }
