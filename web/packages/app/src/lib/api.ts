@@ -5,6 +5,7 @@ export const Status = Schema.Literals([
   "backlog",
   "todo",
   "in_progress",
+  "in_review",
   "done",
   "cancelled",
 ])

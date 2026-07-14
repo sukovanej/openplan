@@ -6,15 +6,17 @@ pub enum Status {
     Backlog,
     Todo,
     InProgress,
+    InReview,
     Done,
     Cancelled,
 }
 
 impl Status {
-    pub const ALL: [Status; 5] = [
+    pub const ALL: [Status; 6] = [
         Status::Backlog,
         Status::Todo,
         Status::InProgress,
+        Status::InReview,
         Status::Done,
         Status::Cancelled,
     ];
@@ -24,6 +26,7 @@ impl Status {
             Status::Backlog => "backlog",
             Status::Todo => "todo",
             Status::InProgress => "in_progress",
+            Status::InReview => "in_review",
             Status::Done => "done",
             Status::Cancelled => "cancelled",
         }

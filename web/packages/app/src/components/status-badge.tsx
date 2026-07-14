@@ -1,4 +1,4 @@
-import { CircleCheck, CircleDot, CircleEllipsis, CircleX, Clock, type LucideIcon } from "lucide-react"
+import { CircleCheck, CircleDot, CircleEllipsis, CircleX, Clock, Eye, type LucideIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import type { Status } from "@/lib/api"
@@ -32,6 +32,14 @@ const styles: Record<
     headerClass: "bg-blue-600/8 border-blue-600/20 text-blue-700/80 dark:text-blue-300/80",
     className: "border-transparent bg-blue-600 text-white",
   },
+  in_review: {
+    label: "In review",
+    variant: "default",
+    icon: Eye,
+    iconClass: "text-violet-600",
+    headerClass: "bg-violet-600/8 border-violet-600/20 text-violet-700/80 dark:text-violet-300/80",
+    className: "border-transparent bg-violet-600 text-white",
+  },
   done: {
     label: "Done",
     variant: "default",
@@ -49,7 +57,7 @@ const styles: Record<
   },
 }
 
-export const statusOrder: ReadonlyArray<Status> = ["in_progress", "todo", "backlog", "done", "cancelled"]
+export const statusOrder: ReadonlyArray<Status> = ["in_progress", "in_review", "todo", "backlog", "done", "cancelled"]
 
 export const statusLabel = (status: Status): string => styles[status].label
 

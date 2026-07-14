@@ -54,7 +54,7 @@ Frontmatter carries only what is *not* derivable from the file itself:
 
 | field | type | notes |
 |---|---|---|
-| `status` | enum | `backlog` / `todo` / `in_progress` / `done` / `cancelled`. `blocked` is **computed** from unmet `deps` — not stored. |
+| `status` | enum | `backlog` / `todo` / `in_progress` / `in_review` / `done` / `cancelled`. `blocked` is **computed** from unmet `deps` — not stored. |
 | `parent` | id? | adjacency-list hierarchy (see §3.2). Absent = top-level. |
 | `deps` | id[] | task→task blocking dependencies; a ref may target a section (`task-id#Section`). Omitted when empty. |
 
