@@ -59,14 +59,6 @@ async fn spa_index_served_with_charset() {
 }
 
 #[tokio::test]
-async fn matrix_endpoint_returns_empty() {
-    let response = get("/api/matrix").await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(&body[..], br#"{"cells":[]}"#);
-}
-
-#[tokio::test]
 async fn health_reports_identity_when_set() {
     let info = op_api::DaemonInfo {
         pid: 4242,
@@ -342,21 +334,30 @@ fn git_state() -> (tempfile::TempDir, AppState) {
 }
 
 #[tokio::test]
-async fn matrix_returns_populated_cells() {
+async fn list_tasks_is_branch_aware() {
     let (_dir, state) = git_state();
-    let response = send(&state, "GET", "/api/matrix", None).await;
+    let response = send(&state, "GET", "/api/tasks", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_json(response).await;
-    let cells = body["cells"].as_array().unwrap();
-    assert_eq!(cells.len(), 2, "alpha on main + feature: {cells:?}");
-    let branches: Vec<&str> = cells
+    let items = body.as_array().unwrap();
+
+    // One row per logical task, even though `alpha` lives on two branches.
+    assert_eq!(items.len(), 1, "one entry per logical task: {items:?}");
+    let alpha = &items[0];
+    assert_eq!(alpha["id"], "alpha");
+    // Headline is the checked-out (main) version.
+    assert_eq!(alpha["status"], "todo");
+    assert_eq!(alpha["title"], "Alpha");
+
+    let branches = alpha["branches"].as_array().unwrap();
+    assert_eq!(branches.len(), 2, "carries both branches: {branches:?}");
+    let names: Vec<&str> = branches
         .iter()
-        .map(|c| c["branch"].as_str().unwrap())
+        .map(|b| b["branch"].as_str().unwrap())
         .collect();
-    assert!(
-        branches.contains(&"main") && branches.contains(&"feature"),
-        "{branches:?}"
-    );
+    assert_eq!(names, vec!["feature", "main"], "sorted by branch name");
+    let feature = branches.iter().find(|b| b["branch"] == "feature").unwrap();
+    assert_eq!(feature["status"], "done", "feature's own version");
 }
 
 #[tokio::test]

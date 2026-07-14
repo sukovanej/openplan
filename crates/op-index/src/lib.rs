@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use op_api::{Matrix, MatrixCell, Status, TaskBranches, TaskSummary, TaskVersion, TaskView};
+use op_api::{
+    BranchState, Matrix, MatrixCell, Status, TaskBranches, TaskListItem, TaskSummary, TaskVersion,
+    TaskView,
+};
 use op_git::{Repo, Worktree};
 use op_store::{Store, StoreError};
 use op_task::Task;
@@ -14,6 +17,8 @@ pub struct Index {
     // the filename, absent from the blob) so two tasks sharing a blob don't leak each other's id.
     blob_cache: HashMap<String, Version>,
     live: HashMap<String, Store>,
+    // The branch checked out in the serve-root worktree; the headline of an aggregated task.
+    current_branch: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +51,12 @@ impl Index {
     }
 
     pub fn rebuild(&mut self, repo: &Repo, store: &Store) -> Result<(), IndexError> {
-        self.live = live_worktrees(&repo.worktrees()?, store);
+        let worktrees = repo.worktrees()?;
+        self.current_branch = worktrees
+            .iter()
+            .find(|worktree| same_path(&worktree.path, store.root()))
+            .and_then(|worktree| worktree.branch.clone());
+        self.live = live_worktrees(&worktrees, store);
         let mut cells = Vec::new();
         for branch in repo.local_branches()? {
             let committed: HashMap<String, String> =
@@ -115,6 +125,43 @@ impl Index {
             .iter()
             .filter(|cell| cell.branch == branch)
             .map(|cell| cell.task.clone())
+            .collect()
+    }
+
+    // One row per logical task across all branches: the headline is the current worktree's branch
+    // (or the first branch when the task doesn't live there), with every branch it exists on in tow.
+    pub fn aggregated_tasks(&self) -> Vec<TaskListItem> {
+        let mut groups: BTreeMap<&str, Vec<&MatrixCell>> = BTreeMap::new();
+        for cell in &self.matrix.cells {
+            groups.entry(cell.task.id.as_str()).or_default().push(cell);
+        }
+        groups
+            .into_iter()
+            .map(|(id, cells)| {
+                let headline = self
+                    .current_branch
+                    .as_deref()
+                    .and_then(|current| cells.iter().find(|c| c.branch == current).copied())
+                    .unwrap_or(cells[0]);
+                let mut branches: Vec<BranchState> = cells
+                    .iter()
+                    .map(|cell| BranchState {
+                        branch: cell.branch.clone(),
+                        status: cell.task.status,
+                        blob_oid: cell.blob_oid.clone(),
+                        dirty: cell.dirty,
+                        conflicted: cell.conflicted,
+                    })
+                    .collect();
+                branches.sort_by(|a, b| a.branch.cmp(&b.branch));
+                TaskListItem {
+                    id: id.to_owned(),
+                    title: headline.task.title.clone(),
+                    status: headline.task.status,
+                    parent: headline.task.parent.clone(),
+                    branches,
+                }
+            })
             .collect()
     }
 

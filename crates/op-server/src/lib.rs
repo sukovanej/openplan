@@ -12,7 +12,7 @@ use axum::{
     },
     routing::get,
 };
-use op_api::{ChangeEvent, CreateTask, DaemonInfo, Matrix, TaskPatch, TaskSummary, TaskView};
+use op_api::{ChangeEvent, CreateTask, DaemonInfo, TaskListItem, TaskPatch, TaskView};
 use op_git::Repo;
 use op_index::{Index, IndexError};
 use op_presence::Registry;
@@ -86,7 +86,6 @@ impl Default for AppState {
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
-        .route("/api/matrix", get(matrix))
         .route("/api/events", get(events))
         .route("/api/tasks", get(list_tasks).post(create_task))
         .route(
@@ -130,36 +129,6 @@ async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Re
     }
     state.shutdown.notify_one();
     (StatusCode::OK, "shutting down").into_response()
-}
-
-async fn matrix(State(state): State<AppState>) -> Json<Matrix> {
-    Json(refresh_matrix(&state).await)
-}
-
-// Rebuild from the serve root's repo + worktrees on demand (coarse v1 refresh); if either is
-// absent, or the walk fails, fall back to the last-built matrix rather than error the request.
-async fn refresh_matrix(state: &AppState) -> Matrix {
-    if let (Some(repo), Some(store)) = (state.repo.clone(), state.store.clone()) {
-        let index = state.index.clone();
-        let rebuilt = tokio::task::spawn_blocking(move || {
-            let mut index = index.lock().expect("index mutex poisoned");
-            index
-                .rebuild(&repo, &store)
-                .map(|()| index.matrix().clone())
-        })
-        .await;
-        match rebuilt {
-            Ok(Ok(matrix)) => return matrix,
-            Ok(Err(err)) => tracing::warn!(%err, "matrix rebuild failed"),
-            Err(err) => tracing::warn!(%err, "matrix rebuild task panicked"),
-        }
-    }
-    state
-        .index
-        .lock()
-        .expect("index mutex poisoned")
-        .matrix()
-        .clone()
 }
 
 async fn events(
@@ -238,20 +207,40 @@ where
     }
 }
 
-async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskSummary>>, ApiError> {
+// Branch-aware: rebuild the index from the serve root's repo + worktrees, then return one entry
+// per logical task with every branch it lives on. Without a git repo, degrade to the current
+// worktree's tasks (no branch awareness) so a non-git .plan store still lists.
+async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
+    if let (Some(repo), Some(store)) = (state.repo.clone(), state.store.clone()) {
+        let index = state.index.clone();
+        let items =
+            tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, IndexError> {
+                let mut index = index.lock().expect("index mutex poisoned");
+                index.rebuild(&repo, &store)?;
+                Ok(index.aggregated_tasks())
+            })
+            .await
+            .map_err(|err| {
+                ApiError(StoreError::Io(std::io::Error::other(format!(
+                    "index task failed: {err}"
+                ))))
+            })?
+            .map_err(index_error)?;
+        return Ok(Json(items));
+    }
     let store = require_store(&state)?;
-    let summaries = blocking(move || {
-        let mut summaries = Vec::new();
+    let items = blocking(move || {
+        let mut items = Vec::new();
         for id in store.task_ids()? {
             match store.read(&id) {
-                Ok(task) => summaries.push(TaskSummary::from_task(id, &task)),
+                Ok(task) => items.push(TaskListItem::from_task(id, &task)),
                 Err(err) => tracing::warn!(%id, %err, "skipping unreadable task"),
             }
         }
-        Ok(summaries)
+        Ok(items)
     })
     .await?;
-    Ok(Json(summaries))
+    Ok(Json(items))
 }
 
 async fn create_task(

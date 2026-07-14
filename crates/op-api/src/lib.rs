@@ -58,6 +58,41 @@ impl TaskView {
     }
 }
 
+// One logical task aggregated across every branch it lives on: a headline (the current worktree's
+// branch, or a deterministic pick when it isn't checked out there) plus one `branches` entry per
+// branch so a client can render badges and spot divergence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskListItem {
+    pub id: String,
+    pub title: String,
+    pub status: Status,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    pub branches: Vec<BranchState>,
+}
+
+impl TaskListItem {
+    pub fn from_task(id: String, task: &Task) -> Self {
+        Self {
+            id,
+            title: task.title().unwrap_or_default(),
+            status: task.frontmatter.status,
+            parent: task.frontmatter.parent.clone(),
+            branches: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BranchState {
+    pub branch: String,
+    pub status: Status,
+    pub blob_oid: String,
+    pub dirty: bool,
+    #[serde(default)]
+    pub conflicted: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTask {
     pub title: String,
