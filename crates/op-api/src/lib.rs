@@ -58,6 +58,16 @@ impl TaskView {
     }
 }
 
+// One task's full view on a single branch, paired with every branch it lives on so a cold-loaded
+// detail page can render a branch switcher without the list in memory. The `view` is the headline
+// (current-worktree) version for a branchless read, or the requested branch's version otherwise.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskDetail {
+    #[serde(flatten)]
+    pub view: TaskView,
+    pub branches: Vec<BranchState>,
+}
+
 // One logical task aggregated across every branch it lives on: a headline (the current worktree's
 // branch, or a deterministic pick when it isn't checked out there) plus one `branches` entry per
 // branch so a client can render badges and spot divergence.
@@ -69,18 +79,6 @@ pub struct TaskListItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     pub branches: Vec<BranchState>,
-}
-
-impl TaskListItem {
-    pub fn from_task(id: String, task: &Task) -> Self {
-        Self {
-            id,
-            title: task.title().unwrap_or_default(),
-            status: task.frontmatter.status,
-            parent: task.frontmatter.parent.clone(),
-            branches: Vec::new(),
-        }
-    }
 }
 
 // How a branch's committed version of a task stands against the default branch's merge-base:

@@ -13,6 +13,8 @@ impl Daemon {
     fn new() -> Self {
         let home = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
+        // `oplan serve` requires a git repository, so the daemon's root must be one.
+        git(root.path(), &["init", "-q", "-b", "main"]);
         std::fs::create_dir_all(root.path().join(".plan/tasks")).unwrap();
         Self { home, root }
     }
@@ -56,6 +58,15 @@ impl Drop for Daemon {
     fn drop(&mut self) {
         let _ = self.cmd().args(["server", "stop"]).output();
     }
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git {args:?} failed");
 }
 
 fn pid_alive(pid: u32) -> bool {

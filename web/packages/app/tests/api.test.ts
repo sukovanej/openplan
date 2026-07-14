@@ -50,15 +50,47 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
     }),
   ))
 
-it.effect("decodes a single task view from GET /api/tasks/:id", () =>
-  withResponse(() => json({ id: "a-1", title: "First", status: "todo", body: "# First\n" }))(
+it.effect("decodes a task detail with its branch set from GET /api/tasks/:id", () =>
+  withResponse(() =>
+    json({
+      id: "a-1",
+      title: "First",
+      status: "todo",
+      body: "# First\n",
+      branches: [
+        { branch: "feature", status: "done", blob_oid: "ccc", dirty: false, kind: "modified" },
+        { branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" },
+      ],
+    })
+  )(
     Effect.gen(function*() {
       const task = yield* getTask("a-1")
       expect(task.title).toBe("First")
       expect(task.status).toBe("todo")
       expect(task.body).toBe("# First\n")
+      expect(task.branches.map((b) => b.branch)).toEqual(["feature", "main"])
     }),
   ))
+
+it.effect("requests a specific branch's version with ?branch=", () =>
+  Effect.gen(function*() {
+    let requested: string | undefined
+    const client = HttpClient.make((request) => {
+      requested = request.url
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          json({ id: "a-1", title: "First", status: "done", body: "# First\n", branches: [] }),
+        ),
+      )
+    })
+    const task = yield* getTask("a-1", "feature").pipe(
+      Effect.provideService(HttpClient.HttpClient, client),
+      Effect.provideService(ApiBaseUrl, "http://localhost"),
+    )
+    expect(task.status).toBe("done")
+    expect(requested).toContain("/api/tasks/a-1?branch=feature")
+  }))
 
 it.effect("maps a 404 response to TaskNotFound", () =>
   withResponse(() => json("no such task", 404))(

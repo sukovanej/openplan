@@ -5,14 +5,32 @@ use op_api::DaemonInfo;
 use op_client::Client;
 use op_server::AppState;
 
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git {args:?} failed");
+}
+
 fn spawn_server(info: DaemonInfo) -> (SocketAddr, JoinHandle<()>) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    git(&root, &["init", "-q", "-b", "main"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    let store = op_store::Store::open(&root).unwrap();
+    let repo = op_git::Repo::discover(&root).unwrap();
+
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = std::thread::spawn(move || {
+        // Keep the temp repo alive for the server's lifetime.
+        let _dir = dir;
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async move {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             tx.send(listener.local_addr().unwrap()).unwrap();
-            let state = AppState::default().with_health(info);
+            let state = AppState::new(repo, store).with_health(info);
             op_server::serve(listener, state, std::future::pending::<()>())
                 .await
                 .unwrap();

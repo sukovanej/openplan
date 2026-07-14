@@ -1,16 +1,25 @@
 import { useMemo } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 
+import { BranchSwitcher } from "@/components/branch-switcher"
 import { DetailSkeleton, Message } from "@/components/states"
 import { StatusIcon } from "@/components/status-badge"
 import { TaskBody } from "@/components/task-body"
-import { TaskNotFound, type TaskView } from "@/lib/api"
+import { type TaskDetail, TaskNotFound } from "@/lib/api"
 import { errorText } from "@/lib/format"
 import { taskQuery, useQuery } from "@/lib/store"
 
 export function DetailRoute() {
   const { id } = useParams()
-  const task = useQuery(useMemo(() => taskQuery(id ?? ""), [id]))
+  // The selected branch lives in the URL (`?branch=`), so it is shareable and resets to the
+  // headline on navigation without a render lag; absent means the headline (current-worktree)
+  // version.
+  const [params, setParams] = useSearchParams()
+  const branch = params.get("branch") ?? undefined
+  const onSelect = (next: string | undefined) =>
+    setParams(next === undefined ? {} : { branch: next }, { replace: true })
+
+  const task = useQuery(useMemo(() => taskQuery(id ?? "", branch), [id, branch]))
   switch (task._tag) {
     case "loading":
       return <DetailSkeleton />
@@ -19,11 +28,17 @@ export function DetailRoute() {
         ? <NotFound id={task.error.id} />
         : <Message title="Could not load task" detail={errorText(task.error)} />
     case "success":
-      return <TaskDetail task={task.value} />
+      return <TaskDetailView task={task.value} selected={branch} onSelect={onSelect} />
   }
 }
 
-function TaskDetail({ task }: { task: TaskView }) {
+function TaskDetailView(
+  { task, selected, onSelect }: {
+    task: TaskDetail
+    selected: string | undefined
+    onSelect: (branch: string | undefined) => void
+  },
+) {
   return (
     <div className="space-y-6">
       <BackLink />
@@ -32,6 +47,7 @@ function TaskDetail({ task }: { task: TaskView }) {
           <StatusIcon status={task.status} />
           <h1 className="text-2xl font-semibold tracking-tight">{task.title}</h1>
         </div>
+        <BranchSwitcher branches={task.branches} selected={selected} onSelect={onSelect} />
         <TaskBody markdown={stripTitle(task.body)} />
       </div>
     </div>

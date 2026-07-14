@@ -33,6 +33,18 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
 }
 
 async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
+    // Reads route through the branch-aware index, which needs a repo; there is no degraded no-repo
+    // serving mode. Fail before binding or taking the lifetime lock so a bad root leaves nothing
+    // half-started.
+    let store = Store::discover(root)
+        .with_context(|| format!("no {} task store found at {}", ".plan", root.display()))?;
+    let repo = Repo::discover(root).with_context(|| {
+        format!(
+            "oplan serve requires a git repository; none found at {}",
+            root.display()
+        )
+    })?;
+
     home.ensure_dir()?;
     let lock = home.open_lock()?;
     if lock.try_lock_exclusive().is_err() {
@@ -57,35 +69,19 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     };
     home.write_info(&info)?;
 
-    let store = Store::discover(root).ok();
-    let repo = Repo::discover(root).ok();
-    let mut state = AppState::default().with_health(info.clone());
-    if let Some(store) = &store {
-        state = state.with_store(store.clone());
-    }
-    if let Some(repo) = &repo {
-        state = state.with_repo(repo.clone());
-    }
-    if let (Some(repo), Some(store)) = (&repo, &store) {
-        if let Err(err) = state
-            .index
-            .lock()
-            .expect("index mutex poisoned")
-            .rebuild(repo, store)
-        {
-            tracing::warn!(%err, "initial matrix build failed");
-        }
+    let state = AppState::new(repo.clone(), store.clone()).with_health(info.clone());
+    if let Err(err) = state
+        .index
+        .lock()
+        .expect("index mutex poisoned")
+        .rebuild(&repo, &store)
+    {
+        tracing::warn!(%err, "initial matrix build failed");
     }
     let (tx, rx) = std::sync::mpsc::channel();
-    let _watcher = match &store {
-        Some(store) => Watcher::start(store.plan_dir(), tx)
-            .inspect_err(|e| tracing::warn!("watch disabled: {e}"))
-            .ok(),
-        None => {
-            tracing::warn!("no .plan/ store found; watch disabled");
-            None
-        }
-    };
+    let _watcher = Watcher::start(store.plan_dir(), tx)
+        .inspect_err(|e| tracing::warn!("watch disabled: {e}"))
+        .ok();
     // Bridge the file watcher's changes onto the broadcast so /api/events fans them out to
     // every connected UI, alongside the writes the API handlers publish directly.
     let events_tx = state.event_sender();

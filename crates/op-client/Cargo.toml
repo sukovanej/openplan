@@ -13,7 +13,10 @@ reqwest.workspace = true
 
 [dev-dependencies]
 op-server.workspace = true
+op-store.workspace = true
+op-git.workspace = true
 tokio.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

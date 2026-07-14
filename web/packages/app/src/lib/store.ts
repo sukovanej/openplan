@@ -2,7 +2,7 @@ import { Effect, Result } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { useSyncExternalStore } from "react"
 
-import { getTask, listTasks, type TaskView } from "./api"
+import { getTask, listTasks, type TaskDetail } from "./api"
 import type { Invalidator } from "./events"
 import { runtime } from "./runtime"
 
@@ -89,14 +89,21 @@ export function useQuery<A>(query: Query<A>): QueryState<A> {
 export const tasksQuery = new Query(listTasks)
 
 const MAX_TASK_QUERIES = 64
-const taskQueries = new Map<string, Query<TaskView>>()
+const taskQueries = new Map<string, Query<TaskDetail>>()
 
-export function taskQuery(id: string): Query<TaskView> {
-  const existing = taskQueries.get(id)
+// A task id is a slug with no spaces, so a space cleanly separates it from an optional branch —
+// one query per (id, branch) so the detail view can hold several branch versions at once.
+function taskKey(id: string, branch: string | undefined): string {
+  return branch === undefined ? id : `${id} ${branch}`
+}
+
+export function taskQuery(id: string, branch?: string): Query<TaskDetail> {
+  const key = taskKey(id, branch)
+  const existing = taskQueries.get(key)
   if (existing !== undefined) return existing
-  const query = new Query(getTask(id), () => taskQueries.delete(id))
-  taskQueries.set(id, query)
-  evictOrphanedTaskQueries(id)
+  const query = new Query(getTask(id, branch), () => taskQueries.delete(key))
+  taskQueries.set(key, query)
+  evictOrphanedTaskQueries(key)
   return query
 }
 
@@ -104,15 +111,22 @@ export function taskQuery(id: string): Query<TaskView> {
 // map by dropping unmounted entries once it grows past the bound.
 function evictOrphanedTaskQueries(keep: string): void {
   if (taskQueries.size <= MAX_TASK_QUERIES) return
-  for (const [id, query] of taskQueries) {
+  for (const [key, query] of taskQueries) {
     if (taskQueries.size <= MAX_TASK_QUERIES) break
-    if (id !== keep && !query.hasListeners()) taskQueries.delete(id)
+    if (key !== keep && !query.hasListeners()) taskQueries.delete(key)
+  }
+}
+
+function refreshTaskQueries(id: string): void {
+  const prefix = `${id} `
+  for (const [key, query] of taskQueries) {
+    if (key === id || key.startsWith(prefix)) query.refresh()
   }
 }
 
 export const storeInvalidator: Invalidator = {
   refreshList: () => tasksQuery.refresh(),
-  refreshTask: (id) => taskQueries.get(id)?.refresh(),
+  refreshTask: (id) => refreshTaskQueries(id),
   refreshVisible: () => {
     for (const query of mounted) query.refresh()
   },

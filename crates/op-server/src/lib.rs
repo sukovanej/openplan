@@ -14,7 +14,7 @@ use axum::{
     },
     routing::get,
 };
-use op_api::{ChangeEvent, CreateTask, DaemonInfo, TaskListItem, TaskPatch, TaskView};
+use op_api::{ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch, TaskView};
 use op_git::Repo;
 use op_index::{Index, IndexError};
 use op_presence::Registry;
@@ -40,26 +40,28 @@ struct Assets;
 pub struct AppState {
     pub index: Arc<Mutex<Index>>,
     pub presence: Arc<Mutex<Registry>>,
-    store: Option<Store>,
-    repo: Option<Repo>,
+    store: Store,
+    repo: Repo,
     shutdown: Arc<watch::Sender<bool>>,
     health: Option<Arc<DaemonInfo>>,
     events: broadcast::Sender<ChangeEvent>,
 }
 
 impl AppState {
+    pub fn new(repo: Repo, store: Store) -> Self {
+        Self {
+            index: Arc::new(Mutex::new(Index::new())),
+            presence: Arc::new(Mutex::new(Registry::new())),
+            store,
+            repo,
+            shutdown: Arc::new(watch::channel(false).0),
+            health: None,
+            events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
+        }
+    }
+
     pub fn with_health(mut self, info: DaemonInfo) -> Self {
         self.health = Some(Arc::new(info));
-        self
-    }
-
-    pub fn with_store(mut self, store: Store) -> Self {
-        self.store = Some(store);
-        self
-    }
-
-    pub fn with_repo(mut self, repo: Repo) -> Self {
-        self.repo = Some(repo);
         self
     }
 
@@ -71,20 +73,6 @@ impl AppState {
 impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState").finish_non_exhaustive()
-    }
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            index: Arc::new(Mutex::new(Index::new())),
-            presence: Arc::new(Mutex::new(Registry::new())),
-            store: None,
-            repo: None,
-            shutdown: Arc::new(watch::channel(false).0),
-            health: None,
-            events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
-        }
     }
 }
 
@@ -246,37 +234,48 @@ struct CreatedTask {
     id: String,
 }
 
-struct ApiError(StoreError);
+enum ApiError {
+    Store(StoreError),
+    // A write aimed at a branch no live worktree has checked out. The server never fabricates a
+    // commit, so it refuses rather than retargeting silently.
+    NotWritable(String),
+}
 
 impl From<StoreError> for ApiError {
     fn from(err: StoreError) -> Self {
-        Self(err)
+        Self::Store(err)
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let status = match &self.0 {
-            StoreError::NotFound { .. } => StatusCode::NOT_FOUND,
-            StoreError::Invalid(_) => StatusCode::BAD_REQUEST,
-            StoreError::StoreMissing | StoreError::Io(_) | StoreError::Task(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
+        let (status, message) = match self {
+            ApiError::Store(StoreError::NotFound { id }) => {
+                (StatusCode::NOT_FOUND, format!("no such task: {id}"))
             }
+            ApiError::Store(StoreError::Invalid(message)) => (StatusCode::BAD_REQUEST, message),
+            ApiError::Store(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            ApiError::NotWritable(branch) => (
+                StatusCode::CONFLICT,
+                format!(
+                    "branch {branch} is not checked out in a writable worktree (no live worktree, \
+                     or an operation is in progress); refusing to write"
+                ),
+            ),
         };
         // TraceLayer's failure line only sees the status code; record the cause onto the request
         // span so its single ERROR line carries route + request id + why, without a second event.
         if status.is_server_error() {
-            Span::current().record("error", tracing::field::display(&self.0));
+            Span::current().record("error", tracing::field::display(&message));
         }
-        (status, self.0.to_string()).into_response()
+        (status, message).into_response()
     }
 }
 
-fn require_store(state: &AppState) -> Result<Store, ApiError> {
-    state
-        .store
-        .clone()
-        .ok_or(ApiError(StoreError::StoreMissing))
+fn join_error(err: tokio::task::JoinError) -> ApiError {
+    ApiError::Store(StoreError::Io(std::io::Error::other(format!(
+        "task failed: {err}"
+    ))))
 }
 
 // The store does blocking file I/O and flock waits; run it off the async worker threads so a
@@ -288,46 +287,25 @@ where
     T: Send + 'static,
 {
     match tokio::task::spawn_blocking(f).await {
-        Ok(result) => result.map_err(ApiError),
-        Err(err) => Err(ApiError(StoreError::Io(std::io::Error::other(format!(
-            "store task failed: {err}"
-        ))))),
+        Ok(result) => result.map_err(ApiError::Store),
+        Err(err) => Err(join_error(err)),
     }
 }
 
-// Branch-aware: rebuild the index from the serve root's repo + worktrees, then return one entry
-// per logical task with every branch it lives on. Without a git repo, degrade to the current
-// worktree's tasks (no branch awareness) so a non-git .plan store still lists.
+// Rebuild the index from the serve root's repo + worktrees, then return one entry per logical task
+// with every branch it lives on.
 async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
-    if let (Some(repo), Some(store)) = (state.repo.clone(), state.store.clone()) {
-        let index = state.index.clone();
-        let items =
-            tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, IndexError> {
-                let mut index = index.lock().expect("index mutex poisoned");
-                index.rebuild(&repo, &store)?;
-                Ok(index.aggregated_tasks())
-            })
-            .await
-            .map_err(|err| {
-                ApiError(StoreError::Io(std::io::Error::other(format!(
-                    "index task failed: {err}"
-                ))))
-            })?
-            .map_err(index_error)?;
-        return Ok(Json(items));
-    }
-    let store = require_store(&state)?;
-    let items = blocking(move || {
-        let mut items = Vec::new();
-        for id in store.task_ids()? {
-            match store.read(&id) {
-                Ok(task) => items.push(TaskListItem::from_task(id, &task)),
-                Err(err) => tracing::warn!(%id, %err, "skipping unreadable task"),
-            }
-        }
-        Ok(items)
+    let repo = state.repo.clone();
+    let store = state.store.clone();
+    let index = state.index.clone();
+    let items = tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, IndexError> {
+        let mut index = index.lock().expect("index mutex poisoned");
+        index.rebuild(&repo, &store)?;
+        Ok(index.aggregated_tasks())
     })
-    .await?;
+    .await
+    .map_err(join_error)?
+    .map_err(index_error)?;
     Ok(Json(items))
 }
 
@@ -335,7 +313,7 @@ async fn create_task(
     State(state): State<AppState>,
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
-    let store = require_store(&state)?;
+    let store = state.store.clone();
     let id = blocking(move || store.create(&body.into_task())).await?;
     publish(
         &state,
@@ -352,95 +330,136 @@ struct TaskQuery {
     branch: Option<String>,
 }
 
+// A `?branch=` reads that branch's version; omitting it returns the headline (current-worktree)
+// version. Either way the response carries every branch the task lives on, resolved through the
+// index so a task absent from the serve-root checkout still loads.
 async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
-) -> Result<Json<TaskView>, ApiError> {
-    // A `?branch=` reads that branch's version cross-branch (§7.1); omitting it keeps the local
-    // current-worktree read the UI already relies on.
-    if let Some(branch) = query.branch {
-        return cross_branch_get(state, id, branch).await;
-    }
-    let store = require_store(&state)?;
-    let view = blocking(move || {
-        let task = store.read(&id)?;
-        Ok(TaskView::from_task(id, &task))
-    })
-    .await?;
-    Ok(Json(view))
-}
-
-async fn cross_branch_get(
-    state: AppState,
-    id: String,
-    branch: String,
-) -> Result<Json<TaskView>, ApiError> {
-    let (Some(repo), Some(store)) = (state.repo.clone(), state.store.clone()) else {
-        return Err(ApiError(StoreError::NotFound { id }));
-    };
+) -> Result<Json<TaskDetail>, ApiError> {
+    let repo = state.repo.clone();
+    let store = state.store.clone();
     let index = state.index.clone();
     let missing = id.clone();
-    let view = tokio::task::spawn_blocking(move || -> Result<Option<TaskView>, ApiError> {
+    let detail = tokio::task::spawn_blocking(move || -> Result<Option<TaskDetail>, ApiError> {
         let mut index = index.lock().expect("index mutex poisoned");
         index.rebuild(&repo, &store).map_err(index_error)?;
         index
-            .effective_view(&repo, &id, &branch)
+            .task_detail(&repo, &id, query.branch.as_deref())
             .map_err(index_error)
     })
     .await
-    .map_err(|err| {
-        ApiError(StoreError::Io(std::io::Error::other(format!(
-            "index task failed: {err}"
-        ))))
-    })??;
-    view.map(Json)
-        .ok_or(ApiError(StoreError::NotFound { id: missing }))
+    .map_err(join_error)??;
+    detail
+        .map(Json)
+        .ok_or(ApiError::Store(StoreError::NotFound { id: missing }))
 }
 
 fn index_error(err: IndexError) -> ApiError {
     match err {
-        IndexError::Store(err) => ApiError(err),
-        IndexError::Git(err) => ApiError(StoreError::Io(std::io::Error::other(err.to_string()))),
+        IndexError::Store(err) => ApiError::Store(err),
+        IndexError::Git(err) => {
+            ApiError::Store(StoreError::Io(std::io::Error::other(err.to_string())))
+        }
+    }
+}
+
+// The write target: the branch requested via `?branch=`, else the serve-root worktree's own branch.
+fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiError> {
+    match requested {
+        Some(branch) => Ok(branch),
+        None => index.current_branch().map(str::to_owned).ok_or_else(|| {
+            ApiError::Store(StoreError::Invalid(
+                "cannot determine the current worktree's branch".to_owned(),
+            ))
+        }),
     }
 }
 
 async fn patch_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<TaskQuery>,
     Json(patch): Json<TaskPatch>,
-) -> Result<Json<TaskView>, ApiError> {
-    let store = require_store(&state)?;
-    let view = blocking(move || {
-        let task = store.update(&id, |task| {
-            patch.apply(task);
-            Ok(())
-        })?;
-        Ok(TaskView::from_task(id, &task))
-    })
-    .await?;
+) -> Result<Json<TaskDetail>, ApiError> {
+    let repo = state.repo.clone();
+    let serve_store = state.store.clone();
+    let index = state.index.clone();
+    let (branch, detail) =
+        tokio::task::spawn_blocking(move || -> Result<(String, TaskDetail), ApiError> {
+            // Resolve the write target under the lock, then release it so the store's flock wait
+            // below does not block concurrent reads sharing the same index mutex.
+            let (branch, store) = {
+                let mut index = index.lock().expect("index mutex poisoned");
+                index.rebuild(&repo, &serve_store).map_err(index_error)?;
+                let branch = write_branch(&index, query.branch)?;
+                let store = index
+                    .live_store(&branch)
+                    .ok_or_else(|| ApiError::NotWritable(branch.clone()))?;
+                (branch, store)
+            };
+            let task = store.update(&id, |task| {
+                patch.apply(task);
+                Ok(())
+            })?;
+            // Echo the freshly written task rather than re-reading it from the matrix: a write that
+            // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
+            // would 404 a write that in fact succeeded.
+            let branches = {
+                let mut index = index.lock().expect("index mutex poisoned");
+                index.rebuild(&repo, &serve_store).map_err(index_error)?;
+                index.task_branch_states(&id)
+            };
+            let detail = TaskDetail {
+                view: TaskView::from_task(id, &task),
+                branches,
+            };
+            Ok((branch, detail))
+        })
+        .await
+        .map_err(join_error)??;
     publish(
         &state,
         ChangeEvent::TaskChanged {
-            id: view.id.clone(),
-            branch: String::new(),
+            id: detail.view.id.clone(),
+            branch,
         },
     );
-    Ok(Json(view))
+    Ok(Json(detail))
 }
 
 async fn delete_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<TaskQuery>,
 ) -> Result<StatusCode, ApiError> {
-    let store = require_store(&state)?;
+    let repo = state.repo.clone();
+    let serve_store = state.store.clone();
+    let index = state.index.clone();
     let changed = id.clone();
-    blocking(move || store.delete(&id)).await?;
+    let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
+        // Resolve the write target under the lock, then release it so the store's flock wait below
+        // does not block concurrent reads sharing the same index mutex.
+        let (branch, store) = {
+            let mut index = index.lock().expect("index mutex poisoned");
+            index.rebuild(&repo, &serve_store).map_err(index_error)?;
+            let branch = write_branch(&index, query.branch)?;
+            let store = index
+                .live_store(&branch)
+                .ok_or_else(|| ApiError::NotWritable(branch.clone()))?;
+            (branch, store)
+        };
+        store.delete(&id)?;
+        Ok(branch)
+    })
+    .await
+    .map_err(join_error)??;
     publish(
         &state,
         ChangeEvent::TaskChanged {
             id: changed,
-            branch: String::new(),
+            branch,
         },
     );
     Ok(StatusCode::NO_CONTENT)

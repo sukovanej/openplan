@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use op_api::{
-    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Status, TaskBranches, TaskListItem,
-    TaskSummary, TaskVersion, TaskView,
+    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Status, TaskBranches, TaskDetail,
+    TaskListItem, TaskSummary, TaskVersion, TaskView,
 };
 use op_git::{Repo, Worktree};
 use op_store::{Store, StoreError};
@@ -313,26 +313,103 @@ impl Index {
                             .and_then(|current| cells.iter().find(|c| c.branch == current).copied())
                     })
                     .unwrap_or(cells[0]);
-                let mut branches: Vec<BranchState> = cells
-                    .iter()
-                    .map(|cell| BranchState {
-                        branch: cell.branch.clone(),
-                        status: cell.task.status,
-                        blob_oid: cell.blob_oid.clone(),
-                        dirty: cell.dirty,
-                        kind: cell.kind,
-                    })
-                    .collect();
-                branches.sort_by(|a, b| a.branch.cmp(&b.branch));
                 TaskListItem {
                     id: id.to_owned(),
                     title: headline.task.title.clone(),
                     status: headline.task.status,
                     parent: headline.task.parent.clone(),
-                    branches,
+                    branches: branch_states(&cells),
                 }
             })
             .collect()
+    }
+
+    pub fn current_branch(&self) -> Option<&str> {
+        self.current_branch.as_deref()
+    }
+
+    // The already-opened store of the worktree that has `branch` checked out and is writable — not
+    // `op_in_progress`. `None` when the branch is not checked out live, so a caller can refuse a
+    // write rather than fabricate a commit onto a branch no worktree holds.
+    pub fn live_store(&self, branch: &str) -> Option<Store> {
+        self.live.get(branch).cloned()
+    }
+
+    pub fn task_branch_states(&self, id: &str) -> Vec<BranchState> {
+        let cells: Vec<&MatrixCell> = self
+            .matrix
+            .cells
+            .iter()
+            .filter(|cell| cell.task.id == id)
+            .collect();
+        branch_states(&cells)
+    }
+
+    // The headline view (branch `None`) or a named branch's view, paired with every branch the task
+    // lives on. A named branch resolves honestly — `None` when the task is absent there. The
+    // branchless headline instead always yields content while any cell exists (a deletion falls back
+    // to its last-known blob) so it never 404s a task the list still shows.
+    pub fn task_detail(
+        &self,
+        repo: &Repo,
+        id: &str,
+        branch: Option<&str>,
+    ) -> Result<Option<TaskDetail>, IndexError> {
+        let cells: Vec<&MatrixCell> = self
+            .matrix
+            .cells
+            .iter()
+            .filter(|cell| cell.task.id == id)
+            .collect();
+        if cells.is_empty() {
+            return Ok(None);
+        }
+        let raw = match branch {
+            Some(branch) => self.effective_raw(repo, id, branch)?,
+            None => Some(self.cell_raw(repo, self.headline_cell(&cells))?),
+        };
+        let Some(raw) = raw else {
+            return Ok(None);
+        };
+        Ok(Some(TaskDetail {
+            view: view_from_raw(id, &raw),
+            branches: branch_states(&cells),
+        }))
+    }
+
+    // The effective text of one cell, including a deletion's last-known blob so a branchless read of
+    // a task every live branch has dropped still resolves instead of 404-ing.
+    fn cell_raw(&self, repo: &Repo, cell: &MatrixCell) -> Result<String, IndexError> {
+        if cell.dirty && cell.kind != ChangeKind::Deleted {
+            if let Some(store) = self.live.get(&cell.branch) {
+                return Ok(store.read_raw(&cell.task.id)?);
+            }
+        }
+        let bytes = repo.read_blob(&cell.blob_oid)?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    // The branch a branchless read resolves to: the default branch, else the current worktree's,
+    // else any — preferring a version the branch still carries so the body resolves, and only
+    // falling back to a deletion cell when every version is a deletion.
+    fn headline_cell<'a>(&self, cells: &[&'a MatrixCell]) -> &'a MatrixCell {
+        let present = |branch: &str| {
+            cells
+                .iter()
+                .find(|cell| cell.branch == branch && cell.kind != ChangeKind::Deleted)
+                .copied()
+        };
+        self.default_branch
+            .as_deref()
+            .and_then(present)
+            .or_else(|| self.current_branch.as_deref().and_then(present))
+            .or_else(|| {
+                cells
+                    .iter()
+                    .find(|c| c.kind != ChangeKind::Deleted)
+                    .copied()
+            })
+            .unwrap_or(cells[0])
     }
 
     pub fn task_branches(&self, id: &str) -> Option<TaskBranches> {
@@ -428,6 +505,21 @@ fn deletion_blob<'a>(bases: &'a HashSet<String>, default_oid: Option<&'a String>
         .iter()
         .min()
         .expect("a deletion row is only built for a non-empty base set")
+}
+
+fn branch_states(cells: &[&MatrixCell]) -> Vec<BranchState> {
+    let mut branches: Vec<BranchState> = cells
+        .iter()
+        .map(|cell| BranchState {
+            branch: cell.branch.clone(),
+            status: cell.task.status,
+            blob_oid: cell.blob_oid.clone(),
+            dirty: cell.dirty,
+            kind: cell.kind,
+        })
+        .collect();
+    branches.sort_by(|a, b| a.branch.cmp(&b.branch));
+    branches
 }
 
 fn present_ids(
