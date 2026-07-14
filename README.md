@@ -15,9 +15,9 @@ cargo fmt --check
 cargo clippy -- -D warnings
 ```
 
-The web UI lives in `web/` (a pnpm workspace). Build it before `cargo build` to embed the
-real SPA; a committed `web/packages/app/dist/` placeholder keeps a Rust-only build working
-without Node.
+The web UI lives in `web/` (a pnpm workspace). Its build output
+(`web/packages/app/dist/`) is gitignored — build it before `cargo build` so the SPA gets
+embedded. Without a build the daemon still compiles and runs, but serves no web UI.
 
 ```sh
 cd web && pnpm install && pnpm -r build   # → web/packages/app/dist
