@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 ---
 # Non-blocking daemon shutdown + SSE connection status/reconnect UX
 
