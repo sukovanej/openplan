@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 
-import { clampIndex, emptyCursor, focused, focusedId, moved, rowCursor, withRows } from "../src/lib/row-cursor"
+import { clampIndex, cleared, emptyCursor, focused, focusedId, moved, rowCursor, withRows } from "../src/lib/row-cursor"
 
 const rows = (n: number): Array<string> => Array.from({ length: n }, (_, i) => `t-${i}`)
 
@@ -45,6 +45,18 @@ it("an empty task set clears the cursor", () => {
   expect(focusedId(empty)).toBeUndefined()
 })
 
+it("clear sets the index to -1 and preserves the ids", () => {
+  const at2 = focused(withRows(emptyCursor, rows(5)), 2)
+  const empty = cleared(at2)
+  expect(empty.index).toBe(-1)
+  expect(empty.ids).toBe(at2.ids)
+})
+
+it("clear on an already-cleared cursor returns the same state", () => {
+  const rowed = withRows(emptyCursor, rows(3))
+  expect(cleared(rowed)).toBe(rowed)
+})
+
 it("focusedId reports the id under the cursor", () => {
   expect(focusedId(focused(withRows(emptyCursor, rows(3)), 1))).toBe("t-1")
 })
@@ -74,5 +86,26 @@ it("the store notifies subscribers and drives the cursor", () => {
   expect(rowCursor.getSnapshot().index).toBe(-1)
 
   expect(ticks).toBeGreaterThan(0)
+  unsubscribe()
+})
+
+it("clear dismisses an active selection but does not churn when already cleared", () => {
+  let ticks = 0
+  const unsubscribe = rowCursor.subscribe(() => {
+    ticks += 1
+  })
+
+  rowCursor.setRows(["a", "b", "c"])
+  rowCursor.focus(1)
+  expect(rowCursor.getSnapshot().index).toBe(1)
+
+  ticks = 0
+  rowCursor.clear()
+  expect(rowCursor.getSnapshot().index).toBe(-1)
+  expect(ticks).toBe(1)
+
+  rowCursor.clear()
+  expect(ticks).toBe(1)
+
   unsubscribe()
 })
