@@ -2,6 +2,11 @@
 
 Local-first task manager (Rust workspace). Design lives in `SPEC.md`, work in `.plan/tasks/`.
 
+## Worktrees
+
+Make every change in a separate git worktree, never directly on the main
+checkout. Create one per unit of work and remove it once the change is merged.
+
 ## Style: minimal comments, docs, and README
 
 Code must be self-describing. If a piece of code seems to need a comment, a doc
