@@ -35,6 +35,7 @@ pulldown-cmark = { version = "0.13", default-features = false }
 gix = "0.85" # default features provide the sha1 object hash
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 axum = "0.8"
 tower-http = { version = "0.7", features = ["trace"] }
 rust-embed = "8"

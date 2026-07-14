@@ -1,6 +1,6 @@
 [package]
 name = "op-server"
-description = "axum HTTP + WebSocket API and embedded SPA"
+description = "axum HTTP + SSE API and embedded SPA"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,6 +15,7 @@ op-store.workspace = true
 op-task.workspace = true
 axum.workspace = true
 tokio.workspace = true
+tokio-stream.workspace = true
 tower-http.workspace = true
 rust-embed.workspace = true
 serde.workspace = true

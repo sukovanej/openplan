@@ -58,9 +58,12 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
             None
         }
     };
+    // Bridge the file watcher's changes onto the broadcast so /api/events fans them out to
+    // every connected UI, alongside the writes the API handlers publish directly.
+    let events_tx = state.event_sender();
     std::thread::spawn(move || {
         for event in rx {
-            tracing::debug!(?event, "change");
+            let _ = events_tx.send(event);
         }
     });
 

@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Bootstrap the realtime web UI (React + Effect + shadcn)
 

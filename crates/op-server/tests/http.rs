@@ -244,3 +244,54 @@ async fn serve_stops_on_external_shutdown() {
     tx.send(()).unwrap();
     server.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn events_endpoint_is_an_event_stream() {
+    let response = get("/api/events").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(content_type, "text/event-stream");
+}
+
+#[tokio::test]
+async fn events_stream_delivers_published_changes() {
+    let (_dir, state) = store_state();
+
+    // The GET resolves once the handler has subscribed, so a change published afterwards is
+    // buffered for this receiver rather than lost.
+    let events = send(&state, "GET", "/api/events", None).await;
+    assert_eq!(events.status(), StatusCode::OK);
+
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks",
+        Some(json!({ "title": "Wire the SSE" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let id = body_json(created).await["id"].as_str().unwrap().to_owned();
+
+    let event: Value = serde_json::from_str(&first_sse_data(events).await).unwrap();
+    assert_eq!(event["kind"], "task_changed");
+    assert_eq!(event["id"], id);
+}
+
+async fn first_sse_data(response: Response) -> String {
+    let mut body = response.into_body();
+    let mut buffer = String::new();
+    while let Some(frame) = body.frame().await {
+        if let Some(data) = frame.unwrap().data_ref() {
+            buffer.push_str(&String::from_utf8_lossy(data));
+            if let Some(line) = buffer.lines().find_map(|line| line.strip_prefix("data:")) {
+                return line.trim().to_owned();
+            }
+        }
+    }
+    panic!("event stream closed before delivering a data frame");
+}

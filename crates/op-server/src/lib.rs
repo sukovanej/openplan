@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
@@ -5,20 +6,28 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::{HeaderMap, StatusCode, Uri, header},
-    response::{IntoResponse, Response},
+    response::{
+        IntoResponse, Response,
+        sse::{Event, KeepAlive, Sse},
+    },
     routing::get,
 };
-use op_api::{CreateTask, DaemonInfo, Matrix, TaskPatch, TaskSummary, TaskView};
+use op_api::{ChangeEvent, CreateTask, DaemonInfo, Matrix, TaskPatch, TaskSummary, TaskView};
 use op_index::Index;
 use op_presence::Registry;
 use op_store::{Store, StoreError};
 use rust_embed::RustEmbed;
 use serde::Serialize;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, broadcast};
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use tokio_stream::{Stream, StreamExt as _};
 use tower_http::trace::TraceLayer;
 
+const EVENT_CHANNEL_CAPACITY: usize = 256;
+
 #[derive(RustEmbed)]
-#[folder = "../../web"]
+#[folder = "../../web/packages/app/dist"]
 struct Assets;
 
 #[derive(Clone)]
@@ -28,6 +37,7 @@ pub struct AppState {
     store: Option<Store>,
     shutdown: Arc<Notify>,
     health: Option<Arc<DaemonInfo>>,
+    events: broadcast::Sender<ChangeEvent>,
 }
 
 impl AppState {
@@ -39,6 +49,10 @@ impl AppState {
     pub fn with_store(mut self, store: Store) -> Self {
         self.store = Some(store);
         self
+    }
+
+    pub fn event_sender(&self) -> broadcast::Sender<ChangeEvent> {
+        self.events.clone()
     }
 }
 
@@ -56,6 +70,7 @@ impl Default for AppState {
             store: None,
             shutdown: Arc::new(Notify::new()),
             health: None,
+            events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
         }
     }
 }
@@ -64,6 +79,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/matrix", get(matrix))
+        .route("/api/events", get(events))
         .route("/api/tasks", get(list_tasks).post(create_task))
         .route(
             "/api/tasks/{id}",
@@ -111,6 +127,33 @@ async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Re
 async fn matrix(State(state): State<AppState>) -> Json<Matrix> {
     let index = state.index.lock().expect("index mutex poisoned");
     Json(index.matrix().clone())
+}
+
+async fn events(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let stream = BroadcastStream::new(state.events.subscribe()).map(|message| {
+        let event = match message {
+            Ok(change) => encode(&change),
+            // A lagging client dropped events; nudge it to refetch the whole list.
+            Err(BroadcastStreamRecvError::Lagged(_)) => encode(&ChangeEvent::RefMoved {
+                branch: String::new(),
+            }),
+        };
+        Ok(event)
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+fn encode(change: &ChangeEvent) -> Event {
+    Event::default()
+        .json_data(change)
+        .unwrap_or_else(|_| Event::default().comment("failed to encode change event"))
+}
+
+fn publish(state: &AppState, event: ChangeEvent) {
+    tracing::info!(?event, "change published");
+    let _ = state.events.send(event);
 }
 
 #[derive(Serialize)]
@@ -184,7 +227,13 @@ async fn create_task(
 ) -> Result<Response, ApiError> {
     let store = require_store(&state)?;
     let id = blocking(move || store.create(&body.into_task())).await?;
-    tracing::info!(%id, "task changed");
+    publish(
+        &state,
+        ChangeEvent::TaskChanged {
+            id: id.clone(),
+            branch: String::new(),
+        },
+    );
     Ok((StatusCode::CREATED, Json(CreatedTask { id })).into_response())
 }
 
@@ -212,10 +261,16 @@ async fn patch_task(
             patch.apply(task);
             Ok(())
         })?;
-        tracing::info!(%id, "task changed");
         Ok(TaskView::from_task(id, &task))
     })
     .await?;
+    publish(
+        &state,
+        ChangeEvent::TaskChanged {
+            id: view.id.clone(),
+            branch: String::new(),
+        },
+    );
     Ok(Json(view))
 }
 
@@ -224,12 +279,15 @@ async fn delete_task(
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let store = require_store(&state)?;
-    blocking(move || {
-        store.delete(&id)?;
-        tracing::info!(%id, "task changed");
-        Ok(())
-    })
-    .await?;
+    let changed = id.clone();
+    blocking(move || store.delete(&id)).await?;
+    publish(
+        &state,
+        ChangeEvent::TaskChanged {
+            id: changed,
+            branch: String::new(),
+        },
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 

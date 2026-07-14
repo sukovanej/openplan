@@ -15,6 +15,19 @@ cargo fmt --check
 cargo clippy -- -D warnings
 ```
 
+The web UI lives in `web/` (a pnpm workspace). Build it before `cargo build` to embed the
+real SPA; a committed `web/packages/app/dist/` placeholder keeps a Rust-only build working
+without Node.
+
+```sh
+cd web && pnpm install && pnpm -r build   # → web/packages/app/dist
+cargo build                               # embeds the SPA
+```
+
+Web workspace checks: `pnpm -r typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm -r test`.
+Live development: `pnpm --filter @open-planner/app dev` (Vite on :5173, proxying the API to
+the daemon on :7373).
+
 ## Run
 
 `oplan` is the single binary — run it via `cargo run -p op-cli -- <args>`:

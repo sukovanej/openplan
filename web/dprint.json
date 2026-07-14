@@ -1,0 +1,19 @@
+{
+  "typescript": {
+    "quoteStyle": "alwaysDouble",
+    "semiColons": "asi"
+  },
+  "json": {},
+  "markdown": {},
+  "excludes": [
+    "**/node_modules",
+    "**/dist",
+    "**/*.tsbuildinfo",
+    "**/pnpm-lock.yaml"
+  ],
+  "plugins": [
+    "https://plugins.dprint.dev/typescript-0.96.1.wasm",
+    "https://plugins.dprint.dev/json-0.23.0.wasm",
+    "https://plugins.dprint.dev/markdown-0.22.1.wasm"
+  ]
+}
