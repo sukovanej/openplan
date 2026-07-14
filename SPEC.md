@@ -167,6 +167,12 @@ Per project it:
 **Degraded fallback:** if the daemon is down, the CLI reads files / the object DB directly and
 uses the on-disk claims file (file-locked), so headless agents still function.
 
+**Logging tiers** (`RUST_LOG`, default `info`): `info` covers lifecycle only — startup,
+lifecycle failures, and change publications. `debug` adds one line per HTTP request (method,
+path, matched route, request id, status, latency); requests slower than 1s log at `warn`. A
+request that fails logs the underlying cause and the failure classification at `error`, both
+tagged with the request's route and id.
+
 ### 7.4 Building the matrix from the object DB (all branches)
 - For each local branch, read its `.plan/` tree via libgit2/gitoxide (not per-file shell-outs).
 - **Dedup by blob OID**: task files unchanged across branches share one blob → parse each unique

@@ -162,6 +162,55 @@ fn second_start_is_idempotent() {
 }
 
 #[test]
+fn foreground_start_reports_lock_conflict_on_both_channels() {
+    let daemon = Daemon::new();
+    // A detached daemon holds the lock for the rest of the test.
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "start", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    wait_until(|| daemon.info_port().is_some());
+
+    // RUST_LOG=off silences tracing; the fatal startup error must still reach stderr.
+    let silent = daemon
+        .cmd()
+        .env("RUST_LOG", "off")
+        .args(["server", "start", "--foreground", "--port", "0"])
+        .output()
+        .unwrap();
+    assert!(
+        !silent.status.success(),
+        "a lock conflict must exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&silent.stderr);
+    assert!(
+        stderr.contains("error:") && stderr.contains("already holds"),
+        "stderr: {stderr}"
+    );
+
+    // With logging live, the same failure is a tracing-formatted ERROR line (on stdout).
+    let logged = daemon
+        .cmd()
+        .env("RUST_LOG", "info")
+        .args(["server", "start", "--foreground", "--port", "0"])
+        .output()
+        .unwrap();
+    assert!(
+        !logged.status.success(),
+        "a lock conflict must exit non-zero"
+    );
+    let stdout = String::from_utf8_lossy(&logged.stdout);
+    assert!(
+        stdout.contains("daemon exited with error") && stdout.contains("already holds"),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
 fn ping_never_starts_daemon() {
     let daemon = Daemon::new();
     let ping = daemon.cmd().args(["server", "ping"]).output().unwrap();

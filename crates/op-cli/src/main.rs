@@ -190,10 +190,16 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
             reject_remote_override(daemon_url, "start")?;
             if foreground {
                 let runtime = tokio::runtime::Runtime::new()?;
-                runtime.block_on(serve::run(Home::resolve()?, port, root))?;
-            } else {
-                Control::resolve()?.start(port, root)?;
+                // serve::run reports its own failure through tracing; map it to an exit code
+                // rather than let main re-print the cause as a plain `error: ...` line.
+                return Ok(
+                    match runtime.block_on(serve::run(Home::resolve()?, port, root)) {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(_) => ExitCode::FAILURE,
+                    },
+                );
             }
+            Control::resolve()?.start(port, root)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Stop => {
