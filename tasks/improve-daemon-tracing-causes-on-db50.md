@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 ---
 # Improve daemon tracing: causes on failed responses, unified tracing, per-request debug logs
 
