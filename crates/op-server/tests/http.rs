@@ -274,6 +274,125 @@ async fn events_stream_delivers_published_changes() {
     assert_eq!(event["id"], id);
 }
 
+#[tokio::test]
+async fn events_stream_ends_on_shutdown_with_final_event() {
+    let (_dir, state) = store_state();
+
+    // The GET resolves once the handler has subscribed to the shutdown watch, so the stop
+    // triggered afterwards reaches this open stream.
+    let events = send(&state, "GET", "/api/events", None).await;
+    assert_eq!(events.status(), StatusCode::OK);
+
+    let shutdown = app(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/shutdown")
+                .header(op_api::ADMIN_HEADER, "1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(shutdown.status(), StatusCode::OK);
+
+    let kinds = tokio::time::timeout(std::time::Duration::from_secs(5), drain_sse_kinds(events))
+        .await
+        .expect("event stream must end after the daemon signals shutdown");
+    assert_eq!(kinds.last().map(String::as_str), Some("daemon_stopping"));
+}
+
+#[tokio::test]
+async fn events_stream_frees_subscription_when_client_disconnects() {
+    let (_dir, state) = store_state();
+    let baseline = state.event_sender().receiver_count();
+
+    let events = send(&state, "GET", "/api/events", None).await;
+    assert_eq!(events.status(), StatusCode::OK);
+    assert_eq!(state.event_sender().receiver_count(), baseline + 1);
+
+    // The client goes away without another event ever being published.
+    drop(events);
+
+    assert!(
+        wait_for_receiver_count(&state, baseline).await,
+        "the SSE pump task kept its broadcast subscription alive after the client disconnected"
+    );
+}
+
+#[tokio::test]
+async fn events_stream_ends_on_shutdown_even_when_send_buffer_is_full() {
+    let (_dir, state) = store_state();
+    let baseline = state.event_sender().receiver_count();
+
+    // The client connects but never reads its body, so the handler's mpsc buffer fills.
+    let _events = send(&state, "GET", "/api/events", None).await;
+    assert_eq!(state.event_sender().receiver_count(), baseline + 1);
+
+    // Overflow the handler far past its channel capacity so the pump task parks inside
+    // `tx.send().await` on the full, un-drained mpsc.
+    for _ in 0..2048 {
+        let _ = state.event_sender().send(op_api::ChangeEvent::RefMoved {
+            branch: String::new(),
+        });
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(state.event_sender().receiver_count(), baseline + 1);
+
+    // The daemon stops. A stream blocked on a full send must still tear down promptly instead
+    // of pinning graceful shutdown open until the stop deadline.
+    let shutdown = app(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/shutdown")
+                .header(op_api::ADMIN_HEADER, "1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(shutdown.status(), StatusCode::OK);
+
+    assert!(
+        wait_for_receiver_count(&state, baseline).await,
+        "a stream blocked on a full send did not observe shutdown and release its subscription"
+    );
+}
+
+async fn wait_for_receiver_count(state: &AppState, target: usize) -> bool {
+    for _ in 0..200 {
+        if state.event_sender().receiver_count() == target {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    state.event_sender().receiver_count() == target
+}
+
+async fn drain_sse_kinds(response: Response) -> Vec<String> {
+    let mut body = response.into_body();
+    let mut buffer = String::new();
+    let mut kinds = Vec::new();
+    while let Some(frame) = body.frame().await {
+        if let Some(data) = frame.unwrap().data_ref() {
+            buffer.push_str(&String::from_utf8_lossy(data));
+        }
+        while let Some(end) = buffer.find("\n\n") {
+            let event: String = buffer.drain(..end + 2).collect();
+            let Some(line) = event.lines().find_map(|line| line.strip_prefix("data:")) else {
+                continue;
+            };
+            if let Ok(value) = serde_json::from_str::<Value>(line.trim()) {
+                if let Some(kind) = value["kind"].as_str() {
+                    kinds.push(kind.to_owned());
+                }
+            }
+        }
+    }
+    kinds
+}
+
 async fn first_sse_data(response: Response) -> String {
     let mut body = response.into_body();
     let mut buffer = String::new();
