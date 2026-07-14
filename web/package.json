@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
+    "watch": "pnpm -r --parallel watch",
     "typecheck": "pnpm -r typecheck",
     "lint": "oxlint",
     "format": "dprint fmt",
