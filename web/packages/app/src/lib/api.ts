@@ -10,11 +10,15 @@ export const Status = Schema.Literals([
 ])
 export type Status = typeof Status.Type
 
+export const ChangeKind = Schema.Literals(["base", "added", "modified", "deleted"])
+export type ChangeKind = typeof ChangeKind.Type
+
 export const BranchState = Schema.Struct({
   branch: Schema.String,
   status: Status,
   blob_oid: Schema.String,
   dirty: Schema.Boolean,
+  kind: ChangeKind,
 })
 export type BranchState = typeof BranchState.Type
 

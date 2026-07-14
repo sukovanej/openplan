@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct Repo {
     inner: gix::ThreadSafeRepository,
@@ -74,37 +76,100 @@ impl Repo {
 
     pub fn branch_task_blobs(&self, branch: &str) -> Result<Vec<(String, String)>, GitError> {
         let repo = self.repo();
-        let mut reference = repo
+        let tree = repo
             .try_find_reference(format!("refs/heads/{branch}").as_str())
             .map_err(|e| GitError::Open(e.to_string()))?
-            .ok_or_else(|| GitError::NoSuchBranch(branch.to_owned()))?;
-        let tree = reference
+            .ok_or_else(|| GitError::NoSuchBranch(branch.to_owned()))?
             .peel_to_tree()
             .map_err(|e| GitError::Object(e.to_string()))?;
-        let Some(entry) = tree
-            .lookup_entry_by_path(".plan/tasks")
+        task_blobs(&tree)
+    }
+
+    pub fn commit_task_blobs(&self, commit_hex: &str) -> Result<Vec<(String, String)>, GitError> {
+        let oid = gix::ObjectId::from_hex(commit_hex.as_bytes())
+            .map_err(|e| GitError::Object(e.to_string()))?;
+        let repo = self.repo();
+        let tree = repo
+            .find_object(oid)
             .map_err(|e| GitError::Object(e.to_string()))?
-        else {
-            return Ok(Vec::new());
-        };
-        if !entry.mode().is_tree() {
-            return Ok(Vec::new());
-        }
-        let subtree = entry
-            .object()
-            .map_err(|e| GitError::Object(e.to_string()))?
-            .into_tree();
-        let mut out = Vec::new();
-        for entry in subtree.iter() {
-            let entry = entry.map_err(|e| GitError::Object(e.to_string()))?;
-            if !entry.mode().is_blob() {
-                continue;
-            }
-            if let Some(id) = entry.filename().to_string().strip_suffix(".md") {
-                out.push((id.to_owned(), entry.oid().to_string()));
-            }
+            .peel_to_tree()
+            .map_err(|e| GitError::Object(e.to_string()))?;
+        task_blobs(&tree)
+    }
+
+    pub fn branch_commit(&self, branch: &str) -> Result<String, GitError> {
+        let repo = self.repo();
+        let id = repo
+            .try_find_reference(format!("refs/heads/{branch}").as_str())
+            .map_err(|e| GitError::Open(e.to_string()))?
+            .ok_or_else(|| GitError::NoSuchBranch(branch.to_owned()))?
+            .peel_to_id()
+            .map_err(|e| GitError::Object(e.to_string()))?;
+        Ok(id.detach().to_string())
+    }
+
+    // All common ancestors of each branch commit with `target`, resolved in one graph walk shared
+    // across every branch (with an object cache) rather than a fresh walk per call. A branch with
+    // no shared history yields an empty list, so its tasks all read as newly added; a criss-cross
+    // history yields several bases, and the caller treats a task as unchanged if it matches any.
+    pub fn merge_bases_against(
+        &self,
+        target_hex: &str,
+        branch_hexes: &[String],
+    ) -> Result<Vec<Vec<String>>, GitError> {
+        let target = gix::ObjectId::from_hex(target_hex.as_bytes())
+            .map_err(|e| GitError::Object(e.to_string()))?;
+        let mut repo = self.repo();
+        repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
+        let cache = repo
+            .commit_graph_if_enabled()
+            .map_err(|e| GitError::Object(e.to_string()))?;
+        let mut graph = repo.revision_graph(cache.as_ref());
+        let others = [target];
+        let mut out = Vec::with_capacity(branch_hexes.len());
+        for hex in branch_hexes {
+            let commit = gix::ObjectId::from_hex(hex.as_bytes())
+                .map_err(|e| GitError::Object(e.to_string()))?;
+            let bases = repo
+                .merge_bases_many_with_graph(commit, &others, &mut graph)
+                .map_err(|e| GitError::Object(e.to_string()))?;
+            out.push(
+                bases
+                    .into_iter()
+                    .map(|id| id.detach().to_string())
+                    .collect(),
+            );
         }
         Ok(out)
+    }
+
+    // The branch the task view treats as the merge target: the `oplan.defaultBranch` git-config
+    // value when it names a real local branch, else `main`, else `master`, else none.
+    pub fn default_branch(&self) -> Result<Option<String>, GitError> {
+        let configured = self
+            .repo()
+            .config_snapshot()
+            .string("oplan.defaultBranch")
+            .map(|value| String::from_utf8_lossy(value.as_ref()).into_owned());
+        if let Some(name) = configured {
+            if self.branch_exists(&name)? {
+                return Ok(Some(name));
+            }
+        }
+        for candidate in ["main", "master"] {
+            if self.branch_exists(candidate)? {
+                return Ok(Some(candidate.to_owned()));
+            }
+        }
+        Ok(None)
+    }
+
+    fn branch_exists(&self, branch: &str) -> Result<bool, GitError> {
+        Ok(self
+            .repo()
+            .try_find_reference(format!("refs/heads/{branch}").as_str())
+            .map_err(|e| GitError::Open(e.to_string()))?
+            .is_some())
     }
 
     pub fn read_blob(&self, oid_hex: &str) -> Result<Vec<u8>, GitError> {
@@ -122,6 +187,33 @@ impl Repo {
             .map_err(|e| GitError::Object(e.to_string()))?;
         Ok(oid.to_string())
     }
+}
+
+fn task_blobs(tree: &gix::Tree) -> Result<Vec<(String, String)>, GitError> {
+    let Some(entry) = tree
+        .lookup_entry_by_path(".plan/tasks")
+        .map_err(|e| GitError::Object(e.to_string()))?
+    else {
+        return Ok(Vec::new());
+    };
+    if !entry.mode().is_tree() {
+        return Ok(Vec::new());
+    }
+    let subtree = entry
+        .object()
+        .map_err(|e| GitError::Object(e.to_string()))?
+        .into_tree();
+    let mut out = Vec::new();
+    for entry in subtree.iter() {
+        let entry = entry.map_err(|e| GitError::Object(e.to_string()))?;
+        if !entry.mode().is_blob() {
+            continue;
+        }
+        if let Some(id) = entry.filename().to_string().strip_suffix(".md") {
+            out.push((id.to_owned(), entry.oid().to_string()));
+        }
+    }
+    Ok(out)
 }
 
 fn worktree_of(repo: &gix::Repository) -> Option<Worktree> {
