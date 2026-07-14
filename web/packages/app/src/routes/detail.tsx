@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { DetailSkeleton, Message } from "@/components/states"
-import { StatusBadge } from "@/components/status-badge"
+import { StatusIcon } from "@/components/status-badge"
 import { TaskBody } from "@/components/task-body"
 import { TaskNotFound, type TaskView } from "@/lib/api"
 import { errorText } from "@/lib/format"
@@ -27,11 +27,13 @@ function TaskDetail({ task }: { task: TaskView }) {
   return (
     <div className="space-y-6">
       <BackLink />
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{task.title}</h1>
-        <StatusBadge status={task.status} />
+      <div className="bg-muted/30 overflow-hidden rounded-lg border p-6">
+        <div className="mb-4 flex items-center gap-3">
+          <StatusIcon status={task.status} />
+          <h1 className="text-2xl font-semibold tracking-tight">{task.title}</h1>
+        </div>
+        <TaskBody markdown={stripTitle(task.body)} />
       </div>
-      <TaskBody markdown={stripTitle(task.body)} />
     </div>
   )
 }

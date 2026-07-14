@@ -25,7 +25,7 @@ function sameIds(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
 
 export function withRows(state: CursorState, ids: ReadonlyArray<string>): CursorState {
   if (sameIds(state.ids, ids)) return state
-  return { ids, index: ids.length === 0 ? -1 : 0 }
+  return { ids, index: -1 }
 }
 
 export function moved(state: CursorState, delta: number): CursorState {

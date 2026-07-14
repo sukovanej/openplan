@@ -7,6 +7,7 @@ import { startRealtime } from "./lib/realtime"
 import { DetailRoute } from "./routes/detail"
 import { ListRoute } from "./routes/list"
 
+import "@fontsource-variable/geist/index.css"
 import "./index.css"
 
 const router = createBrowserRouter([
