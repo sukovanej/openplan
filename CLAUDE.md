@@ -4,8 +4,15 @@ Local-first task manager (Rust workspace). Design lives in `SPEC.md`, work in `.
 
 ## Worktrees
 
-Make every change in a separate git worktree, never directly on the main
-checkout. Create one per unit of work and remove it once the change is merged.
+Never write to the main checkout. Every change to a tracked file goes in a
+separate git worktree — source, docs, config, and `.plan/tasks/` task files
+alike, including writes made through the `oplan` CLI. "It's one line", "it's
+just a task", and "it's only the tracker, not code" are not exceptions.
+
+Before the first write of any unit of work, confirm you are not in the primary
+worktree (in it, `git rev-parse --git-dir` equals `--git-common-dir`); if you
+are, create a dedicated worktree and switch into it first. Create one worktree
+per unit of work and remove it once the change is merged.
 
 ## Style: minimal comments, docs, and README
 
