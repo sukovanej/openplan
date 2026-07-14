@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Add `oplan server restart` command
 

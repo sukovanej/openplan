@@ -116,6 +116,11 @@ enum ServerCommand {
     },
     /// Stop the running daemon, gracefully if it answers
     Stop,
+    /// Stop the running daemon, then start a fresh one
+    Restart {
+        #[arg(long, default_value_t = DEFAULT_PORT)]
+        port: u16,
+    },
     /// Report daemon status without starting it
     Ping,
 }
@@ -182,11 +187,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
 fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Result<ExitCode> {
     match command {
         ServerCommand::Start { port, foreground } => {
-            if let Some(url) = daemon_url {
-                bail!(
-                    "--daemon {url} cannot be used with `server start`; start launches the local machine daemon"
-                );
-            }
+            reject_remote_override(daemon_url, "start")?;
             if foreground {
                 let runtime = tokio::runtime::Runtime::new()?;
                 runtime.block_on(serve::run(Home::resolve()?, port, root))?;
@@ -199,6 +200,11 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
             Control::resolve()?.stop(daemon_url)?;
             Ok(ExitCode::SUCCESS)
         }
+        ServerCommand::Restart { port } => {
+            reject_remote_override(daemon_url, "restart")?;
+            Control::resolve()?.restart(port, root)?;
+            Ok(ExitCode::SUCCESS)
+        }
         ServerCommand::Ping => {
             let running = Control::resolve()?.ping(daemon_url)?;
             Ok(if running {
@@ -208,6 +214,15 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
             })
         }
     }
+}
+
+fn reject_remote_override(daemon_url: Option<&str>, command: &str) -> Result<()> {
+    if let Some(url) = daemon_url {
+        bail!(
+            "--daemon {url} cannot be used with `server {command}`; {command} operates on the local machine daemon, not a remote one"
+        );
+    }
+    Ok(())
 }
 
 fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Option<String>> {
