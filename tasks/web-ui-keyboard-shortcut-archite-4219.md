@@ -1,5 +1,7 @@
 ---
 status: todo
+deps:
+- web-ui-task-list-as-a-table-id-t-fdad
 ---
 # Web UI: keyboard-shortcut architecture + navigation shortcuts (Linear-style)
 
@@ -38,15 +40,12 @@ A shortcut **registry** + a single global **dispatcher**, in a dedicated module
   - Adding a mutation (e.g. `s` = set status) = one new binding whose `run`
     performs an HTTP call. No dispatcher change.
 
-## List → table
+## List table (prerequisite)
 
-Replace the card list in `routes/list.tsx` with a table: `id · title · status`
-(title truncates, status as a badge).
-
-- Keyboard **cursor**: a focused-row index in small state, clamped to the row
-  count, reset when the task set changes.
-- a11y: roving `tabindex` (or `aria-activedescendant`), a visible focus ring,
-  correct `role` semantics; clicking a row also sets the cursor.
+The task list is rendered as a table with a focused-row cursor by
+[web-ui-task-list-as-a-table-id-t-fdad] — a dependency of this task. The `j` /
+`k` / `Enter` bindings below drive that cursor; this task does not build the
+table or its cursor state itself.
 
 ## Shortcut set (all read-only)
 
@@ -79,7 +78,8 @@ truth), grouped by `group`. Labeled, focus-trapped, closes on `Esc` / `?`.
 
 ## Done when
 
-- List is a table with a working keyboard cursor.
+- The `j` / `k` / `Enter` bindings drive the table row cursor from
+  [web-ui-task-list-as-a-table-id-t-fdad].
 - Every shortcut above works, chords included, with input-scope suppression.
 - `?` help overlay renders from the registry.
 - Registry/dispatcher are the documented extension point for palette + mutations.
