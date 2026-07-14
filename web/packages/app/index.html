@@ -4,6 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>open-planner</title>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("oplan.theme")
+          const preference = stored === "light" || stored === "dark" ? stored : "system"
+          const dark = preference === "dark"
+            || (preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches)
+          const root = document.documentElement
+          root.classList.toggle("dark", dark)
+          root.style.colorScheme = dark ? "dark" : "light"
+        } catch {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

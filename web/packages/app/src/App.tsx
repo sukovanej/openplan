@@ -1,5 +1,7 @@
 import { Link, Outlet } from "react-router-dom"
 
+import { ThemeToggle } from "@/components/theme-toggle"
+
 export function App() {
   return (
     <div className="bg-background text-foreground min-h-screen">
@@ -9,6 +11,7 @@ export function App() {
             open-planner
           </Link>
           <span className="text-muted-foreground text-xs">realtime</span>
+          <ThemeToggle className="ml-auto" />
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-8">
