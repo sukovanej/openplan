@@ -88,6 +88,35 @@ fn working_edit_emits_task_changed_for_its_branch() {
 }
 
 #[test]
+fn unrelated_git_activity_emits_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    init_repo(path);
+    write_task(path, "alpha", "Alpha");
+    std::fs::write(path.join("code.txt"), "one").unwrap();
+    git(path, &["add", "."]);
+    git(path, &["commit", "-qm", "init"]);
+
+    let repo = Repo::discover(path).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let watcher = Watcher::start(repo, tx).unwrap();
+
+    // Churn that leaves every task blob untouched: a non-task file staged (rewrites .git/index) and
+    // an empty commit (moves HEAD). Neither must produce a task event.
+    std::fs::write(path.join("code.txt"), "two").unwrap();
+    git(path, &["add", "code.txt"]);
+    git(path, &["commit", "-qm", "code only"]);
+    git(path, &["commit", "--allow-empty", "-qm", "noop"]);
+
+    let changes = collect(&rx, QUIET);
+    assert!(
+        changes.is_empty(),
+        "activity that changes no task must emit nothing: {changes:?}"
+    );
+    watcher.stop();
+}
+
+#[test]
 fn commit_on_a_worktree_branch_emits_only_the_changed_task() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path();

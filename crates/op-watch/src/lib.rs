@@ -4,20 +4,26 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use notify::{RecursiveMode, Watcher as _};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
 use op_api::ChangeEvent;
-use op_git::Repo;
-use op_store::Store;
+use op_git::{GitError, Repo, Worktree};
+use op_store::{Store, StoreError};
 
 // A quiet window that coalesces the burst of fs events a single git op (commit, merge, checkout)
-// produces into one diff pass. While a git op is still in progress the pass is deferred and this
-// same interval doubles as the settle poll.
+// produces into one diff pass.
 const DEBOUNCE: Duration = Duration::from_millis(150);
+// A slower cadence used while a git op is still in progress, or after a transient read error, so a
+// long-running (or abandoned) op is re-checked without a tight poll.
+const SETTLE: Duration = Duration::from_millis(400);
 
 #[derive(Debug, thiserror::Error)]
 pub enum WatchError {
     #[error("watch error: {0}")]
     Notify(#[from] notify::Error),
+    #[error(transparent)]
+    Git(#[from] GitError),
+    #[error(transparent)]
+    Store(#[from] StoreError),
 }
 
 pub struct Watcher {
@@ -36,19 +42,24 @@ impl Watcher {
         let fs_tx = tx.clone();
         let mut notifier =
             notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-                // Metadata/open events carry no content change; every other kind is a signal to re-diff.
+                // Only ref/HEAD/worktree and .plan/tasks paths signal a re-diff; git's own index and
+                // log churn (which the .git watch also sees) would otherwise trigger pointless passes.
                 if let Ok(event) = res
                     && !matches!(event.kind, notify::EventKind::Access(_))
+                    && is_relevant(&event)
                 {
                     let _ = fs_tx.send(Msg::FsEvent);
                 }
             })?;
 
-        // Take the watch set and baseline before returning so the first change after start() diffs
-        // against the real tree rather than an empty snapshot (which would replay every task).
+        // Establish the watch set and baseline before returning so the first change diffs against the
+        // real tree, not an empty snapshot (which would replay every task). Errors here disable the
+        // watcher outright rather than seed a bogus baseline; the same reads just succeeded for the
+        // daemon's initial index build, so this only fires on a genuinely broken repo.
+        let worktrees = repo.worktrees()?;
         let mut watched = HashSet::new();
-        reconcile(&repo, &mut notifier, &mut watched);
-        let baseline = snapshot(&repo);
+        reconcile(&repo, &worktrees, &mut notifier, &mut watched);
+        let baseline = snapshot(&repo, &worktrees)?;
 
         let worker = std::thread::spawn(move || run(repo, notifier, rx, sink, watched, baseline));
         Ok(Self {
@@ -77,16 +88,16 @@ impl Drop for Watcher {
 
 fn run(
     repo: Repo,
-    mut notifier: notify::RecommendedWatcher,
+    mut notifier: RecommendedWatcher,
     rx: Receiver<Msg>,
     sink: Sender<ChangeEvent>,
     mut watched: HashSet<PathBuf>,
     mut state: Snapshot,
 ) {
-    let mut pending: Option<Instant> = None;
+    let mut deadline: Option<Instant> = None;
     loop {
-        let message = match pending {
-            Some(_) => match rx.recv_timeout(DEBOUNCE) {
+        let message = match deadline {
+            Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
                 Ok(message) => Some(message),
                 Err(RecvTimeoutError::Timeout) => None,
                 Err(RecvTimeoutError::Disconnected) => break,
@@ -98,21 +109,39 @@ fn run(
         };
         match message {
             Some(Msg::Stop) => break,
-            Some(Msg::FsEvent) => pending = Some(Instant::now()),
-            None => {
-                // A git op leaves the tree torn mid-flight; wait for it to settle, re-arming the
-                // debounce so the next timeout re-checks, before diffing anything.
-                if repo.op_in_progress() {
-                    pending = Some(Instant::now());
-                    continue;
-                }
-                reconcile(&repo, &mut notifier, &mut watched);
-                let next = snapshot(&repo);
-                emit_diff(&state, &next, &sink);
-                state = next;
-                pending = None;
-            }
+            Some(Msg::FsEvent) => deadline = Some(Instant::now() + DEBOUNCE),
+            None => deadline = attempt_pass(&repo, &mut notifier, &mut watched, &mut state, &sink),
         }
+    }
+}
+
+// One settled diff pass. Returns the next deadline: `None` once a clean snapshot has been taken (wait
+// for the next fs event), or a `SETTLE` retry when a git op is mid-flight or a read failed — never
+// diffing a torn or partially-read tree.
+fn attempt_pass(
+    repo: &Repo,
+    notifier: &mut RecommendedWatcher,
+    watched: &mut HashSet<PathBuf>,
+    state: &mut Snapshot,
+    sink: &Sender<ChangeEvent>,
+) -> Option<Instant> {
+    let Ok(worktrees) = repo.worktrees() else {
+        return Some(Instant::now() + SETTLE);
+    };
+    // A git rewrite leaves the tree torn and refs churning mid-op; defer until every worktree settles.
+    if worktrees.iter().any(|worktree| worktree.op_in_progress) {
+        return Some(Instant::now() + SETTLE);
+    }
+    reconcile(repo, &worktrees, notifier, watched);
+    match snapshot(repo, &worktrees) {
+        Ok(next) => {
+            emit_diff(state, &next, sink);
+            *state = next;
+            None
+        }
+        // A transient read error must not be read as "everything deleted"; keep the prior state and
+        // retry, so the diff never emits a spurious deletion flood.
+        Err(_) => Some(Instant::now() + SETTLE),
     }
 }
 
@@ -128,36 +157,28 @@ struct Cell {
     deleted: bool,
 }
 
-fn snapshot(repo: &Repo) -> Snapshot {
-    let worktrees = repo.worktrees().unwrap_or_default();
-    let mut live: HashMap<String, PathBuf> = HashMap::new();
-    for worktree in &worktrees {
+fn snapshot(repo: &Repo, worktrees: &[Worktree]) -> Result<Snapshot, WatchError> {
+    let mut live: HashMap<&str, &Path> = HashMap::new();
+    for worktree in worktrees {
         if worktree.op_in_progress {
             continue;
         }
         if let Some(branch) = &worktree.branch {
-            live.entry(branch.clone())
-                .or_insert_with(|| worktree.path.clone());
+            live.entry(branch).or_insert(worktree.path.as_path());
         }
     }
 
     let mut out = Snapshot::new();
-    for branch in repo.local_branches().unwrap_or_default() {
-        let committed: HashMap<String, String> = repo
-            .branch_task_blobs(&branch)
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
-        let cells = match live
-            .get(&branch)
-            .and_then(|path| working_task_oids(repo, path))
-        {
-            Some(working) => working_cells(&working, &committed),
+    for branch in repo.local_branches()? {
+        let committed: HashMap<String, String> =
+            repo.branch_task_blobs(&branch)?.into_iter().collect();
+        let cells = match live.get(branch.as_str()) {
+            Some(path) => working_cells(&working_task_oids(repo, path)?, &committed),
             None => committed_cells(committed),
         };
         out.insert(branch, cells);
     }
-    out
+    Ok(out)
 }
 
 fn committed_cells(committed: HashMap<String, String>) -> HashMap<String, Cell> {
@@ -208,17 +229,14 @@ fn working_cells(
     cells
 }
 
-fn working_task_oids(repo: &Repo, worktree: &Path) -> Option<HashMap<String, String>> {
-    let store = Store::open(worktree).ok()?;
+fn working_task_oids(repo: &Repo, worktree: &Path) -> Result<HashMap<String, String>, WatchError> {
+    let store = Store::open(worktree)?;
     let mut out = HashMap::new();
-    for id in store.task_ids().ok()? {
-        if let Ok(raw) = store.read_raw(&id)
-            && let Ok(oid) = repo.hash_blob(raw.as_bytes())
-        {
-            out.insert(id, oid);
-        }
+    for id in store.task_ids()? {
+        let oid = repo.hash_blob(store.read_raw(&id)?.as_bytes())?;
+        out.insert(id, oid);
     }
-    Some(out)
+    Ok(out)
 }
 
 fn emit_diff(old: &Snapshot, new: &Snapshot, sink: &Sender<ChangeEvent>) {
@@ -241,10 +259,11 @@ fn emit_diff(old: &Snapshot, new: &Snapshot, sink: &Sender<ChangeEvent>) {
 
 fn reconcile(
     repo: &Repo,
-    notifier: &mut notify::RecommendedWatcher,
+    worktrees: &[Worktree],
+    notifier: &mut RecommendedWatcher,
     watched: &mut HashSet<PathBuf>,
 ) {
-    let desired = watch_paths(repo);
+    let desired = watch_paths(repo, worktrees);
     let keep: HashSet<&PathBuf> = desired.iter().map(|(path, _)| path).collect();
     for stale in watched
         .iter()
@@ -264,8 +283,9 @@ fn reconcile(
 
 // The change sources of SPEC §7.5: every live worktree's `.plan/tasks` for working edits, and the
 // git-side refs/HEAD/worktrees under the shared `.git`. The common dir is watched non-recursively so
-// HEAD, `packed-refs`, and the first creation of `worktrees/` register without pulling in objects/.
-fn watch_paths(repo: &Repo) -> Vec<(PathBuf, RecursiveMode)> {
+// HEAD, `packed-refs`, and the first creation of `worktrees/` register without pulling in objects/;
+// the callback's `is_relevant` filter drops the index/log churn that watch still surfaces.
+fn watch_paths(repo: &Repo, worktrees: &[Worktree]) -> Vec<(PathBuf, RecursiveMode)> {
     let common = repo.git_common_dir();
     let mut paths = vec![(common.clone(), RecursiveMode::NonRecursive)];
     for sub in ["refs", "worktrees"] {
@@ -274,11 +294,39 @@ fn watch_paths(repo: &Repo) -> Vec<(PathBuf, RecursiveMode)> {
             paths.push((dir, RecursiveMode::Recursive));
         }
     }
-    for worktree in repo.worktrees().unwrap_or_default() {
+    for worktree in worktrees {
         let tasks = worktree.path.join(".plan").join("tasks");
         if tasks.is_dir() {
             paths.push((tasks, RecursiveMode::Recursive));
         }
     }
     paths
+}
+
+// A watched path is worth a diff pass only when it touches a task file (`.plan/tasks/*`) or a git ref
+// source (`refs/*`, `HEAD`, `packed-refs`, `worktrees/*`). Everything else under `.git` — `index`,
+// `ORIG_HEAD`, `COMMIT_EDITMSG`, logs — churns on routine git commands without changing any task.
+fn is_relevant(event: &notify::Event) -> bool {
+    event.paths.iter().any(|path| {
+        if matches!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("HEAD" | "packed-refs")
+        ) {
+            return true;
+        }
+        let mut refs = false;
+        let mut worktrees = false;
+        let mut plan = false;
+        let mut tasks = false;
+        for part in path.components().filter_map(|c| c.as_os_str().to_str()) {
+            match part {
+                "refs" => refs = true,
+                "worktrees" => worktrees = true,
+                ".plan" => plan = true,
+                "tasks" => tasks = true,
+                _ => {}
+            }
+        }
+        refs || worktrees || (plan && tasks)
+    })
 }
