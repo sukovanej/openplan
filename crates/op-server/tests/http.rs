@@ -288,7 +288,12 @@ async fn first_sse_data(response: Response) -> String {
     while let Some(frame) = body.frame().await {
         if let Some(data) = frame.unwrap().data_ref() {
             buffer.push_str(&String::from_utf8_lossy(data));
-            if let Some(line) = buffer.lines().find_map(|line| line.strip_prefix("data:")) {
+        }
+        // An SSE event ends at a blank line; only parse a fully-received event so a payload
+        // split across frames is never read half-formed.
+        while let Some(end) = buffer.find("\n\n") {
+            let event: String = buffer.drain(..end + 2).collect();
+            if let Some(line) = event.lines().find_map(|line| line.strip_prefix("data:")) {
                 return line.trim().to_owned();
             }
         }

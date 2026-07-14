@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { DetailSkeleton, Message } from "@/components/states"
@@ -9,7 +10,7 @@ import { taskQuery, useQuery } from "@/lib/store"
 
 export function DetailRoute() {
   const { id } = useParams()
-  const task = useQuery(taskQuery(id ?? ""))
+  const task = useQuery(useMemo(() => taskQuery(id ?? ""), [id]))
   switch (task._tag) {
     case "loading":
       return <DetailSkeleton />

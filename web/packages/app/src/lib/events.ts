@@ -20,6 +20,7 @@ export type ChangeEvent = typeof ChangeEvent.Type
 export interface Invalidator {
   readonly refreshList: () => void
   readonly refreshTask: (id: string) => void
+  readonly refreshVisible: () => void
 }
 
 export function applyChange(inv: Invalidator, event: ChangeEvent): void {
@@ -29,8 +30,12 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
       inv.refreshList()
       return
     }
-    // Coarse events (ref moves, presence) can touch any task, so refetch the list.
-    case "ref_moved":
+    // A ref move (e.g. `oplan set`) carries no task id, so refetch everything on screen —
+    // the open task detail as well as the list.
+    case "ref_moved": {
+      inv.refreshVisible()
+      return
+    }
     case "presence_changed": {
       inv.refreshList()
       return

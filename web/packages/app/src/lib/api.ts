@@ -63,5 +63,6 @@ export const getTask = (
     if (response.status === 404) {
       return yield* Effect.fail(new TaskNotFound({ id }))
     }
-    return yield* HttpClientResponse.schemaBodyJson(TaskView)(response)
+    const ok = yield* HttpClientResponse.filterStatusOk(response)
+    return yield* HttpClientResponse.schemaBodyJson(TaskView)(ok)
   }).pipe(Effect.scoped)
