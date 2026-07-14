@@ -54,39 +54,45 @@ function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
       onMouseMove={() => {
         if (index !== -1) rowCursor.clear()
       }}
-      className="overflow-hidden rounded-lg text-sm focus:outline-none"
+      // Box outline is an inset ring, not `border`, so the selected row's own inset ring lands on
+      // the same pixels and reads as one line instead of doubling up against a container border.
+      className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border text-sm focus:outline-none"
     >
-      {groups.map((group, groupIndex) => {
-        const groupBase = base
-        base += group.tasks.length
-        const lastGroup = groupIndex === groups.length - 1
-        return (
-          <div key={group.status} role="rowgroup" aria-label={statusLabel(group.status)}>
-            <HeaderRow status={group.status} roundTop={groupIndex === 0} />
-            {group.tasks.map((task, j) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                index={groupBase + j}
-                active={groupBase + j === index}
-                lastInGroup={j === group.tasks.length - 1}
-                tableLast={lastGroup && j === group.tasks.length - 1}
-              />
-            ))}
-          </div>
-        )
-      })}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {groups.map((group, groupIndex) => {
+          const groupBase = base
+          base += group.tasks.length
+          const lastGroup = groupIndex === groups.length - 1
+          return (
+            <div key={group.status} role="rowgroup" aria-label={statusLabel(group.status)}>
+              <HeaderRow status={group.status} />
+              {group.tasks.map((task, j) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  index={groupBase + j}
+                  active={groupBase + j === index}
+                  tableLast={lastGroup && j === group.tasks.length - 1}
+                />
+              ))}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-function HeaderRow({ status, roundTop }: { status: Status; roundTop: boolean }) {
+function HeaderRow({ status }: { status: Status }) {
   return (
-    <div
-      role="row"
-      className={cn("border px-4 py-2", roundTop && "rounded-t-lg", statusHeaderClass(status))}
-    >
-      <span role="columnheader" className="text-xs font-normal tracking-wide uppercase">
+    <div role="row" className="bg-muted/20 border-b px-4 py-2">
+      <span
+        role="columnheader"
+        className={cn(
+          "inline-block rounded-md border px-2 py-0.5 text-xs font-medium tracking-wide uppercase",
+          statusHeaderClass(status),
+        )}
+      >
         {statusLabel(status)}
       </span>
     </div>
@@ -94,11 +100,10 @@ function HeaderRow({ status, roundTop }: { status: Status; roundTop: boolean }) 
 }
 
 function TaskRow(
-  { task, index, active, lastInGroup, tableLast }: {
+  { task, index, active, tableLast }: {
     task: TaskListItem
     index: number
     active: boolean
-    lastInGroup: boolean
     tableLast: boolean
   },
 ) {
@@ -109,10 +114,14 @@ function TaskRow(
       aria-selected={active}
       onClick={() => rowCursor.focus(index)}
       className={cn(
-        "relative flex cursor-pointer items-center border-x transition-colors",
-        (!lastInGroup || tableLast) && "border-b",
-        tableLast && "rounded-b-lg",
-        active ? "bg-accent" : "bg-muted/30 hover:bg-accent",
+        // Every row keeps a bottom border so its height never changes; it just goes transparent
+        // for the selected row (the ring draws its edges) and the last row (no trailing divider).
+        "relative flex cursor-pointer items-center border-b transition-colors",
+        (active || tableLast) && "border-transparent",
+        // -mt-px pulls the selected row up so its ring covers the separator above, not doubles it.
+        active
+          ? "-mt-px bg-muted/30 ring-1 ring-inset ring-muted-foreground/40"
+          : "hover:bg-muted/30",
       )}
     >
       <div role="gridcell" className="shrink-0 px-4 py-3">

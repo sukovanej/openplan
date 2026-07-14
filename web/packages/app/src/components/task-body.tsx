@@ -2,7 +2,7 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
 const proseColors =
-  "[--tw-prose-body:var(--color-neutral-800)] [--tw-prose-bold:var(--color-neutral-800)] [--tw-prose-headings:var(--color-neutral-900)] [--tw-prose-code:var(--color-neutral-800)] dark:[--tw-prose-invert-body:var(--color-neutral-400)] dark:[--tw-prose-invert-bold:var(--color-neutral-400)] dark:[--tw-prose-invert-headings:var(--color-neutral-200)] dark:[--tw-prose-invert-code:var(--color-neutral-400)]"
+  "[--tw-prose-body:var(--color-neutral-700)] [--tw-prose-bold:var(--color-neutral-700)] [--tw-prose-headings:var(--color-neutral-900)] [--tw-prose-code:var(--color-neutral-800)] dark:[--tw-prose-invert-body:var(--color-neutral-300)] dark:[--tw-prose-invert-bold:var(--color-neutral-300)] dark:[--tw-prose-invert-headings:var(--color-neutral-200)] dark:[--tw-prose-invert-code:var(--color-neutral-400)]"
 
 const proseSpacing =
   "prose-headings:mt-7 prose-headings:mb-3 prose-h2:text-lg prose-h3:text-base prose-h4:text-sm prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-pre:my-3 prose-pre:bg-muted prose-pre:text-foreground"
