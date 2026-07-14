@@ -3,8 +3,8 @@ import { Link } from "react-router-dom"
 
 import { BranchBadges } from "@/components/branch-badges"
 import { ListSkeleton, Message } from "@/components/states"
-import { StatusBadge } from "@/components/status-badge"
-import type { TaskListItem } from "@/lib/api"
+import { statusHeaderClass, StatusIcon, statusLabel, statusOrder } from "@/components/status-badge"
+import type { Status, TaskListItem } from "@/lib/api"
 import { errorText } from "@/lib/format"
 import { rowCursor, useRowCursor } from "@/lib/row-cursor"
 import { tasksQuery, useQuery } from "@/lib/store"
@@ -20,72 +20,113 @@ export function ListRoute() {
     case "success":
       return tasks.value.length === 0
         ? <Message title="No tasks yet" detail="Create one with `oplan create`." />
-        : <TaskTable tasks={tasks.value} />
+        : <TaskGrid tasks={tasks.value} />
   }
 }
 
 const rowDomId = (id: string) => `task-row-${id}`
 
-function TaskTable({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
-  const ids = useMemo(() => tasks.map((task) => task.id), [tasks])
-  const { index } = useRowCursor(ids)
-  const activeId = index >= 0 && index < tasks.length ? rowDomId(tasks[index].id) : undefined
+interface Group {
+  readonly status: Status
+  readonly tasks: ReadonlyArray<TaskListItem>
+}
 
+function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
+  const groups = useMemo<ReadonlyArray<Group>>(
+    () =>
+      statusOrder
+        .map((status) => ({ status, tasks: tasks.filter((task) => task.status === status) }))
+        .filter((group) => group.tasks.length > 0),
+    [tasks],
+  )
+  const ordered = useMemo(() => groups.flatMap((group) => group.tasks), [groups])
+  const ids = useMemo(() => ordered.map((task) => task.id), [ordered])
+  const { index } = useRowCursor(ids)
+  const activeId = index >= 0 && index < ordered.length ? rowDomId(ordered[index].id) : undefined
+
+  let base = 0
   return (
-    <div className="overflow-hidden rounded-lg">
-      <table
-        role="grid"
-        aria-label="Tasks"
-        aria-activedescendant={activeId}
-        tabIndex={0}
-        className="w-full table-fixed border-separate border-spacing-0 text-sm focus:outline-none"
-      >
-        <tbody role="rowgroup">
-          {tasks.map((task, i) => {
-            const active = i === index
-            const first = i === 0
-            const last = i === tasks.length - 1
-            const aboveActive = i === index - 1
-            const edge = cn(
-              (first || active) && "border-t",
-              !aboveActive && "border-b",
-              active ? "border-ring" : "border-border",
-            )
-            return (
-              <tr
+    <div
+      role="grid"
+      aria-label="Tasks"
+      aria-activedescendant={activeId}
+      tabIndex={0}
+      className="overflow-hidden rounded-lg text-sm focus:outline-none"
+    >
+      {groups.map((group, groupIndex) => {
+        const groupBase = base
+        base += group.tasks.length
+        const lastGroup = groupIndex === groups.length - 1
+        return (
+          <div key={group.status} role="rowgroup" aria-label={statusLabel(group.status)}>
+            <HeaderRow status={group.status} roundTop={groupIndex === 0} />
+            {group.tasks.map((task, j) => (
+              <TaskRow
                 key={task.id}
-                id={rowDomId(task.id)}
-                role="row"
-                aria-selected={active}
-                onClick={() => rowCursor.focus(i)}
-                className={cn("relative cursor-pointer transition-colors", active ? "bg-accent" : "hover:bg-accent")}
-              >
-                <td
-                  role="gridcell"
-                  className={cn("border-l px-4 py-3", edge, first && "rounded-tl-lg", last && "rounded-bl-lg")}
-                >
-                  <Link
-                    to={`/task/${task.id}`}
-                    tabIndex={-1}
-                    className="block truncate font-medium after:absolute after:inset-0"
-                  >
-                    {task.title}
-                  </Link>
-                </td>
-                <td
-                  role="gridcell"
-                  className={cn("w-72 border-r px-4 py-3", edge, first && "rounded-tr-lg", last && "rounded-br-lg")}
-                >
-                  <div className="flex items-center justify-end gap-2">
-                    <BranchBadges branches={task.branches} />
-                    <StatusBadge status={task.status} />
-                  </div>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                task={task}
+                index={groupBase + j}
+                active={groupBase + j === index}
+                lastInGroup={j === group.tasks.length - 1}
+                tableLast={lastGroup && j === group.tasks.length - 1}
+              />
+            ))}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function HeaderRow({ status, roundTop }: { status: Status; roundTop: boolean }) {
+  return (
+    <div
+      role="row"
+      className={cn("border px-4 py-2", roundTop && "rounded-t-lg", statusHeaderClass(status))}
+    >
+      <span role="columnheader" className="text-xs font-normal tracking-wide uppercase">
+        {statusLabel(status)}
+      </span>
+    </div>
+  )
+}
+
+function TaskRow(
+  { task, index, active, lastInGroup, tableLast }: {
+    task: TaskListItem
+    index: number
+    active: boolean
+    lastInGroup: boolean
+    tableLast: boolean
+  },
+) {
+  return (
+    <div
+      id={rowDomId(task.id)}
+      role="row"
+      aria-selected={active}
+      onClick={() => rowCursor.focus(index)}
+      className={cn(
+        "relative flex cursor-pointer items-center border-x transition-colors",
+        (!lastInGroup || tableLast) && "border-b",
+        tableLast && "rounded-b-lg",
+        active ? "bg-accent" : "bg-muted/30 hover:bg-accent",
+      )}
+    >
+      <div role="gridcell" className="shrink-0 px-4 py-3">
+        <StatusIcon status={task.status} />
+      </div>
+      <div role="gridcell" className="min-w-0 flex-1 py-3">
+        <Link
+          to={`/task/${task.id}`}
+          tabIndex={-1}
+          className="text-foreground/90 block truncate text-sm font-normal after:absolute after:inset-0"
+        >
+          {task.title}
+        </Link>
+      </div>
+      <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">
+        <BranchBadges branches={task.branches} />
+      </div>
     </div>
   )
 }

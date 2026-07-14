@@ -13,7 +13,7 @@ it("clampIndex keeps an index within [0, count - 1], or -1 when empty", () => {
 })
 
 it("the cursor cannot move past the last row or before the first", () => {
-  const first = withRows(emptyCursor, rows(3))
+  const first = focused(withRows(emptyCursor, rows(3)), 0)
   expect(first.index).toBe(0)
   expect(moved(first, -1).index).toBe(0)
 
@@ -25,13 +25,13 @@ it("the cursor cannot move past the last row or before the first", () => {
   expect(focused(first, -99).index).toBe(0)
 })
 
-it("the cursor resets to the first row when the task set changes", () => {
+it("the cursor clears when the task set changes", () => {
   const at2 = focused(withRows(emptyCursor, rows(5)), 2)
   expect(at2.index).toBe(2)
 
   const next = withRows(at2, ["a", "b", "c"])
   expect(next.ids).toEqual(["a", "b", "c"])
-  expect(next.index).toBe(0)
+  expect(next.index).toBe(-1)
 })
 
 it("the cursor is preserved when the task set is unchanged", () => {
@@ -56,6 +56,9 @@ it("the store notifies subscribers and drives the cursor", () => {
   })
 
   rowCursor.setRows(["a", "b", "c"])
+  expect(rowCursor.getSnapshot().index).toBe(-1)
+
+  rowCursor.moveBy(1)
   expect(rowCursor.getSnapshot().index).toBe(0)
 
   rowCursor.moveBy(1)
@@ -68,7 +71,7 @@ it("the store notifies subscribers and drives the cursor", () => {
   expect(rowCursor.getSnapshot().index).toBe(2)
 
   rowCursor.setRows(["x", "y"])
-  expect(rowCursor.getSnapshot().index).toBe(0)
+  expect(rowCursor.getSnapshot().index).toBe(-1)
 
   expect(ticks).toBeGreaterThan(0)
   unsubscribe()

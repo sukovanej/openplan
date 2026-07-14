@@ -7,8 +7,8 @@ export function App() {
     <div className="bg-background text-foreground min-h-screen">
       <header className="border-b">
         <div className="flex items-center gap-3 px-6 py-4">
-          <Link to="/" className="text-lg font-semibold tracking-tight">
-            open-planner
+          <Link to="/" className="text-2xl font-semibold tracking-tight">
+            Open Plan
           </Link>
           <span className="text-muted-foreground text-xs">realtime</span>
           <ThemeToggle className="ml-auto" />

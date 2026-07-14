@@ -12,29 +12,30 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "effect": "catalog:",
-    "react": "catalog:",
-    "react-dom": "catalog:",
-    "react-router-dom": "catalog:",
-    "react-markdown": "catalog:",
-    "remark-gfm": "catalog:",
+    "@fontsource-variable/geist": "^5.2.9",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
-    "tailwind-merge": "catalog:",
-    "lucide-react": "catalog:"
+    "effect": "catalog:",
+    "lucide-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-markdown": "catalog:",
+    "react-router-dom": "catalog:",
+    "remark-gfm": "catalog:",
+    "tailwind-merge": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@tailwindcss/typography": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "@types/node": "catalog:",
     "@vitejs/plugin-react": "catalog:",
-    "@tailwindcss/vite": "catalog:",
-    "@tailwindcss/typography": "catalog:",
-    "tailwindcss": "catalog:",
-    "vite": "catalog:",
-    "vitest": "catalog:",
     "happy-dom": "catalog:",
-    "typescript": "catalog:"
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }
