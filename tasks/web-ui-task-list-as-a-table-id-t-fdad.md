@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Web UI: task list as a table (id · title · status) with a row cursor
 
