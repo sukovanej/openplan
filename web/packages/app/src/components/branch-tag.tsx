@@ -24,6 +24,7 @@ export function BranchTag(
     "inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] leading-tight",
     "whitespace-nowrap transition-opacity",
     kindColor[branch.kind],
+    branch.dirty && "border-dashed",
     interactive && "cursor-pointer",
     interactive && !selected && "opacity-55 hover:opacity-100",
     interactive && selected && "font-semibold",
@@ -33,7 +34,6 @@ export function BranchTag(
     <>
       {headline && <Dot className="bg-current" />}
       <span>{branch.branch}</span>
-      {branch.dirty && <Dot className="bg-amber-500" />}
     </>
   )
   return onSelect === undefined
