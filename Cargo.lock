@@ -2208,6 +2208,8 @@ dependencies = [
  "notify",
  "op-api",
  "op-git",
+ "op-store",
+ "tempfile",
  "thiserror",
 ]
 

@@ -79,14 +79,15 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
         tracing::warn!(%err, "initial matrix build failed");
     }
     let (tx, rx) = std::sync::mpsc::channel();
-    let _watcher = Watcher::start(store.plan_dir(), tx)
+    let _watcher = Watcher::start(repo.clone(), tx)
         .inspect_err(|e| tracing::warn!("watch disabled: {e}"))
         .ok();
-    // Bridge the file watcher's changes onto the broadcast so /api/events fans them out to
+    // Bridge the watcher's per-branch changes onto the broadcast so /api/events fans them out to
     // every connected UI, alongside the writes the API handlers publish directly.
     let events_tx = state.event_sender();
     std::thread::spawn(move || {
         for event in rx {
+            tracing::debug!(?event, "watcher change forwarded");
             let _ = events_tx.send(event);
         }
     });

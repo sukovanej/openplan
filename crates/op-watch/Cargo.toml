@@ -9,9 +9,13 @@ repository.workspace = true
 
 [dependencies]
 op-git.workspace = true
+op-store.workspace = true
 op-api.workspace = true
 notify.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
