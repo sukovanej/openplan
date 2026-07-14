@@ -52,14 +52,19 @@ oplan set <id> deps "<id1>, <id2>"
 
 ## Working on a task
 
-Before starting work on a task, mark it `in_progress`:
+`oplan set <id> status in_progress` writes to `.plan/tasks/`, so it is a
+tracked-file change and the Worktree rule in CLAUDE.md governs it. The correct
+order is: create/switch into the task's worktree **first**, then make marking it
+`in_progress` the first write you do *inside* that worktree.
 
 ```sh
+# from the task's worktree, not the primary checkout:
 oplan set <id> status in_progress
 ```
 
-Do this as the first step, before making any changes. Mark it `done` once the
-work is complete.
+Never run `oplan set` from the primary checkout to "just mark it started" before
+the worktree exists — that is the write the Worktree rule forbids. Mark it `done`
+once the work is complete.
 
 ## Delete
 
