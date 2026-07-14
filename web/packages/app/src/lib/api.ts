@@ -22,13 +22,14 @@ export const BranchState = Schema.Struct({
 })
 export type BranchState = typeof BranchState.Type
 
-// One logical task aggregated across branches: the headline fields mirror the current worktree's
-// branch, and `branches` carries every branch it lives on for badges and divergence.
+// One logical task aggregated across branches: `status`/`title` come from the `headline` branch (the
+// most recently changed one), and `branches` carries every branch it lives on for badges/divergence.
 export const TaskListItem = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
   status: Status,
   parent: Schema.optionalKey(Schema.String),
+  headline: Schema.String,
   branches: Schema.Array(BranchState),
 })
 export type TaskListItem = typeof TaskListItem.Type
@@ -42,6 +43,7 @@ export const TaskDetail = Schema.Struct({
   parent: Schema.optionalKey(Schema.String),
   deps: Schema.optionalKey(Schema.Array(Schema.String)),
   body: Schema.String,
+  headline: Schema.String,
   branches: Schema.Array(BranchState),
 })
 export type TaskDetail = typeof TaskDetail.Type

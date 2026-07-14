@@ -125,7 +125,7 @@ function TaskRow(
         </Link>
       </div>
       <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">
-        <BranchBadges branches={task.branches} />
+        <BranchBadges branches={task.branches} headline={task.headline} />
       </div>
     </div>
   )

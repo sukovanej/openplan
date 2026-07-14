@@ -469,6 +469,10 @@ async fn list_tasks_is_branch_aware() {
     // Headline follows the most recently changed branch: `feature` edited alpha after main's init.
     assert_eq!(alpha["status"], "done");
     assert_eq!(alpha["title"], "Alpha done");
+    assert_eq!(
+        alpha["headline"], "feature",
+        "the row names its headline branch"
+    );
 
     let branches = alpha["branches"].as_array().unwrap();
     assert_eq!(branches.len(), 2, "carries both branches: {branches:?}");
@@ -513,6 +517,10 @@ async fn branchless_get_carries_the_branch_set() {
     // Headline is the most recently changed version (feature), flattened alongside the branch set.
     assert_eq!(view["status"], "done");
     assert_eq!(view["title"], "Alpha done");
+    assert_eq!(
+        view["headline"], "feature",
+        "names the branch the headline resolves to"
+    );
     let names: Vec<&str> = view["branches"]
         .as_array()
         .unwrap()

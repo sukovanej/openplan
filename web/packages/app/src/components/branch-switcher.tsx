@@ -1,74 +1,34 @@
-import type { ReactNode } from "react"
-
-import type { BranchState, ChangeKind } from "@/lib/api"
-import { cn } from "@/lib/utils"
-
-const kindClass: Record<ChangeKind, string> = {
-  base: "",
-  added: "border-emerald-500 text-emerald-600",
-  modified: "border-sky-500 text-sky-600",
-  deleted: "border-rose-500 text-rose-600 line-through",
-}
+import { BranchTag } from "@/components/branch-tag"
+import type { BranchState } from "@/lib/api"
 
 // A task can live on several branches with diverging content; the switcher lets the reader pin any
-// one. `undefined` selects the headline (current-worktree) version the server picks by default.
+// one. `selected` is the pinned branch, or `undefined` for the default read — which resolves to
+// `headline`, the most recently changed branch, marked with a leading dot. Clicking the headline
+// returns to that clean default (no `?branch=`); any other branch pins it.
 export function BranchSwitcher(
-  { branches, selected, onSelect }: {
+  { branches, selected, headline, onSelect }: {
     branches: ReadonlyArray<BranchState>
     selected: string | undefined
+    headline: string
     onSelect: (branch: string | undefined) => void
   },
 ) {
   if (branches.length < 2) return null
+  const active = selected ?? headline
   return (
     <div className="mb-4 flex flex-wrap items-center gap-1.5">
-      <span className="text-muted-foreground text-xs">branch</span>
-      <Chip active={selected === undefined} onClick={() => onSelect(undefined)}>current</Chip>
-      {branches.map((branch) => (
-        <Chip
-          key={branch.branch}
-          active={selected === branch.branch}
-          onClick={() => onSelect(branch.branch)}
-          className={cn(kindClass[branch.kind], branch.dirty && "border-amber-500 text-amber-600")}
-          title={branchTitle(branch)}
-        >
-          {branch.branch}
-          {branch.dirty ? " ●" : ""}
-        </Chip>
-      ))}
+      {branches.map((branch) => {
+        const isHeadline = branch.branch === headline
+        return (
+          <BranchTag
+            key={branch.branch}
+            branch={branch}
+            headline={isHeadline}
+            selected={active === branch.branch}
+            onSelect={() => onSelect(isHeadline ? undefined : branch.branch)}
+          />
+        )
+      })}
     </div>
   )
-}
-
-function Chip(
-  { active, onClick, className, title, children }: {
-    active: boolean
-    onClick: () => void
-    className?: string
-    title?: string
-    children: ReactNode
-  },
-) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-pressed={active}
-      className={cn(
-        "rounded-md border px-2 py-0.5 font-mono text-[11px] leading-tight transition-colors",
-        active ? "border-foreground bg-foreground text-background" : "hover:bg-muted",
-        !active && className,
-      )}
-    >
-      {children}
-    </button>
-  )
-}
-
-function branchTitle(branch: BranchState): string {
-  const notes: Array<string> = [branch.status]
-  if (branch.kind !== "base") notes.push(branch.kind)
-  if (branch.dirty) notes.push("uncommitted")
-  return `${branch.branch}: ${notes.join(", ")}`
 }

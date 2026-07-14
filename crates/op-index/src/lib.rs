@@ -377,6 +377,7 @@ impl Index {
                     title: headline.task.title.clone(),
                     status: headline.task.status,
                     parent: headline.task.parent.clone(),
+                    headline: headline.branch.clone(),
                     branches: branch_states(&cells),
                 }
             })
@@ -432,8 +433,21 @@ impl Index {
         };
         Ok(Some(TaskDetail {
             view: view_from_raw(id, &raw),
+            headline: self.select_headline(&cells).branch.clone(),
             branches: branch_states(&cells),
         }))
+    }
+
+    // The branch a branchless read headlines with, for the write path which builds its own
+    // `TaskDetail` from the just-written task rather than through `task_detail`.
+    pub fn headline_branch(&self, id: &str) -> Option<String> {
+        let cells: Vec<&MatrixCell> = self
+            .matrix
+            .cells
+            .iter()
+            .filter(|cell| cell.task.id == id)
+            .collect();
+        (!cells.is_empty()).then(|| self.select_headline(&cells).branch.clone())
     }
 
     // The effective text of one cell, including a deletion's last-known blob so a branchless read of

@@ -406,13 +406,17 @@ async fn patch_task(
             // Echo the freshly written task rather than re-reading it from the matrix: a write that
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
             // would 404 a write that in fact succeeded.
-            let branches = {
+            let (headline, branches) = {
                 let mut index = index.lock().expect("index mutex poisoned");
                 index.rebuild(&repo, &serve_store).map_err(index_error)?;
-                index.task_branch_states(&id)
+                (
+                    index.headline_branch(&id).unwrap_or_default(),
+                    index.task_branch_states(&id),
+                )
             };
             let detail = TaskDetail {
                 view: TaskView::from_task(id, &task),
+                headline,
                 branches,
             };
             Ok((branch, detail))

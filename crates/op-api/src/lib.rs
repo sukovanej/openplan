@@ -59,18 +59,20 @@ impl TaskView {
 }
 
 // One task's full view on a single branch, paired with every branch it lives on so a cold-loaded
-// detail page can render a branch switcher without the list in memory. The `view` is the headline
-// (current-worktree) version for a branchless read, or the requested branch's version otherwise.
+// detail page can render a branch switcher without the list in memory. The `view` is the requested
+// branch's version, or the headline version for a branchless read; `headline` names the branch that
+// version resolves to (the most recently changed one), so the switcher can mark it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskDetail {
     #[serde(flatten)]
     pub view: TaskView,
+    pub headline: String,
     pub branches: Vec<BranchState>,
 }
 
-// One logical task aggregated across every branch it lives on: a headline (the current worktree's
-// branch, or a deterministic pick when it isn't checked out there) plus one `branches` entry per
-// branch so a client can render badges and spot divergence.
+// One logical task aggregated across every branch it lives on: the `status`/`title` come from the
+// `headline` branch (the most recently changed one), plus one `branches` entry per branch so a
+// client can render badges, mark the headline, and spot divergence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskListItem {
     pub id: String,
@@ -78,6 +80,7 @@ pub struct TaskListItem {
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    pub headline: String,
     pub branches: Vec<BranchState>,
 }
 

@@ -57,7 +57,12 @@ function TaskDetailView(
           <StatusIcon status={task.status} />
           <h1 className="text-2xl font-semibold tracking-tight">{task.title}</h1>
         </div>
-        <BranchSwitcher branches={task.branches} selected={selected} onSelect={onSelect} />
+        <BranchSwitcher
+          branches={task.branches}
+          selected={selected}
+          headline={task.headline}
+          onSelect={onSelect}
+        />
         <TaskBody markdown={stripTitle(task.body)} />
       </div>
     </div>
