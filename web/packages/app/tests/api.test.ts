@@ -36,7 +36,7 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
         parent: "a-1",
         branches: [
           { branch: "main", status: "todo", blob_oid: "bbb", dirty: false },
-          { branch: "feature", status: "in_progress", blob_oid: "ccc", dirty: true, conflicted: false },
+          { branch: "feature", status: "in_progress", blob_oid: "ccc", dirty: true },
         ],
       },
     ])

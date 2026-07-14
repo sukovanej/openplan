@@ -459,9 +459,6 @@ fn cell_flags(cell: &MatrixCell) -> String {
     if cell.dirty {
         flags.push("dirty");
     }
-    if cell.conflicted {
-        flags.push("conflict");
-    }
     if flags.is_empty() {
         String::new()
     } else {
@@ -473,9 +470,6 @@ fn version_flags(version: &op_api::TaskVersion) -> String {
     let mut flags = Vec::new();
     if version.dirty {
         flags.push("dirty");
-    }
-    if version.conflicted {
-        flags.push("conflict");
     }
     if flags.is_empty() {
         String::new()

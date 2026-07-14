@@ -12,8 +12,7 @@ export function BranchBadges({ branches }: { branches: ReadonlyArray<BranchState
           variant="outline"
           className={cn(
             "font-mono text-[10px] leading-tight",
-            branch.conflicted && "border-destructive text-destructive",
-            !branch.conflicted && branch.dirty && "border-amber-500 text-amber-600",
+            branch.dirty && "border-amber-500 text-amber-600",
           )}
           title={branchTitle(branch)}
         >
@@ -28,6 +27,5 @@ export function BranchBadges({ branches }: { branches: ReadonlyArray<BranchState
 function branchTitle(branch: BranchState): string {
   const notes: Array<string> = [branch.status]
   if (branch.dirty) notes.push("uncommitted")
-  if (branch.conflicted) notes.push("conflict")
   return `${branch.branch}: ${notes.join(", ")}`
 }
