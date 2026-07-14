@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 
 # Task CRUD across the store, daemon, and CLI
