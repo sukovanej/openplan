@@ -50,6 +50,17 @@ oplan set <id> parent <parent-id>
 oplan set <id> deps "<id1>, <id2>"
 ```
 
+## Working on a task
+
+Before starting work on a task, mark it `in_progress`:
+
+```sh
+oplan set <id> status in_progress
+```
+
+Do this as the first step, before making any changes. Mark it `done` once the
+work is complete.
+
 ## Delete
 
 ```sh
