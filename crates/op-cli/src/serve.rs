@@ -20,6 +20,14 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
         .try_init()
         .ok();
 
+    // With the subscriber up, lifecycle failures go through tracing for consistent formatting
+    // instead of the CLI's plain `error: ...` stderr line.
+    serve(home, port, root).await.inspect_err(|err| {
+        tracing::error!(error = format!("{err:#}"), "daemon exited with error");
+    })
+}
+
+async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     home.ensure_dir()?;
     let lock = home.open_lock()?;
     if lock.try_lock_exclusive().is_err() {

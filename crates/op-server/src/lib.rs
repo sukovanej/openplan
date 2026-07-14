@@ -1,11 +1,13 @@
 use std::convert::Infallible;
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode, Uri, header},
+    extract::{MatchedPath, Path, Query, State},
+    http::{HeaderMap, Request, StatusCode, Uri, header},
     response::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
@@ -23,9 +25,12 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tokio_stream::{Stream, StreamExt as _};
+use tower_http::classify::ServerErrorsFailureClass;
 use tower_http::trace::TraceLayer;
+use tracing::Span;
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
+const SLOW_REQUEST: Duration = Duration::from_millis(1000);
 
 #[derive(RustEmbed)]
 #[folder = "../../web/packages/app/dist"]
@@ -94,7 +99,43 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<axum::body::Body>| {
+                    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+                    let request_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+                    let route = request
+                        .extensions()
+                        .get::<MatchedPath>()
+                        .map_or_else(|| request.uri().path(), MatchedPath::as_str);
+                    tracing::info_span!(
+                        "request",
+                        request_id,
+                        method = %request.method(),
+                        path = %request.uri().path(),
+                        route = %route,
+                    )
+                })
+                .on_request(())
+                .on_response(|response: &Response, latency: Duration, _: &Span| {
+                    let status = response.status().as_u16();
+                    let latency_ms = latency.as_millis();
+                    if latency >= SLOW_REQUEST {
+                        tracing::warn!(status, latency_ms, "slow request");
+                    } else {
+                        tracing::debug!(status, latency_ms, "request served");
+                    }
+                })
+                .on_failure(
+                    |failure: ServerErrorsFailureClass, latency: Duration, _: &Span| {
+                        tracing::error!(
+                            %failure,
+                            latency_ms = latency.as_millis(),
+                            "request failed"
+                        );
+                    },
+                ),
+        )
         .with_state(state)
 }
 
@@ -215,6 +256,11 @@ impl IntoResponse for ApiError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         };
+        // The failure line from TraceLayer only sees the status code; log the cause here, inside
+        // the request span, so the ERROR record carries route + request id + why.
+        if status.is_server_error() {
+            tracing::error!(error = %self.0, "request handler failed");
+        }
         (status, self.0.to_string()).into_response()
     }
 }
