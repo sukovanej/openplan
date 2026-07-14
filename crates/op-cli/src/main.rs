@@ -8,8 +8,9 @@ use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use op_api::{CreateTask, TaskSummary, TaskView};
+use op_api::{CreateTask, Matrix, MatrixCell, TaskSummary, TaskView};
 use op_git::Repo;
+use op_index::Index;
 use op_store::Store;
 use op_task::Status;
 
@@ -53,15 +54,29 @@ enum Command {
         parent: Option<String>,
         #[arg(long)]
         json: bool,
+        /// Every task on every local branch (one matrix row per task×branch)
+        #[arg(long = "all-branches", conflicts_with_all = ["branch", "parent"])]
+        all_branches: bool,
+        /// Tasks as they stand on one branch, without checking it out
+        #[arg(long)]
+        branch: Option<String>,
     },
     /// Print a whole task file, or its metadata as JSON
     Get {
         id: String,
         #[arg(long)]
         json: bool,
+        /// Read the task's version on another branch (read-only)
+        #[arg(long)]
+        branch: Option<String>,
     },
     /// Print a task's metadata (status, parent, deps)
-    Show { id: String },
+    Show {
+        id: String,
+        /// Show the per-branch status matrix for this task instead
+        #[arg(long)]
+        branches: bool,
+    },
     /// Set a validated field: status | parent | deps
     Set {
         id: String,
@@ -133,9 +148,23 @@ fn run(cli: Cli) -> Result<ExitCode> {
             status,
             parent,
             json,
-        } => list(&cli.root, status, parent.as_deref(), json).map(|()| ExitCode::SUCCESS),
-        Command::Get { id, json } => get(&cli.root, &id, json).map(|()| ExitCode::SUCCESS),
-        Command::Show { id } => show(&cli.root, &id).map(|()| ExitCode::SUCCESS),
+            all_branches,
+            branch,
+        } => list(
+            &cli.root,
+            status,
+            parent.as_deref(),
+            json,
+            all_branches,
+            branch.as_deref(),
+        )
+        .map(|()| ExitCode::SUCCESS),
+        Command::Get { id, json, branch } => {
+            get(&cli.root, &id, json, branch.as_deref()).map(|()| ExitCode::SUCCESS)
+        }
+        Command::Show { id, branches } => {
+            show(&cli.root, &id, branches).map(|()| ExitCode::SUCCESS)
+        }
         Command::Set { id, field, value } => {
             set(&cli.root, &id, &field, &value).map(|()| ExitCode::SUCCESS)
         }
@@ -216,7 +245,21 @@ fn create(
     Ok(())
 }
 
-fn list(root: &Path, status: Option<Status>, parent: Option<&str>, json: bool) -> Result<()> {
+fn list(
+    root: &Path,
+    status: Option<Status>,
+    parent: Option<&str>,
+    json: bool,
+    all_branches: bool,
+    branch: Option<&str>,
+) -> Result<()> {
+    if all_branches {
+        return list_all_branches(root, status, json);
+    }
+    if let Some(branch) = branch {
+        return list_branch(root, branch, status, parent, json);
+    }
+
     let store = Store::discover(root)?;
     let ids = store.task_ids()?;
     let mut summaries = Vec::new();
@@ -239,10 +282,7 @@ fn list(root: &Path, status: Option<Status>, parent: Option<&str>, json: bool) -
     if json {
         println!("{}", serde_json::to_string_pretty(&summaries)?);
     } else if !summaries.is_empty() {
-        for summary in &summaries {
-            let status = format!("{:?}", summary.status);
-            println!("{:<28} {status:<11} {}", summary.id, summary.title);
-        }
+        print_summaries(&summaries);
     } else if ids.is_empty() {
         println!("no tasks yet");
     } else {
@@ -251,7 +291,63 @@ fn list(root: &Path, status: Option<Status>, parent: Option<&str>, json: bool) -
     Ok(())
 }
 
-fn get(root: &Path, id: &str, json: bool) -> Result<()> {
+fn list_all_branches(root: &Path, status: Option<Status>, json: bool) -> Result<()> {
+    let (_repo, index) = build_index(root)?;
+    let cells: Vec<MatrixCell> = index
+        .matrix()
+        .cells
+        .iter()
+        .filter(|cell| status.is_none_or(|s| cell.task.status == s))
+        .cloned()
+        .collect();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&Matrix { cells })?);
+    } else if cells.is_empty() {
+        println!("no tasks on any branch");
+    } else {
+        for cell in &cells {
+            let status = format!("{:?}", cell.task.status);
+            println!(
+                "{:<22} {:<28} {status:<11} {}{}",
+                cell.branch,
+                cell.task.id,
+                cell.task.title,
+                cell_flags(cell),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn list_branch(
+    root: &Path,
+    branch: &str,
+    status: Option<Status>,
+    parent: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let (repo, index) = build_index(root)?;
+    ensure_branch(&repo, branch)?;
+    let summaries: Vec<TaskSummary> = index
+        .branch_summaries(branch)
+        .into_iter()
+        .filter(|s| status.is_none_or(|st| s.status == st))
+        .filter(|s| parent.is_none_or(|p| s.parent.as_deref() == Some(p)))
+        .collect();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&summaries)?);
+    } else if summaries.is_empty() {
+        println!("no matching tasks");
+    } else {
+        print_summaries(&summaries);
+    }
+    Ok(())
+}
+
+fn get(root: &Path, id: &str, json: bool, branch: Option<&str>) -> Result<()> {
+    if let Some(branch) = branch {
+        return get_branch(root, id, branch, json);
+    }
     let store = Store::discover(root)?;
     if json {
         let task = store.read(id)?;
@@ -267,7 +363,27 @@ fn get(root: &Path, id: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn show(root: &Path, id: &str) -> Result<()> {
+fn get_branch(root: &Path, id: &str, branch: &str, json: bool) -> Result<()> {
+    let (repo, index) = build_index(root)?;
+    ensure_branch(&repo, branch)?;
+    if json {
+        match index.effective_view(&repo, id, branch)? {
+            Some(view) => println!("{}", serde_json::to_string_pretty(&view)?),
+            None => bail!("no such task on branch {branch}: {id}"),
+        }
+    } else {
+        match index.effective_raw(&repo, id, branch)? {
+            Some(raw) => print!("{raw}"),
+            None => bail!("no such task on branch {branch}: {id}"),
+        }
+    }
+    Ok(())
+}
+
+fn show(root: &Path, id: &str, branches: bool) -> Result<()> {
+    if branches {
+        return show_branches(root, id);
+    }
     let store = Store::discover(root)?;
     let task = store.read(id)?;
     let fm = &task.frontmatter;
@@ -284,6 +400,92 @@ fn show(root: &Path, id: &str) -> Result<()> {
         }
     );
     Ok(())
+}
+
+fn show_branches(root: &Path, id: &str) -> Result<()> {
+    let (_repo, index) = build_index(root)?;
+    let Some(view) = index.task_branches(id) else {
+        bail!("task not found on any branch: {id}");
+    };
+    let branch_count: usize = view.versions.iter().map(|v| v.branches.len()).sum();
+    let divergent = view.versions.len() > 1;
+    println!("id: {}", view.id);
+    println!(
+        "{} version{} across {} branch{}{}",
+        view.versions.len(),
+        plural(view.versions.len()),
+        branch_count,
+        if branch_count == 1 { "" } else { "es" },
+        if divergent { " (divergent)" } else { "" },
+    );
+    for version in &view.versions {
+        let short = &version.blob_oid[..version.blob_oid.len().min(12)];
+        println!(
+            "  {short}  {:<11} {}{}",
+            version.summary.status.as_str(),
+            version.summary.title,
+            version_flags(version),
+        );
+        println!("    branches: {}", version.branches.join(", "));
+    }
+    Ok(())
+}
+
+fn build_index(root: &Path) -> Result<(Repo, Index)> {
+    let repo = Repo::discover(root)?;
+    let store = Store::discover(root)?;
+    let mut index = Index::new();
+    index.rebuild(&repo, &store)?;
+    Ok((repo, index))
+}
+
+fn ensure_branch(repo: &Repo, branch: &str) -> Result<()> {
+    if repo.local_branches()?.iter().any(|b| b == branch) {
+        Ok(())
+    } else {
+        bail!("no such branch: {branch}");
+    }
+}
+
+fn print_summaries(summaries: &[TaskSummary]) {
+    for summary in summaries {
+        let status = format!("{:?}", summary.status);
+        println!("{:<28} {status:<11} {}", summary.id, summary.title);
+    }
+}
+
+fn cell_flags(cell: &MatrixCell) -> String {
+    let mut flags = Vec::new();
+    if cell.dirty {
+        flags.push("dirty");
+    }
+    if cell.conflicted {
+        flags.push("conflict");
+    }
+    if flags.is_empty() {
+        String::new()
+    } else {
+        format!("  [{}]", flags.join(", "))
+    }
+}
+
+fn version_flags(version: &op_api::TaskVersion) -> String {
+    let mut flags = Vec::new();
+    if version.dirty {
+        flags.push("dirty");
+    }
+    if version.conflicted {
+        flags.push("conflict");
+    }
+    if flags.is_empty() {
+        String::new()
+    } else {
+        format!("  [{}]", flags.join(", "))
+    }
+}
+
+fn plural(n: usize) -> &'static str {
+    if n == 1 { "" } else { "s" }
 }
 
 fn set(root: &Path, id: &str, field: &str, value: &str) -> Result<()> {

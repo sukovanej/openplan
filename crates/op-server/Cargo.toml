@@ -12,6 +12,7 @@ op-index.workspace = true
 op-presence.workspace = true
 op-api.workspace = true
 op-store.workspace = true
+op-git.workspace = true
 op-task.workspace = true
 axum.workspace = true
 tokio.workspace = true

@@ -3,6 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
+use op_git::Repo;
 use op_server::AppState;
 use op_store::Store;
 use op_watch::Watcher;
@@ -44,9 +45,23 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
     home.write_info(&info)?;
 
     let store = Store::discover(root).ok();
+    let repo = Repo::discover(root).ok();
     let mut state = AppState::default().with_health(info.clone());
     if let Some(store) = &store {
         state = state.with_store(store.clone());
+    }
+    if let Some(repo) = &repo {
+        state = state.with_repo(repo.clone());
+    }
+    if let (Some(repo), Some(store)) = (&repo, &store) {
+        if let Err(err) = state
+            .index
+            .lock()
+            .expect("index mutex poisoned")
+            .rebuild(repo, store)
+        {
+            tracing::warn!(%err, "initial matrix build failed");
+        }
     }
     let (tx, rx) = std::sync::mpsc::channel();
     let _watcher = match &store {

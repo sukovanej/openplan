@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom"
 
+import { BranchBadges } from "@/components/branch-badges"
 import { ListSkeleton, Message } from "@/components/states"
 import { StatusBadge } from "@/components/status-badge"
 import { Card } from "@/components/ui/card"
-import type { TaskSummary } from "@/lib/api"
+import type { TaskListItem } from "@/lib/api"
 import { errorText } from "@/lib/format"
 import { tasksQuery, useQuery } from "@/lib/store"
 
@@ -21,7 +22,7 @@ export function ListRoute() {
   }
 }
 
-function TaskList({ tasks }: { tasks: ReadonlyArray<TaskSummary> }) {
+function TaskList({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
   return (
     <ul className="space-y-2">
       {tasks.map((task) => (
@@ -29,7 +30,10 @@ function TaskList({ tasks }: { tasks: ReadonlyArray<TaskSummary> }) {
           <Link to={`/task/${task.id}`} className="block">
             <Card className="hover:bg-accent flex-row items-center justify-between gap-4 px-4 py-3 transition-colors">
               <span className="truncate font-medium">{task.title}</span>
-              <StatusBadge status={task.status} />
+              <div className="flex shrink-0 items-center gap-2">
+                <BranchBadges branches={task.branches} />
+                <StatusBadge status={task.status} />
+              </div>
             </Card>
           </Link>
         </li>

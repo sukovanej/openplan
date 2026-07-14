@@ -2092,6 +2092,7 @@ dependencies = [
  "op-api",
  "op-client",
  "op-git",
+ "op-index",
  "op-md",
  "op-server",
  "op-store",
@@ -2131,6 +2132,8 @@ dependencies = [
  "op-git",
  "op-store",
  "op-task",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -2156,6 +2159,7 @@ dependencies = [
  "axum",
  "http-body-util",
  "op-api",
+ "op-git",
  "op-index",
  "op-presence",
  "op-store",

@@ -10,13 +10,25 @@ export const Status = Schema.Literals([
 ])
 export type Status = typeof Status.Type
 
-export const TaskSummary = Schema.Struct({
+export const BranchState = Schema.Struct({
+  branch: Schema.String,
+  status: Status,
+  blob_oid: Schema.String,
+  dirty: Schema.Boolean,
+  conflicted: Schema.optionalKey(Schema.Boolean),
+})
+export type BranchState = typeof BranchState.Type
+
+// One logical task aggregated across branches: the headline fields mirror the current worktree's
+// branch, and `branches` carries every branch it lives on for badges and divergence.
+export const TaskListItem = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
   status: Status,
   parent: Schema.optionalKey(Schema.String),
+  branches: Schema.Array(BranchState),
 })
-export type TaskSummary = typeof TaskSummary.Type
+export type TaskListItem = typeof TaskListItem.Type
 
 export const TaskView = Schema.Struct({
   id: Schema.String,
@@ -28,7 +40,7 @@ export const TaskView = Schema.Struct({
 })
 export type TaskView = typeof TaskView.Type
 
-const TaskSummaries = Schema.Array(TaskSummary)
+const TaskListItems = Schema.Array(TaskListItem)
 
 export class TaskNotFound extends Data.TaggedError("TaskNotFound")<{
   readonly id: string
@@ -43,14 +55,14 @@ export const ApiBaseUrl = Context.Reference<string>("app/ApiBaseUrl", {
 })
 
 export const listTasks: Effect.Effect<
-  ReadonlyArray<TaskSummary>,
+  ReadonlyArray<TaskListItem>,
   HttpClientError.HttpClientError | Schema.SchemaError,
   HttpClient.HttpClient
 > = Effect.gen(function*() {
   const client = yield* HttpClient.HttpClient
   const base = yield* ApiBaseUrl
   const response = yield* client.get(`${base}/api/tasks`)
-  return yield* HttpClientResponse.schemaBodyJson(TaskSummaries)(response)
+  return yield* HttpClientResponse.schemaBodyJson(TaskListItems)(response)
 }).pipe(Effect.scoped)
 
 export const getTask = (

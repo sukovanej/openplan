@@ -20,19 +20,33 @@ const withResponse = (response: () => Response) => <A, E>(effect: Effect.Effect<
     Effect.provideService(ApiBaseUrl, "http://localhost"),
   )
 
-it.effect("decodes the task list from GET /api/tasks", () =>
+it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
   withResponse(() =>
     json([
-      { id: "a-1", title: "First", status: "todo" },
-      { id: "b-2", title: "Second", status: "in_progress", parent: "a-1" },
+      {
+        id: "a-1",
+        title: "First",
+        status: "todo",
+        branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false }],
+      },
+      {
+        id: "b-2",
+        title: "Second",
+        status: "in_progress",
+        parent: "a-1",
+        branches: [
+          { branch: "main", status: "todo", blob_oid: "bbb", dirty: false },
+          { branch: "feature", status: "in_progress", blob_oid: "ccc", dirty: true, conflicted: false },
+        ],
+      },
     ])
   )(
     Effect.gen(function*() {
       const tasks = yield* listTasks
-      expect(tasks).toEqual([
-        { id: "a-1", title: "First", status: "todo" },
-        { id: "b-2", title: "Second", status: "in_progress", parent: "a-1" },
-      ])
+      expect(tasks.map((t) => t.id)).toEqual(["a-1", "b-2"])
+      expect(tasks[0].branches.map((b) => b.branch)).toEqual(["main"])
+      expect(tasks[1].branches.length).toBe(2)
+      expect(tasks[1].branches[1].dirty).toBe(true)
     }),
   ))
 
@@ -56,7 +70,7 @@ it.effect("maps a 404 response to TaskNotFound", () =>
   ))
 
 it.effect("rejects a malformed status with a decode failure", () =>
-  withResponse(() => json([{ id: "a-1", title: "First", status: "bogus" }]))(
+  withResponse(() => json([{ id: "a-1", title: "First", status: "bogus", branches: [] }]))(
     Effect.gen(function*() {
       const outcome = yield* Effect.result(listTasks)
       expect(Result.isFailure(outcome)).toBe(true)
