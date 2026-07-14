@@ -113,11 +113,31 @@ pub struct MatrixCell {
     pub task: TaskSummary,
     pub blob_oid: String,
     pub dirty: bool,
+    #[serde(default)]
+    pub conflicted: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Matrix {
     pub cells: Vec<MatrixCell>,
+}
+
+// One task viewed across every branch it lives on, its cells grouped by blob OID so identical
+// versions collapse into a single row and divergent ones stand out (§7.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskBranches {
+    pub id: String,
+    pub versions: Vec<TaskVersion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskVersion {
+    pub blob_oid: String,
+    pub summary: TaskSummary,
+    pub branches: Vec<String>,
+    pub dirty: bool,
+    #[serde(default)]
+    pub conflicted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

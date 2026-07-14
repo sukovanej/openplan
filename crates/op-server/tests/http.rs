@@ -300,3 +300,84 @@ async fn first_sse_data(response: Response) -> String {
     }
     panic!("event stream closed before delivering a data frame");
 }
+
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git {args:?} failed");
+}
+
+// A git-backed store whose `alpha` task is `todo` on the checked-out main branch and `done` on a
+// non-checked-out feature branch, so the matrix and cross-branch reads have something to resolve.
+fn git_state() -> (tempfile::TempDir, AppState) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(
+        root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: todo\n---\n# Alpha\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    std::fs::write(
+        root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: done\n---\n# Alpha done\n",
+    )
+    .unwrap();
+    git(root, &["commit", "-qam", "edit alpha"]);
+    git(root, &["checkout", "-q", "main"]);
+
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = AppState::default().with_store(store).with_repo(repo);
+    (dir, state)
+}
+
+#[tokio::test]
+async fn matrix_returns_populated_cells() {
+    let (_dir, state) = git_state();
+    let response = send(&state, "GET", "/api/matrix", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    let cells = body["cells"].as_array().unwrap();
+    assert_eq!(cells.len(), 2, "alpha on main + feature: {cells:?}");
+    let branches: Vec<&str> = cells
+        .iter()
+        .map(|c| c["branch"].as_str().unwrap())
+        .collect();
+    assert!(
+        branches.contains(&"main") && branches.contains(&"feature"),
+        "{branches:?}"
+    );
+}
+
+#[tokio::test]
+async fn cross_branch_task_read_reflects_the_other_branch() {
+    let (_dir, state) = git_state();
+    let response = send(&state, "GET", "/api/tasks/alpha?branch=feature", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let view = body_json(response).await;
+    assert_eq!(view["status"], "done");
+    assert_eq!(view["title"], "Alpha done");
+
+    // Omitting the branch keeps the local current-worktree read (main: todo).
+    let local = send(&state, "GET", "/api/tasks/alpha", None).await;
+    assert_eq!(body_json(local).await["status"], "todo");
+}
+
+#[tokio::test]
+async fn cross_branch_read_missing_id_or_branch_is_404() {
+    let (_dir, state) = git_state();
+    let missing_branch = send(&state, "GET", "/api/tasks/alpha?branch=ghost", None).await;
+    assert_eq!(missing_branch.status(), StatusCode::NOT_FOUND);
+    let missing_id = send(&state, "GET", "/api/tasks/ghost?branch=feature", None).await;
+    assert_eq!(missing_id.status(), StatusCode::NOT_FOUND);
+}

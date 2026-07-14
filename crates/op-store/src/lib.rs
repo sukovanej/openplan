@@ -58,6 +58,10 @@ impl Store {
         Err(StoreError::StoreMissing)
     }
 
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn plan_dir(&self) -> PathBuf {
         self.root.join(STORE_DIR)
     }

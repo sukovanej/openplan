@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, Uri, header},
     response::{
         IntoResponse, Response,
@@ -13,11 +13,12 @@ use axum::{
     routing::get,
 };
 use op_api::{ChangeEvent, CreateTask, DaemonInfo, Matrix, TaskPatch, TaskSummary, TaskView};
-use op_index::Index;
+use op_git::Repo;
+use op_index::{Index, IndexError};
 use op_presence::Registry;
 use op_store::{Store, StoreError};
 use rust_embed::RustEmbed;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, broadcast};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
@@ -35,6 +36,7 @@ pub struct AppState {
     pub index: Arc<Mutex<Index>>,
     pub presence: Arc<Mutex<Registry>>,
     store: Option<Store>,
+    repo: Option<Repo>,
     shutdown: Arc<Notify>,
     health: Option<Arc<DaemonInfo>>,
     events: broadcast::Sender<ChangeEvent>,
@@ -48,6 +50,11 @@ impl AppState {
 
     pub fn with_store(mut self, store: Store) -> Self {
         self.store = Some(store);
+        self
+    }
+
+    pub fn with_repo(mut self, repo: Repo) -> Self {
+        self.repo = Some(repo);
         self
     }
 
@@ -68,6 +75,7 @@ impl Default for AppState {
             index: Arc::new(Mutex::new(Index::new())),
             presence: Arc::new(Mutex::new(Registry::new())),
             store: None,
+            repo: None,
             shutdown: Arc::new(Notify::new()),
             health: None,
             events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
@@ -125,8 +133,33 @@ async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Re
 }
 
 async fn matrix(State(state): State<AppState>) -> Json<Matrix> {
-    let index = state.index.lock().expect("index mutex poisoned");
-    Json(index.matrix().clone())
+    Json(refresh_matrix(&state).await)
+}
+
+// Rebuild from the serve root's repo + worktrees on demand (coarse v1 refresh); if either is
+// absent, or the walk fails, fall back to the last-built matrix rather than error the request.
+async fn refresh_matrix(state: &AppState) -> Matrix {
+    if let (Some(repo), Some(store)) = (state.repo.clone(), state.store.clone()) {
+        let index = state.index.clone();
+        let rebuilt = tokio::task::spawn_blocking(move || {
+            let mut index = index.lock().expect("index mutex poisoned");
+            index
+                .rebuild(&repo, &store)
+                .map(|()| index.matrix().clone())
+        })
+        .await;
+        match rebuilt {
+            Ok(Ok(matrix)) => return matrix,
+            Ok(Err(err)) => tracing::warn!(%err, "matrix rebuild failed"),
+            Err(err) => tracing::warn!(%err, "matrix rebuild task panicked"),
+        }
+    }
+    state
+        .index
+        .lock()
+        .expect("index mutex poisoned")
+        .matrix()
+        .clone()
 }
 
 async fn events(
@@ -237,10 +270,21 @@ async fn create_task(
     Ok((StatusCode::CREATED, Json(CreatedTask { id })).into_response())
 }
 
+#[derive(Deserialize)]
+struct TaskQuery {
+    branch: Option<String>,
+}
+
 async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(query): Query<TaskQuery>,
 ) -> Result<Json<TaskView>, ApiError> {
+    // A `?branch=` reads that branch's version cross-branch (§7.1); omitting it keeps the local
+    // current-worktree read the UI already relies on.
+    if let Some(branch) = query.branch {
+        return cross_branch_get(state, id, branch).await;
+    }
     let store = require_store(&state)?;
     let view = blocking(move || {
         let task = store.read(&id)?;
@@ -248,6 +292,40 @@ async fn get_task(
     })
     .await?;
     Ok(Json(view))
+}
+
+async fn cross_branch_get(
+    state: AppState,
+    id: String,
+    branch: String,
+) -> Result<Json<TaskView>, ApiError> {
+    let (Some(repo), Some(store)) = (state.repo.clone(), state.store.clone()) else {
+        return Err(ApiError(StoreError::NotFound { id }));
+    };
+    let index = state.index.clone();
+    let missing = id.clone();
+    let view = tokio::task::spawn_blocking(move || -> Result<Option<TaskView>, ApiError> {
+        let mut index = index.lock().expect("index mutex poisoned");
+        index.rebuild(&repo, &store).map_err(index_error)?;
+        index
+            .effective_view(&repo, &id, &branch)
+            .map_err(index_error)
+    })
+    .await
+    .map_err(|err| {
+        ApiError(StoreError::Io(std::io::Error::other(format!(
+            "index task failed: {err}"
+        ))))
+    })??;
+    view.map(Json)
+        .ok_or(ApiError(StoreError::NotFound { id: missing }))
+}
+
+fn index_error(err: IndexError) -> ApiError {
+    match err {
+        IndexError::Store(err) => ApiError(err),
+        IndexError::Git(err) => ApiError(StoreError::Io(std::io::Error::other(err.to_string()))),
+    }
 }
 
 async fn patch_task(

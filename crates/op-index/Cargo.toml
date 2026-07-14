@@ -12,6 +12,10 @@ op-store.workspace = true
 op-git.workspace = true
 op-task.workspace = true
 op-api.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

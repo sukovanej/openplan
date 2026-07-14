@@ -477,3 +477,165 @@ fn list_json_reports_unreadable_tasks_on_stderr() {
         "the unreadable task must be reported on stderr"
     );
 }
+
+fn git(dir: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git {args:?} failed");
+}
+
+// A repo whose `alpha` task diverges: `todo`/`# Alpha` on main, `done`/`# Alpha done` on feature.
+// The working tree is left on main.
+fn diverged_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    write(
+        &root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: todo\n---\n# Alpha\n",
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write(
+        &root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: done\n---\n# Alpha done\n",
+    );
+    git(root, &["commit", "-qam", "edit alpha on feature"]);
+    git(root, &["checkout", "-q", "main"]);
+    dir
+}
+
+#[test]
+fn list_all_branches_json_has_one_row_per_task_branch() {
+    let dir = diverged_repo();
+    let out = run(dir.path(), &["list", "--all-branches", "--json"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let matrix: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let cells = matrix["cells"].as_array().unwrap();
+    assert_eq!(
+        cells.len(),
+        2,
+        "alpha on main + alpha on feature: {cells:?}"
+    );
+    let branches: Vec<&str> = cells
+        .iter()
+        .map(|c| c["branch"].as_str().unwrap())
+        .collect();
+    assert!(
+        branches.contains(&"main") && branches.contains(&"feature"),
+        "{branches:?}"
+    );
+}
+
+#[test]
+fn list_branch_reads_other_branch_without_checking_it_out() {
+    let dir = diverged_repo();
+    let out = run(dir.path(), &["list", "--branch", "feature", "--json"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0]["status"], "done", "feature's version");
+    assert_eq!(tasks[0]["title"], "Alpha done");
+
+    // The current worktree is untouched: still on main, alpha still `todo`.
+    let head = run(dir.path(), &["get", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_slice(&head.stdout).unwrap();
+    assert_eq!(
+        view["status"], "todo",
+        "reading a branch must not mutate the worktree"
+    );
+    let on_disk = std::fs::read_to_string(dir.path().join(".plan/tasks/alpha.md")).unwrap();
+    assert!(
+        on_disk.contains("status: todo"),
+        "working file unchanged: {on_disk}"
+    );
+}
+
+#[test]
+fn list_branch_nonexistent_errors_nonzero() {
+    let dir = diverged_repo();
+    let out = run(dir.path(), &["list", "--branch", "ghost"]);
+    assert!(!out.status.success(), "a missing branch must fail");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no such branch"),
+        "clear message: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn get_branch_prints_that_branchs_version() {
+    let dir = diverged_repo();
+    let out = run(dir.path(), &["get", "alpha", "--branch", "feature"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = stdout(&out);
+    assert!(text.contains("status: done"), "{text}");
+    assert!(text.contains("# Alpha done"), "{text}");
+
+    let missing = run(dir.path(), &["get", "ghost", "--branch", "feature"]);
+    assert!(
+        !missing.status.success(),
+        "a missing task on a branch must fail"
+    );
+}
+
+#[test]
+fn show_branches_groups_and_flags_divergence() {
+    let dir = diverged_repo();
+    let out = run(dir.path(), &["show", "alpha", "--branches"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = stdout(&out);
+    assert!(
+        text.contains("divergent"),
+        "diverging versions flagged: {text}"
+    );
+    assert!(text.contains("main"), "{text}");
+    assert!(text.contains("feature"), "{text}");
+}
+
+#[test]
+fn set_rejects_a_cross_branch_write() {
+    let dir = diverged_repo();
+    // There is deliberately no cross-branch write flag; `--branch` is not a valid arg for `set`.
+    let out = run(
+        dir.path(),
+        &["set", "alpha", "--branch", "feature", "status", "done"],
+    );
+    assert!(
+        !out.status.success(),
+        "writes must not accept a --branch target"
+    );
+
+    // feature's committed version is untouched by the failed attempt.
+    let feature = run(
+        dir.path(),
+        &["get", "alpha", "--branch", "feature", "--json"],
+    );
+    let view: serde_json::Value = serde_json::from_slice(&feature.stdout).unwrap();
+    assert_eq!(view["status"], "done");
+}
