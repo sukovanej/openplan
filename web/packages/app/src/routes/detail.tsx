@@ -50,21 +50,18 @@ function TaskDetailView(
   },
 ) {
   return (
-    <div className="space-y-6">
-      <BackLink />
-      <div className="bg-muted/30 overflow-hidden rounded-lg border p-6">
-        <div className="mb-4 flex items-center gap-3">
-          <StatusIcon status={task.status} />
-          <h1 className="text-2xl font-semibold tracking-tight">{task.title}</h1>
-        </div>
-        <BranchSwitcher
-          branches={task.branches}
-          selected={selected}
-          headline={task.headline}
-          onSelect={onSelect}
-        />
-        <TaskBody markdown={stripTitle(task.body)} />
+    <div className="bg-muted/10 h-full overflow-y-auto rounded-lg border p-6">
+      <div className="mb-4 flex items-center gap-3">
+        <StatusIcon status={task.status} />
+        <h1 className="text-2xl font-semibold tracking-tight">{task.title}</h1>
       </div>
+      <BranchSwitcher
+        branches={task.branches}
+        selected={selected}
+        headline={task.headline}
+        onSelect={onSelect}
+      />
+      <TaskBody markdown={stripTitle(task.body)} />
     </div>
   )
 }
