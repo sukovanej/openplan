@@ -76,6 +76,14 @@ fn parse_pid(text: &str) -> Option<u32> {
     rest[..end].parse().ok()
 }
 
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
 fn wait_until(mut cond: impl FnMut() -> bool) {
     let start = Instant::now();
     while !cond() {
@@ -398,6 +406,132 @@ fn stop_honors_daemon_override_url() {
     );
     assert!(String::from_utf8_lossy(&stop.stdout).contains("stopping (daemon at"));
     wait_until(|| !pid_alive(pid));
+}
+
+#[test]
+fn restart_rebinds_a_fresh_daemon_while_running() {
+    let daemon = Daemon::new();
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "start", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let old = daemon.info_pid().unwrap();
+
+    let restart = daemon
+        .cmd()
+        .args(["server", "restart", "--port", "0"])
+        .output()
+        .unwrap();
+    assert!(
+        restart.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&restart.stderr)
+    );
+    assert!(String::from_utf8_lossy(&restart.stdout).contains("started (pid"));
+
+    let new = daemon.info_pid().unwrap();
+    assert_ne!(new, old, "restart must spawn a fresh daemon");
+    assert!(!pid_alive(old), "restart must stop the old daemon");
+    assert!(pid_alive(new), "the new daemon must be alive");
+
+    let ping = daemon.cmd().args(["server", "ping"]).output().unwrap();
+    assert!(ping.status.success(), "the new daemon must be healthy");
+}
+
+#[test]
+fn restart_rebinds_the_same_fixed_port() {
+    let daemon = Daemon::new();
+    let port = free_port();
+    let port_arg = port.to_string();
+
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "start", "--port", &port_arg])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(daemon.info_port().unwrap(), port);
+    let old = daemon.info_pid().unwrap();
+
+    let restart = daemon
+        .cmd()
+        .args(["server", "restart", "--port", &port_arg])
+        .output()
+        .unwrap();
+    assert!(
+        restart.status.success(),
+        "restart must rebind the requested port: {}",
+        String::from_utf8_lossy(&restart.stderr)
+    );
+
+    let new = daemon.info_pid().unwrap();
+    assert_ne!(new, old, "restart must spawn a fresh daemon");
+    assert_eq!(
+        daemon.info_port().unwrap(),
+        port,
+        "the fresh daemon must rebind the same requested port"
+    );
+    assert!(pid_alive(new), "the new daemon must be alive");
+}
+
+#[test]
+fn restart_with_nothing_running_just_starts() {
+    let daemon = Daemon::new();
+    let restart = daemon
+        .cmd()
+        .args(["server", "restart", "--port", "0"])
+        .output()
+        .unwrap();
+    assert!(
+        restart.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&restart.stderr)
+    );
+    let out = String::from_utf8_lossy(&restart.stdout);
+    assert!(out.contains("started (pid"), "{out}");
+    assert!(
+        !out.contains("not running"),
+        "restart with nothing running should read as a plain start, not report a stop: {out}"
+    );
+
+    let pid = daemon.info_pid().expect("restart started a daemon");
+    assert!(pid_alive(pid));
+}
+
+#[test]
+fn restart_rejects_daemon_override() {
+    let daemon = Daemon::new();
+    let out = daemon
+        .cmd()
+        .args([
+            "--daemon",
+            "http://127.0.0.1:1",
+            "server",
+            "restart",
+            "--port",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "restart must reject a --daemon override"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--daemon"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !daemon.home_path().join("daemon.json").exists(),
+        "a rejected restart must not spawn a daemon"
+    );
 }
 
 #[test]

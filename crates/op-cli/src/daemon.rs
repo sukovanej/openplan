@@ -24,6 +24,12 @@ pub enum Started {
     Fresh(DaemonInfo),
 }
 
+enum StopOutcome {
+    NotRunning,
+    RemovedStale { pid: u32 },
+    Stopped { pid: u32, port: u16 },
+}
+
 impl Home {
     pub fn resolve() -> Result<Self> {
         let dir = match std::env::var_os("OPLAN_HOME").filter(|v| !v.is_empty()) {
@@ -146,6 +152,17 @@ impl Control {
         Ok(())
     }
 
+    pub fn restart(&self, port: u16, root: &Path) -> Result<()> {
+        match self.stop_local()? {
+            StopOutcome::NotRunning => {}
+            StopOutcome::RemovedStale { pid } => {
+                println!("removed stale daemon.json for pid {pid}");
+            }
+            StopOutcome::Stopped { pid, port } => println!("stopped (pid {pid}, port {port})"),
+        }
+        self.start(port, root)
+    }
+
     pub fn ping(&self, override_url: Option<&str>) -> Result<bool> {
         if let Some(url) = override_url {
             let up = self.client.health(url.trim_end_matches('/')).is_some();
@@ -188,18 +205,24 @@ impl Control {
             return Ok(());
         }
 
+        match self.stop_local()? {
+            StopOutcome::NotRunning => println!("not running"),
+            StopOutcome::RemovedStale { pid } => {
+                println!("not running (removed stale daemon.json for pid {pid})");
+            }
+            StopOutcome::Stopped { pid, port } => println!("stopped (pid {pid}, port {port})"),
+        }
+        Ok(())
+    }
+
+    fn stop_local(&self) -> Result<StopOutcome> {
         let Some(info) = self.home.read_info() else {
-            println!("not running");
-            return Ok(());
+            return Ok(StopOutcome::NotRunning);
         };
 
         if self.home.lock_is_free()? {
             self.home.clear_info();
-            println!(
-                "not running (removed stale daemon.json for pid {})",
-                info.pid
-            );
-            return Ok(());
+            return Ok(StopOutcome::RemovedStale { pid: info.pid });
         }
 
         let clean = self.serves_identity(&info) && self.client.shutdown(&base(info.port));
@@ -208,8 +231,10 @@ impl Control {
         }
         self.wait_until_exited(info.pid)?;
         self.home.clear_info();
-        println!("stopped (pid {}, port {})", info.pid, info.port);
-        Ok(())
+        Ok(StopOutcome::Stopped {
+            pid: info.pid,
+            port: info.port,
+        })
     }
 
     pub fn ensure_daemon(&self, port: u16, root: &Path) -> Result<Started> {
