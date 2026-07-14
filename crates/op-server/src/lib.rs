@@ -19,9 +19,9 @@ use op_presence::Registry;
 use op_store::{Store, StoreError};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Notify, broadcast};
-use tokio_stream::wrappers::BroadcastStream;
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tokio_stream::{Stream, StreamExt as _};
 use tower_http::trace::TraceLayer;
 
@@ -37,7 +37,7 @@ pub struct AppState {
     pub presence: Arc<Mutex<Registry>>,
     store: Option<Store>,
     repo: Option<Repo>,
-    shutdown: Arc<Notify>,
+    shutdown: Arc<watch::Sender<bool>>,
     health: Option<Arc<DaemonInfo>>,
     events: broadcast::Sender<ChangeEvent>,
 }
@@ -76,7 +76,7 @@ impl Default for AppState {
             presence: Arc::new(Mutex::new(Registry::new())),
             store: None,
             repo: None,
-            shutdown: Arc::new(Notify::new()),
+            shutdown: Arc::new(watch::channel(false).0),
             health: None,
             events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
         }
@@ -103,13 +103,17 @@ pub async fn serve(
     state: AppState,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    let admin = state.shutdown.clone();
+    let stop = state.shutdown.clone();
     axum::serve(listener, app(state))
         .with_graceful_shutdown(async move {
+            let mut stopping = stop.subscribe();
             tokio::select! {
                 _ = shutdown => {}
-                _ = admin.notified() => {}
+                _ = stopping.wait_for(|&stopping| stopping) => {}
             }
+            // An external signal arrives here without touching the watch; publish it so open SSE
+            // streams observe the stop and end, instead of pinning graceful shutdown open.
+            let _ = stop.send(true);
         })
         .await
 }
@@ -127,24 +131,55 @@ async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Re
     if !headers.contains_key(op_api::ADMIN_HEADER) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    state.shutdown.notify_one();
+    let _ = state.shutdown.send(true);
     (StatusCode::OK, "shutting down").into_response()
 }
 
 async fn events(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let stream = BroadcastStream::new(state.events.subscribe()).map(|message| {
-        let event = match message {
-            Ok(change) => encode(&change),
-            // A lagging client dropped events; nudge it to refetch the whole list.
-            Err(BroadcastStreamRecvError::Lagged(_)) => encode(&ChangeEvent::RefMoved {
-                branch: String::new(),
-            }),
-        };
-        Ok(event)
+    let mut shutdown = state.shutdown.subscribe();
+    let mut changes = BroadcastStream::new(state.events.subscribe());
+    let (tx, rx) = mpsc::channel(EVENT_CHANNEL_CAPACITY);
+
+    // Race the broadcast against the shutdown watch and the client's own liveness so a stopping
+    // daemon — or a vanished client — ends the stream at once instead of pinning graceful shutdown
+    // open. The shutdown arm guards the send too: a client behind a full buffer must not park the
+    // task inside `tx.send` where it can no longer observe the stop. The trailing DaemonStopping
+    // lets the UI tell an intentional stop from a crash; a connection that subscribes mid-shutdown
+    // sees the latched `true` and ends at once.
+    tokio::spawn(async move {
+        loop {
+            let event = tokio::select! {
+                _ = tx.closed() => return,
+                _ = shutdown.wait_for(|&stopping| stopping) => {
+                    let _ = tx.try_send(Ok(encode(&ChangeEvent::DaemonStopping)));
+                    return;
+                }
+                message = changes.next() => match message {
+                    Some(Ok(change)) => Ok(encode(&change)),
+                    // A lagging client dropped events; nudge it to refetch the whole list.
+                    Some(Err(BroadcastStreamRecvError::Lagged(_))) => Ok(encode(&ChangeEvent::RefMoved {
+                        branch: String::new(),
+                    })),
+                    None => return,
+                },
+            };
+            tokio::select! {
+                result = tx.send(event) => {
+                    if result.is_err() {
+                        return;
+                    }
+                }
+                _ = shutdown.wait_for(|&stopping| stopping) => {
+                    let _ = tx.try_send(Ok(encode(&ChangeEvent::DaemonStopping)));
+                    return;
+                }
+            }
+        }
     });
-    Sse::new(stream).keep_alive(KeepAlive::default())
+
+    Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default())
 }
 
 fn encode(change: &ChangeEvent) -> Event {

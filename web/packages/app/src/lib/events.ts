@@ -14,6 +14,9 @@ export const ChangeEvent = Schema.Union([
     kind: Schema.Literal("presence_changed"),
     task_id: Schema.String,
   }),
+  Schema.Struct({
+    kind: Schema.Literal("daemon_stopping"),
+  }),
 ])
 export type ChangeEvent = typeof ChangeEvent.Type
 
@@ -38,6 +41,10 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
     }
     case "presence_changed": {
       inv.refreshList()
+      return
+    }
+    // A connection-lifecycle signal, not a data change: the realtime layer handles it.
+    case "daemon_stopping": {
       return
     }
   }

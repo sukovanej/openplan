@@ -1,5 +1,6 @@
 import { Link, Outlet } from "react-router-dom"
 
+import { ConnectionStatus } from "@/components/connection-status"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 export function App() {
@@ -10,7 +11,7 @@ export function App() {
           <Link to="/" className="text-2xl font-semibold tracking-tight">
             Open Plan
           </Link>
-          <span className="text-muted-foreground text-xs">realtime</span>
+          <ConnectionStatus />
           <ThemeToggle className="ml-auto" />
         </div>
       </header>

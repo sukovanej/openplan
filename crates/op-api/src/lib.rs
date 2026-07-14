@@ -204,4 +204,5 @@ pub enum ChangeEvent {
     TaskChanged { id: String, branch: String },
     RefMoved { branch: String },
     PresenceChanged { task_id: String },
+    DaemonStopping,
 }
