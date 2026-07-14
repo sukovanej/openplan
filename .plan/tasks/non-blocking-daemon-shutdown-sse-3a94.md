@@ -44,15 +44,24 @@ a crash or network drop. Keep the two hand-mirrored definitions in sync:
 This event is best-effort UX signal only — it is NOT the shutdown mechanism
 (part 1 is). If it never reaches a client, shutdown still completes.
 
-### 3. Web: connection-status indicator
+### 3. Web: connection-status badge
 
-No status is surfaced today; `onopen`/`onerror` are not wired up
-(`realtime.ts` has only `onmessage`). Add a small indicator showing realtime
-state:
+Replace the static `realtime` text in the top bar (`App.tsx:13`,
+`<span className="text-muted-foreground text-xs">realtime</span>`) with a colored
+status `Badge` reflecting the live connection state. No status is surfaced today;
+`onopen`/`onerror` are not wired up (`realtime.ts` has only `onmessage`).
 
-- **Up** — stream open (`onopen`).
-- **Reconnecting…** — unexpected drop (`onerror`).
-- **Daemon stopped** — received `DaemonStopping` before the drop.
+- Use the existing `Badge` component (`web/packages/app/src/components/ui/badge.tsx`),
+  following the `StatusBadge` color pattern
+  (`web/packages/app/src/components/status-badge.tsx` — `bg-emerald-600` /
+  `bg-blue-600` etc. with `border-transparent text-white`).
+- States and colors:
+  - **Live** — stream open (`onopen`): green (`bg-emerald-600`).
+  - **Reconnecting…** — unexpected drop (`onerror`): amber (e.g. `bg-amber-500`).
+  - **Daemon stopped** — received `DaemonStopping` before the drop: muted/gray
+    (`variant="outline"` / `text-muted-foreground`).
+- The badge reads connection state from a small store the realtime layer updates,
+  so `realtime.ts` and the header component stay decoupled.
 
 ### 4. Web: reconnect + resync
 
@@ -70,8 +79,9 @@ state:
 
 - With a browser tab open on the UI, `oplan daemon stop` returns promptly and
   does not hit the 5s `STOP_DEADLINE`.
-- Killing/stopping the daemon flips the UI indicator; a clean stop shows "Daemon
-  stopped", an unexpected drop shows "Reconnecting…".
+- The top-bar badge (replacing the old `realtime` text) reflects connection
+  state: green "Live" when up, muted "Daemon stopped" on a clean stop, amber
+  "Reconnecting…" on an unexpected drop.
 - Restarting the daemon: the UI reconnects on its own and its data is correct
   (reflects changes made while it was down).
 - `cargo build && cargo test && cargo fmt --check && cargo clippy -- -D warnings`
