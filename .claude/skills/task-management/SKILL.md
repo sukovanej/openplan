@@ -8,7 +8,7 @@ description: Work items in this repo are called "tasks" (.plan/tasks/*.md, manag
 Tasks in this repo are markdown files in `.plan/tasks/<id>.md`, managed with the
 `oplan` binary.
 
-Statuses: `backlog` `todo` `in_progress` `done` `cancelled`.
+Statuses: `backlog` `todo` `in_progress` `in_review` `done` `cancelled`.
 
 ## Read
 
@@ -63,8 +63,17 @@ oplan set <id> status in_progress
 ```
 
 Never run `oplan set` from the primary checkout to "just mark it started" before
-the worktree exists — that is the write the Worktree rule forbids. Mark it `done`
-once the work is complete.
+the worktree exists — that is the write the Worktree rule forbids.
+
+When the work is complete, mark it `in_review` — not `done`:
+
+```sh
+oplan set <id> status in_review
+```
+
+`in_review` means the work is finished and awaiting human review. Do not set a
+task to `done` yourself; a human moves it from `in_review` to `done` (or back to
+`in_progress` if the review asks for changes).
 
 ## Delete
 
