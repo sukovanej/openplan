@@ -7,114 +7,149 @@ status: todo
 Stand up the real web frontend that `op-server` embeds (replacing the `web/index.html`
 placeholder from [[init-workspace-a1e0]]): a minimal, realtime SPA a human watches while
 agents change tasks live (§9). This init delivers two read views end-to-end — a task **list**
-and a single-task **detail with a markdown viewer** — plus the architecture the rest of the UI
-grows on: an Effect-based data layer, a shadcn/Tailwind component base, and a clean realtime
-channel wired all the way from the daemon to React. Mutations (create/edit/status/reorder) and
-the branch/matrix/presence views (§9) are explicit follow-ups.
+and a single-task **detail with a markdown viewer** — inside a **TypeScript monorepo** set up
+the way Effect projects are, so later packages (a generated API client, shared UI, shared
+domain schemas) drop in without re-plumbing. Mutations and the branch/matrix/presence views
+(§9) are explicit follow-ups.
 
-## Stack (proposed)
-- **Vite + React + TypeScript** SPA. Build output is embedded by `op-server` (`rust-embed`), so
-  the daemon still ships as one static binary (§10).
-- **Effect v4** (`effect`) as the data/effect layer: API access and the realtime stream are
-  `Effect` services exposed as `Layer`s over one `ManagedRuntime`; React binds to them via
-  `@effect-atom/atom-react` (atoms derived from services, so components stay declarative and the
-  realtime channel drives invalidation, not `useEffect` soup).
-- **shadcn/ui** (Radix + Tailwind, components copied into `web/src/components/ui`) for the UI
-  primitives; `components.json` + Tailwind configured via the shadcn init.
-- **React Router** for the two routes (`/`, `/task/:id`). (TanStack Router is the alternative —
-  React Router chosen for minimal footprint at this size.)
-- **Markdown**: `react-markdown` + `remark-gfm` (task bodies use GFM tables and `- [ ]`
-  checklists — see any task file), styled with `@tailwindcss/typography` to match shadcn.
-
-## Project layout
-Frontend source lives in `web/` as a self-contained Vite project; the build emits to
-`web/dist/`, which becomes the embed root:
+## Monorepo (`web/`)
+`web/` becomes a **pnpm workspace**, the TS-side mirror of the Rust cargo workspace under
+`crates/`. Layout and config follow the Effect monorepo template, adapted (linter → oxc, no
+publishing):
 ```
 web/
-  index.html            # Vite entry (was the embedded placeholder; now the source template)
-  package.json          # pnpm/npm project — NOT embedded
-  vite.config.ts        # dev proxy + build.outDir = "dist"
-  tailwind.config.ts  components.json  tsconfig.json
-  src/
-    main.tsx  App.tsx  routes/{list,detail}.tsx
-    lib/api.ts          # Effect Service: HttpClient over /api/tasks(/:id)
-    lib/events.ts       # Effect Stream over /api/events (SSE) -> ChangeEvent
-    lib/runtime.ts      # ManagedRuntime + Layers; atoms
-    components/ui/*      # shadcn components
-  dist/                 # vite build output; rust-embed folder (committed placeholder keeps
-                        #   `cargo build` working before any frontend build)
+  pnpm-workspace.yaml        # packages: ["packages/*"]  (+ pnpm catalog for shared versions)
+  package.json               # root scripts: `-r` fan-out (build/lint/format/typecheck/test)
+  tsconfig.base.json         # shared compiler options; strict
+  tsconfig.json              # solution file: project references over every package
+  vitest.shared.ts           # shared vitest config           }
+  vitest.workspace.ts        # discovers per-package projects  } Effect-template layout
+  .oxlintrc.json             # oxlint rules (replaces eslint.config.mjs)
+  dprint.json                # formatter config
+  packages/
+    app/                     # THE app this task ships — Vite + React + Effect + shadcn SPA
+      index.html  vite.config.ts  tailwind.config.ts  components.json  tsconfig.json
+      src/{main,App}.tsx  src/routes/{list,detail}.tsx
+      src/lib/{api,events,runtime}.ts   src/components/ui/*
+      dist/                  # vite output; the rust-embed root (committed placeholder inside)
 ```
-- Repoint `op-server`'s `#[folder = "../../web"]` → `#[folder = "../../web/dist"]`.
-- Commit a minimal `web/dist/index.html` placeholder so a Rust-only `cargo build` still embeds a
-  valid (if bare) SPA and `rust-embed` never fails on a missing folder; a real `vite build`
-  overwrites it.
-- `.gitignore`: `web/node_modules/`; keep `web/dist/` **tracked** (single-binary builds must not
-  require Node — the committed build is what `cargo install` embeds).
+- **Repoint `op-server`**: `#[folder = "../../web"]` → `#[folder = "../../web/packages/app/dist"]`.
+- Commit a minimal `packages/app/dist/index.html` placeholder so a Rust-only `cargo build` still
+  embeds a valid SPA and `rust-embed` never fails on a missing folder; a real build overwrites it.
+- `.gitignore`: `web/**/node_modules/`; keep `packages/app/dist/` **tracked** — single-binary
+  builds (`cargo install`) must embed the UI without Node in the loop.
+- **Future packages (design for, don't build now):** `packages/domain` (Effect `Schema` mirroring
+  the `op-api` DTOs, shared by app + client), `packages/api-client` (the generated Effect client
+  off the Rust OpenAPI — deferred), `packages/ui` / `packages/config` (shared shadcn + tsconfig /
+  oxlint / tailwind presets). Each is just another `packages/*` entry + project reference.
+
+## Tooling (Effect-recommended, oxc-first)
+The Effect template ships pnpm + TS project references + Vitest + **ESLint & dprint** +
+Changesets + Nix. We keep the Effect-native pieces and swap the linter to **oxc** per the repo's
+Rust-native bias:
+- **Package manager**: pnpm workspaces + **catalog** so shared dep versions (react, effect,
+  vite, vitest) are pinned once.
+- **TypeScript**: `tsconfig.base.json` (strict) + per-package `tsconfig.json` with **project
+  references** and path aliases; root `tsconfig.json` is the solution file. `tsc -b` typechecks
+  the graph in dependency order.
+- **Tests**: **Vitest** + **`@effect/vitest`** (`it.effect` / `it.scoped`, `TestClock`) —
+  `vitest.shared.ts` + `vitest.workspace.ts` per the template. Ships with real tests: the
+  `TasksApi` decode path against a mocked `HttpClient`, and the SSE→invalidation reducer.
+- **Lint**: **oxlint** (`.oxlintrc.json`) — Rust-based, ~zero-config, ~50–100× ESLint; the
+  correctness + typescript + react + react-hooks plugins on.
+- **Format**: **dprint** (`dprint.json`), the Effect-standard formatter. (oxfmt is the all-oxc
+  alternative once stable — noted, not adopted yet.)
+- **Root scripts** (`pnpm -r --filter`): `build`, `typecheck`, `lint`, `format`(`:check`),
+  `test`. A Turborepo task graph is optional and can layer on later for caching.
+- **Dropped from the template**: Changesets (nothing is published — the app is embedded) and the
+  Nix flake (this repo pins toolchains via `rust-toolchain.toml` + pnpm, not Nix).
+
+## App stack (`packages/app`)
+- **Vite + React + TypeScript** SPA; build embedded by `op-server` so the daemon stays one
+  static binary (§10).
+- **Effect v4** (`effect`) data/effect layer: API access and the realtime stream are `Effect`
+  services exposed as `Layer`s over one `ManagedRuntime`; React binds via
+  `@effect-atom/atom-react` (atoms derived from services — declarative views, realtime drives
+  invalidation, not `useEffect` soup).
+- **shadcn/ui** (Radix + Tailwind, components copied into `src/components/ui`); `components.json`
+  + Tailwind via shadcn init.
+- **React Router** for `/` and `/task/:id` (TanStack Router is the alternative; React Router for
+  minimal footprint here).
+- **Markdown**: `react-markdown` + `remark-gfm` (bodies use GFM tables and `- [ ]` checklists),
+  styled with `@tailwindcss/typography` to match shadcn.
 
 ## Data layer (Effect)
-- `TasksApi` service wraps `@effect/platform` `HttpClient`, decoding responses with
-  `Schema` that mirror the `op-api` DTOs from [[task-crud-6e8b]]:
-  - `list: Effect<TaskSummary[]>`        ← `GET /api/tasks`
-  - `get(id): Effect<TaskView>`          ← `GET /api/tasks/:id`
-  (Write methods exist in the API already but their UI is out of scope here.)
+- `TasksApi` service wraps `@effect/platform` `HttpClient`, decoding with `Schema` that mirror
+  the `op-api` DTOs from [[task-crud-6e8b]] (these Schemas are what later moves to
+  `packages/domain`):
+  - `list: Effect<TaskSummary[]>`  ← `GET /api/tasks`
+  - `get(id): Effect<TaskView>`    ← `GET /api/tasks/:id`
 - Errors are typed (`TaskNotFound`, `RequestError`) and rendered as inline states, never thrown
   past the runtime.
-- React reads via atoms: `tasksAtom` (list), `taskAtom(id)` (detail). Loading/error/success are
-  atom states, so views are pure functions of atom result.
+- React reads via atoms: `tasksAtom` (list), `taskAtom(id)` (detail); loading/error/success are
+  atom states, so views are pure functions of the atom result.
 
 ## Realtime (the clean channel)
-The daemon currently has no server→client push: [[init-workspace-a1e0]]'s watcher feeds an
+The daemon has no server→client push today: [[init-workspace-a1e0]]'s watcher feeds an
 in-process `mpsc<ChangeEvent>` in `serve.rs` that goes nowhere. This task adds the minimal,
-complete path so realtime is real rather than mocked:
-- **Server**: add `GET /api/events` to `op-server` — an SSE (`text/event-stream`) response
-  streaming `op_api::ChangeEvent` as JSON. Back it with a `tokio::sync::broadcast<ChangeEvent>`
-  in `AppState`; bridge the watcher's `mpsc` into the broadcast in `serve.rs`, and have the
-  create/patch/delete handlers publish to it too (so UI- and CLI/agent-driven writes both fan
-  out to every connected client). Auto-reconnect is free with SSE.
-- **Client**: `lib/events.ts` exposes the SSE feed as an Effect `Stream<ChangeEvent>`
-  (`EventSource` wrapped in a `Stream`, retried with backoff). A subscriber maps each event to
-  the atoms it invalidates (`TaskChanged{id}` → refetch that task + the list; coarse events →
-  refetch the list). Editing a task via `oplan` or an agent visibly updates the open UI.
-- **SSE over WebSocket** for v1: the UI's realtime need is one-directional (reads are global,
-  writes go through REST — §7.1), so SSE is the simpler, self-healing fit. The spec's WS (§9,
-  §10) is reserved for later bidirectional needs (live presence/cursors).
+complete path so realtime is real, not mocked:
+- **Server**: add `GET /api/events` to `op-server` — SSE (`text/event-stream`) streaming
+  `op_api::ChangeEvent` as JSON, backed by a `tokio::sync::broadcast<ChangeEvent>` in
+  `AppState`. Bridge the watcher's `mpsc` into the broadcast in `serve.rs`, and have the
+  create/patch/delete handlers publish too, so UI- and CLI/agent-driven writes both fan out to
+  every connected client. SSE auto-reconnects.
+- **Client**: `lib/events.ts` exposes the feed as an Effect `Stream<ChangeEvent>` (`EventSource`
+  wrapped in a `Stream`, retried with backoff); a subscriber maps each event to the atoms it
+  invalidates (`TaskChanged{id}` → that task + the list; coarse events → the list). Editing a
+  task via `oplan` or an agent visibly updates the open UI.
+- **SSE over WebSocket** for v1: the UI's realtime need is one-directional (reads global, writes
+  via REST — §7.1), so SSE is the simpler, self-healing fit. The spec's WS (§9/§10) is reserved
+  for later bidirectional needs (presence/cursors).
 
 ## Dev workflow
-- `vite dev` (5173) with a proxy for `/api`, `/api/events`, `/health` → the daemon
-  (`http://localhost:7373`, the `DEFAULT_PORT`; override via env).
-- Production: `vite build` → `web/dist`, then `cargo build`; `oplan server start` serves the
-  embedded SPA and the API from one port. Add the two-step build to the README build essentials.
+- `pnpm --filter app dev` → Vite dev server (5173) proxying `/api`, `/api/events`, `/health` to
+  the daemon (`http://localhost:7373`, `DEFAULT_PORT`; override via env).
+- Production: `pnpm -r build` (builds `packages/app` → `dist`), then `cargo build` embeds it;
+  `oplan server start` serves the SPA + API from one port. Add the two-step build to the README
+  build essentials.
 
 ## Acceptance criteria
-- [ ] `cd web && <pm> install && <pm> run build` produces `web/dist/{index.html, assets/*}`;
+- [ ] `cd web && pnpm install && pnpm -r build` produces `packages/app/dist/{index.html,assets/*}`;
       `cargo build` embeds it and `oplan server start` serves the SPA at `/` with the API.
 - [ ] `/` lists tasks from `GET /api/tasks` (title + status badge), each linking to its detail.
-- [ ] `/task/:id` shows the task: title, status, and the body rendered by the markdown viewer
-      (GFM tables + `- [ ]` checklists render); a missing id shows a clean not-found state.
+- [ ] `/task/:id` renders title, status, and the body via the markdown viewer (GFM tables +
+      `- [ ]` checklists render); a missing id shows a clean not-found state.
 - [ ] Realtime: with the UI open, `oplan set <id> status done` (or a `PATCH`) updates the list
-      and the open detail **without a manual refresh**, driven by an `/api/events` SSE message.
-- [ ] `GET /api/events` streams `ChangeEvent` JSON; the server tests cover a publish → SSE
-      delivery roundtrip (extend the existing `tower::ServiceExt` suite).
-- [ ] Rust-only `cargo build` (no Node) still compiles and embeds the committed `dist`
-      placeholder; `cargo build`, `cargo test`, `cargo fmt --check`, `cargo clippy -- -D warnings`
-      all pass.
-- [ ] Frontend `tsc --noEmit` and lint are clean; no `useEffect`-based data fetching (data and
-      realtime both flow through Effect atoms).
+      and open detail **without a manual refresh**, driven by an `/api/events` SSE message.
+- [ ] `GET /api/events` streams `ChangeEvent` JSON; server tests cover publish → SSE delivery
+      (extend the existing `tower::ServiceExt` suite).
+- [ ] Monorepo quality gates pass: `pnpm -r typecheck` (`tsc -b`), `pnpm lint` (oxlint),
+      `pnpm format:check` (dprint), `pnpm -r test` (Vitest + `@effect/vitest`, with the two tests
+      above). No `useEffect`-based data fetching.
+- [ ] Rust-only `cargo build` (no Node) compiles and embeds the committed `dist` placeholder;
+      `cargo build`, `cargo test`, `cargo fmt --check`, `cargo clippy -- -D warnings` all pass.
 
 ## Out of scope (follow-up tasks)
-- All write UI: create/edit task, inline section edit, status change, drag-to-reorder (`rank`),
-  claim/release — §9 interactions. The REST + `oplan` write paths already exist ([[task-crud-6e8b]]).
-- Branch-aware matrix view, worktree swimlanes, and presence dots (§9) — needs `/api/matrix`
-  and presence, and richer events.
+- The future packages themselves: `packages/domain`, the generated `packages/api-client`, shared
+  `ui`/`config` — this task only lays the workspace so they slot in.
+- All write UI: create/edit, inline section edit, status change, drag-to-reorder, claim/release
+  (§9). REST + `oplan` write paths already exist ([[task-crud-6e8b]]).
+- Branch-aware matrix view, worktree swimlanes, presence dots (§9) — need `/api/matrix`,
+  presence, and richer events.
 - **Event fidelity**: real debounced `TaskChanged`/ref/presence events from `op-watch` (still a
-  skeleton `TODO` emitting coarse `RefMoved` on any modify) — the UI degrades gracefully by
-  refetching on coarse events until then.
-- WebSocket transport; multi-project aggregation across stores.
+  skeleton `TODO` emitting coarse `RefMoved` on any modify) — the UI degrades by refetching on
+  coarse events until then.
+- WebSocket transport; Turborepo caching; multi-project aggregation.
 
 ## Notes
-- Keep it minimal: two read views, one realtime channel, one component base. Everything else in
-  §9 layers on afterward.
-- The frontend framework was left TBD by [[init-workspace-a1e0]]; this task resolves it
-  (Vite/React/TS/Effect/shadcn) and moves the embed root to `web/dist`.
-- Reuse the `op-api` DTO shapes as the Schema source of truth — the wire contract is
-  Rust-owned; the TS `Schema` mirrors it and fails loudly on drift.
+- Structure and config track the **Effect monorepo template** (pnpm, project references,
+  `vitest.shared.ts`/`vitest.workspace.ts`); the one deliberate divergence is **oxc** for
+  linting instead of ESLint, matching this repo's Rust-native, single-fast-binary bias.
+- **oxc caveat**: oxlint has no Effect-specific rules yet (the `@effect/eslint-plugin` niceties —
+  dprint-as-lint, no-barrel-import — don't exist there); dprint covers formatting, and if
+  Effect-aware lint rules become necessary later, add ESLint as a second, CI-only pass.
+- Reuse the `op-api` DTO shapes as the `Schema` source of truth — the wire contract is
+  Rust-owned; the TS `Schema` mirrors it and fails loudly on drift. Those Schemas are the seed of
+  `packages/domain`.
+- The frontend framework, left TBD by [[init-workspace-a1e0]], is resolved here; the embed root
+  moves from `web/` to `web/packages/app/dist`.
