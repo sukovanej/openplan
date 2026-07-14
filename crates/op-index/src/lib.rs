@@ -26,7 +26,6 @@ struct Version {
     title: String,
     status: Status,
     parent: Option<String>,
-    conflicted: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -150,7 +149,6 @@ impl Index {
                         status: cell.task.status,
                         blob_oid: cell.blob_oid.clone(),
                         dirty: cell.dirty,
-                        conflicted: cell.conflicted,
                     })
                     .collect();
                 branches.sort_by(|a, b| a.branch.cmp(&b.branch));
@@ -175,11 +173,9 @@ impl Index {
                     summary: cell.task.clone(),
                     branches: Vec::new(),
                     dirty: false,
-                    conflicted: false,
                 });
             version.branches.push(cell.branch.clone());
             version.dirty |= cell.dirty;
-            version.conflicted |= cell.conflicted;
         }
         if groups.is_empty() {
             return None;
@@ -264,7 +260,6 @@ fn cell(branch: &str, id: &str, oid: &str, dirty: bool, version: &Version) -> Ma
         task: version.summary(id),
         blob_oid: oid.to_owned(),
         dirty,
-        conflicted: version.conflicted,
     }
 }
 
@@ -281,13 +276,11 @@ impl Version {
 
 fn parse_version(bytes: &[u8]) -> Version {
     let text = String::from_utf8_lossy(bytes);
-    let conflicted = text.contains("<<<<<<<");
     match Task::from_file_string(&text) {
         Ok(task) => Version {
             title: task.title().unwrap_or_default(),
             status: task.frontmatter.status,
             parent: task.frontmatter.parent.clone(),
-            conflicted,
         },
         // Unresolved merge markers can break the frontmatter fences; keep the cell rather than
         // abort the whole rebuild, best-effort title, status left at the unstarted default.
@@ -295,7 +288,6 @@ fn parse_version(bytes: &[u8]) -> Version {
             title: best_effort_title(&text).unwrap_or_default(),
             status: Status::Backlog,
             parent: None,
-            conflicted: true,
         },
     }
 }

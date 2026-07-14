@@ -137,7 +137,7 @@ fn working_tree_overlay_marks_dirty_in_a_linked_worktree() {
 }
 
 #[test]
-fn conflict_markers_flag_the_cell_without_aborting_rebuild() {
+fn unparseable_frontmatter_does_not_abort_rebuild() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
@@ -152,21 +152,16 @@ fn conflict_markers_flag_the_cell_without_aborting_rebuild() {
         "---\n<<<<<<< HEAD\nstatus: todo\n=======\nstatus: done\n>>>>>>> other\n---\n# Head\n",
     );
     git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "conflicted"]);
+    git(root, &["commit", "-qm", "broken frontmatter"]);
 
     let index = built(root);
     let cells = &index.matrix().cells;
     assert_eq!(cells.len(), 2, "rebuild kept both cells: {cells:?}");
 
     let body = cells.iter().find(|c| c.task.id == "body").unwrap();
-    assert!(body.conflicted);
     assert_eq!(body.task.title, "Body");
 
     let head = cells.iter().find(|c| c.task.id == "head").unwrap();
-    assert!(
-        head.conflicted,
-        "unparseable frontmatter still flags the cell"
-    );
     assert_eq!(head.task.title, "Head", "best-effort title survives");
 }
 

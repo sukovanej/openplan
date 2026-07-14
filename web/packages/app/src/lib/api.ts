@@ -15,7 +15,6 @@ export const BranchState = Schema.Struct({
   status: Status,
   blob_oid: Schema.String,
   dirty: Schema.Boolean,
-  conflicted: Schema.optionalKey(Schema.Boolean),
 })
 export type BranchState = typeof BranchState.Type
 

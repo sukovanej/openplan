@@ -89,8 +89,6 @@ pub struct BranchState {
     pub status: Status,
     pub blob_oid: String,
     pub dirty: bool,
-    #[serde(default)]
-    pub conflicted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,8 +146,6 @@ pub struct MatrixCell {
     pub task: TaskSummary,
     pub blob_oid: String,
     pub dirty: bool,
-    #[serde(default)]
-    pub conflicted: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -171,8 +167,6 @@ pub struct TaskVersion {
     pub summary: TaskSummary,
     pub branches: Vec<String>,
     pub dirty: bool,
-    #[serde(default)]
-    pub conflicted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
