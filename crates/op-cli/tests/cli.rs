@@ -1,5 +1,6 @@
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 fn oplan() -> Command {
     Command::new(env!("CARGO_BIN_EXE_oplan"))
@@ -311,6 +312,123 @@ fn get_prints_the_file_verbatim() {
         raw,
         "get must print the on-disk bytes, not a re-serialization"
     );
+}
+
+#[test]
+fn create_with_body_places_content_below_title() {
+    let dir = store();
+    let out = run(
+        dir.path(),
+        &[
+            "create",
+            "Ship login",
+            "--body",
+            "Support OAuth and email login.",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = stdout(&out).trim().to_owned();
+
+    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "---\nstatus: todo\n---\n# Ship login\n\nSupport OAuth and email login.\n"
+    );
+
+    let view = run(dir.path(), &["get", &id, "--json"]);
+    let json: serde_json::Value = serde_json::from_slice(&view.stdout).unwrap();
+    assert_eq!(json["title"], "Ship login");
+    assert_eq!(
+        json["body"],
+        "# Ship login\n\nSupport OAuth and email login.\n"
+    );
+}
+
+#[test]
+fn create_with_body_file_reads_the_file() {
+    let dir = store();
+    let notes = dir.path().join("notes.md");
+    write(&notes, "## Goals\n- OAuth\n- Email + password\n");
+
+    let out = run(
+        dir.path(),
+        &[
+            "create",
+            "Ship login",
+            "--body-file",
+            notes.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = stdout(&out).trim().to_owned();
+
+    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    assert_eq!(
+        task_body(&path),
+        "# Ship login\n\n## Goals\n- OAuth\n- Email + password\n"
+    );
+}
+
+#[test]
+fn create_with_body_file_dash_reads_stdin() {
+    let dir = store();
+    let mut child = oplan()
+        .arg("--root")
+        .arg(dir.path())
+        .args(["create", "Ship login", "--body-file", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"## Goals\n- OAuth\n- Email + password\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = stdout(&out).trim().to_owned();
+
+    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    assert_eq!(
+        task_body(&path),
+        "# Ship login\n\n## Goals\n- OAuth\n- Email + password\n"
+    );
+}
+
+#[test]
+fn create_rejects_body_with_body_file() {
+    let dir = store();
+    let out = run(
+        dir.path(),
+        &[
+            "create",
+            "Ship login",
+            "--body",
+            "x",
+            "--body-file",
+            "notes.md",
+        ],
+    );
+    assert!(
+        !out.status.success(),
+        "--body and --body-file are mutually exclusive"
+    );
+    assert!(stdout(&run(dir.path(), &["list"])).contains("no tasks yet"));
 }
 
 #[test]

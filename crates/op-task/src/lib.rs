@@ -87,6 +87,15 @@ impl Task {
         }
     }
 
+    pub fn append_body(&mut self, content: &str) {
+        let content = content.trim_end_matches('\n');
+        if content.is_empty() {
+            return;
+        }
+        let head = self.body.trim_end_matches('\n');
+        self.body = format!("{head}\n\n{content}\n");
+    }
+
     pub fn set_status(&mut self, status: Status) {
         self.frontmatter.status = status;
     }

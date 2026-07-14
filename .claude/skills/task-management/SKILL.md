@@ -1,6 +1,6 @@
 ---
 name: task-management
-description: How to manage work items in this repository. Use for any task work — listing, inspecting, creating, updating status/parent/deps, or deleting tasks.
+description: Work items in this repo are called "tasks" (.plan/tasks/*.md, managed by the `oplan` CLI) — NOT the TODO list or subagent tools. Invoke this skill before any task work, and whenever a task is mentioned. Triggers on: create/add/new task, list/show/get task(s), set status/parent/deps, add/clear dependency, block, reparent, delete/cancel task, "the plan".
 ---
 
 # Task management
@@ -30,9 +30,14 @@ Prints the new id. Default status is `todo`.
 oplan create "Ship login page"
 oplan create "Add validation" --parent <id>
 oplan create "Deploy" --status backlog --dep <id> --dep <id2>
+oplan create "Ship login" --body "Support OAuth and email login."
+oplan create "Ship login" --body-file notes.md   # or --body-file - for stdin
 ```
 
 `--dep` is repeatable; each is a task id (or `task-id#Section`).
+
+`--body` / `--body-file` set the markdown content below the title heading; they
+are mutually exclusive.
 
 ## Update
 

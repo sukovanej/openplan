@@ -2,7 +2,7 @@ mod daemon;
 mod mergedriver;
 mod serve;
 
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -38,6 +38,12 @@ enum Command {
         status: Option<Status>,
         #[arg(long = "dep")]
         deps: Vec<String>,
+        /// Markdown content placed below the title heading
+        #[arg(long, conflicts_with = "body_file")]
+        body: Option<String>,
+        /// Read the content from a file, or `-` for stdin
+        #[arg(long = "body-file")]
+        body_file: Option<String>,
     },
     /// List tasks in the store
     List {
@@ -117,7 +123,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
             parent,
             status,
             deps,
-        } => create(&cli.root, title, parent, status, deps).map(|()| ExitCode::SUCCESS),
+            body,
+            body_file,
+        } => {
+            let body = resolve_body(body, body_file)?;
+            create(&cli.root, title, parent, status, deps, body).map(|()| ExitCode::SUCCESS)
+        }
         Command::List {
             status,
             parent,
@@ -170,12 +181,25 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
     }
 }
 
+fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Option<String>> {
+    match body_file {
+        Some(path) if path == "-" => {
+            let mut content = String::new();
+            std::io::stdin().read_to_string(&mut content)?;
+            Ok(Some(content))
+        }
+        Some(path) => Ok(Some(std::fs::read_to_string(&path)?)),
+        None => Ok(body),
+    }
+}
+
 fn create(
     root: &Path,
     title: String,
     parent: Option<String>,
     status: Option<Status>,
     deps: Vec<String>,
+    body: Option<String>,
 ) -> Result<()> {
     let store = Store::discover(root)?;
     let id = store.create(
@@ -184,6 +208,7 @@ fn create(
             status,
             parent,
             deps,
+            body,
         }
         .into_task(),
     )?;

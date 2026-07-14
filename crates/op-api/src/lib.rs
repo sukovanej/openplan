@@ -67,6 +67,8 @@ pub struct CreateTask {
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deps: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 }
 
 impl CreateTask {
@@ -74,6 +76,9 @@ impl CreateTask {
         let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Todo));
         task.set_parent(self.parent);
         task.set_deps(self.deps);
+        if let Some(body) = &self.body {
+            task.append_body(body);
+        }
         task
     }
 }
