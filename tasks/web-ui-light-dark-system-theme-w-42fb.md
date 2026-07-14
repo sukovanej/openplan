@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Web UI: light / dark / system theme with persistence
 
