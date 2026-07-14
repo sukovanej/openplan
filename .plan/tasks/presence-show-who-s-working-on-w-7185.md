@@ -89,6 +89,17 @@ first, this second.
 - Reuses the SSE broadcast + `notify` watcher infra from
   `emit-change-events-for-all-branches-and-worktrees`.
 - Independent of `branch-aware-crud`.
+- **Cross-branch collision warning (from `design-a-continuous-changes-accu-2380`).**
+  That design adds *ambient* edits routed to `refs/open-plan/rolling-updates`,
+  which are **unclaimed by nature** — a human's quick UI triage edit heartbeats no
+  session and lands on a branch nobody has checked out. It creates a new collision
+  axis presence doesn't cover today: a human ambient-edits task X while an agent is
+  actively claimed on task X on a feature branch → the two collide *later*, at
+  rolling-updates' refresh/rebase, possibly long after. Consider whether presence
+  should warn at *edit* time ("an agent is actively working this task on
+  `feat/auth`; your edit may conflict when it merges") instead of letting the
+  conflict surface silently at merge. Open: does presence stay branch-local as
+  designed, or become cross-branch-aware to surface this?
 
 ## Out of scope
 

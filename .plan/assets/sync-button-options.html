@@ -1,0 +1,426 @@
+<title>Rolling-updates sync control — options</title>
+<style>
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --secondary: oklch(0.97 0 0);
+    --border: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --good: oklch(0.6 0.13 158);
+    --warn: oklch(0.68 0.16 62);
+    --info: oklch(0.55 0.17 256);
+    --info-soft: oklch(0.55 0.17 256 / 0.12);
+    --warn-soft: oklch(0.68 0.16 62 / 0.14);
+    --radius: 0.625rem;
+    --font: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: oklch(0.145 0 0);
+      --foreground: oklch(0.985 0 0);
+      --card: oklch(0.205 0 0);
+      --muted: oklch(0.269 0 0);
+      --muted-foreground: oklch(0.708 0 0);
+      --secondary: oklch(0.269 0 0);
+      --border: oklch(1 0 0 / 0.1);
+      --ring: oklch(0.556 0 0);
+      --good: oklch(0.72 0.14 160);
+      --warn: oklch(0.78 0.15 68);
+      --info: oklch(0.72 0.15 256);
+      --info-soft: oklch(0.72 0.15 256 / 0.16);
+      --warn-soft: oklch(0.78 0.15 68 / 0.18);
+    }
+  }
+  :root[data-theme="light"] {
+    --background: oklch(1 0 0); --foreground: oklch(0.145 0 0); --card: oklch(1 0 0);
+    --muted: oklch(0.97 0 0); --muted-foreground: oklch(0.556 0 0); --secondary: oklch(0.97 0 0);
+    --border: oklch(0.922 0 0); --ring: oklch(0.708 0 0);
+    --good: oklch(0.6 0.13 158); --warn: oklch(0.68 0.16 62); --info: oklch(0.55 0.17 256);
+    --info-soft: oklch(0.55 0.17 256 / 0.12); --warn-soft: oklch(0.68 0.16 62 / 0.14);
+  }
+  :root[data-theme="dark"] {
+    --background: oklch(0.145 0 0); --foreground: oklch(0.985 0 0); --card: oklch(0.205 0 0);
+    --muted: oklch(0.269 0 0); --muted-foreground: oklch(0.708 0 0); --secondary: oklch(0.269 0 0);
+    --border: oklch(1 0 0 / 0.1); --ring: oklch(0.556 0 0);
+    --good: oklch(0.72 0.14 160); --warn: oklch(0.78 0.15 68); --info: oklch(0.72 0.15 256);
+    --info-soft: oklch(0.72 0.15 256 / 0.16); --warn-soft: oklch(0.78 0.15 68 / 0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--background); color: var(--foreground);
+    font-family: var(--font); line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 40px 24px 80px; }
+  .lede { max-width: 65ch; }
+  h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+       color: var(--muted-foreground); margin: 0 0 14px; }
+  .sub { color: var(--muted-foreground); margin: 0 0 28px; font-size: 0.95rem; }
+  p { margin: 0 0 10px; }
+
+  /* control strip */
+  .strip {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 10px; margin-bottom: 32px;
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--card);
+    position: sticky; top: 12px; z-index: 40;
+    box-shadow: 0 1px 2px oklch(0 0 0 / 0.04);
+  }
+  .strip .grp { display: flex; gap: 4px; align-items: center; }
+  .strip .grp + .grp { margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--border); }
+  .strip .cap { font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); margin-right: 4px; }
+  .seg {
+    font: inherit; font-size: 0.83rem; cursor: pointer; padding: 5px 11px; border-radius: 7px;
+    border: 1px solid transparent; background: transparent; color: var(--muted-foreground);
+  }
+  .seg:hover { background: var(--secondary); color: var(--foreground); }
+  .seg[aria-pressed="true"] { background: var(--secondary); color: var(--foreground); border-color: var(--border); font-weight: 500; }
+  .seg:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .push { margin-left: auto; }
+
+  /* header replica */
+  .options { display: grid; gap: 18px; }
+  .opt { border: 1px solid var(--border); border-radius: var(--radius); overflow: visible; background: var(--card); }
+  .opt-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 18px 0; }
+  .opt-title { font-size: 0.95rem; font-weight: 600; }
+  .opt-title .tag { font-size: 0.72rem; font-weight: 500; color: var(--muted-foreground); margin-left: 8px; }
+  .opt-note { font-size: 0.85rem; color: var(--muted-foreground); max-width: 46ch; }
+  .replica {
+    margin: 14px 0 0; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+    background: var(--background); border-radius: 0 0 var(--radius) var(--radius);
+  }
+  .brand { font-size: 1.15rem; font-weight: 600; letter-spacing: -0.02em; }
+  .daemon { font-size: 0.8rem; color: var(--good); display: inline-flex; align-items: center; gap: 6px; }
+  .daemon::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--good); }
+  .toolbar { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .ghost { width: 34px; height: 34px; border-radius: 8px; border: 0; background: transparent; color: var(--muted-foreground);
+           display: grid; place-items: center; cursor: pointer; }
+  .ghost:hover { background: var(--secondary); color: var(--foreground); }
+  .ghost svg { width: 17px; height: 17px; }
+
+  /* the sync control */
+  .sync-host { position: relative; }
+  .sync {
+    position: relative; height: 34px; border-radius: 8px; border: 1px solid transparent;
+    background: transparent; color: var(--muted-foreground); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px; padding: 0 9px;
+    font: inherit; font-size: 0.84rem; font-weight: 500;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .sync svg { width: 17px; height: 17px; flex: none; }
+  .sync:hover { background: var(--secondary); }
+  .sync:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .sync[data-color="info"] { color: var(--info); }
+  .sync[data-color="warn"] { color: var(--warn); }
+  .sync[data-color="good"] { color: var(--good); }
+  .sync[data-color="muted"] { color: var(--muted-foreground); }
+  .sync[data-color="dim"] { color: var(--muted-foreground); opacity: 0.5; cursor: not-allowed; }
+  .sync[data-color="info"]:hover { background: var(--info-soft); }
+  .sync[data-color="warn"]:hover { background: var(--warn-soft); }
+
+  .count { font-variant-numeric: tabular-nums; font-size: 0.78rem; font-weight: 600;
+           min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+           display: inline-flex; align-items: center; justify-content: center;
+           background: var(--info-soft); color: var(--info); }
+  .sync[data-color="warn"] .count { background: var(--warn-soft); color: var(--warn); }
+
+  .dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
+         background: var(--info); box-shadow: 0 0 0 2px var(--background); }
+  .sync[data-color="warn"] .dot { background: var(--warn); }
+
+  .spin { animation: spin 0.9s linear infinite; transform-origin: 50% 50%; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+  /* tooltip */
+  .sync[data-tip]:hover::after, .sync[data-tip]:focus-visible::after {
+    content: attr(data-tip); position: absolute; top: calc(100% + 9px); right: 0;
+    width: max-content; max-width: 280px; text-align: left;
+    background: var(--foreground); color: var(--background);
+    font-size: 0.78rem; font-weight: 450; line-height: 1.4; padding: 7px 10px; border-radius: 7px;
+    box-shadow: 0 6px 20px oklch(0 0 0 / 0.22); z-index: 60; pointer-events: none;
+  }
+  .sync[data-tip]:hover::before, .sync[data-tip]:focus-visible::before {
+    content: ""; position: absolute; top: calc(100% + 3px); right: 14px;
+    border: 6px solid transparent; border-bottom-color: var(--foreground); z-index: 60;
+  }
+
+  /* popover (option C) */
+  .pop {
+    position: absolute; top: calc(100% + 10px); right: 0; width: 320px; z-index: 55;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 12px 34px oklch(0 0 0 / 0.22); overflow: hidden;
+    display: none;
+  }
+  .pop.open { display: block; }
+  .pop-hd { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .pop-hd strong { font-size: 0.9rem; font-weight: 600; }
+  .pop-hd .meta { font-size: 0.76rem; color: var(--muted-foreground); }
+  .pop-list { max-height: 210px; overflow-y: auto; }
+  .row { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); align-items: flex-start; }
+  .row:last-child { border-bottom: 0; }
+  .row .ricon { margin-top: 2px; color: var(--muted-foreground); display: grid; place-items: center; }
+  .row .ricon svg { width: 15px; height: 15px; }
+  .row.conflict .ricon { color: var(--warn); }
+  .row .rmain { min-width: 0; }
+  .row .rtitle { font-size: 0.86rem; font-weight: 500; }
+  .row .rwhat { font-size: 0.78rem; color: var(--muted-foreground); }
+  .row.conflict .rwhat { color: var(--warn); }
+  .pop-ft { padding: 12px 14px; display: flex; gap: 8px; }
+  .btn { font: inherit; font-size: 0.85rem; font-weight: 500; border-radius: 8px; padding: 8px 12px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--foreground); }
+  .btn:hover { background: var(--secondary); }
+  .btn.primary { flex: 1; border-color: transparent; background: var(--info); color: white; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.warn { flex: 1; border-color: transparent; background: var(--warn); color: oklch(0.2 0.03 62); }
+  .btn.primary[disabled] { opacity: 0.45; cursor: not-allowed; filter: none; }
+  .pop-empty { padding: 22px 14px; text-align: center; color: var(--muted-foreground); font-size: 0.85rem; }
+
+  /* legend + reco */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 44px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .legend { display: grid; gap: 8px; }
+  .lg { display: flex; align-items: center; gap: 10px; font-size: 0.86rem; }
+  .sw { width: 12px; height: 12px; border-radius: 4px; flex: none; }
+  .lg code { font-family: var(--mono); font-size: 0.78rem; color: var(--muted-foreground); }
+  .reco { border: 1px solid var(--border); border-left: 3px solid var(--info); border-radius: var(--radius);
+          padding: 16px 18px; background: var(--card); }
+  .reco h3 { margin: 0 0 8px; font-size: 0.95rem; }
+  .reco p { font-size: 0.88rem; color: var(--muted-foreground); }
+  .reco strong { color: var(--foreground); }
+  .flash { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+           background: var(--foreground); color: var(--background); padding: 10px 16px; border-radius: 9px;
+           font-size: 0.85rem; font-weight: 500; opacity: 0; transition: all .2s; pointer-events: none; z-index: 90;
+           box-shadow: 0 8px 26px oklch(0 0 0 / 0.25); }
+  .flash.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+
+<div class="wrap">
+  <div class="lede">
+    <h1>Rolling-updates sync control</h1>
+    <p class="sub">Header control for <code style="font-family:var(--mono);font-size:.85rem">refs/open-plan/rolling-updates</code>. Refresh from <code style="font-family:var(--mono);font-size:.85rem">main</code> is automatic; the control's job is to show sync state and let you <strong>publish</strong> pending ambient edits. Pick a state, flip the theme, try the layouts.</p>
+  </div>
+
+  <div class="strip" role="group" aria-label="Mockup controls">
+    <div class="grp">
+      <span class="cap">State</span>
+      <button class="seg" data-state="idle">In&nbsp;sync</button>
+      <button class="seg" data-state="pending" aria-pressed="true">Pending</button>
+      <button class="seg" data-state="syncing">Syncing</button>
+      <button class="seg" data-state="blocked">Blocked</button>
+      <button class="seg" data-state="offline">Offline</button>
+    </div>
+    <div class="grp push">
+      <button class="seg" id="theme">Toggle theme</button>
+    </div>
+  </div>
+
+  <div class="options">
+
+    <div class="opt">
+      <div class="opt-hd">
+        <div class="opt-title">Option A · Bare icon<span class="tag">your initial idea</span></div>
+        <div class="opt-note">Just a color-coded icon; the tooltip carries the detail. Click publishes immediately. Smallest footprint, zero review step.</div>
+      </div>
+      <div class="replica">
+        <span class="brand">Open Plan</span>
+        <span class="daemon" data-daemon>daemon up</span>
+        <div class="toolbar">
+          <span class="sync-host"><button class="sync" id="ctlA" aria-label="Sync"></button></span>
+          <button class="ghost" aria-label="Theme">☾</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="opt-hd">
+        <div class="opt-title">Option B · Icon + count<span class="tag">recommended</span></div>
+        <div class="opt-note">Adds a pending-count pill so “how much is unpublished” reads without hovering. Click publishes.</div>
+      </div>
+      <div class="replica">
+        <span class="brand">Open Plan</span>
+        <span class="daemon" data-daemon>daemon up</span>
+        <div class="toolbar">
+          <span class="sync-host"><button class="sync" id="ctlB" aria-label="Sync"></button></span>
+          <button class="ghost" aria-label="Theme">☾</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="opt">
+      <div class="opt-hd">
+        <div class="opt-title">Option C · Icon + review popover<span class="tag">safest for “publish to main”</span></div>
+        <div class="opt-note">Click opens a panel listing exactly what will land on <code style="font-family:var(--mono);font-size:.82rem">main</code>, with conflicts called out. Publish is one deliberate click inside.</div>
+      </div>
+      <div class="replica">
+        <span class="brand">Open Plan</span>
+        <span class="daemon" data-daemon>daemon up</span>
+        <div class="toolbar">
+          <span class="sync-host">
+            <button class="sync" id="ctlC" aria-label="Sync" aria-haspopup="true"></button>
+            <div class="pop" id="popC" role="dialog" aria-label="Rolling updates"></div>
+          </span>
+          <button class="ghost" aria-label="Theme">☾</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h2>What each color means</h2>
+      <div class="legend">
+        <div class="lg"><span class="sw" style="background:var(--muted-foreground)"></span> <span><strong>In sync</strong> — nothing to publish. <code>muted</code></span></div>
+        <div class="lg"><span class="sw" style="background:var(--info)"></span> <span><strong>Pending</strong> — ambient edits ready for <code>main</code>. <code>info / blue</code></span></div>
+        <div class="lg"><span class="sw" style="background:var(--info)"></span> <span><strong>Syncing</strong> — publish or auto-rebase running. <code>spinner</code></span></div>
+        <div class="lg"><span class="sw" style="background:var(--warn)"></span> <span><strong>Blocked</strong> — a refresh conflict paused sync. <code>warn / amber</code></span></div>
+        <div class="lg"><span class="sw" style="background:var(--muted-foreground);opacity:.5"></span> <span><strong>Offline</strong> — daemon down, control disabled. <code>dim</code></span></div>
+      </div>
+      <p class="sub" style="margin-top:16px;font-size:.83rem">Colors reuse your existing convention (<code style="font-family:var(--mono)">emerald</code>=good, <code style="font-family:var(--mono)">amber</code>=warning from <code style="font-family:var(--mono)">connection-status</code>); blue is the only addition, for “action available.”</p>
+    </div>
+    <div>
+      <h2>My recommendation</h2>
+      <div class="reco">
+        <h3>B for the header, C behavior on click</h3>
+        <p>The bare icon (A) is elegant but hides <em>what</em> you’re about to merge into <strong>main</strong> — and publish is consequential and hard to eyeball-verify. Keep A’s minimalism as the resting state, add B’s <strong>count pill</strong> for at-a-glance pending volume, and make the click open <strong>C’s review popover</strong> rather than publishing blind. That preserves your “one control in the header” instinct while giving publish a one-beat confirm and giving conflicts somewhere to live.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<script>
+  const ICONS = {
+    check:  '<path d="M20 6 9 17l-5-5"/>',
+    cloud:  '<path d="M12 13v8"/><path d="m8 17 4-4 4 4"/><path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/>',
+    warn:   '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    refresh:'<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>',
+    spin:   '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+    edit:   '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    plus:   '<path d="M5 12h14"/><path d="M12 5v14"/>',
+    flag:   '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
+  };
+  const svg = (name, cls) => `<svg class="${cls||''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+
+  const CHANGES = [
+    { icon:'flag', title:'Reprioritise onboarding epic', what:'status → in_progress' },
+    { icon:'edit', title:'Rework auth flow',              what:'description edited', conflict:true },
+    { icon:'plus', title:'Add rate-limit subtask',        what:'new subtask' },
+  ];
+
+  const STATES = {
+    idle:    { color:'muted', icon:'check',   label:'In sync', tip:'All ambient changes are published — nothing to sync.', count:0 },
+    pending: { color:'info',  icon:'cloud',   label:'Publish', tip:'3 changes ready to publish to main. Click to publish.', count:3 },
+    syncing: { color:'info',  icon:'spin',    label:'Syncing', tip:'Publishing to main…', count:3, spin:true },
+    blocked: { color:'warn',  icon:'warn',    label:'Blocked', tip:'Sync paused — “Rework auth flow” conflicts with main. Resolve to continue.', count:2 },
+    offline: { color:'dim',   icon:'refresh', label:'Offline', tip:'Daemon offline — sync unavailable.', count:0, disabled:true },
+  };
+
+  let state = 'pending';
+  const $ = (s, r=document) => r.querySelector(s);
+  const flash = (msg) => { const f = $('#flash'); f.textContent = msg; f.classList.add('show'); clearTimeout(f._t); f._t = setTimeout(()=>f.classList.remove('show'), 1600); };
+
+  function renderA(el) {
+    const s = STATES[state];
+    el.dataset.color = s.color;
+    el.dataset.tip = s.tip;
+    el.disabled = !!s.disabled;
+    const dot = (state === 'pending') ? '<span class="dot"></span>' : '';
+    el.innerHTML = svg(s.icon, s.spin ? 'spin' : '') + dot;
+  }
+  function renderB(el) {
+    const s = STATES[state];
+    el.dataset.color = s.color;
+    el.dataset.tip = s.tip;
+    el.disabled = !!s.disabled;
+    const badge = s.count ? `<span class="count">${s.count}</span>` : '';
+    el.innerHTML = svg(s.icon, s.spin ? 'spin' : '') + badge;
+  }
+  function renderC(el) {
+    const s = STATES[state];
+    el.dataset.color = s.color;
+    el.dataset.tip = s.tip;
+    el.disabled = !!s.disabled;
+    const badge = s.count ? `<span class="count">${s.count}</span>` : '';
+    el.innerHTML = svg(s.icon, s.spin ? 'spin' : '') + badge;
+    renderPop();
+  }
+  function renderPop() {
+    const pop = $('#popC');
+    const s = STATES[state];
+    if (state === 'offline') { pop.innerHTML = `<div class="pop-empty">Daemon offline — reconnect to sync.</div>`; return; }
+    if (state === 'idle') { pop.innerHTML = `<div class="pop-empty">Nothing pending. Everything is on <b>main</b>.</div>`; return; }
+    const list = (state === 'blocked' ? CHANGES.slice(0,2) : CHANGES).map(c => `
+      <div class="row ${c.conflict && state==='blocked' ? 'conflict' : ''}">
+        <span class="ricon">${svg(c.conflict && state==='blocked' ? 'warn' : c.icon)}</span>
+        <span class="rmain">
+          <div class="rtitle">${c.title}</div>
+          <div class="rwhat">${c.conflict && state==='blocked' ? 'conflicts with main — needs resolving' : c.what}</div>
+        </span>
+      </div>`).join('');
+    const footer = state === 'blocked'
+      ? `<button class="btn warn" data-act="resolve">Resolve conflict</button>`
+      : state === 'syncing'
+      ? `<button class="btn primary" disabled>Publishing…</button>`
+      : `<button class="btn primary" data-act="publish">Publish ${s.count} to main</button>`;
+    pop.innerHTML = `
+      <div class="pop-hd"><strong>Rolling updates</strong>
+        <span class="meta">${state==='blocked' ? '1 conflict' : s.count + ' pending'}</span></div>
+      <div class="pop-list">${list}</div>
+      <div class="pop-ft">${footer}</div>`;
+    pop.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.act === 'publish') { flash('Published to main'); setState('idle'); closePop(); }
+      else { flash('Opening conflict resolution…'); closePop(); }
+    }));
+  }
+  function closePop(){ $('#popC').classList.remove('open'); }
+
+  function renderAll() {
+    renderA($('#ctlA')); renderB($('#ctlB')); renderC($('#ctlC'));
+    document.querySelectorAll('[data-daemon]').forEach(d => {
+      const off = state === 'offline';
+      d.textContent = off ? 'daemon down' : 'daemon up';
+      d.style.color = off ? 'var(--warn)' : 'var(--good)';
+      d.style.setProperty('--good', off ? 'var(--warn)' : (getComputedStyle(document.documentElement).getPropertyValue('--good')));
+    });
+  }
+  function setState(next) {
+    state = next;
+    document.querySelectorAll('.seg[data-state]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.state === next)));
+    renderAll();
+  }
+
+  document.querySelectorAll('.seg[data-state]').forEach(b => b.addEventListener('click', () => { setState(b.dataset.state); closePop(); }));
+
+  // direct-publish behavior for A and B
+  function directPublish() {
+    if (state === 'pending') { flash('Published to main'); setState('idle'); }
+    else if (state === 'blocked') { flash('Opening conflict resolution…'); }
+    else if (state === 'idle') { flash('Nothing to publish'); }
+  }
+  $('#ctlA').addEventListener('click', directPublish);
+  $('#ctlB').addEventListener('click', directPublish);
+  $('#ctlC').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (STATES[state].disabled) return;
+    $('#popC').classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#popC') && !e.target.closest('#ctlC')) closePop(); });
+
+  $('#theme').addEventListener('click', () => {
+    const root = document.documentElement;
+    const cur = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    renderAll();
+  });
+
+  setState('pending');
+</script>
