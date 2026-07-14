@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Branch-aware CRUD: read/update/delete a task that lives on multiple branches
 
