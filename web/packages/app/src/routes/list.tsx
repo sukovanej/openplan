@@ -51,6 +51,9 @@ function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
       aria-label="Tasks"
       aria-activedescendant={activeId}
       tabIndex={0}
+      onMouseMove={() => {
+        if (index !== -1) rowCursor.clear()
+      }}
       className="overflow-hidden rounded-lg text-sm focus:outline-none"
     >
       {groups.map((group, groupIndex) => {

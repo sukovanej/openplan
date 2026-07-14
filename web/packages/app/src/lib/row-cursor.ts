@@ -38,6 +38,10 @@ export function focused(state: CursorState, index: number): CursorState {
   return index_ === state.index ? state : { ids: state.ids, index: index_ }
 }
 
+export function cleared(state: CursorState): CursorState {
+  return state.index === -1 ? state : { ids: state.ids, index: -1 }
+}
+
 export function focusedId(state: CursorState): string | undefined {
   return state.index < 0 ? undefined : state.ids[state.index]
 }
@@ -58,6 +62,7 @@ class RowCursorStore {
   readonly setRows = (ids: ReadonlyArray<string>): void => this.commit(withRows(this.state, ids))
   readonly moveBy = (delta: number): void => this.commit(moved(this.state, delta))
   readonly focus = (index: number): void => this.commit(focused(this.state, index))
+  readonly clear = (): void => this.commit(cleared(this.state))
 
   private commit(next: CursorState): void {
     if (next === this.state) return
