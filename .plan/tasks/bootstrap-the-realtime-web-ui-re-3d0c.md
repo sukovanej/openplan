@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T00:24:07Z
 ---
 # Bootstrap the realtime web UI (React + Effect + shadcn)
 
