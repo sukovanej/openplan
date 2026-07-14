@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Aggregate tasks across all branches and worktrees (task×branch matrix)
 
