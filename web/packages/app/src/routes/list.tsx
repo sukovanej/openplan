@@ -115,12 +115,13 @@ function TaskRow(
       onClick={() => rowCursor.focus(index)}
       className={cn(
         // Every row keeps a bottom border so its height never changes; it just goes transparent
-        // for the selected row (the ring draws its edges) and the last row (no trailing divider).
+        // for the selected row (the outline draws its edges) and the last row (no trailing divider).
         "relative flex cursor-pointer items-center border-b transition-colors",
         (active || tableLast) && "border-transparent",
-        // -mt-px pulls the selected row up so its ring covers the separator above, not doubles it.
+        // The selection outline is an absolutely-positioned overlay, offset up 1px to sit on the
+        // separator above, so it never participates in flow and can't shift any row's height.
         active
-          ? "-mt-px bg-muted/30 ring-1 ring-inset ring-muted-foreground/40"
+          ? "bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:bottom-px after:border after:border-muted-foreground/40 after:content-['']"
           : "hover:bg-muted/30",
       )}
     >
