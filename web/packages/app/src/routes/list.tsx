@@ -85,7 +85,7 @@ function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
 
 function HeaderRow({ status }: { status: Status }) {
   return (
-    <div role="row" className="bg-muted/20 border-b px-4 py-2">
+    <div role="row" className="bg-muted/20 border-b p-2">
       <span
         role="columnheader"
         className={cn(
