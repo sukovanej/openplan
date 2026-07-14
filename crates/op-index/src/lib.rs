@@ -20,6 +20,12 @@ pub struct Index {
     // The branch checked out in the serve-root worktree; the headline of an aggregated task.
     current_branch: Option<String>,
     default_branch: Option<String>,
+    // (branch, id) -> unix time of that branch's last change to the task; `u64::MAX` for a live
+    // uncommitted edit. Only divergent cells are timed. The headline picks the newest of these.
+    recency: HashMap<(String, String), u64>,
+    // branch -> (tip oid, per-id change times) so an unchanged branch reuses its walk across the
+    // per-request rebuilds instead of re-walking history.
+    recency_cache: HashMap<String, (String, HashMap<String, u64>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -100,8 +106,70 @@ impl Index {
             }
         }
         cells.sort_by(|a, b| (&a.task.id, &a.branch).cmp(&(&b.task.id, &b.branch)));
+        self.recency = self.compute_recency(repo, &cells)?;
         self.matrix = Matrix { cells };
         Ok(())
+    }
+
+    // When a task lives on several branches, the headline follows the branch that changed it most
+    // recently ("latest change wins"), so a version advanced in a worktree shows over the default
+    // branch's stale baseline — and, symmetrically, a fresher edit on the default branch wins over an
+    // older feature-branch one. Only tasks contested across branches need timing; a live uncommitted
+    // edit outranks any commit.
+    fn compute_recency(
+        &mut self,
+        repo: &Repo,
+        cells: &[MatrixCell],
+    ) -> Result<HashMap<(String, String), u64>, IndexError> {
+        let mut per_id: HashMap<&str, Vec<&MatrixCell>> = HashMap::new();
+        for cell in cells {
+            if cell.kind != ChangeKind::Deleted {
+                per_id.entry(cell.task.id.as_str()).or_default().push(cell);
+            }
+        }
+        let mut request: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut dirty: Vec<(String, String)> = Vec::new();
+        for group in per_id.values() {
+            if group.len() < 2 {
+                continue;
+            }
+            for cell in group {
+                if cell.dirty {
+                    dirty.push((cell.branch.clone(), cell.task.id.clone()));
+                } else {
+                    request
+                        .entry(cell.branch.clone())
+                        .or_default()
+                        .insert(cell.task.id.clone());
+                }
+            }
+        }
+
+        let mut recency = HashMap::new();
+        for (branch, ids) in &request {
+            let tip = repo.branch_commit(branch)?;
+            let times = match self.recency_cache.get(branch) {
+                Some((cached_tip, cached))
+                    if *cached_tip == tip && ids.iter().all(|id| cached.contains_key(id)) =>
+                {
+                    cached.clone()
+                }
+                _ => {
+                    let times = repo.task_change_times(branch, ids)?;
+                    self.recency_cache
+                        .insert(branch.clone(), (tip, times.clone()));
+                    times
+                }
+            };
+            for id in ids {
+                let seconds = times.get(id).copied().unwrap_or(0);
+                recency.insert((branch.clone(), id.clone()), seconds);
+            }
+        }
+        for (branch, id) in dirty {
+            recency.insert((branch, id), u64::MAX);
+        }
+        Ok(recency)
     }
 
     // Every non-baseline branch's task blobs at its merge-base(s) with the default branch, keyed by
@@ -293,8 +361,8 @@ impl Index {
             .collect()
     }
 
-    // One row per logical task across all branches: the headline is the default branch's version
-    // (the authoritative one) when present, else the current worktree's branch, else the first.
+    // One row per logical task across all branches, headlined by the branch that changed it most
+    // recently (see `select_headline`).
     pub fn aggregated_tasks(&self) -> Vec<TaskListItem> {
         let mut groups: BTreeMap<&str, Vec<&MatrixCell>> = BTreeMap::new();
         for cell in &self.matrix.cells {
@@ -303,16 +371,7 @@ impl Index {
         groups
             .into_iter()
             .map(|(id, cells)| {
-                let headline = self
-                    .default_branch
-                    .as_deref()
-                    .and_then(|default| cells.iter().find(|c| c.branch == default).copied())
-                    .or_else(|| {
-                        self.current_branch
-                            .as_deref()
-                            .and_then(|current| cells.iter().find(|c| c.branch == current).copied())
-                    })
-                    .unwrap_or(cells[0]);
+                let headline = self.select_headline(&cells);
                 TaskListItem {
                     id: id.to_owned(),
                     title: headline.task.title.clone(),
@@ -366,7 +425,7 @@ impl Index {
         }
         let raw = match branch {
             Some(branch) => self.effective_raw(repo, id, branch)?,
-            None => Some(self.cell_raw(repo, self.headline_cell(&cells))?),
+            None => Some(self.cell_raw(repo, self.select_headline(&cells))?),
         };
         let Some(raw) = raw else {
             return Ok(None);
@@ -389,27 +448,39 @@ impl Index {
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
-    // The branch a branchless read resolves to: the default branch, else the current worktree's,
-    // else any — preferring a version the branch still carries so the body resolves, and only
-    // falling back to a deletion cell when every version is a deletion.
-    fn headline_cell<'a>(&self, cells: &[&'a MatrixCell]) -> &'a MatrixCell {
-        let present = |branch: &str| {
-            cells
-                .iter()
-                .find(|cell| cell.branch == branch && cell.kind != ChangeKind::Deleted)
-                .copied()
-        };
-        self.default_branch
-            .as_deref()
-            .and_then(present)
-            .or_else(|| self.current_branch.as_deref().and_then(present))
-            .or_else(|| {
-                cells
-                    .iter()
-                    .find(|c| c.kind != ChangeKind::Deleted)
-                    .copied()
+    // The version a task headlines with: the branch that changed it most recently, so active work
+    // shows over a stale baseline. Deletions never headline while any version survives; when every
+    // version is a deletion it falls back to the first cell.
+    fn select_headline<'a>(&self, cells: &[&'a MatrixCell]) -> &'a MatrixCell {
+        cells
+            .iter()
+            .filter(|c| c.kind != ChangeKind::Deleted)
+            .copied()
+            .max_by(|a, b| {
+                self.recency_of(a)
+                    .cmp(&self.recency_of(b))
+                    .then_with(|| self.headline_pref(a).cmp(&self.headline_pref(b)))
             })
             .unwrap_or(cells[0])
+    }
+
+    fn recency_of(&self, cell: &MatrixCell) -> u64 {
+        self.recency
+            .get(&(cell.branch.clone(), cell.task.id.clone()))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    // A same-second tie prefers the current worktree, then the default branch, then stable order, so
+    // the headline never flips between rebuilds.
+    fn headline_pref(&self, cell: &MatrixCell) -> u8 {
+        if self.current_branch.as_deref() == Some(cell.branch.as_str()) {
+            2
+        } else if self.default_branch.as_deref() == Some(cell.branch.as_str()) {
+            1
+        } else {
+            0
+        }
     }
 
     pub fn task_branches(&self, id: &str) -> Option<TaskBranches> {

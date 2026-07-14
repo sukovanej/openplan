@@ -1,6 +1,10 @@
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
+// A safety valve on the last-change walk: an id whose change lies deeper than this stays undated
+// (read as "old"), which only ever lets a more recent branch outrank it — never the reverse.
+const HISTORY_WALK_BUDGET: usize = 4096;
 
 #[derive(Debug, Clone)]
 pub struct Repo {
@@ -97,6 +101,55 @@ impl Repo {
         task_blobs(&tree)
     }
 
+    // The unix time of the newest commit on `branch` that changed each of `ids`, found by walking
+    // history newest-first and stopping once every id is dated. Bounded to the requested ids — which
+    // the caller draws from the branch's divergent cells — so the walk exhausts the short branch tip
+    // rather than descending the whole default-branch history.
+    pub fn task_change_times(
+        &self,
+        branch: &str,
+        ids: &HashSet<String>,
+    ) -> Result<HashMap<String, u64>, GitError> {
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let tip = gix::ObjectId::from_hex(self.branch_commit(branch)?.as_bytes())
+            .map_err(|e| GitError::Object(e.to_string()))?;
+        let mut repo = self.repo();
+        repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
+
+        let mut needed: HashSet<&str> = ids.iter().map(String::as_str).collect();
+        let mut times = HashMap::new();
+        let walk = repo
+            .rev_walk([tip])
+            .sorting(gix::revision::walk::Sorting::ByCommitTime(
+                gix::traverse::commit::simple::CommitTimeOrder::NewestFirst,
+            ))
+            .all()
+            .map_err(|e| GitError::Object(e.to_string()))?;
+
+        for (visited, info) in walk.enumerate() {
+            if needed.is_empty() || visited >= HISTORY_WALK_BUDGET {
+                break;
+            }
+            let info = info.map_err(|e| GitError::Object(e.to_string()))?;
+            let seconds = info.commit_time().max(0) as u64;
+            let this = commit_task_map(&repo, info.id)?;
+            let parent = match info.parent_ids.first() {
+                Some(pid) => commit_task_map(&repo, *pid)?,
+                None => HashMap::new(),
+            };
+            needed.retain(|id| match this.get(*id) {
+                Some(blob) if parent.get(*id) != Some(blob) => {
+                    times.insert((*id).to_owned(), seconds);
+                    false
+                }
+                _ => true,
+            });
+        }
+        Ok(times)
+    }
+
     pub fn branch_commit(&self, branch: &str) -> Result<String, GitError> {
         let repo = self.repo();
         let id = repo
@@ -187,6 +240,18 @@ impl Repo {
             .map_err(|e| GitError::Object(e.to_string()))?;
         Ok(oid.to_string())
     }
+}
+
+fn commit_task_map(
+    repo: &gix::Repository,
+    commit: gix::ObjectId,
+) -> Result<HashMap<String, String>, GitError> {
+    let tree = repo
+        .find_object(commit)
+        .map_err(|e| GitError::Object(e.to_string()))?
+        .peel_to_tree()
+        .map_err(|e| GitError::Object(e.to_string()))?;
+    Ok(task_blobs(&tree)?.into_iter().collect())
 }
 
 fn task_blobs(tree: &gix::Tree) -> Result<Vec<(String, String)>, GitError> {

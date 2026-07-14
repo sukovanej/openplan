@@ -432,7 +432,8 @@ fn git(dir: &std::path::Path, args: &[&str]) {
 }
 
 // A git-backed store whose `alpha` task is `todo` on the checked-out main branch and `done` on a
-// non-checked-out feature branch, so the matrix and cross-branch reads have something to resolve.
+// non-checked-out feature branch, which edited it later — so latest-change-wins headlines `done`.
+// Commit dates are explicit so the ordering never hinges on same-second wall-clock ties.
 fn git_state() -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -440,20 +441,12 @@ fn git_state() -> (tempfile::TempDir, AppState) {
     git(root, &["config", "user.email", "t@example.com"]);
     git(root, &["config", "user.name", "Test"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
-    std::fs::write(
-        root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: todo\n---\n# Alpha\n",
-    )
-    .unwrap();
+    write_alpha(root, "todo", "Alpha");
     git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "init"]);
+    git_commit_at(root, 1_000_000_000, "init");
     git(root, &["checkout", "-q", "-b", "feature"]);
-    std::fs::write(
-        root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: done\n---\n# Alpha done\n",
-    )
-    .unwrap();
-    git(root, &["commit", "-qam", "edit alpha"]);
+    write_alpha(root, "done", "Alpha done");
+    git_commit_at(root, 1_000_000_100, "edit alpha");
     git(root, &["checkout", "-q", "main"]);
 
     let store = op_store::Store::open(root).unwrap();
@@ -473,9 +466,9 @@ async fn list_tasks_is_branch_aware() {
     assert_eq!(items.len(), 1, "one entry per logical task: {items:?}");
     let alpha = &items[0];
     assert_eq!(alpha["id"], "alpha");
-    // Headline is the checked-out (main) version.
-    assert_eq!(alpha["status"], "todo");
-    assert_eq!(alpha["title"], "Alpha");
+    // Headline follows the most recently changed branch: `feature` edited alpha after main's init.
+    assert_eq!(alpha["status"], "done");
+    assert_eq!(alpha["title"], "Alpha done");
 
     let branches = alpha["branches"].as_array().unwrap();
     assert_eq!(branches.len(), 2, "carries both branches: {branches:?}");
@@ -497,9 +490,9 @@ async fn cross_branch_task_read_reflects_the_other_branch() {
     assert_eq!(view["status"], "done");
     assert_eq!(view["title"], "Alpha done");
 
-    // Omitting the branch keeps the local current-worktree read (main: todo).
+    // Omitting the branch headlines the most recently changed version, which here is feature's.
     let local = send(&state, "GET", "/api/tasks/alpha", None).await;
-    assert_eq!(body_json(local).await["status"], "todo");
+    assert_eq!(body_json(local).await["status"], "done");
 }
 
 #[tokio::test]
@@ -517,9 +510,9 @@ async fn branchless_get_carries_the_branch_set() {
     let response = send(&state, "GET", "/api/tasks/alpha", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
-    // Headline is the checked-out (main) version, flattened alongside the branch set.
-    assert_eq!(view["status"], "todo");
-    assert_eq!(view["title"], "Alpha");
+    // Headline is the most recently changed version (feature), flattened alongside the branch set.
+    assert_eq!(view["status"], "done");
+    assert_eq!(view["title"], "Alpha done");
     let names: Vec<&str> = view["branches"]
         .as_array()
         .unwrap()
@@ -673,4 +666,72 @@ async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
     assert_eq!(view["title"], "Alpha");
+}
+
+fn write_alpha(root: &std::path::Path, status: &str, title: &str) {
+    std::fs::write(
+        root.join(".plan/tasks/alpha.md"),
+        format!("---\nstatus: {status}\n---\n# {title}\n"),
+    )
+    .unwrap();
+}
+
+fn git_commit_at(root: &std::path::Path, secs: i64, msg: &str) {
+    let date = format!("@{secs} +0000");
+    let status = std::process::Command::new("git")
+        .current_dir(root)
+        .args(["commit", "-qam", msg])
+        .env("GIT_AUTHOR_DATE", &date)
+        .env("GIT_COMMITTER_DATE", &date)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git commit failed");
+}
+
+#[tokio::test]
+async fn headline_follows_the_most_recent_change_even_on_the_default_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+
+    // main creates alpha=todo (t0); feature diverges it to in_progress (t1); then main advances it
+    // to done (t2), the newest change of all. Latest-change-wins must headline main's done over
+    // feature's older in_progress — proving the default branch competes on time, and isn't ignored
+    // just because a feature branch also diverged. (git_state proves the reverse direction.)
+    write_alpha(root, "todo", "Alpha");
+    git(root, &["add", "."]);
+    git_commit_at(root, 1_000_000_000, "init");
+
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write_alpha(root, "in_progress", "Alpha wip");
+    git_commit_at(root, 1_000_000_100, "feature wip");
+
+    git(root, &["checkout", "-q", "main"]);
+    write_alpha(root, "done", "Alpha done");
+    git_commit_at(root, 1_000_000_200, "main done");
+
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = AppState::new(repo, store);
+
+    let list = send(&state, "GET", "/api/tasks", None).await;
+    let alpha = body_json(list).await;
+    let alpha = alpha
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "alpha")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        alpha["status"], "done",
+        "main's newer change headlines over feature's older one"
+    );
+    assert_eq!(alpha["title"], "Alpha done");
+
+    let detail = send(&state, "GET", "/api/tasks/alpha", None).await;
+    assert_eq!(body_json(detail).await["status"], "done");
 }
