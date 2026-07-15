@@ -58,6 +58,9 @@ function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
       // the same pixels and reads as one line instead of doubling up against a container border.
       className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border text-sm focus:outline-none"
     >
+      <div className="bg-muted/30 flex h-11 shrink-0 items-center border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground">
+        Tasks
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {groups.map((group, groupIndex) => {
           const groupBase = base
@@ -121,7 +124,7 @@ function TaskRow(
         // The selection outline is an absolutely-positioned overlay, offset up 1px to sit on the
         // separator above, so it never participates in flow and can't shift any row's height.
         active
-          ? "bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:bottom-px after:border after:border-muted-foreground/40 after:content-['']"
+          ? "bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:bottom-px after:border after:border-blue-600/40 after:content-['']"
           : "hover:bg-muted/30",
       )}
     >
