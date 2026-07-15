@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 ---
 # Clickable links for [[task-id]] references in markdown
 
