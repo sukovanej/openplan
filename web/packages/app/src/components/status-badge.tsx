@@ -48,7 +48,7 @@ export const statusLabel = (status: Status): string => styles[status].label
 
 export const statusHeaderClass = (status: Status): string => styles[status].palette.header
 
-export function StatusIcon({ status }: { status: Status }) {
+export function StatusIcon({ status, className }: { status: Status; className?: string }) {
   const { icon: Icon, label, palette } = styles[status]
-  return <Icon className={cn("size-5", palette.icon)} aria-label={label} />
+  return <Icon className={cn("size-5", palette.icon, className)} aria-label={label} />
 }

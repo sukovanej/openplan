@@ -1,8 +1,13 @@
-import { Square, SquareCheckBig } from "lucide-react"
+import { CircleDashed, Square, SquareCheckBig } from "lucide-react"
+import type { ReactNode } from "react"
 import Markdown, { type Components } from "react-markdown"
+import { Link } from "react-router-dom"
 import remarkGfm from "remark-gfm"
 
+import { tasksQuery, useQuery } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { StatusIcon } from "./status-badge"
+import { remarkTaskLinks } from "./task-links"
 
 const proseColors =
   "[--tw-prose-body:var(--color-neutral-700)] [--tw-prose-bold:var(--color-neutral-700)] [--tw-prose-headings:var(--color-neutral-900)] [--tw-prose-code:var(--color-neutral-900)] dark:[--tw-prose-invert-body:var(--color-neutral-300)] dark:[--tw-prose-invert-bold:var(--color-neutral-300)] dark:[--tw-prose-invert-headings:var(--color-neutral-200)] dark:[--tw-prose-invert-code:var(--color-neutral-200)]"
@@ -18,8 +23,7 @@ const proseCode =
 
 // GFM task-list items carry the `task-list-item` class; drop their bullet and keep the checkbox
 // inline so code chips and text stay in normal inline flow instead of becoming flex items.
-const proseTaskList =
-  "[&_li.task-list-item]:list-none [&_ul:has(li.task-list-item)]:pl-1"
+const proseTaskList = "[&_li.task-list-item]:list-none [&_ul:has(li.task-list-item)]:pl-1"
 
 const proseTable =
   "prose-table:my-0 prose-thead:bg-muted/40 prose-th:border-b prose-th:border-r prose-th:border-border prose-th:px-3 prose-th:py-1.5 prose-td:border-b prose-td:border-r prose-td:border-border prose-td:px-3 prose-td:py-1.5 [&_th:last-child]:border-r-0 [&_td:last-child]:border-r-0 [&_tbody_tr:last-child_td]:border-b-0"
@@ -27,7 +31,46 @@ const proseTable =
 const proseClass =
   `prose prose-base prose-neutral dark:prose-invert max-w-none ${proseColors} ${proseSpacing} ${proseCode} ${proseTaskList} ${proseTable}`
 
+const linkClass =
+  "font-medium text-foreground underline decoration-1 decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
+
+const chipClass =
+  "not-prose mx-0.5 inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle text-sm font-medium leading-none no-underline transition-colors"
+
+const TASK_ROUTE = "/task/"
+
+function TaskRef({ href, fallback }: { href: string; fallback: ReactNode }) {
+  const tasks = useQuery(tasksQuery)
+  const id = href.slice(TASK_ROUTE.length).split("#")[0]
+  const task = tasks._tag === "success" ? tasks.value.find((t) => t.id === id) : undefined
+  return (
+    <Link
+      to={href}
+      className={cn(
+        chipClass,
+        task === undefined
+          ? "border-dashed border-border text-muted-foreground hover:bg-muted/40"
+          : "border-border bg-muted/40 text-foreground hover:bg-muted",
+      )}
+    >
+      {task === undefined
+        ? <CircleDashed className="size-4 shrink-0 text-muted-foreground/60" aria-hidden />
+        : <StatusIcon status={task.status} className="size-4 shrink-0" />}
+      <span className="min-w-0 truncate">{task?.title ?? fallback}</span>
+    </Link>
+  )
+}
+
 const components: Components = {
+  a({ href, children }) {
+    if (href !== undefined && href.startsWith(TASK_ROUTE)) {
+      return <TaskRef href={href} fallback={children} />
+    }
+    if (href !== undefined && href.startsWith("/")) {
+      return <Link to={href} className={linkClass}>{children}</Link>
+    }
+    return <a href={href} target="_blank" rel="noreferrer">{children}</a>
+  },
   table({ children }) {
     return (
       <div className="my-3 overflow-hidden rounded-lg border border-border">
@@ -54,7 +97,7 @@ const components: Components = {
 export function TaskBody({ markdown }: { markdown: string }) {
   return (
     <article data-keys-ignore className={proseClass}>
-      <Markdown remarkPlugins={[remarkGfm]} components={components}>{markdown}</Markdown>
+      <Markdown remarkPlugins={[remarkGfm, remarkTaskLinks]} components={components}>{markdown}</Markdown>
     </article>
   )
 }

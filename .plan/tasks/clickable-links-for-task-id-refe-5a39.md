@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 ---
 # Clickable links for [[task-id]] references in markdown
 
