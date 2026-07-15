@@ -14,7 +14,10 @@ use axum::{
     },
     routing::get,
 };
-use op_api::{ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch, TaskView};
+use op_api::{
+    ApiErrorBody, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
+    TaskView,
+};
 use op_git::Repo;
 use op_index::{Index, IndexError};
 use op_presence::Registry;
@@ -28,6 +31,8 @@ use tokio_stream::{Stream, StreamExt as _};
 use tower_http::classify::ServerErrorsFailureClass;
 use tower_http::trace::TraceLayer;
 use tracing::Span;
+use utoipa::{OpenApi, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 const SLOW_REQUEST: Duration = Duration::from_millis(1000);
@@ -76,15 +81,29 @@ impl std::fmt::Debug for AppState {
     }
 }
 
+#[derive(OpenApi)]
+#[openapi(info(
+    title = "open-planner",
+    description = "open-planner daemon HTTP API",
+    version = "0.1.0"
+))]
+struct ApiDoc;
+
+fn documented() -> OpenApiRouter<AppState> {
+    OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .routes(routes!(health))
+        .routes(routes!(list_tasks, create_task))
+        .routes(routes!(get_task, patch_task, delete_task))
+}
+
+pub fn openapi() -> utoipa::openapi::OpenApi {
+    documented().split_for_parts().1
+}
+
 pub fn app(state: AppState) -> Router {
-    Router::new()
-        .route("/health", get(health))
+    let (router, _) = documented().split_for_parts();
+    router
         .route("/api/events", get(events))
-        .route("/api/tasks", get(list_tasks).post(create_task))
-        .route(
-            "/api/tasks/{id}",
-            get(get_task).patch(patch_task).delete(delete_task),
-        )
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
         .layer(
@@ -154,6 +173,11 @@ pub async fn serve(
         .await
 }
 
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses((status = 200, description = "Daemon info when running as a daemon, else \"ok\"", body = DaemonInfo))
+)]
 async fn health(State(state): State<AppState>) -> Response {
     match &state.health {
         Some(info) => Json(info.as_ref()).into_response(),
@@ -229,7 +253,7 @@ fn publish(state: &AppState, event: ChangeEvent) {
     let _ = state.events.send(event);
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 struct CreatedTask {
     id: String,
 }
@@ -268,7 +292,7 @@ impl IntoResponse for ApiError {
         if status.is_server_error() {
             Span::current().record("error", tracing::field::display(&message));
         }
-        (status, message).into_response()
+        (status, Json(ApiErrorBody { message })).into_response()
     }
 }
 
@@ -294,6 +318,11 @@ where
 
 // Rebuild the index from the serve root's repo + worktrees, then return one entry per logical task
 // with every branch it lives on.
+#[utoipa::path(
+    get,
+    path = "/api/tasks",
+    responses((status = 200, description = "Every logical task, aggregated across branches", body = Vec<TaskListItem>))
+)]
 async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
     let repo = state.repo.clone();
     let store = state.store.clone();
@@ -309,6 +338,12 @@ async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListIt
     Ok(Json(items))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/tasks",
+    request_body = CreateTask,
+    responses((status = 201, description = "Created", body = CreatedTask))
+)]
 async fn create_task(
     State(state): State<AppState>,
     Json(body): Json<CreateTask>,
@@ -333,6 +368,18 @@ struct TaskQuery {
 // A `?branch=` reads that branch's version; omitting it returns the headline (current-worktree)
 // version. Either way the response carries every branch the task lives on, resolved through the
 // index so a task absent from the serve-root checkout still loads.
+#[utoipa::path(
+    get,
+    path = "/api/tasks/{id}",
+    params(
+        ("id" = String, Path, description = "Task id"),
+        ("branch" = Option<String>, Query, description = "Branch version to read; omit for the headline")
+    ),
+    responses(
+        (status = 200, description = "The task on the requested branch", body = TaskDetail),
+        (status = 404, description = "No such task", body = ApiErrorBody)
+    )
+)]
 async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -377,6 +424,20 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
     }
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/tasks/{id}",
+    params(
+        ("id" = String, Path, description = "Task id"),
+        ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
+    ),
+    request_body = TaskPatch,
+    responses(
+        (status = 200, description = "The updated task", body = TaskDetail),
+        (status = 404, description = "No such task", body = ApiErrorBody),
+        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody)
+    )
+)]
 async fn patch_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -433,6 +494,18 @@ async fn patch_task(
     Ok(Json(detail))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/tasks/{id}",
+    params(
+        ("id" = String, Path, description = "Task id"),
+        ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
+    ),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody)
+    )
+)]
 async fn delete_task(
     State(state): State<AppState>,
     Path(id): Path<String>,

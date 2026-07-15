@@ -6,7 +6,7 @@ use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{Result, bail};
+use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand};
 use op_api::{BranchMark, ChangeKind, CreateTask, Matrix, MatrixCell, TaskSummary, TaskView};
 use op_git::Repo;
@@ -123,6 +123,8 @@ enum ServerCommand {
     },
     /// Report daemon status without starting it
     Ping,
+    /// Print the HTTP API's OpenAPI 3.1 spec to stdout
+    Openapi,
 }
 
 fn main() -> ExitCode {
@@ -218,6 +220,13 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
             } else {
                 ExitCode::FAILURE
             })
+        }
+        ServerCommand::Openapi => {
+            let spec = op_server::openapi()
+                .to_pretty_json()
+                .context("serialize OpenAPI spec")?;
+            println!("{spec}");
+            Ok(ExitCode::SUCCESS)
         }
     }
 }

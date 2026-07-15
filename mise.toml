@@ -4,3 +4,12 @@ run = [
   "pnpm -C web -r build",
   "cargo run -p op-cli -- server restart",
 ]
+
+[tasks.generate-web-client]
+description = "Regenerate the Effect HTTP client (web/packages/api-client) from the Rust API's OpenAPI spec"
+dir = "web/packages/api-client"
+run = [
+  "cargo run --quiet --manifest-path ../../../Cargo.toml -p op-cli -- server openapi > openapi.json",
+  "pnpm exec openapigen -s openapi.json -f httpclient -n TasksClient > src/index.ts",
+  "pnpm exec dprint fmt src/index.ts",
+]

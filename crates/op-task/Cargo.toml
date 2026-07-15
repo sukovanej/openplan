@@ -12,6 +12,7 @@ op-md.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+utoipa.workspace = true
 
 [lints]
 workspace = true
