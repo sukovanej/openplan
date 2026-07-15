@@ -39,6 +39,10 @@ oplan create "Ship login" --body-file notes.md   # or --body-file - for stdin
 `--body` / `--body-file` set the markdown content below the title heading; they
 are mutually exclusive.
 
+When asked to create a task, do the write in a worktree as usual, but do **not**
+commit it right away. Leave the change uncommitted and wait for the user to
+review the new task first; commit (and merge) only after they approve.
+
 ## Update
 
 `set <id> <field> <value>` — field is `status`, `parent`, or `deps`.
