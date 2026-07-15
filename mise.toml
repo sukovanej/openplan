@@ -1,0 +1,6 @@
+[tasks.rebuild]
+description = "Rebuild the web SPA and restart the daemon with the fresh embed"
+run = [
+  "pnpm -C web -r build",
+  "cargo run -p op-cli -- server restart",
+]
