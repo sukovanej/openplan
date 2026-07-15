@@ -249,15 +249,18 @@ compare-and-swap the ref. The daemon is the **sole writer**, serializing writes 
 cross-process lock. Inbound edits are **debounced/coalesced** so rapid UI keystrokes and
 drag-reorder collapse into few commits, keeping history legible.
 
-**Reconciliation is also worktree-less** — the §7.7 driver runs in-core. Verified on git 2.50:
-`git merge-tree --write-tree <base> <ours>` invokes the `.gitattributes` `merge=openplan` driver, and
-on a clean merge prints the merged tree OID (exit 0); on a genuine same-section overlap it exits 1 and
-prints stage-1/2/3 entries naming exactly which `.plan/*.md` blobs conflicted. So the daemon never
-needs a checkout to reconcile: it **replays** each pending ambient commit onto the new `main` as a
-sequence of `merge-tree` steps — driver firing per step — keeping the ref a linear `main` + ambient
-stack, and reads the conflict set straight from the plumbing output. (An **ephemeral worktree**
-running `git rebase` is the fallback only if a driver ever needs a real working tree; not the primary
-path.)
+**Reconciliation is also worktree-less** — the §7.7 section merge runs in-process. The daemon
+**replays** each pending ambient commit `C` onto the new `main` as a sequence of **3-way tree
+merges** (`gix::merge::tree`): per step, `base = tree(parent(C))`, `ours = ` the accumulated tip,
+`theirs = tree(C)` — cherry-pick semantics, so the base is `C`'s *own parent*, never a single fixed
+merge-base (that would re-merge already-replayed edits). Each step hands its content conflicts to the
+same section-merge library the `merge=openplan` driver wraps; non-overlapping section/field edits
+auto-merge, a genuine same-section overlap yields the conflicting `.plan/*.md` set. The chain stays a
+linear `main` + ambient stack, and no checkout is ever needed. The merge machinery being unable to
+run is a hard error, not a shell-out fallback. (An **ephemeral worktree** running `git rebase` is a
+fallback only if the section merge ever needs a real working tree; not the primary path. The spike
+confirmed the driver fires under git's own merge machinery — `rebase` replay and `merge-tree` — which
+is the same machinery `gix::merge::tree` reuses.)
 
 **Flow — refresh to track `main`, fast-forward to publish:**
 - `main → updates` **refresh** — keep the ref reconciled with `main` so it is always

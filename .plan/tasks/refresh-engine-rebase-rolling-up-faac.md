@@ -38,9 +38,11 @@ must still trigger a refresh, so inferring from per-task diffs is insufficient.
 ## 3. `Refresh` handler (inside the ref-owner actor)
 
 Flush staged ambient edits first, then:
-- base = `merge_bases_against(main_tip, [rolling_tip])`; pending = ambient commits
-  since base.
-- `replay_onto(main_tip, pending)` — worktree-less, the section driver fires per
+- `divergence = merge_bases_against(main_tip, [rolling_tip])`; `pending` = the
+  ambient commits on `rolling` since `divergence` (this only enumerates the
+  commit range — it is **not** the 3-way merge base).
+- `replay_onto(main_tip, pending)` — worktree-less; each commit is replayed with
+  its own parent as the per-step base (Phase 1), so the section driver fires per
   step.
 - `Done { tip }` -> CAS `rolling` old->new; `SyncState` -> `InSync` / `Pending`.
 - `Blocked { last_good, tasks }` -> **hold** the ref at its last good tip, set

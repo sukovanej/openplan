@@ -36,11 +36,16 @@ pub fn commit_overlay(
 ) -> Result<String, GitError>;
 
 // reconcile primitive — in-process only, via gix::merge::tree + the section-merge lib.
+// base/ours/theirs are the three tree-ish sides of the 3-way; base is explicit (never
+// auto-computed), so callers control the merge base per step.
 pub enum Reconciled { Clean { tree: String }, Conflicts { tasks: Vec<String> } }
 pub fn merge_trees(&self, base: &str, ours: &str, theirs: &str)
     -> Result<Reconciled, GitError>;
 
 // replay pending ambient commits onto `onto`, one merge_trees step each, linear stack.
+// Cherry-pick semantics: for each commit C, base = tree(parent(C)), ours = accumulated
+// tip, theirs = tree(C). NOT a single fixed merge-base — that would re-merge already
+// replayed edits from step 2 on.
 pub enum Replayed { Done { tip: String }, Blocked { last_good: String, tasks: Vec<String> } }
 pub fn replay_onto(&self, onto: &str, commits: &[String]) -> Result<Replayed, GitError>;
 
@@ -54,8 +59,10 @@ pub fn fast_forward(&self, name: &str, to: &str) -> Result<(), GitError>; // Err
   (resolver can't be hosted, unreadable object) → **`Err`**, propagated. Never a
   shell-out.
 - New `GitError` variants: `RefRace`, `NotFastForward`, `Conflict`.
-- Reuse existing `merge_bases_against` to pick the base for `merge_trees` /
-  `replay_onto`.
+- `replay_onto` derives each step's base from the replayed commit's own parent
+  (cherry-pick base), not from `merge_bases_against`. `merge_bases_against` is for
+  *detecting* divergence (has `rolling` fallen behind `main`?), not for choosing a
+  replay merge base.
 - Update the crate `description` in `Cargo.toml` — it no longer reads-only.
 
 No daemon wiring in this phase (that is Phase 2).
@@ -69,5 +76,9 @@ Unit tests (`crates/op-git/tests/`) drive a temp repo through:
 - reconcile-conflict: same-section divergence → `Conflicts { tasks }` naming the
   logical ids;
 - replay preserves a linear stack and stops at `Blocked` on the first conflict;
+- **multi-commit replay** (≥2 pending commits touching different sections of the
+  same task): all edits survive with no spurious conflict — the regression guard
+  for the per-step parent base (a single fixed merge-base would re-merge the first
+  commit's delta and falsely conflict);
 - publish: `fast_forward` advances a ref; a non-FF target yields `NotFastForward`
   (never a merge).
