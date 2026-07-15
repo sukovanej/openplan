@@ -2,7 +2,7 @@ import { Effect, Result } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { useSyncExternalStore } from "react"
 
-import { getTask, listTasks, type TaskDetail } from "./api"
+import { getTask, listTasks, type TaskDetail, type TaskListItem } from "./api"
 import type { Invalidator } from "./events"
 import { runtime } from "./runtime"
 
@@ -87,6 +87,11 @@ export function useQuery<A>(query: Query<A>): QueryState<A> {
 }
 
 export const tasksQuery = new Query(listTasks)
+
+export function listItem(id: string): TaskListItem | undefined {
+  const snapshot = tasksQuery.getSnapshot()
+  return snapshot._tag === "success" ? snapshot.value.find((task) => task.id === id) : undefined
+}
 
 const MAX_TASK_QUERIES = 64
 const taskQueries = new Map<string, Query<TaskDetail>>()

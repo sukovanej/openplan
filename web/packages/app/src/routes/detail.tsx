@@ -2,12 +2,12 @@ import { useMemo, useRef } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 
 import { BranchSwitcher } from "@/components/branch-switcher"
-import { DetailSkeleton, Message } from "@/components/states"
+import { BodySkeleton, DetailSkeleton, Message } from "@/components/states"
 import { StatusIcon } from "@/components/status-badge"
 import { TaskBody } from "@/components/task-body"
-import { type TaskDetail, TaskNotFound } from "@/lib/api"
+import { type TaskDetail, type TaskListItem, TaskNotFound } from "@/lib/api"
 import { errorText } from "@/lib/format"
-import { taskQuery, useQuery } from "@/lib/store"
+import { listItem, taskQuery, useQuery } from "@/lib/store"
 
 export function DetailRoute() {
   const { id = "" } = useParams()
@@ -37,31 +37,44 @@ export function DetailRoute() {
     : lastShown.current?.id === id
     ? lastShown.current.value
     : null
-  return shown === null
-    ? <DetailSkeleton />
-    : <TaskDetailView task={shown} selected={branch} onSelect={onSelect} />
+  // The list cache already holds the header fields (title, status, branches); seed from it so the
+  // header renders instantly and only the body streams in, instead of flashing a full skeleton.
+  const seed = shown ?? listItem(id)
+  if (seed === undefined) return <DetailSkeleton />
+  return (
+    <TaskDetailView
+      task={seed}
+      body={shown?.body}
+      selected={branch}
+      onSelect={onSelect}
+    />
+  )
 }
 
 function TaskDetailView(
-  { task, selected, onSelect }: {
-    task: TaskDetail
+  { task, body, selected, onSelect }: {
+    task: TaskDetail | TaskListItem
+    body: string | undefined
     selected: string | undefined
     onSelect: (branch: string | undefined) => void
   },
 ) {
   return (
-    <div className="bg-muted/10 h-full overflow-y-auto rounded-lg border p-6">
-      <div className="mb-4 flex items-center gap-3">
+    <div className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border">
+      <div className="bg-muted/30 flex h-11 shrink-0 items-center gap-2 border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground">
         <StatusIcon status={task.status} />
-        <h1 className="text-2xl font-semibold tracking-tight">{task.title}</h1>
+        {task.title}
       </div>
-      <BranchSwitcher
-        branches={task.branches}
-        selected={selected}
-        headline={task.headline}
-        onSelect={onSelect}
-      />
-      <TaskBody markdown={stripTitle(task.body)} />
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <h1 className="mb-4 text-2xl font-semibold tracking-tight">{task.title}</h1>
+        <BranchSwitcher
+          branches={task.branches}
+          selected={selected}
+          headline={task.headline}
+          onSelect={onSelect}
+        />
+        {body === undefined ? <BodySkeleton /> : <TaskBody markdown={stripTitle(body)} />}
+      </div>
     </div>
   )
 }

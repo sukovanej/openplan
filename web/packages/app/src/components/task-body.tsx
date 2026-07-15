@@ -1,5 +1,8 @@
-import Markdown from "react-markdown"
+import { Square, SquareCheckBig } from "lucide-react"
+import Markdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
+
+import { cn } from "@/lib/utils"
 
 const proseColors =
   "[--tw-prose-body:var(--color-neutral-700)] [--tw-prose-bold:var(--color-neutral-700)] [--tw-prose-headings:var(--color-neutral-900)] [--tw-prose-code:var(--color-neutral-900)] dark:[--tw-prose-invert-body:var(--color-neutral-300)] dark:[--tw-prose-invert-bold:var(--color-neutral-300)] dark:[--tw-prose-invert-headings:var(--color-neutral-200)] dark:[--tw-prose-invert-code:var(--color-neutral-200)]"
@@ -13,13 +16,45 @@ const proseSpacing =
 const proseCode =
   "prose-code:font-normal prose-code:bg-muted prose-code:rounded prose-code:px-1.5 prose-code:py-1 prose-code:before:content-none prose-code:after:content-none [&_pre_code]:bg-transparent [&_pre_code]:p-0"
 
+// GFM task-list items carry the `task-list-item` class; drop their bullet and align the custom
+// checkbox with the first line of text.
+const proseTaskList =
+  "[&_li.task-list-item]:list-none [&_li.task-list-item]:flex [&_li.task-list-item]:items-baseline [&_li.task-list-item]:gap-2 [&_ul:has(li.task-list-item)]:pl-1"
+
+const proseTable =
+  "prose-table:my-0 prose-thead:bg-muted/40 prose-th:border-b prose-th:border-r prose-th:border-border prose-th:px-3 prose-th:py-1.5 prose-td:border-b prose-td:border-r prose-td:border-border prose-td:px-3 prose-td:py-1.5 [&_th:last-child]:border-r-0 [&_td:last-child]:border-r-0 [&_tbody_tr:last-child_td]:border-b-0"
+
 const proseClass =
-  `prose prose-base prose-neutral dark:prose-invert max-w-none ${proseColors} ${proseSpacing} ${proseCode}`
+  `prose prose-base prose-neutral dark:prose-invert max-w-none ${proseColors} ${proseSpacing} ${proseCode} ${proseTaskList} ${proseTable}`
+
+const components: Components = {
+  table({ children }) {
+    return (
+      <div className="my-3 overflow-hidden rounded-lg border border-border">
+        <table className="my-0">{children}</table>
+      </div>
+    )
+  },
+  input({ type, checked }) {
+    if (type !== "checkbox") return null
+    const Icon = checked ? SquareCheckBig : Square
+    return (
+      <Icon
+        role="checkbox"
+        aria-checked={checked}
+        className={cn(
+          "relative top-0.5 inline-block size-[1.05em] shrink-0",
+          checked ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground/60",
+        )}
+      />
+    )
+  },
+}
 
 export function TaskBody({ markdown }: { markdown: string }) {
   return (
     <article data-keys-ignore className={proseClass}>
-      <Markdown remarkPlugins={[remarkGfm]}>{markdown}</Markdown>
+      <Markdown remarkPlugins={[remarkGfm]} components={components}>{markdown}</Markdown>
     </article>
   )
 }

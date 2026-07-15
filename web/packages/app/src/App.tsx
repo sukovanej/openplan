@@ -18,7 +18,7 @@ export function App() {
           <ThemeToggle className="ml-auto" />
         </div>
       </header>
-      <main className="min-h-0 flex-1 overflow-hidden px-6 py-8">
+      <main className="min-h-0 flex-1 overflow-hidden px-4 py-4">
         <Outlet />
       </main>
       <HelpOverlay open={overlayOpen} onClose={closeOverlay} />

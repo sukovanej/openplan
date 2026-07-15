@@ -18,6 +18,10 @@ export function DetailSkeleton() {
   )
 }
 
+export function BodySkeleton() {
+  return <Skeleton className="h-40 w-full" />
+}
+
 export function Message({ title, detail }: { title: string; detail?: string }) {
   return (
     <div className="rounded-lg border border-dashed p-8 text-center">
