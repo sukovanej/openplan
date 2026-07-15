@@ -18,7 +18,7 @@ const proseClass =
 
 export function TaskBody({ markdown }: { markdown: string }) {
   return (
-    <article className={proseClass}>
+    <article data-keys-ignore className={proseClass}>
       <Markdown remarkPlugins={[remarkGfm]}>{markdown}</Markdown>
     </article>
   )
