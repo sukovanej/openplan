@@ -43,7 +43,7 @@ const components: Components = {
         role="checkbox"
         aria-checked={checked}
         className={cn(
-          "relative top-0.5 mr-1.5 inline-block size-[1.05em] shrink-0",
+          "mr-1.5 inline-block size-[1.05em] shrink-0 align-[-0.2em]",
           checked ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground/60",
         )}
       />
