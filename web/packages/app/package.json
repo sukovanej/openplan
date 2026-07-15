@@ -7,9 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "watch": "vite build --watch",
-    "preview": "vite preview",
-    "typecheck": "tsc -b",
-    "test": "vitest run"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

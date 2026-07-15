@@ -1,1 +1,2 @@
-packages/app/dist/
+dist
+*.tsbuildinfo

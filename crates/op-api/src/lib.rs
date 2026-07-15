@@ -1,11 +1,17 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 pub use op_task::Status;
 use op_task::Task;
 
 pub const ADMIN_HEADER: &str = "x-oplan-admin";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ApiErrorBody {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DaemonInfo {
     pub pid: u32,
     pub port: u16,
@@ -33,7 +39,7 @@ impl TaskSummary {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskView {
     pub id: String,
     pub title: String,
@@ -62,7 +68,7 @@ impl TaskView {
 // detail page can render a branch switcher without the list in memory. The `view` is the requested
 // branch's version, or the headline version for a branchless read; `headline` names the branch that
 // version resolves to (the most recently changed one), so the switcher can mark it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskDetail {
     #[serde(flatten)]
     pub view: TaskView,
@@ -73,7 +79,7 @@ pub struct TaskDetail {
 // One logical task aggregated across every branch it lives on: the `status`/`title` come from the
 // `headline` branch (the most recently changed one), plus one `branches` entry per branch so a
 // client can render badges, mark the headline, and spot divergence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskListItem {
     pub id: String,
     pub title: String,
@@ -86,7 +92,7 @@ pub struct TaskListItem {
 
 // How a branch's committed version of a task stands against the default branch's merge-base:
 // `Base` is the default branch itself, the other three are the ways a branch diverges.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ChangeKind {
     Base,
@@ -95,7 +101,7 @@ pub enum ChangeKind {
     Deleted,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct BranchState {
     pub branch: String,
     pub status: Status,
@@ -104,7 +110,7 @@ pub struct BranchState {
     pub kind: ChangeKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CreateTask {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -129,7 +135,7 @@ impl CreateTask {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<Status>,
