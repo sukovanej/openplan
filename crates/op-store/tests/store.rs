@@ -193,6 +193,35 @@ fn create_and_update_validate_references() {
 }
 
 #[test]
+fn reparenting_under_a_descendant_is_refused() {
+    let (_dir, store) = make_store();
+    let a = store.create(&Task::new("A", Status::Todo)).unwrap();
+
+    let mut b = Task::new("B", Status::Todo);
+    b.set_parent(Some(a.clone()));
+    let b = store.create(&b).unwrap();
+
+    let mut c = Task::new("C", Status::Todo);
+    c.set_parent(Some(b.clone()));
+    let c = store.create(&c).unwrap();
+
+    // A is an ancestor of C; making C the parent of A would close a cycle.
+    let cycle = store.update(&a, |task| {
+        task.set_parent(Some(c.clone()));
+        Ok(())
+    });
+    assert!(
+        matches!(cycle, Err(StoreError::Invalid(_))),
+        "a task may not be reparented under its own descendant"
+    );
+    assert_eq!(
+        store.read(&a).unwrap().frontmatter.parent,
+        None,
+        "a rejected reparent must not mutate the file"
+    );
+}
+
+#[test]
 fn dangling_reference_does_not_block_unrelated_edit() {
     let (_dir, store) = make_store();
     let a = store.create(&Task::new("A", Status::Todo)).unwrap();
@@ -238,7 +267,7 @@ fn update_preserves_unknown_frontmatter_keys() {
     let (_dir, store) = make_store();
     std::fs::write(
         store.task_path("t"),
-        "---\nstatus: todo\nrank: 3.5\n---\n# T\n",
+        "---\nstatus: todo\nestimate: 3.5\n---\n# T\n",
     )
     .unwrap();
 
@@ -250,7 +279,10 @@ fn update_preserves_unknown_frontmatter_keys() {
         .unwrap();
 
     let raw = std::fs::read_to_string(store.task_path("t")).unwrap();
-    assert!(raw.contains("rank: 3.5"), "rank must survive update: {raw}");
+    assert!(
+        raw.contains("estimate: 3.5"),
+        "estimate must survive update: {raw}"
+    );
     assert!(raw.contains("status: done"));
 }
 

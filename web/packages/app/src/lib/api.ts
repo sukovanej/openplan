@@ -1,5 +1,5 @@
 import { Context, Data, Effect, Schema } from "effect"
-import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 
 export const Status = Schema.Literals([
   "backlog",
@@ -30,6 +30,7 @@ export const TaskListItem = Schema.Struct({
   title: Schema.String,
   status: Status,
   parent: Schema.optionalKey(Schema.String),
+  rank: Schema.optionalKey(Schema.String),
   headline: Schema.String,
   branches: Schema.Array(BranchState),
 })
@@ -42,12 +43,32 @@ export const TaskDetail = Schema.Struct({
   title: Schema.String,
   status: Status,
   parent: Schema.optionalKey(Schema.String),
+  rank: Schema.optionalKey(Schema.String),
   deps: Schema.optionalKey(Schema.Array(Schema.String)),
   body: Schema.String,
   headline: Schema.String,
   branches: Schema.Array(BranchState),
 })
 export type TaskDetail = typeof TaskDetail.Type
+
+// The subtree the daemon builds by grouping the flat task set on `parent`; siblings arrive in
+// `rank` order.
+export interface TaskTree {
+  readonly id: string
+  readonly title: string
+  readonly status: Status
+  readonly parent?: string
+  readonly rank?: string
+  readonly children: ReadonlyArray<TaskTree>
+}
+export const TaskTree: Schema.Codec<TaskTree> = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: Status,
+  parent: Schema.optionalKey(Schema.String),
+  rank: Schema.optionalKey(Schema.String),
+  children: Schema.Array(Schema.suspend((): Schema.Codec<TaskTree> => TaskTree)),
+})
 
 const TaskListItems = Schema.Array(TaskListItem)
 
@@ -90,4 +111,67 @@ export const getTask = (
     }
     const ok = yield* HttpClientResponse.filterStatusOk(response)
     return yield* HttpClientResponse.schemaBodyJson(TaskDetail)(ok)
+  }).pipe(Effect.scoped)
+
+// The subtree rooted at `id`, bounded by `depth` (direct children at `1`, unbounded when omitted).
+export const getTree = (
+  id: string,
+  depth?: number,
+): Effect.Effect<TaskTree, TaskError, HttpClient.HttpClient> =>
+  Effect.gen(function*() {
+    const client = yield* HttpClient.HttpClient
+    const base = yield* ApiBaseUrl
+    const query = depth === undefined ? "" : `?depth=${depth}`
+    const response = yield* client.get(`${base}/api/tasks/${encodeURIComponent(id)}/tree${query}`)
+    if (response.status === 404) {
+      return yield* Effect.fail(new TaskNotFound({ id }))
+    }
+    const ok = yield* HttpClientResponse.filterStatusOk(response)
+    return yield* HttpClientResponse.schemaBodyJson(TaskTree)(ok)
+  }).pipe(Effect.scoped)
+
+// `parent` is three-state to match the server: omit the key to leave it unchanged, `null` to clear
+// it (top level), or an id to set it. `rank` and `status` are set-only.
+export interface TaskPatch {
+  readonly status?: Status
+  readonly parent?: string | null
+  readonly rank?: string
+}
+
+export const patchTask = (id: string, patch: TaskPatch) =>
+  Effect.gen(function*() {
+    const client = yield* HttpClient.HttpClient
+    const base = yield* ApiBaseUrl
+    const request = yield* HttpClientRequest.bodyJson(
+      HttpClientRequest.patch(`${base}/api/tasks/${encodeURIComponent(id)}`),
+      patch,
+    )
+    const response = yield* client.execute(request)
+    if (response.status === 404) {
+      return yield* Effect.fail(new TaskNotFound({ id }))
+    }
+    const ok = yield* HttpClientResponse.filterStatusOk(response)
+    return yield* HttpClientResponse.schemaBodyJson(TaskDetail)(ok)
+  }).pipe(Effect.scoped)
+
+export interface CreateTask {
+  readonly title: string
+  readonly parent?: string
+  readonly status?: Status
+}
+
+const CreatedTask = Schema.Struct({ id: Schema.String })
+
+export const createTask = (input: CreateTask) =>
+  Effect.gen(function*() {
+    const client = yield* HttpClient.HttpClient
+    const base = yield* ApiBaseUrl
+    const request = yield* HttpClientRequest.bodyJson(
+      HttpClientRequest.post(`${base}/api/tasks`),
+      input,
+    )
+    const response = yield* client.execute(request)
+    const ok = yield* HttpClientResponse.filterStatusOk(response)
+    const created = yield* HttpClientResponse.schemaBodyJson(CreatedTask)(ok)
+    return created.id
   }).pipe(Effect.scoped)

@@ -26,6 +26,8 @@ pub struct TaskSummary {
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<String>,
 }
 
 impl TaskSummary {
@@ -35,6 +37,7 @@ impl TaskSummary {
             title: task.title().unwrap_or_default(),
             status: task.frontmatter.status,
             parent: task.frontmatter.parent.clone(),
+            rank: task.frontmatter.rank.clone(),
         }
     }
 }
@@ -46,6 +49,8 @@ pub struct TaskView {
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deps: Vec<String>,
     pub body: String,
@@ -58,6 +63,7 @@ impl TaskView {
             title: task.title().unwrap_or_default(),
             status: task.frontmatter.status,
             parent: task.frontmatter.parent.clone(),
+            rank: task.frontmatter.rank.clone(),
             deps: task.frontmatter.deps.clone(),
             body: task.body.clone(),
         }
@@ -86,6 +92,8 @@ pub struct TaskListItem {
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<String>,
     pub headline: String,
     pub branches: Vec<BranchState>,
 }
@@ -139,8 +147,16 @@ impl CreateTask {
 pub struct TaskPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<Status>,
+    // Three-state so a client can tell "leave the parent alone" from "clear it": an absent key is
+    // `None`, JSON `null` is `Some(None)` (unparent to top level), and an id is `Some(Some(id))`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "double_option"
+    )]
+    pub parent: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent: Option<String>,
+    pub rank: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deps: Option<Vec<String>>,
 }
@@ -151,11 +167,115 @@ impl TaskPatch {
             task.set_status(status);
         }
         if let Some(parent) = self.parent {
-            task.set_parent(Some(parent));
+            task.set_parent(parent);
+        }
+        if let Some(rank) = self.rank {
+            task.set_rank(Some(rank));
         }
         if let Some(deps) = self.deps {
             task.set_deps(deps);
         }
+    }
+}
+
+fn double_option<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
+}
+
+// The subtree rooted at one task: siblings within `children` are ordered by `rank` (§3.2), the tree
+// built by grouping the flat task set on `parent`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskTree {
+    pub id: String,
+    pub title: String,
+    pub status: Status,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<String>,
+    pub children: Vec<TaskTree>,
+}
+
+// Siblings sort by `rank` ascending; a task without a rank sorts last, ties broken by id so the
+// order is stable across rebuilds (§4).
+pub fn sibling_cmp(a: &TaskSummary, b: &TaskSummary) -> std::cmp::Ordering {
+    match (&a.rank, &b.rank) {
+        (Some(x), Some(y)) => x.cmp(y).then_with(|| a.id.cmp(&b.id)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.id.cmp(&b.id),
+    }
+}
+
+impl TaskTree {
+    // The subtree rooted at `root` built by grouping a flat task set on `parent`. `depth` bounds the
+    // descent (`None` unbounded, `Some(0)` root only, `Some(1)` direct children); siblings are
+    // ordered by `sibling_cmp`. Cycle-safe: an id already on the current path is not re-expanded and
+    // is pushed onto `cycles` so callers can report it instead of looping forever.
+    pub fn build(
+        summaries: &[TaskSummary],
+        root: &str,
+        depth: Option<usize>,
+        cycles: &mut Vec<String>,
+    ) -> Option<TaskTree> {
+        let by_id: std::collections::HashMap<&str, &TaskSummary> =
+            summaries.iter().map(|s| (s.id.as_str(), s)).collect();
+        let mut children_of: std::collections::HashMap<&str, Vec<&TaskSummary>> =
+            std::collections::HashMap::new();
+        for summary in summaries {
+            if let Some(parent) = &summary.parent {
+                children_of
+                    .entry(parent.as_str())
+                    .or_default()
+                    .push(summary);
+            }
+        }
+        let root = by_id.get(root)?;
+        let mut path = std::collections::HashSet::new();
+        Some(build_node(root, depth, &children_of, &mut path, cycles))
+    }
+}
+
+fn build_node(
+    summary: &TaskSummary,
+    depth: Option<usize>,
+    children_of: &std::collections::HashMap<&str, Vec<&TaskSummary>>,
+    path: &mut std::collections::HashSet<String>,
+    cycles: &mut Vec<String>,
+) -> TaskTree {
+    path.insert(summary.id.clone());
+    let mut children = Vec::new();
+    if depth != Some(0) {
+        let mut kids = children_of
+            .get(summary.id.as_str())
+            .cloned()
+            .unwrap_or_default();
+        kids.sort_by(|a, b| sibling_cmp(a, b));
+        for kid in kids {
+            if path.contains(&kid.id) {
+                cycles.push(kid.id.clone());
+                continue;
+            }
+            children.push(build_node(
+                kid,
+                depth.map(|d| d - 1),
+                children_of,
+                path,
+                cycles,
+            ));
+        }
+    }
+    path.remove(&summary.id);
+    TaskTree {
+        id: summary.id.clone(),
+        title: summary.title.clone(),
+        status: summary.status,
+        parent: summary.parent.clone(),
+        rank: summary.rank.clone(),
+        children,
     }
 }
 

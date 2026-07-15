@@ -186,11 +186,109 @@ async fn missing_task_routes_are_404() {
 }
 
 #[tokio::test]
+async fn patch_parent_null_clears_absent_leaves_id_sets() {
+    let (dir, state) = store_state();
+    std::fs::write(
+        dir.path().join(".plan/tasks/epic.md"),
+        "---\nstatus: todo\n---\n# Epic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join(".plan/tasks/child.md"),
+        "---\nstatus: todo\nparent: epic\n---\n# Child\n",
+    )
+    .unwrap();
+
+    // Absent key: parent untouched.
+    let untouched = send(
+        &state,
+        "PATCH",
+        "/api/tasks/child",
+        Some(json!({ "status": "in_progress" })),
+    )
+    .await;
+    assert_eq!(untouched.status(), StatusCode::OK);
+    assert_eq!(body_json(untouched).await["parent"], "epic");
+
+    // Explicit null: parent cleared to top level, and the key drops from the file.
+    let cleared = send(
+        &state,
+        "PATCH",
+        "/api/tasks/child",
+        Some(json!({ "parent": null })),
+    )
+    .await;
+    assert_eq!(cleared.status(), StatusCode::OK);
+    assert!(body_json(cleared).await.get("parent").is_none());
+    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/child.md")).unwrap();
+    assert!(!raw.contains("parent"), "cleared key must drop: {raw}");
+
+    // Explicit id: parent set again.
+    let set = send(
+        &state,
+        "PATCH",
+        "/api/tasks/child",
+        Some(json!({ "parent": "epic" })),
+    )
+    .await;
+    assert_eq!(set.status(), StatusCode::OK);
+    assert_eq!(body_json(set).await["parent"], "epic");
+}
+
+#[tokio::test]
+async fn tree_endpoint_returns_nested_subtree_bounded_by_depth() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(tasks.join("root.md"), "---\nstatus: todo\n---\n# Root\n").unwrap();
+    std::fs::write(
+        tasks.join("a.md"),
+        "---\nstatus: todo\nparent: root\nrank: m\n---\n# A\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("b.md"),
+        "---\nstatus: todo\nparent: root\nrank: t\n---\n# B\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("a1.md"),
+        "---\nstatus: todo\nparent: a\nrank: m\n---\n# A1\n",
+    )
+    .unwrap();
+
+    let full = send(&state, "GET", "/api/tasks/root/tree", None).await;
+    assert_eq!(full.status(), StatusCode::OK);
+    let tree = body_json(full).await;
+    let children = tree["children"].as_array().unwrap();
+    assert_eq!(
+        children
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["a", "b"]
+    );
+    assert_eq!(children[0]["children"][0]["id"], "a1");
+
+    let shallow = send(&state, "GET", "/api/tasks/root/tree?depth=1", None).await;
+    let shallow = body_json(shallow).await;
+    assert!(
+        shallow["children"][0]["children"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "depth=1 must not expand grandchildren"
+    );
+
+    let missing = send(&state, "GET", "/api/tasks/ghost/tree", None).await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn patch_preserves_unknown_frontmatter_keys() {
     let (dir, state) = store_state();
     std::fs::write(
         dir.path().join(".plan/tasks/keep.md"),
-        "---\nstatus: todo\nrank: 9\n---\n# Keep\n",
+        "---\nstatus: todo\nestimate: 9\n---\n# Keep\n",
     )
     .unwrap();
 
@@ -204,7 +302,10 @@ async fn patch_preserves_unknown_frontmatter_keys() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/keep.md")).unwrap();
-    assert!(raw.contains("rank: 9"), "rank must survive PATCH: {raw}");
+    assert!(
+        raw.contains("estimate: 9"),
+        "estimate must survive PATCH: {raw}"
+    );
     assert!(raw.contains("status: done"));
 }
 

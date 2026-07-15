@@ -45,3 +45,11 @@ cargo test
 cargo fmt --check
 cargo clippy -- -D warnings
 ```
+
+## Running my version for the user
+
+When the user asks to run, restart, or try "my version" / "your version" of the
+code (the daemon serving this branch's code and store), run `mise run rebuild`
+from this worktree. It rebuilds the web SPA and restarts the machine daemon with
+the fresh embed, serving this worktree as its root. Do not hand-roll
+`server restart` or a manual SPA build — `mise run rebuild` is the one command.

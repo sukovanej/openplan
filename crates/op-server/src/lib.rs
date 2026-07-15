@@ -16,7 +16,7 @@ use axum::{
 };
 use op_api::{
     ApiErrorBody, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
-    TaskView,
+    TaskSummary, TaskTree, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -106,6 +106,7 @@ pub fn app(state: AppState) -> Router {
     router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
         .route("/api/events", get(events))
+        .route("/api/tasks/{id}/tree", get(get_task_tree))
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
         .layer(
@@ -402,6 +403,45 @@ async fn get_task(
     .map_err(join_error)??;
     detail
         .map(Json)
+        .ok_or(ApiError::Store(StoreError::NotFound { id: missing }))
+}
+
+#[derive(Deserialize)]
+struct TreeQuery {
+    depth: Option<usize>,
+}
+
+// The subtree rooted at `id`, built by grouping the branch-aware aggregated task set on `parent`
+// (§5) — the same source the list view uses, so hierarchy reads stay "reads global".
+async fn get_task_tree(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(query): Query<TreeQuery>,
+) -> Result<Json<TaskTree>, ApiError> {
+    let repo = state.repo.clone();
+    let store = state.store.clone();
+    let index = state.index.clone();
+    let missing = id.clone();
+    let tree = tokio::task::spawn_blocking(move || -> Result<Option<TaskTree>, ApiError> {
+        let mut index = index.lock().expect("index mutex poisoned");
+        index.rebuild(&repo, &store).map_err(index_error)?;
+        let summaries: Vec<TaskSummary> = index
+            .aggregated_tasks()
+            .into_iter()
+            .map(|item| TaskSummary {
+                id: item.id,
+                title: item.title,
+                status: item.status,
+                parent: item.parent,
+                rank: item.rank,
+            })
+            .collect();
+        let mut cycles = Vec::new();
+        Ok(TaskTree::build(&summaries, &id, query.depth, &mut cycles))
+    })
+    .await
+    .map_err(join_error)??;
+    tree.map(Json)
         .ok_or(ApiError::Store(StoreError::NotFound { id: missing }))
 }
 

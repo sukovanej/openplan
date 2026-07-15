@@ -33,6 +33,7 @@ struct Version {
     title: String,
     status: Status,
     parent: Option<String>,
+    rank: Option<String>,
 }
 
 struct DiffCtx<'a> {
@@ -377,6 +378,7 @@ impl Index {
                     title: headline.task.title.clone(),
                     status: headline.task.status,
                     parent: headline.task.parent.clone(),
+                    rank: headline.task.rank.clone(),
                     headline: headline.branch.clone(),
                     branches: branch_states(&cells),
                 }
@@ -665,6 +667,7 @@ impl Version {
             title: self.title.clone(),
             status: self.status,
             parent: self.parent.clone(),
+            rank: self.rank.clone(),
         }
     }
 }
@@ -676,6 +679,7 @@ fn parse_version(bytes: &[u8]) -> Version {
             title: task.title().unwrap_or_default(),
             status: task.frontmatter.status,
             parent: task.frontmatter.parent.clone(),
+            rank: task.frontmatter.rank.clone(),
         },
         // Unresolved merge markers can break the frontmatter fences; keep the cell rather than
         // abort the whole rebuild, best-effort title, status left at the unstarted default.
@@ -683,6 +687,7 @@ fn parse_version(bytes: &[u8]) -> Version {
             title: best_effort_title(&text).unwrap_or_default(),
             status: Status::Backlog,
             parent: None,
+            rank: None,
         },
     }
 }
@@ -695,6 +700,7 @@ fn view_from_raw(id: &str, raw: &str) -> TaskView {
             title: best_effort_title(raw).unwrap_or_default(),
             status: Status::Backlog,
             parent: None,
+            rank: None,
             deps: Vec::new(),
             body: raw.to_owned(),
         },

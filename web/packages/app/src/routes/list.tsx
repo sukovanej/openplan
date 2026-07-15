@@ -3,9 +3,10 @@ import { Link } from "react-router-dom"
 
 import { BranchBadges } from "@/components/branch-badges"
 import { ListSkeleton, Message } from "@/components/states"
-import { statusHeaderClass, StatusIcon, statusLabel, statusOrder } from "@/components/status-badge"
-import type { Status, TaskListItem } from "@/lib/api"
+import { StatusIcon } from "@/components/status-badge"
+import type { TaskListItem } from "@/lib/api"
 import { errorText } from "@/lib/format"
+import { type ForestRow, forestRows } from "@/lib/hierarchy"
 import { rowCursor, useRowCursor } from "@/lib/row-cursor"
 import { tasksQuery, useQuery } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -26,25 +27,14 @@ export function ListRoute() {
 
 const rowDomId = (id: string) => `task-row-${id}`
 
-interface Group {
-  readonly status: Status
-  readonly tasks: ReadonlyArray<TaskListItem>
-}
-
 function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
-  const groups = useMemo<ReadonlyArray<Group>>(
-    () =>
-      statusOrder
-        .map((status) => ({ status, tasks: tasks.filter((task) => task.status === status) }))
-        .filter((group) => group.tasks.length > 0),
-    [tasks],
-  )
-  const ordered = useMemo(() => groups.flatMap((group) => group.tasks), [groups])
-  const ids = useMemo(() => ordered.map((task) => task.id), [ordered])
+  // Pre-order the parent→child forest so each task is followed by its rank-ordered subtree; the row
+  // cursor then walks the same visible order.
+  const rows = useMemo(() => forestRows(tasks), [tasks])
+  const ids = useMemo(() => rows.map((row) => row.task.id), [rows])
   const { index } = useRowCursor(ids)
-  const activeId = index >= 0 && index < ordered.length ? rowDomId(ordered[index].id) : undefined
+  const activeId = index >= 0 && index < rows.length ? rowDomId(rows[index].task.id) : undefined
 
-  let base = 0
   return (
     <div
       role="grid"
@@ -62,60 +52,35 @@ function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
         Tasks
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {groups.map((group, groupIndex) => {
-          const groupBase = base
-          base += group.tasks.length
-          const lastGroup = groupIndex === groups.length - 1
-          return (
-            <div key={group.status} role="rowgroup" aria-label={statusLabel(group.status)}>
-              <HeaderRow status={group.status} />
-              {group.tasks.map((task, j) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  index={groupBase + j}
-                  active={groupBase + j === index}
-                  tableLast={lastGroup && j === group.tasks.length - 1}
-                />
-              ))}
-            </div>
-          )
-        })}
+        {rows.map((row, i) => (
+          <TaskRow
+            key={row.task.id}
+            row={row}
+            active={i === index}
+            tableLast={i === rows.length - 1}
+            onFocus={() => rowCursor.focus(i)}
+          />
+        ))}
       </div>
     </div>
   )
 }
 
-function HeaderRow({ status }: { status: Status }) {
-  return (
-    <div role="row" className="bg-muted/20 border-b p-2">
-      <span
-        role="columnheader"
-        className={cn(
-          "inline-block rounded-md border px-2 py-0.5 text-xs font-medium tracking-wide uppercase",
-          statusHeaderClass(status),
-        )}
-      >
-        {statusLabel(status)}
-      </span>
-    </div>
-  )
-}
-
 function TaskRow(
-  { task, index, active, tableLast }: {
-    task: TaskListItem
-    index: number
+  { row, active, tableLast, onFocus }: {
+    row: ForestRow
     active: boolean
     tableLast: boolean
+    onFocus: () => void
   },
 ) {
+  const { task, depth } = row
   return (
     <div
       id={rowDomId(task.id)}
       role="row"
       aria-selected={active}
-      onClick={() => rowCursor.focus(index)}
+      onClick={onFocus}
       className={cn(
         // Every row keeps a bottom border so its height never changes; it just goes transparent
         // for the selected row (the outline draws its edges) and the last row (no trailing divider).
@@ -128,10 +93,15 @@ function TaskRow(
           : "hover:bg-muted/30",
       )}
     >
-      <div role="gridcell" className="shrink-0 px-4 py-3">
+      <div
+        role="gridcell"
+        className="shrink-0 py-3"
+        // Indent nested tasks so the parent→child relationship reads at a glance.
+        style={{ paddingLeft: `${1 + depth * 1.5}rem` }}
+      >
         <StatusIcon status={task.status} />
       </div>
-      <div role="gridcell" className="min-w-0 flex-1 py-3">
+      <div className="min-w-0 flex-1 py-3 pl-3" role="gridcell">
         <Link
           to={`/task/${task.id}`}
           tabIndex={-1}

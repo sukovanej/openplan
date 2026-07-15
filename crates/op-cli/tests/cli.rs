@@ -279,7 +279,7 @@ fn set_preserves_unknown_frontmatter_keys() {
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     write(
         &path,
-        "---\nstatus: todo\nrank: 3.5\nassignee: milan\n---\n# Task C\n",
+        "---\nstatus: todo\nestimate: 3.5\nassignee: milan\n---\n# Task C\n",
     );
 
     assert!(
@@ -289,7 +289,10 @@ fn set_preserves_unknown_frontmatter_keys() {
     );
 
     let contents = std::fs::read_to_string(&path).unwrap();
-    assert!(contents.contains("rank: 3.5"), "rank dropped: {contents}");
+    assert!(
+        contents.contains("estimate: 3.5"),
+        "estimate dropped: {contents}"
+    );
     assert!(
         contents.contains("assignee: milan"),
         "assignee dropped: {contents}"
@@ -638,4 +641,146 @@ fn set_rejects_a_cross_branch_write() {
     );
     let view: serde_json::Value = serde_json::from_slice(&feature.stdout).unwrap();
     assert_eq!(view["status"], "done");
+}
+
+fn child(root: &Path, title: &str, parent: &str) -> String {
+    let out = run(root, &["create", title, "--parent", parent]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    stdout(&out).trim().to_owned()
+}
+
+fn tree_ids(root: &Path, id: &str) -> Vec<String> {
+    let out = run(root, &["tree", id, "--json"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let tree: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    tree["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn set_parent_empty_clears_to_top_level() {
+    let dir = store();
+    let parent = create(dir.path(), "Parent");
+    let kid = child(dir.path(), "Kid", &parent);
+
+    assert!(
+        run(dir.path(), &["set", &kid, "parent", ""])
+            .status
+            .success()
+    );
+
+    let show = run(dir.path(), &["show", &kid]);
+    assert!(stdout(&show).contains("parent: -"), "{}", stdout(&show));
+    let path = dir.path().join(".plan/tasks").join(format!("{kid}.md"));
+    assert!(
+        !std::fs::read_to_string(&path).unwrap().contains("parent"),
+        "cleared parent key must drop from the file"
+    );
+}
+
+#[test]
+fn tree_bounds_by_depth_and_reports_json() {
+    let dir = store();
+    let root = create(dir.path(), "Root");
+    let a = child(dir.path(), "A", &root);
+    let _grandchild = child(dir.path(), "A1", &a);
+
+    let out = run(dir.path(), &["tree", &root, "--depth", "1", "--json"]);
+    assert!(out.status.success());
+    let tree: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(tree["children"][0]["id"], a.as_str());
+    assert!(
+        tree["children"][0]["children"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "depth 1 must not expand grandchildren"
+    );
+}
+
+#[test]
+fn move_reorders_siblings_via_before_and_after() {
+    let dir = store();
+    let root = create(dir.path(), "Root");
+    let a = child(dir.path(), "A", &root);
+    let b = child(dir.path(), "B", &root);
+    let c = child(dir.path(), "C", &root);
+
+    // Move C before A, then B after C.
+    assert!(
+        run(dir.path(), &["move", &c, "--parent", &root, "--before", &a])
+            .status
+            .success()
+    );
+    assert!(
+        run(dir.path(), &["move", &b, "--parent", &root, "--after", &c])
+            .status
+            .success()
+    );
+    assert_eq!(
+        tree_ids(dir.path(), &root),
+        vec![c.clone(), b.clone(), a.clone()]
+    );
+}
+
+#[test]
+fn move_reparents_across_parents() {
+    let dir = store();
+    let root = create(dir.path(), "Root");
+    let other = create(dir.path(), "Other");
+    let kid = child(dir.path(), "Kid", &root);
+
+    assert!(
+        run(dir.path(), &["move", &kid, "--parent", &other])
+            .status
+            .success()
+    );
+    assert_eq!(tree_ids(dir.path(), &root), Vec::<String>::new());
+    assert_eq!(tree_ids(dir.path(), &other), vec![kid]);
+}
+
+#[test]
+fn move_under_own_descendant_is_refused() {
+    let dir = store();
+    let a = create(dir.path(), "A");
+    let b = child(dir.path(), "B", &a);
+    let c = child(dir.path(), "C", &b);
+
+    let out = run(dir.path(), &["move", &a, "--parent", &c]);
+    assert!(!out.status.success(), "cycle must be refused");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("descendant"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn move_unranked_siblings_then_reorder_lists_in_new_order() {
+    let dir = store();
+    let root = create(dir.path(), "Root");
+    // Created without explicit order — unranked, so they list by id first.
+    let a = child(dir.path(), "A", &root);
+    let z = child(dir.path(), "Z", &root);
+    assert_eq!(tree_ids(dir.path(), &root), vec![a.clone(), z.clone()]);
+
+    // Reorder Z before A; the group migrates to ranks and the new order sticks.
+    assert!(
+        run(dir.path(), &["move", &z, "--parent", &root, "--before", &a])
+            .status
+            .success()
+    );
+    assert_eq!(tree_ids(dir.path(), &root), vec![z, a]);
 }

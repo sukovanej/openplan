@@ -8,11 +8,14 @@ use std::process::ExitCode;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand};
-use op_api::{BranchMark, ChangeKind, CreateTask, Matrix, MatrixCell, TaskSummary, TaskView};
+use op_api::{
+    BranchMark, ChangeKind, CreateTask, Matrix, MatrixCell, TaskSummary, TaskTree, TaskView,
+    sibling_cmp,
+};
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
-use op_task::Status;
+use op_task::{Status, rank};
 
 use daemon::{Control, DEFAULT_PORT, Home};
 
@@ -76,6 +79,28 @@ enum Command {
         /// Show the per-branch status matrix for this task instead
         #[arg(long)]
         branches: bool,
+    },
+    /// Print the subtask hierarchy rooted at a task
+    Tree {
+        id: String,
+        /// Limit the descent (1 = direct children only); unbounded when omitted
+        #[arg(long)]
+        depth: Option<usize>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Reparent and/or reorder a task among its siblings (rank)
+    Move {
+        id: String,
+        /// New parent id; "" or "-" moves the task to the top level. Omit to keep the current parent
+        #[arg(long)]
+        parent: Option<String>,
+        /// Place the task immediately before this sibling
+        #[arg(long, conflicts_with = "after")]
+        before: Option<String>,
+        /// Place the task immediately after this sibling
+        #[arg(long)]
+        after: Option<String>,
     },
     /// Set a validated field: status | parent | deps
     Set {
@@ -172,6 +197,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Show { id, branches } => {
             show(&cli.root, &id, branches).map(|()| ExitCode::SUCCESS)
         }
+        Command::Tree { id, depth, json } => {
+            tree(&cli.root, &id, depth, json).map(|()| ExitCode::SUCCESS)
+        }
+        Command::Move {
+            id,
+            parent,
+            before,
+            after,
+        } => move_task(&cli.root, &id, parent, before, after).map(|()| ExitCode::SUCCESS),
         Command::Set { id, field, value } => {
             set(&cli.root, &id, &field, &value).map(|()| ExitCode::SUCCESS)
         }
@@ -532,7 +566,8 @@ fn set(root: &Path, id: &str, field: &str, value: &str) -> Result<()> {
     store.update(id, |task| {
         match field {
             "status" => task.set_status(value.parse().map_err(invalid)?),
-            "parent" => task.set_parent(Some(value.to_owned())),
+            // "" or "-" clears the parent (top level), mirroring how `deps ""` clears deps.
+            "parent" => task.set_parent(parse_parent(value)),
             "deps" => task.set_deps(
                 value
                     .split(',')
@@ -587,4 +622,184 @@ fn branches(root: &Path) -> Result<()> {
         println!("{branch}");
     }
     Ok(())
+}
+
+// "" or the "-" sentinel clears the parent (top level); any other value sets it.
+fn parse_parent(value: &str) -> Option<String> {
+    if value.is_empty() || value == "-" {
+        None
+    } else {
+        Some(value.to_owned())
+    }
+}
+
+fn local_summaries(store: &Store) -> Result<Vec<TaskSummary>> {
+    let mut summaries = Vec::new();
+    for id in store.task_ids()? {
+        match store.read(&id) {
+            Ok(task) => summaries.push(TaskSummary::from_task(id, &task)),
+            Err(err) => eprintln!("{id}: {err}"),
+        }
+    }
+    Ok(summaries)
+}
+
+fn tree(root: &Path, id: &str, depth: Option<usize>, json: bool) -> Result<()> {
+    let store = Store::discover(root)?;
+    if !store.exists(id) {
+        bail!("no such task: {id}");
+    }
+    let summaries = local_summaries(&store)?;
+    let mut cycles = Vec::new();
+    let tree = TaskTree::build(&summaries, id, depth, &mut cycles)
+        .ok_or_else(|| anyhow::anyhow!("no such task: {id}"))?;
+    let mut reported = std::collections::BTreeSet::new();
+    for cycle in cycles {
+        if reported.insert(cycle.clone()) {
+            eprintln!("warning: parent cycle at {cycle}; its subtree is truncated");
+        }
+    }
+    if json {
+        println!("{}", serde_json::to_string_pretty(&tree)?);
+    } else {
+        print_tree(&tree, 0);
+    }
+    Ok(())
+}
+
+fn print_tree(node: &TaskTree, depth: usize) {
+    println!(
+        "{}{:<28} {:<11} {}",
+        "  ".repeat(depth),
+        node.id,
+        node.status.as_str(),
+        node.title,
+    );
+    for child in &node.children {
+        print_tree(child, depth + 1);
+    }
+}
+
+fn move_task(
+    root: &Path,
+    id: &str,
+    parent: Option<String>,
+    before: Option<String>,
+    after: Option<String>,
+) -> Result<()> {
+    let store = Store::discover(root)?;
+    let current_parent = store.read(id)?.frontmatter.parent;
+    let new_parent = match parent {
+        None => current_parent,
+        Some(value) => parse_parent(&value),
+    };
+    let summaries = local_summaries(&store)?;
+    let mut siblings: Vec<&TaskSummary> = summaries
+        .iter()
+        .filter(|s| s.parent == new_parent && s.id != id)
+        .collect();
+    siblings.sort_by(|a, b| sibling_cmp(a, b));
+    let insert = insert_index(&siblings, before.as_deref(), after.as_deref())?;
+
+    match rank_plan(&siblings, insert) {
+        RankPlan::Single(new_rank) => {
+            store.update(id, |task| {
+                task.set_parent(new_parent.clone());
+                task.set_rank(Some(new_rank.clone()));
+                Ok(())
+            })?;
+        }
+        // A sibling group with missing or colliding ranks can't be split by a single fractional
+        // key, so materialize a fresh, evenly-spaced order for the whole group in one pass (§4).
+        RankPlan::Rebalance {
+            siblings: assigned,
+            x_rank,
+        } => {
+            for (sibling_id, sibling_rank) in assigned {
+                store.update(&sibling_id, |task| {
+                    task.set_rank(Some(sibling_rank.clone()));
+                    Ok(())
+                })?;
+            }
+            store.update(id, |task| {
+                task.set_parent(new_parent.clone());
+                task.set_rank(Some(x_rank.clone()));
+                Ok(())
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn insert_index(
+    siblings: &[&TaskSummary],
+    before: Option<&str>,
+    after: Option<&str>,
+) -> Result<usize> {
+    if let Some(before) = before {
+        let pos = sibling_pos(siblings, before)?;
+        Ok(pos)
+    } else if let Some(after) = after {
+        let pos = sibling_pos(siblings, after)?;
+        Ok(pos + 1)
+    } else {
+        Ok(siblings.len())
+    }
+}
+
+fn sibling_pos(siblings: &[&TaskSummary], target: &str) -> Result<usize> {
+    siblings
+        .iter()
+        .position(|s| s.id == target)
+        .ok_or_else(|| anyhow::anyhow!("{target} is not a sibling under the target parent"))
+}
+
+enum RankPlan {
+    Single(String),
+    Rebalance {
+        siblings: Vec<(String, String)>,
+        x_rank: String,
+    },
+}
+
+fn rank_plan(siblings: &[&TaskSummary], insert: usize) -> RankPlan {
+    let ranks: Vec<&str> = siblings.iter().filter_map(|s| s.rank.as_deref()).collect();
+    let all_ranked = ranks.len() == siblings.len();
+    let unique = {
+        let set: std::collections::BTreeSet<&str> = ranks.iter().copied().collect();
+        set.len() == ranks.len()
+    };
+    if all_ranked && unique {
+        let lower = insert
+            .checked_sub(1)
+            .map(|i| siblings[i].rank.as_deref().unwrap());
+        let upper = siblings.get(insert).map(|s| s.rank.as_deref().unwrap());
+        RankPlan::Single(rank::between(lower, upper))
+    } else {
+        let keys = spaced_keys(siblings.len() + 1);
+        let assigned = siblings
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let slot = if i < insert { i } else { i + 1 };
+                (s.id.clone(), keys[slot].clone())
+            })
+            .collect();
+        RankPlan::Rebalance {
+            siblings: assigned,
+            x_rank: keys[insert].clone(),
+        }
+    }
+}
+
+// `n` strictly-increasing rank keys, evenly stepping up from the open start toward the open end.
+fn spaced_keys(n: usize) -> Vec<String> {
+    let mut keys = Vec::with_capacity(n);
+    let mut prev: Option<String> = None;
+    for _ in 0..n {
+        let key = rank::between(prev.as_deref(), None);
+        prev = Some(key.clone());
+        keys.push(key);
+    }
+    keys
 }

@@ -120,3 +120,95 @@ it.effect("rejects a malformed status with a decode failure", () =>
       expect(Result.isFailure(outcome)).toBe(true)
     }),
   ))
+
+import { HttpClientRequest } from "effect/unstable/http"
+import { createTask, getTree, patchTask } from "../src/lib/api"
+
+function decodeBody(request: HttpClientRequest.HttpClientRequest): unknown {
+  const body = request.body
+  if (body._tag === "Uint8Array") {
+    return JSON.parse(new TextDecoder().decode(body.body))
+  }
+  return undefined
+}
+
+const captureRequest = (response: () => Response) => {
+  const captured: { request?: HttpClientRequest.HttpClientRequest } = {}
+  const client = HttpClient.make((request) => {
+    captured.request = request
+    return Effect.succeed(HttpClientResponse.fromWeb(request, response()))
+  })
+  const provide = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
+    effect.pipe(
+      Effect.provideService(HttpClient.HttpClient, client),
+      Effect.provideService(ApiBaseUrl, "http://localhost"),
+    )
+  return { captured, provide }
+}
+
+it.effect("decodes a nested subtree from GET /api/tasks/:id/tree", () =>
+  withResponse(() =>
+    json({
+      id: "root",
+      title: "Root",
+      status: "todo",
+      children: [
+        {
+          id: "child",
+          title: "Child",
+          status: "in_progress",
+          parent: "root",
+          rank: "m",
+          children: [
+            { id: "grand", title: "Grand", status: "done", parent: "child", rank: "m", children: [] },
+          ],
+        },
+      ],
+    })
+  )(
+    Effect.gen(function*() {
+      const tree = yield* getTree("root")
+      expect(tree.children.map((c) => c.id)).toEqual(["child"])
+      expect(tree.children[0].children[0].id).toBe("grand")
+    }),
+  ))
+
+it.effect("bounds the tree request with ?depth=", () =>
+  Effect.gen(function*() {
+    const { captured, provide } = captureRequest(() =>
+      json({ id: "root", title: "Root", status: "todo", children: [] })
+    )
+    yield* provide(getTree("root", 1))
+    expect(captured.request?.url).toContain("/api/tasks/root/tree?depth=1")
+  }))
+
+it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
+  Effect.gen(function*() {
+    const { captured, provide } = captureRequest(() =>
+      json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] })
+    )
+    const detail = yield* provide(patchTask("child", { parent: null }))
+    expect(captured.request?.method).toBe("PATCH")
+    expect(captured.request?.url).toContain("/api/tasks/child")
+    expect(decodeBody(captured.request!)).toEqual({ parent: null })
+    expect(detail.id).toBe("child")
+  }))
+
+it.effect("PATCH sends a parent id to reparent", () =>
+  Effect.gen(function*() {
+    const { captured, provide } = captureRequest(() =>
+      json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] })
+    )
+    yield* provide(patchTask("child", { parent: "epic-1" }))
+    expect(decodeBody(captured.request!)).toEqual({ parent: "epic-1" })
+  }))
+
+it.effect("POST creates a child under a parent and returns the new id", () =>
+  Effect.gen(function*() {
+    const { captured, provide } = captureRequest(() => json({ id: "new-1" }, 201))
+    const id = yield* provide(createTask({ title: "Subtask", parent: "root" }))
+    expect(captured.request?.method).toBe("POST")
+    expect(captured.request?.url).toContain("/api/tasks")
+    expect(decodeBody(captured.request!)).toEqual({ title: "Subtask", parent: "root" })
+    expect(id).toBe("new-1")
+  }))

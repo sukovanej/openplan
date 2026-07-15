@@ -129,6 +129,18 @@ function refreshTaskQueries(id: string): void {
   }
 }
 
+// Run a write, then refresh the list and every open task detail so the change shows at once —
+// without waiting for the daemon's SSE echo (which also refreshes, and covers external edits).
+export function runMutation<A>(
+  effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
+): Promise<A> {
+  return runtime.runPromise(effect).then((value) => {
+    tasksQuery.refresh()
+    for (const query of taskQueries.values()) query.refresh()
+    return value
+  })
+}
+
 export const storeInvalidator: Invalidator = {
   refreshList: () => tasksQuery.refresh(),
   refreshTask: (id) => refreshTaskQueries(id),

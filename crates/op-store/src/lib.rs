@@ -238,6 +238,9 @@ impl Store {
                         "parent {parent} does not exist"
                     )));
                 }
+                if let Some(id) = id {
+                    self.reject_parent_cycle(id, parent)?;
+                }
             }
         }
         for dep in &new.deps {
@@ -255,6 +258,30 @@ impl Store {
                     "dependency {dep} does not exist"
                 )));
             }
+        }
+        Ok(())
+    }
+
+    // Reparenting `id` under `parent` must not make `id` an ancestor of itself. Walk up from
+    // `parent`: reaching `id` would close a cycle, so refuse. Bounded by a visited set so a
+    // pre-existing cycle among other tasks is reported rather than looped on forever.
+    fn reject_parent_cycle(&self, id: &str, parent: &str) -> Result<(), StoreError> {
+        let mut cursor = Some(parent.to_owned());
+        let mut seen = std::collections::HashSet::new();
+        while let Some(current) = cursor {
+            if current == id {
+                return Err(StoreError::Invalid(format!(
+                    "cannot reparent {id} under its own descendant {parent}"
+                )));
+            }
+            if !seen.insert(current.clone()) {
+                break;
+            }
+            cursor = match self.read(&current) {
+                Ok(task) => task.frontmatter.parent,
+                Err(StoreError::NotFound { .. }) => None,
+                Err(err) => return Err(err),
+            };
         }
         Ok(())
     }
