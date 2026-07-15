@@ -14,12 +14,12 @@ const proseSpacing =
 // The [&_pre_code] reset keeps these chip styles from leaking into fenced blocks,
 // which already carry their own background and padding via prose-pre.
 const proseCode =
-  "prose-code:font-normal prose-code:bg-muted prose-code:rounded prose-code:px-1.5 prose-code:py-1 prose-code:before:content-none prose-code:after:content-none [&_pre_code]:bg-transparent [&_pre_code]:p-0"
+  "prose-code:font-normal prose-code:text-[0.875em] prose-code:bg-muted prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:before:content-none prose-code:after:content-none [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[1em]"
 
-// GFM task-list items carry the `task-list-item` class; drop their bullet and align the custom
-// checkbox with the first line of text.
+// GFM task-list items carry the `task-list-item` class; drop their bullet and keep the checkbox
+// inline so code chips and text stay in normal inline flow instead of becoming flex items.
 const proseTaskList =
-  "[&_li.task-list-item]:list-none [&_li.task-list-item]:flex [&_li.task-list-item]:items-baseline [&_li.task-list-item]:gap-2 [&_ul:has(li.task-list-item)]:pl-1"
+  "[&_li.task-list-item]:list-none [&_ul:has(li.task-list-item)]:pl-1"
 
 const proseTable =
   "prose-table:my-0 prose-thead:bg-muted/40 prose-th:border-b prose-th:border-r prose-th:border-border prose-th:px-3 prose-th:py-1.5 prose-td:border-b prose-td:border-r prose-td:border-border prose-td:px-3 prose-td:py-1.5 [&_th:last-child]:border-r-0 [&_td:last-child]:border-r-0 [&_tbody_tr:last-child_td]:border-b-0"
@@ -43,7 +43,7 @@ const components: Components = {
         role="checkbox"
         aria-checked={checked}
         className={cn(
-          "relative top-0.5 inline-block size-[1.05em] shrink-0",
+          "relative top-0.5 mr-1.5 inline-block size-[1.05em] shrink-0",
           checked ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground/60",
         )}
       />
