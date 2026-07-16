@@ -33,6 +33,7 @@ use tower_http::trace::TraceLayer;
 use tracing::Span;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
+use utoipa_swagger_ui::SwaggerUi;
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 const SLOW_REQUEST: Duration = Duration::from_millis(1000);
@@ -101,8 +102,9 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 }
 
 pub fn app(state: AppState) -> Router {
-    let (router, _) = documented().split_for_parts();
+    let (router, api) = documented().split_for_parts();
     router
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
         .route("/api/events", get(events))
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
