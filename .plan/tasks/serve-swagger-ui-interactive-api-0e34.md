@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 ---
 # Serve Swagger UI (interactive API docs) from op-server
 
