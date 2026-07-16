@@ -136,8 +136,16 @@ function TaskRow(
         >
           {task.title}
         </Link>
-        {parent_title !== undefined && (
-          <span className="text-muted-foreground block truncate text-xs">↳ under {parent_title}</span>
+        {parent_title !== undefined && task.parent !== undefined && (
+          <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="text-muted-foreground/70">Subtask of</span>
+            <Link
+              to={`/task/${task.parent}`}
+              className="text-foreground/90 relative z-10 max-w-[15rem] truncate hover:underline"
+            >
+              {parent_title}
+            </Link>
+          </span>
         )}
       </div>
       <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">

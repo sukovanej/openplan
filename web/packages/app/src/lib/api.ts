@@ -75,7 +75,7 @@ export type TaskDetail = typeof TaskDetail.Type
 
 // One rendered line of the board: the task, its `depth` within the status group (a group-local root
 // is 0), whether a nested row sits beneath it, and — for a group-local root whose real parent lives
-// in another status group — that parent's title for an "under <parent>" hint.
+// in another status group — that parent's title for a "Subtask of <parent>" hint.
 export const BoardRow = Schema.Struct({
   task: TaskListItem,
   depth: Schema.Number,
