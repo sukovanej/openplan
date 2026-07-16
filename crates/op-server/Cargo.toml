@@ -24,6 +24,7 @@ serde_json.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
+utoipa-swagger-ui.workspace = true
 
 [dev-dependencies]
 tower.workspace = true

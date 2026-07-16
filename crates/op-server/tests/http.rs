@@ -743,3 +743,30 @@ async fn headline_follows_the_most_recent_change_even_on_the_default_branch() {
     let detail = send(&state, "GET", "/api/tasks/alpha", None).await;
     assert_eq!(body_json(detail).await["status"], "done");
 }
+
+#[tokio::test]
+async fn openapi_spec_is_served_over_http() {
+    let response = get("/api-docs/openapi.json").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let spec = body_json(response).await;
+    assert_eq!(spec["info"]["title"], "open-planner");
+    assert!(spec["paths"].get("/api/tasks").is_some());
+    assert!(spec["paths"].get("/api/tasks/{id}").is_some());
+}
+
+#[tokio::test]
+async fn swagger_ui_page_is_served() {
+    let response = get("/swagger-ui/").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert!(content_type.starts_with("text/html"));
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&bytes);
+    assert!(html.to_lowercase().contains("swagger"));
+}
