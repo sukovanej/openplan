@@ -53,18 +53,22 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
     }),
   ))
 
-it.effect("decodes a task detail with its branch set from GET /api/tasks/:id", () =>
+it.effect("decodes a task detail with its branch set and hierarchy from GET /api/tasks/:id", () =>
   withResponse(() =>
     json({
       id: "a-1",
       title: "First",
       status: "todo",
+      parent: "epic-1",
       body: "# First\n",
       headline: "feature",
       branches: [
         { branch: "feature", status: "done", blob_oid: "ccc", dirty: false, kind: "modified" },
         { branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" },
       ],
+      parent_title: "Epic",
+      children: [{ id: "kid-1", title: "Kid", status: "in_progress", rank: "m" }],
+      refs: [{ id: "epic-1", title: "Epic", status: "todo" }],
     })
   )(
     Effect.gen(function*() {
@@ -74,6 +78,28 @@ it.effect("decodes a task detail with its branch set from GET /api/tasks/:id", (
       expect(task.body).toBe("# First\n")
       expect(task.headline).toBe("feature")
       expect(task.branches.map((b) => b.branch)).toEqual(["feature", "main"])
+      expect(task.parent_title).toBe("Epic")
+      expect(task.children?.map((c) => c.id)).toEqual(["kid-1"])
+      expect(task.refs?.[0].title).toBe("Epic")
+    }),
+  ))
+
+it.effect("decodes a task detail that omits the optional hierarchy fields", () =>
+  withResponse(() =>
+    json({
+      id: "solo-1",
+      title: "Solo",
+      status: "todo",
+      body: "# Solo\n",
+      headline: "main",
+      branches: [],
+    })
+  )(
+    Effect.gen(function*() {
+      const task = yield* getTask("solo-1")
+      expect(task.parent_title).toBeUndefined()
+      expect(task.children).toBeUndefined()
+      expect(task.refs).toBeUndefined()
     }),
   ))
 
@@ -122,7 +148,7 @@ it.effect("rejects a malformed status with a decode failure", () =>
   ))
 
 import { HttpClientRequest } from "effect/unstable/http"
-import { createTask, getTree, patchTask } from "../src/lib/api"
+import { createTask, patchTask } from "../src/lib/api"
 
 function decodeBody(request: HttpClientRequest.HttpClientRequest): unknown {
   const body = request.body
@@ -145,42 +171,6 @@ const captureRequest = (response: () => Response) => {
     )
   return { captured, provide }
 }
-
-it.effect("decodes a nested subtree from GET /api/tasks/:id/tree", () =>
-  withResponse(() =>
-    json({
-      id: "root",
-      title: "Root",
-      status: "todo",
-      children: [
-        {
-          id: "child",
-          title: "Child",
-          status: "in_progress",
-          parent: "root",
-          rank: "m",
-          children: [
-            { id: "grand", title: "Grand", status: "done", parent: "child", rank: "m", children: [] },
-          ],
-        },
-      ],
-    })
-  )(
-    Effect.gen(function*() {
-      const tree = yield* getTree("root")
-      expect(tree.children.map((c) => c.id)).toEqual(["child"])
-      expect(tree.children[0].children[0].id).toBe("grand")
-    }),
-  ))
-
-it.effect("bounds the tree request with ?depth=", () =>
-  Effect.gen(function*() {
-    const { captured, provide } = captureRequest(() =>
-      json({ id: "root", title: "Root", status: "todo", children: [] })
-    )
-    yield* provide(getTree("root", 1))
-    expect(captured.request?.url).toContain("/api/tasks/root/tree?depth=1")
-  }))
 
 it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
   Effect.gen(function*() {

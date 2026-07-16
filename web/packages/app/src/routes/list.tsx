@@ -3,38 +3,38 @@ import { Link } from "react-router-dom"
 
 import { BranchBadges } from "@/components/branch-badges"
 import { ListSkeleton, Message } from "@/components/states"
-import { StatusIcon } from "@/components/status-badge"
-import type { TaskListItem } from "@/lib/api"
+import { statusHeaderClass, StatusIcon, statusLabel } from "@/components/status-badge"
+import type { Board, BoardRow, Status } from "@/lib/api"
 import { errorText } from "@/lib/format"
-import { type ForestRow, forestRows } from "@/lib/hierarchy"
 import { rowCursor, useRowCursor } from "@/lib/row-cursor"
-import { tasksQuery, useQuery } from "@/lib/store"
+import { boardQuery, useQuery } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 export function ListRoute() {
-  const tasks = useQuery(tasksQuery)
-  switch (tasks._tag) {
+  const board = useQuery(boardQuery)
+  switch (board._tag) {
     case "loading":
       return <ListSkeleton />
     case "failure":
-      return <Message title="Could not load tasks" detail={errorText(tasks.error)} />
+      return <Message title="Could not load tasks" detail={errorText(board.error)} />
     case "success":
-      return tasks.value.length === 0
+      return board.value.groups.length === 0
         ? <Message title="No tasks yet" detail="Create one with `oplan create`." />
-        : <TaskGrid tasks={tasks.value} />
+        : <TaskGrid board={board.value} />
   }
 }
 
 const rowDomId = (id: string) => `task-row-${id}`
 
-function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
-  // Pre-order the parent→child forest so each task is followed by its rank-ordered subtree; the row
-  // cursor then walks the same visible order.
-  const rows = useMemo(() => forestRows(tasks), [tasks])
+function TaskGrid({ board }: { board: Board }) {
+  // The board arrives already grouped, ordered, and flattened; the cursor walks the concatenation of
+  // every group's rows in that same visible order.
+  const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
   const ids = useMemo(() => rows.map((row) => row.task.id), [rows])
   const { index } = useRowCursor(ids)
   const activeId = index >= 0 && index < rows.length ? rowDomId(rows[index].task.id) : undefined
 
+  let base = 0
   return (
     <div
       role="grid"
@@ -52,29 +52,56 @@ function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
         Tasks
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {rows.map((row, i) => (
-          <TaskRow
-            key={row.task.id}
-            row={row}
-            active={i === index}
-            tableLast={i === rows.length - 1}
-            onFocus={() => rowCursor.focus(i)}
-          />
-        ))}
+        {board.groups.map((group, groupIndex) => {
+          const lastGroup = groupIndex === board.groups.length - 1
+          return (
+            <div key={group.status} role="rowgroup" aria-label={statusLabel(group.status)}>
+              <HeaderRow status={group.status} />
+              {group.rows.map((row, j) => {
+                const i = base++
+                return (
+                  <TaskRow
+                    key={row.task.id}
+                    row={row}
+                    active={i === index}
+                    tableLast={lastGroup && j === group.rows.length - 1}
+                    onFocus={() => rowCursor.focus(i)}
+                  />
+                )
+              })}
+            </div>
+          )
+        })}
       </div>
+    </div>
+  )
+}
+
+function HeaderRow({ status }: { status: Status }) {
+  return (
+    <div role="row" className="bg-muted/20 border-b p-2">
+      <span
+        role="columnheader"
+        className={cn(
+          "inline-block rounded-md border px-2 py-0.5 text-xs font-medium tracking-wide uppercase",
+          statusHeaderClass(status),
+        )}
+      >
+        {statusLabel(status)}
+      </span>
     </div>
   )
 }
 
 function TaskRow(
   { row, active, tableLast, onFocus }: {
-    row: ForestRow
+    row: BoardRow
     active: boolean
     tableLast: boolean
     onFocus: () => void
   },
 ) {
-  const { task, depth } = row
+  const { task, depth, parent_title } = row
   return (
     <div
       id={rowDomId(task.id)}
@@ -109,6 +136,9 @@ function TaskRow(
         >
           {task.title}
         </Link>
+        {parent_title !== undefined && (
+          <span className="text-muted-foreground block truncate text-xs">↳ under {parent_title}</span>
+        )}
       </div>
       <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">
         <BranchBadges branches={task.branches} headline={task.headline} />

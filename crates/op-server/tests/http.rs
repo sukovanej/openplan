@@ -236,30 +236,74 @@ async fn patch_parent_null_clears_absent_leaves_id_sets() {
 }
 
 #[tokio::test]
-async fn tree_endpoint_returns_nested_subtree_bounded_by_depth() {
+async fn board_groups_by_status_and_nests_same_status_children() {
     let (dir, state) = store_state();
     let tasks = dir.path().join(".plan/tasks");
-    std::fs::write(tasks.join("root.md"), "---\nstatus: todo\n---\n# Root\n").unwrap();
     std::fs::write(
-        tasks.join("a.md"),
-        "---\nstatus: todo\nparent: root\nrank: m\n---\n# A\n",
+        tasks.join("epic.md"),
+        "---\nstatus: in_progress\n---\n# Epic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("sub-open.md"),
+        "---\nstatus: in_progress\nparent: epic\nrank: m\n---\n# Sub open\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("sub-todo.md"),
+        "---\nstatus: todo\nparent: epic\n---\n# Sub todo\n",
+    )
+    .unwrap();
+
+    let board = body_json(send(&state, "GET", "/api/board", None).await).await;
+    let groups = board["groups"].as_array().unwrap();
+    let order: Vec<&str> = groups
+        .iter()
+        .map(|g| g["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(order, vec!["in_progress", "todo"]);
+
+    // Same-status child nests under the epic (depth 1); the todo child surfaces in its own group as
+    // a root carrying the parent hint.
+    let in_progress = &groups[0]["rows"];
+    assert_eq!(in_progress[0]["task"]["id"], "epic");
+    assert_eq!(in_progress[0]["depth"], 0);
+    assert_eq!(in_progress[0]["has_children"], true);
+    assert_eq!(in_progress[1]["task"]["id"], "sub-open");
+    assert_eq!(in_progress[1]["depth"], 1);
+
+    let todo = &groups[1]["rows"];
+    assert_eq!(todo[0]["task"]["id"], "sub-todo");
+    assert_eq!(todo[0]["depth"], 0);
+    assert_eq!(todo[0]["parent_title"], "Epic");
+}
+
+#[tokio::test]
+async fn task_detail_carries_parent_title_children_and_resolved_refs() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(tasks.join("epic.md"), "---\nstatus: todo\n---\n# Epic\n").unwrap();
+    std::fs::write(
+        tasks.join("child.md"),
+        "---\nstatus: in_progress\nparent: epic\nrank: m\n---\n# Child\n\nblocks [[epic]], not [[ghost-0000]] or `[[epic]]`.\n",
     )
     .unwrap();
     std::fs::write(
         tasks.join("b.md"),
-        "---\nstatus: todo\nparent: root\nrank: t\n---\n# B\n",
+        "---\nstatus: todo\nparent: child\nrank: t\n---\n# B\n",
     )
     .unwrap();
     std::fs::write(
-        tasks.join("a1.md"),
-        "---\nstatus: todo\nparent: a\nrank: m\n---\n# A1\n",
+        tasks.join("a.md"),
+        "---\nstatus: todo\nparent: child\nrank: m\n---\n# A\n",
     )
     .unwrap();
 
-    let full = send(&state, "GET", "/api/tasks/root/tree", None).await;
-    assert_eq!(full.status(), StatusCode::OK);
-    let tree = body_json(full).await;
-    let children = tree["children"].as_array().unwrap();
+    let detail = body_json(send(&state, "GET", "/api/tasks/child", None).await).await;
+    assert_eq!(detail["parent_title"], "Epic");
+
+    // Direct children arrive in rank order (a before b), each with title + status.
+    let children = detail["children"].as_array().unwrap();
     assert_eq!(
         children
             .iter()
@@ -267,20 +311,18 @@ async fn tree_endpoint_returns_nested_subtree_bounded_by_depth() {
             .collect::<Vec<_>>(),
         vec!["a", "b"]
     );
-    assert_eq!(children[0]["children"][0]["id"], "a1");
+    assert_eq!(children[0]["title"], "A");
 
-    let shallow = send(&state, "GET", "/api/tasks/root/tree?depth=1", None).await;
-    let shallow = body_json(shallow).await;
-    assert!(
-        shallow["children"][0]["children"]
-            .as_array()
-            .unwrap()
-            .is_empty(),
-        "depth=1 must not expand grandchildren"
-    );
+    // Only resolvable `[[id]]`s become refs, deduped; a dangling id is dropped.
+    let refs = detail["refs"].as_array().unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0]["id"], "epic");
+    assert_eq!(refs[0]["title"], "Epic");
 
-    let missing = send(&state, "GET", "/api/tasks/ghost/tree", None).await;
-    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    // A top-level task reports no parent and no children.
+    let epic = body_json(send(&state, "GET", "/api/tasks/epic", None).await).await;
+    assert!(epic.get("parent_title").is_none());
+    assert_eq!(epic["children"][0]["id"], "child");
 }
 
 #[tokio::test]

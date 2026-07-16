@@ -9,6 +9,7 @@ import { focusedId, rowCursor } from "../../src/lib/row-cursor"
 interface Harness {
   readonly navigations: Array<string>
   readonly overlay: { open: number; close: number; toggle: number }
+  readonly detail: { editParent: number; addSubtask: number; goToParent: number; escape: number }
   setScope: (scope: RouteScope) => void
   setOverlayOpen: (open: boolean) => void
   detach: () => void
@@ -19,6 +20,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   let overlayOpen = false
   const navigations: Array<string> = []
   const overlay = { open: 0, close: 0, toggle: 0 }
+  const detail = { editParent: 0, addSubtask: 0, goToParent: 0, escape: 0 }
   const context = (): RunContext => ({
     navigate: (to) => navigations.push(to),
     overlay: {
@@ -29,6 +31,12 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     cursor: {
       moveBy: rowCursor.moveBy,
       focusedId: () => focusedId(rowCursor.getSnapshot()),
+    },
+    detail: {
+      editParent: () => void detail.editParent++,
+      addSubtask: () => void detail.addSubtask++,
+      goToParent: () => void detail.goToParent++,
+      escape: () => void detail.escape++,
     },
   })
   const dispatcher = new Dispatcher({
@@ -42,6 +50,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   return {
     navigations,
     overlay,
+    detail,
     setScope: (next) => void (scope = next),
     setOverlayOpen: (next) => void (overlayOpen = next),
     detach,
@@ -164,15 +173,57 @@ describe("cursor clamping", () => {
   })
 })
 
+describe("row cursor is live on both the list and detail routes", () => {
+  it("moves and opens from j/k/Enter while on a task detail page", () => {
+    const h = mount()
+    h.setScope("detail")
+    rowCursor.setRows(["a", "b", "c"])
+
+    press("j")
+    press("j")
+    expect(rowCursor.getSnapshot().index).toBe(1)
+
+    press("Enter")
+    expect(h.navigations).toEqual(["/task/b"])
+    h.detach()
+  })
+})
+
 describe("scope resolution", () => {
-  it("routes Escape to the list only on the detail route", () => {
+  it("routes Escape to the detail-view handler only on the detail route", () => {
     const h = mount()
     press("Escape")
-    expect(h.navigations).toEqual([])
+    expect(h.detail.escape).toBe(0)
 
     h.setScope("detail")
     press("Escape")
-    expect(h.navigations).toEqual(["/"])
+    expect(h.detail.escape).toBe(1)
+    h.detach()
+  })
+
+  it("triggers parent and subtask edits only on the detail route", () => {
+    const h = mount()
+    press("p")
+    press("s")
+    expect(h.detail).toEqual({ editParent: 0, addSubtask: 0, goToParent: 0, escape: 0 })
+
+    h.setScope("detail")
+    press("p")
+    press("s")
+    expect(h.detail).toEqual({ editParent: 1, addSubtask: 1, goToParent: 0, escape: 0 })
+    h.detach()
+  })
+
+  it("distinguishes the g-p chord (go to parent) from a bare p (edit parent)", () => {
+    const h = mount()
+    h.setScope("detail")
+
+    press("g")
+    press("p")
+    expect(h.detail).toMatchObject({ goToParent: 1, editParent: 0 })
+
+    press("p")
+    expect(h.detail).toMatchObject({ goToParent: 1, editParent: 1 })
     h.detach()
   })
 

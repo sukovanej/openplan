@@ -36,8 +36,27 @@ export const TaskListItem = Schema.Struct({
 })
 export type TaskListItem = typeof TaskListItem.Type
 
-// A task's view on one branch plus every branch it lives on, so the detail page can render a
-// branch switcher even when loaded cold (no list in memory).
+// A direct child of a task, in sibling (`rank`) order — the subtasks list renders straight from this.
+export const TaskChild = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: Status,
+  rank: Schema.optionalKey(Schema.String),
+})
+export type TaskChild = typeof TaskChild.Type
+
+// A task referenced by `[[id]]` in the body, resolved to its current title/status so a chip renders
+// without a full-list lookup.
+export const TaskRef = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: Status,
+})
+export type TaskRef = typeof TaskRef.Type
+
+// A task's view on one branch plus every branch it lives on, so the detail page can render a branch
+// switcher even when loaded cold (no list in memory). `parent_title`, `children`, and `refs` carry
+// the immediate hierarchy so the page renders from this one read rather than the whole task set.
 export const TaskDetail = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
@@ -48,27 +67,35 @@ export const TaskDetail = Schema.Struct({
   body: Schema.String,
   headline: Schema.String,
   branches: Schema.Array(BranchState),
+  parent_title: Schema.optionalKey(Schema.String),
+  children: Schema.optionalKey(Schema.Array(TaskChild)),
+  refs: Schema.optionalKey(Schema.Array(TaskRef)),
 })
 export type TaskDetail = typeof TaskDetail.Type
 
-// The subtree the daemon builds by grouping the flat task set on `parent`; siblings arrive in
-// `rank` order.
-export interface TaskTree {
-  readonly id: string
-  readonly title: string
-  readonly status: Status
-  readonly parent?: string
-  readonly rank?: string
-  readonly children: ReadonlyArray<TaskTree>
-}
-export const TaskTree: Schema.Codec<TaskTree> = Schema.Struct({
-  id: Schema.String,
-  title: Schema.String,
-  status: Status,
-  parent: Schema.optionalKey(Schema.String),
-  rank: Schema.optionalKey(Schema.String),
-  children: Schema.Array(Schema.suspend((): Schema.Codec<TaskTree> => TaskTree)),
+// One rendered line of the board: the task, its `depth` within the status group (a group-local root
+// is 0), whether a nested row sits beneath it, and — for a group-local root whose real parent lives
+// in another status group — that parent's title for an "under <parent>" hint.
+export const BoardRow = Schema.Struct({
+  task: TaskListItem,
+  depth: Schema.Number,
+  has_children: Schema.Boolean,
+  parent_title: Schema.optionalKey(Schema.String),
 })
+export type BoardRow = typeof BoardRow.Type
+
+export const BoardGroup = Schema.Struct({
+  status: Status,
+  rows: Schema.Array(BoardRow),
+})
+export type BoardGroup = typeof BoardGroup.Type
+
+// The whole list view in one read: status groups in render order, each already flattened into
+// ordered rows. The client renders it verbatim — the server owns grouping, ordering, and hierarchy.
+export const Board = Schema.Struct({
+  groups: Schema.Array(BoardGroup),
+})
+export type Board = typeof Board.Type
 
 const TaskListItems = Schema.Array(TaskListItem)
 
@@ -95,6 +122,17 @@ export const listTasks: Effect.Effect<
   return yield* HttpClientResponse.schemaBodyJson(TaskListItems)(response)
 }).pipe(Effect.scoped)
 
+export const getBoard: Effect.Effect<
+  Board,
+  HttpClientError.HttpClientError | Schema.SchemaError,
+  HttpClient.HttpClient
+> = Effect.gen(function*() {
+  const client = yield* HttpClient.HttpClient
+  const base = yield* ApiBaseUrl
+  const response = yield* client.get(`${base}/api/board`)
+  return yield* HttpClientResponse.schemaBodyJson(Board)(response)
+}).pipe(Effect.scoped)
+
 // Omitting `branch` returns the headline (current-worktree) version; passing one returns that
 // branch's version. Either way the response carries every branch the task lives on.
 export const getTask = (
@@ -111,23 +149,6 @@ export const getTask = (
     }
     const ok = yield* HttpClientResponse.filterStatusOk(response)
     return yield* HttpClientResponse.schemaBodyJson(TaskDetail)(ok)
-  }).pipe(Effect.scoped)
-
-// The subtree rooted at `id`, bounded by `depth` (direct children at `1`, unbounded when omitted).
-export const getTree = (
-  id: string,
-  depth?: number,
-): Effect.Effect<TaskTree, TaskError, HttpClient.HttpClient> =>
-  Effect.gen(function*() {
-    const client = yield* HttpClient.HttpClient
-    const base = yield* ApiBaseUrl
-    const query = depth === undefined ? "" : `?depth=${depth}`
-    const response = yield* client.get(`${base}/api/tasks/${encodeURIComponent(id)}/tree${query}`)
-    if (response.status === 404) {
-      return yield* Effect.fail(new TaskNotFound({ id }))
-    }
-    const ok = yield* HttpClientResponse.filterStatusOk(response)
-    return yield* HttpClientResponse.schemaBodyJson(TaskTree)(ok)
   }).pipe(Effect.scoped)
 
 // `parent` is three-state to match the server: omit the key to leave it unchanged, `null` to clear

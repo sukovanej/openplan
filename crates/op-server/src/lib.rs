@@ -15,8 +15,8 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    ApiErrorBody, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
-    TaskSummary, TaskTree, TaskView,
+    ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
+    TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -106,7 +106,7 @@ pub fn app(state: AppState) -> Router {
     router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
         .route("/api/events", get(events))
-        .route("/api/tasks/{id}/tree", get(get_task_tree))
+        .route("/api/board", get(get_board))
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
         .layer(
@@ -341,6 +341,24 @@ async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListIt
     Ok(Json(items))
 }
 
+// The list view's whole data set in one read: tasks grouped by status and flattened into
+// render-ordered rows (§9). Built from the same branch-aware aggregation as `list_tasks`, so board
+// reads stay "reads global"; the client consumes it verbatim.
+async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
+    let repo = state.repo.clone();
+    let store = state.store.clone();
+    let index = state.index.clone();
+    let board = tokio::task::spawn_blocking(move || -> Result<Board, IndexError> {
+        let mut index = index.lock().expect("index mutex poisoned");
+        index.rebuild(&repo, &store)?;
+        Ok(Board::build(&index.aggregated_tasks()))
+    })
+    .await
+    .map_err(join_error)?
+    .map_err(index_error)?;
+    Ok(Json(board))
+}
+
 #[utoipa::path(
     post,
     path = "/api/tasks",
@@ -406,45 +424,6 @@ async fn get_task(
         .ok_or(ApiError::Store(StoreError::NotFound { id: missing }))
 }
 
-#[derive(Deserialize)]
-struct TreeQuery {
-    depth: Option<usize>,
-}
-
-// The subtree rooted at `id`, built by grouping the branch-aware aggregated task set on `parent`
-// (§5) — the same source the list view uses, so hierarchy reads stay "reads global".
-async fn get_task_tree(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Query(query): Query<TreeQuery>,
-) -> Result<Json<TaskTree>, ApiError> {
-    let repo = state.repo.clone();
-    let store = state.store.clone();
-    let index = state.index.clone();
-    let missing = id.clone();
-    let tree = tokio::task::spawn_blocking(move || -> Result<Option<TaskTree>, ApiError> {
-        let mut index = index.lock().expect("index mutex poisoned");
-        index.rebuild(&repo, &store).map_err(index_error)?;
-        let summaries: Vec<TaskSummary> = index
-            .aggregated_tasks()
-            .into_iter()
-            .map(|item| TaskSummary {
-                id: item.id,
-                title: item.title,
-                status: item.status,
-                parent: item.parent,
-                rank: item.rank,
-            })
-            .collect();
-        let mut cycles = Vec::new();
-        Ok(TaskTree::build(&summaries, &id, query.depth, &mut cycles))
-    })
-    .await
-    .map_err(join_error)??;
-    tree.map(Json)
-        .ok_or(ApiError::Store(StoreError::NotFound { id: missing }))
-}
-
 fn index_error(err: IndexError) -> ApiError {
     match err {
         IndexError::Store(err) => ApiError::Store(err),
@@ -506,21 +485,30 @@ async fn patch_task(
                 patch.apply(task);
                 Ok(())
             })?;
+            let view = TaskView::from_task(id, &task);
             // Echo the freshly written task rather than re-reading it from the matrix: a write that
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
             // would 404 a write that in fact succeeded.
-            let (headline, branches) = {
+            let (headline, branches, parent_title, children, refs) = {
                 let mut index = index.lock().expect("index mutex poisoned");
                 index.rebuild(&repo, &serve_store).map_err(index_error)?;
+                let (parent_title, children, refs) =
+                    index.hierarchy_context(&view.id, view.parent.as_deref(), &view.body);
                 (
-                    index.headline_branch(&id).unwrap_or_default(),
-                    index.task_branch_states(&id),
+                    index.headline_branch(&view.id).unwrap_or_default(),
+                    index.task_branch_states(&view.id),
+                    parent_title,
+                    children,
+                    refs,
                 )
             };
             let detail = TaskDetail {
-                view: TaskView::from_task(id, &task),
+                view,
                 headline,
                 branches,
+                parent_title,
+                children,
+                refs,
             };
             Ok((branch, detail))
         })

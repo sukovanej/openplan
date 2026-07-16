@@ -2,7 +2,7 @@ import { Effect, Result } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { useSyncExternalStore } from "react"
 
-import { getTask, listTasks, type TaskDetail, type TaskListItem } from "./api"
+import { type Board, getBoard, getTask, listTasks, type TaskDetail, type TaskListItem } from "./api"
 import type { Invalidator } from "./events"
 import { runtime } from "./runtime"
 
@@ -86,11 +86,23 @@ export function useQuery<A>(query: Query<A>): QueryState<A> {
   return useSyncExternalStore(query.subscribe, query.getSnapshot)
 }
 
+// The whole flat task set. Only the parent / add-subtask pickers need it, and only while open, so it
+// is fetched lazily on subscribe rather than on every detail view.
 export const tasksQuery = new Query(listTasks)
 
+// The list view's grouped/ordered/nested rows — the sole always-loaded task read; the detail page
+// gets its hierarchy from the per-task `taskQuery` instead.
+export const boardQuery: Query<Board> = new Query(getBoard)
+
+export function boardTasks(board: Board): ReadonlyArray<TaskListItem> {
+  return board.groups.flatMap((group) => group.rows.map((row) => row.task))
+}
+
 export function listItem(id: string): TaskListItem | undefined {
-  const snapshot = tasksQuery.getSnapshot()
-  return snapshot._tag === "success" ? snapshot.value.find((task) => task.id === id) : undefined
+  const snapshot = boardQuery.getSnapshot()
+  return snapshot._tag === "success"
+    ? boardTasks(snapshot.value).find((task) => task.id === id)
+    : undefined
 }
 
 const MAX_TASK_QUERIES = 64
@@ -135,14 +147,18 @@ export function runMutation<A>(
   effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
 ): Promise<A> {
   return runtime.runPromise(effect).then((value) => {
-    tasksQuery.refresh()
+    boardQuery.refresh()
+    if (tasksQuery.hasListeners()) tasksQuery.refresh()
     for (const query of taskQueries.values()) query.refresh()
     return value
   })
 }
 
 export const storeInvalidator: Invalidator = {
-  refreshList: () => tasksQuery.refresh(),
+  refreshList: () => {
+    boardQuery.refresh()
+    if (tasksQuery.hasListeners()) tasksQuery.refresh()
+  },
   refreshTask: (id) => refreshTaskQueries(id),
   refreshVisible: () => {
     for (const query of mounted) query.refresh()

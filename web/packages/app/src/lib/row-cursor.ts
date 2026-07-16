@@ -80,3 +80,49 @@ export function useRowCursor(ids: ReadonlyArray<string>): CursorState {
   }, [ids])
   return state
 }
+
+// A cursor whose focused row is remembered per key, so navigating parent → child → back leaves the
+// parent's subtask still highlighted. A key never visited starts unselected, unlike a bounds clamp.
+class KeyedRowCursor {
+  private activeKey = ""
+  private state: CursorState = emptyCursor
+  private readonly saved = new Map<string, number>()
+  private readonly listeners = new Set<() => void>()
+
+  readonly subscribe = (listener: () => void): () => void => {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  readonly getSnapshot = (): CursorState => this.state
+
+  readonly activate = (key: string, ids: ReadonlyArray<string>): void => {
+    const prior = this.saved.get(key)
+    const index = prior === undefined || ids.length === 0 ? -1 : Math.min(prior, ids.length - 1)
+    this.activeKey = key
+    this.commit({ ids, index })
+  }
+
+  readonly moveBy = (delta: number): void => this.commit(moved(this.state, delta))
+  readonly focus = (index: number): void => this.commit(focused(this.state, index))
+  readonly clear = (): void => this.commit(cleared(this.state))
+
+  private commit(next: CursorState): void {
+    if (next === this.state) return
+    this.state = next
+    if (this.activeKey !== "") this.saved.set(this.activeKey, next.index)
+    for (const listener of this.listeners) listener()
+  }
+}
+
+export const subtaskCursor = new KeyedRowCursor()
+
+export function useSubtaskCursor(key: string, ids: ReadonlyArray<string>): CursorState {
+  const state = useSyncExternalStore(subtaskCursor.subscribe, subtaskCursor.getSnapshot)
+  useLayoutEffect(() => {
+    subtaskCursor.activate(key, ids)
+  }, [key, ids])
+  return state
+}

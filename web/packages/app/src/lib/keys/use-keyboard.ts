@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react"
-import { useLocation, useNavigate } from "react-router-dom"
+import { useLocation, useNavigate, useNavigationType } from "react-router-dom"
 
-import { focusedId, rowCursor } from "@/lib/row-cursor"
+import { detailActions, escapeOutcome } from "@/lib/detail-actions"
+import { focusedId, rowCursor, subtaskCursor } from "@/lib/row-cursor"
 
 import { bindings } from "./bindings"
 import { Dispatcher } from "./dispatcher"
@@ -19,12 +20,23 @@ export interface Keyboard {
 export function useKeyboard(): Keyboard {
   const navigate = useNavigate()
   const location = useLocation()
+  const navigationType = useNavigationType()
   const [overlayOpen, setOverlayOpen] = useState(false)
 
-  const live = useRef({ navigate, scope: routeScope(location.pathname), overlayOpen })
-  live.current = { navigate, scope: routeScope(location.pathname), overlayOpen }
+  const scope = routeScope(location.pathname)
+  const live = useRef({ navigate, scope, overlayOpen })
+  live.current = { navigate, scope, overlayOpen }
+
+  // How many in-app entries can Esc pop before there is nothing of ours left; PUSH deepens it, POP
+  // unwinds it, and a branch-only REPLACE leaves it be. At zero, Esc falls back to the list.
+  const depth = useRef(0)
+  useEffect(() => {
+    if (navigationType === "PUSH") depth.current += 1
+    else if (navigationType === "POP") depth.current = Math.max(0, depth.current - 1)
+  }, [location.key, navigationType])
 
   useEffect(() => {
+    const activeCursor = () => (live.current.scope === "detail" ? subtaskCursor : rowCursor)
     const context = (): RunContext => ({
       navigate: (to) => live.current.navigate(to),
       overlay: {
@@ -33,8 +45,19 @@ export function useKeyboard(): Keyboard {
         toggle: () => setOverlayOpen((open) => !open),
       },
       cursor: {
-        moveBy: rowCursor.moveBy,
-        focusedId: () => focusedId(rowCursor.getSnapshot()),
+        moveBy: (delta) => activeCursor().moveBy(delta),
+        focusedId: () => focusedId(activeCursor().getSnapshot()),
+      },
+      detail: {
+        editParent: () => detailActions.emit("edit-parent"),
+        addSubtask: () => detailActions.emit("add-subtask"),
+        goToParent: () => detailActions.emit("go-parent"),
+        escape: () => {
+          const outcome = escapeOutcome(subtaskCursor.getSnapshot().index >= 0, depth.current > 0)
+          if (outcome === "clear-selection") subtaskCursor.clear()
+          else if (outcome === "back") live.current.navigate(-1)
+          else live.current.navigate("/")
+        },
       },
     })
     const dispatcher = new Dispatcher({
