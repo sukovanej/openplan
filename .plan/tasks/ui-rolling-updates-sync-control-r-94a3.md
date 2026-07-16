@@ -1,5 +1,6 @@
 ---
 status: todo
+parent: continuous-changes-accumulation-v-0cb0
 deps:
 - daemon-ambient-writer-accumulate-e2f2
 - publish-fast-forward-main-to-the-3241

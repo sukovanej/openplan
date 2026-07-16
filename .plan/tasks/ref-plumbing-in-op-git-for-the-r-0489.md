@@ -1,5 +1,6 @@
 ---
 status: todo
+parent: continuous-changes-accumulation-v-0cb0
 deps:
 - implement-the-section-aware-merg-381e
 - design-a-continuous-changes-accu-2380

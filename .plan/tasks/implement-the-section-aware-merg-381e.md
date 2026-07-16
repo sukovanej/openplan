@@ -1,5 +1,6 @@
 ---
 status: todo
+parent: continuous-changes-accumulation-v-0cb0
 deps:
 - design-a-continuous-changes-accu-2380
 ---

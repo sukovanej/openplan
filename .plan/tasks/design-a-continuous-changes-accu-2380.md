@@ -1,5 +1,6 @@
 ---
 status: in_review
+parent: continuous-changes-accumulation-v-0cb0
 ---
 # Design a continuous-changes accumulation branch
 
