@@ -45,3 +45,14 @@ cargo test
 cargo fmt --check
 cargo clippy -- -D warnings
 ```
+
+## Commands (mise)
+
+Recurring workflows are `mise` tasks (see `mise.toml`) — run the named task, not
+its underlying commands by hand. Before treating a bare verb like `rebuild` as a
+cargo command, check whether it names a `mise` task and, if so, run that:
+
+```sh
+mise run rebuild               # rebuild the web SPA and restart the daemon on the fresh embed
+mise run generate-web-client   # regenerate the Effect HTTP client from the API's OpenAPI spec
+```
