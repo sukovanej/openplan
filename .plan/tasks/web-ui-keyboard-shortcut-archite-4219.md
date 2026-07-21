@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 deps:
 - web-ui-task-list-as-a-table-id-t-fdad
 ---
