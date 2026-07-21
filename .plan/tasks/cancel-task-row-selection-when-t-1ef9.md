@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T16:34:57Z
 ---
 # Cancel task-row selection when the mouse hovers over the list
 
