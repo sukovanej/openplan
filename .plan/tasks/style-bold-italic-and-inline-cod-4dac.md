@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T16:37:13Z
 ---
 # Style bold/italic and inline code in markdown rendering
 
