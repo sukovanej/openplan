@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 ---
 # Emit change events for all branches and worktrees
 
