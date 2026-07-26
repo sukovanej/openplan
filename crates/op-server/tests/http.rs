@@ -190,12 +190,12 @@ async fn patch_parent_null_clears_absent_leaves_id_sets() {
     let (dir, state) = store_state();
     std::fs::write(
         dir.path().join(".plan/tasks/epic.md"),
-        "---\nstatus: todo\n---\n# Epic\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
     )
     .unwrap();
     std::fs::write(
         dir.path().join(".plan/tasks/child.md"),
-        "---\nstatus: todo\nparent: epic\n---\n# Child\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: epic\n---\n# Child\n",
     )
     .unwrap();
 
@@ -241,17 +241,17 @@ async fn board_groups_by_status_and_nests_same_status_children() {
     let tasks = dir.path().join(".plan/tasks");
     std::fs::write(
         tasks.join("epic.md"),
-        "---\nstatus: in_progress\n---\n# Epic\n",
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
     )
     .unwrap();
     std::fs::write(
         tasks.join("sub-open.md"),
-        "---\nstatus: in_progress\nparent: epic\nrank: m\n---\n# Sub open\n",
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: epic\nrank: m\n---\n# Sub open\n",
     )
     .unwrap();
     std::fs::write(
         tasks.join("sub-todo.md"),
-        "---\nstatus: todo\nparent: epic\n---\n# Sub todo\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: epic\n---\n# Sub todo\n",
     )
     .unwrap();
 
@@ -282,20 +282,24 @@ async fn board_groups_by_status_and_nests_same_status_children() {
 async fn task_detail_carries_parent_title_children_and_resolved_refs() {
     let (dir, state) = store_state();
     let tasks = dir.path().join(".plan/tasks");
-    std::fs::write(tasks.join("epic.md"), "---\nstatus: todo\n---\n# Epic\n").unwrap();
+    std::fs::write(
+        tasks.join("epic.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
+    )
+    .unwrap();
     std::fs::write(
         tasks.join("child.md"),
-        "---\nstatus: in_progress\nparent: epic\nrank: m\n---\n# Child\n\nblocks [[epic]], not [[ghost-0000]] or `[[epic]]`.\n",
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: epic\nrank: m\n---\n# Child\n\nblocks [[epic]], not [[ghost-0000]] or `[[epic]]`.\n",
     )
     .unwrap();
     std::fs::write(
         tasks.join("b.md"),
-        "---\nstatus: todo\nparent: child\nrank: t\n---\n# B\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: child\nrank: t\n---\n# B\n",
     )
     .unwrap();
     std::fs::write(
         tasks.join("a.md"),
-        "---\nstatus: todo\nparent: child\nrank: m\n---\n# A\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: child\nrank: m\n---\n# A\n",
     )
     .unwrap();
 
@@ -330,7 +334,7 @@ async fn patch_preserves_unknown_frontmatter_keys() {
     let (dir, state) = store_state();
     std::fs::write(
         dir.path().join(".plan/tasks/keep.md"),
-        "---\nstatus: todo\nestimate: 9\n---\n# Keep\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nestimate: 9\n---\n# Keep\n",
     )
     .unwrap();
 
@@ -727,7 +731,7 @@ fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     std::fs::write(
         root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: todo\n---\n# Alpha\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();
     git(root, &["add", "."]);
@@ -747,7 +751,7 @@ fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
     );
     std::fs::write(
         wt.join(".plan/tasks/alpha.md"),
-        "---\nstatus: done\n---\n# Alpha\n",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();
     git(&wt, &["commit", "-qam", "feature: alpha done"]);
@@ -787,7 +791,7 @@ async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     std::fs::write(
         root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: todo\n---\n# Alpha\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();
     git(root, &["add", "."]);
@@ -822,7 +826,7 @@ async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
 fn write_alpha(root: &std::path::Path, status: &str, title: &str) {
     std::fs::write(
         root.join(".plan/tasks/alpha.md"),
-        format!("---\nstatus: {status}\n---\n# {title}\n"),
+        format!("---\nstatus: {status}\ncreated: 2026-01-01T00:00:00Z\n---\n# {title}\n"),
     )
     .unwrap();
 }
@@ -919,7 +923,7 @@ async fn patch_rejects_a_malformed_rank_with_its_reason() {
     let (dir, state) = store_state();
     std::fs::write(
         dir.path().join(".plan/tasks/solo.md"),
-        "---\nstatus: todo\n---\n# Solo\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Solo\n",
     )
     .unwrap();
 
@@ -957,12 +961,12 @@ async fn patching_a_parent_that_would_cycle_is_refused_with_its_reason() {
     let (dir, state) = store_state();
     std::fs::write(
         dir.path().join(".plan/tasks/epic.md"),
-        "---\nstatus: todo\n---\n# Epic\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
     )
     .unwrap();
     std::fs::write(
         dir.path().join(".plan/tasks/child.md"),
-        "---\nstatus: todo\nparent: epic\n---\n# Child\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: epic\n---\n# Child\n",
     )
     .unwrap();
 

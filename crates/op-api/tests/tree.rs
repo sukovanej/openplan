@@ -1,5 +1,9 @@
 use op_api::{FieldUpdate, Status, TaskPatch, TaskSummary, TaskTree};
-use op_task::Task;
+use op_task::{Task, Timestamp};
+
+fn stamp() -> Timestamp {
+    "2026-01-01T00:00:00Z".parse().unwrap()
+}
 
 fn summary(id: &str, parent: Option<&str>, rank: Option<&str>) -> TaskSummary {
     TaskSummary {
@@ -82,7 +86,7 @@ fn unknown_root_yields_none() {
 fn patch_parent_absent_leaves_it_unchanged() {
     let patch: TaskPatch = serde_json::from_value(serde_json::json!({ "status": "done" })).unwrap();
     assert_eq!(patch.parent, FieldUpdate::Keep);
-    let mut task = Task::new("T", Status::Todo);
+    let mut task = Task::new("T", Status::Todo, stamp());
     task.set_parent(Some("p".to_owned()));
     patch.apply(&mut task);
     assert_eq!(task.frontmatter.parent.as_deref(), Some("p"));
@@ -92,7 +96,7 @@ fn patch_parent_absent_leaves_it_unchanged() {
 fn patch_parent_null_clears_it() {
     let patch: TaskPatch = serde_json::from_value(serde_json::json!({ "parent": null })).unwrap();
     assert_eq!(patch.parent, FieldUpdate::Clear);
-    let mut task = Task::new("T", Status::Todo);
+    let mut task = Task::new("T", Status::Todo, stamp());
     task.set_parent(Some("p".to_owned()));
     patch.apply(&mut task);
     assert_eq!(task.frontmatter.parent, None);
@@ -103,7 +107,7 @@ fn patch_parent_id_sets_it() {
     let patch: TaskPatch =
         serde_json::from_value(serde_json::json!({ "parent": "epic-1" })).unwrap();
     assert_eq!(patch.parent, FieldUpdate::Set("epic-1".to_owned()));
-    let mut task = Task::new("T", Status::Todo);
+    let mut task = Task::new("T", Status::Todo, stamp());
     patch.apply(&mut task);
     assert_eq!(task.frontmatter.parent.as_deref(), Some("epic-1"));
 }

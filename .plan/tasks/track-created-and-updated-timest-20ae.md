@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_progress
 ---
 # Track created and updated timestamps per task
 

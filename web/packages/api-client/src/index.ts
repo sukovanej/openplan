@@ -96,12 +96,14 @@ export const TaskListItem = Schema.Struct({
 })
 export type TaskDetail = {
   readonly body: string
+  readonly created?: string
   readonly deps?: ReadonlyArray<string>
   readonly id: string
   readonly parent?: string
   readonly rank?: string
   readonly status: Status
   readonly title: string
+  readonly updated?: string
   readonly branches: ReadonlyArray<BranchState>
   readonly children?: ReadonlyArray<TaskChild>
   readonly headline: string
@@ -110,12 +112,14 @@ export type TaskDetail = {
 }
 export const TaskDetail = Schema.Struct({
   body: Schema.String,
+  created: Schema.optionalKey(Schema.Union([Schema.String.annotate({ format: "date-time" })])),
   deps: Schema.optionalKey(Schema.Array(Schema.String)),
   id: Schema.String,
   parent: Schema.optionalKey(Schema.String),
   rank: Schema.optionalKey(Schema.String),
   status: Status,
   title: Schema.String,
+  updated: Schema.optionalKey(Schema.Union([Schema.String.annotate({ format: "date-time" })])),
   branches: Schema.Array(BranchState),
   children: Schema.optionalKey(Schema.Array(TaskChild)),
   headline: Schema.String,

@@ -15,7 +15,7 @@ use op_api::{
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
-use op_task::{Status, rank};
+use op_task::{Status, Timestamp, rank};
 
 use daemon::{Control, DEFAULT_PORT, Home};
 
@@ -303,7 +303,7 @@ fn create(
             deps,
             body,
         }
-        .into_task(),
+        .into_task(Timestamp::now()),
     )?;
     println!("{id}");
     Ok(())
@@ -415,10 +415,8 @@ fn get(root: &Path, id: &str, json: bool, branch: Option<&str>) -> Result<()> {
     let store = Store::discover(root)?;
     if json {
         let task = store.read(id)?;
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&TaskView::from_task(id.to_owned(), &task))?
-        );
+        let view = TaskView::from_task(id.to_owned(), &task, headline_updated(root, id));
+        println!("{}", serde_json::to_string_pretty(&view)?);
     } else {
         // Print the file verbatim; re-serializing would normalize formatting and is a lossy
         // view of what is actually on disk.
@@ -493,6 +491,13 @@ fn show_branches(root: &Path, id: &str) -> Result<()> {
         println!("    branches: {}", branches.join(", "));
     }
     Ok(())
+}
+
+// `updated` is git-derived, so a store that sits outside a repository — or a task no commit holds —
+// simply has none to report.
+fn headline_updated(root: &Path, id: &str) -> Option<Timestamp> {
+    let (_repo, index) = build_index(root).ok()?;
+    index.task_updated(id, None)
 }
 
 fn build_index(root: &Path) -> Result<(Repo, Index)> {

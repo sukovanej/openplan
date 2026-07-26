@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+pub use jiff::Timestamp;
+
 pub mod rank;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -56,6 +58,7 @@ impl std::str::FromStr for Status {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Frontmatter {
     pub status: Status,
+    pub created: Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -83,10 +86,11 @@ pub enum TaskError {
 }
 
 impl Task {
-    pub fn new(title: &str, status: Status) -> Self {
+    pub fn new(title: &str, status: Status, created: Timestamp) -> Self {
         Self {
             frontmatter: Frontmatter {
                 status,
+                created,
                 parent: None,
                 rank: None,
                 deps: Vec::new(),
@@ -107,6 +111,10 @@ impl Task {
 
     pub fn set_status(&mut self, status: Status) {
         self.frontmatter.status = status;
+    }
+
+    pub fn set_created(&mut self, created: Timestamp) {
+        self.frontmatter.created = created;
     }
 
     pub fn set_parent(&mut self, parent: Option<String>) {

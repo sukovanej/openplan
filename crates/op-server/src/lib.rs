@@ -16,7 +16,7 @@ use axum::{
 };
 use op_api::{
     ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
-    TaskView,
+    TaskView, Timestamp,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -387,7 +387,8 @@ async fn create_task(
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
     let store = state.store.clone();
-    let id = blocking(move || store.create(&body.into_task())).await?;
+    let created = Timestamp::now();
+    let id = blocking(move || store.create(&body.into_task(created))).await?;
     publish(
         &state,
         ChangeEvent::TaskChanged {
@@ -506,23 +507,27 @@ async fn patch_task(
                 patch.apply(task);
                 Ok(())
             })?;
-            let view = TaskView::from_task(id, &task);
             // Echo the freshly written task rather than re-reading it from the matrix: a write that
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
-            // would 404 a write that in fact succeeded.
-            let (headline, branches, parent_title, children, refs) = {
+            // would 404 a write that in fact succeeded — and its `updated` falls back to the
+            // headline, the commit that already holds this exact content.
+            let (headline, branches, parent_title, children, refs, updated) = {
                 let mut index = index.lock().expect("index mutex poisoned");
                 index.rebuild(&repo, &serve_store).map_err(index_error)?;
                 let (parent_title, children, refs) =
-                    index.hierarchy_context(&view.id, view.parent.as_deref(), &view.body);
+                    index.hierarchy_context(&id, task.frontmatter.parent.as_deref(), &task.body);
                 (
-                    index.headline_branch(&view.id).unwrap_or_default(),
-                    index.task_branch_states(&view.id),
+                    index.headline_branch(&id).unwrap_or_default(),
+                    index.task_branch_states(&id),
                     parent_title,
                     children,
                     refs,
+                    index
+                        .task_updated(&id, Some(&branch))
+                        .or_else(|| index.task_updated(&id, None)),
                 )
             };
+            let view = TaskView::from_task(id, &task, updated);
             let detail = TaskDetail {
                 view,
                 headline,

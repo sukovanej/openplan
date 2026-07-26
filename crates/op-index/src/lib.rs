@@ -7,7 +7,7 @@ use op_api::{
 };
 use op_git::{Repo, Worktree};
 use op_store::{Store, StoreError};
-use op_task::Task;
+use op_task::{Task, Timestamp};
 
 #[derive(Debug, Default)]
 pub struct Index {
@@ -20,12 +20,21 @@ pub struct Index {
     // The branch checked out in the serve-root worktree; the headline of an aggregated task.
     current_branch: Option<String>,
     default_branch: Option<String>,
-    // (branch, id) -> unix time of that branch's last change to the task; `u64::MAX` for a live
-    // uncommitted edit. Only divergent cells are timed. The headline picks the newest of these.
-    recency: HashMap<(String, String), u64>,
-    // branch -> (tip oid, per-id change times) so an unchanged branch reuses its walk across the
-    // per-request rebuilds instead of re-walking history.
-    recency_cache: HashMap<String, (String, HashMap<String, u64>)>,
+    // (branch, id) -> author time of that branch's last commit to touch the task. Absent for a task
+    // whose change lies deeper than the walk budget, and for one no commit holds yet.
+    change_times: HashMap<(String, String), Timestamp>,
+    // branch -> a walk result reusable across the per-request rebuilds, instead of re-walking
+    // history every time.
+    change_cache: HashMap<String, ChangeTimes>,
+}
+
+#[derive(Debug, Clone)]
+struct ChangeTimes {
+    tip: String,
+    // The ids the walk asked for: an id it found no commit for is absent from `times`, so only the
+    // request tells a cache hit from a task still to be dated.
+    requested: HashSet<String>,
+    times: HashMap<String, Timestamp>,
 }
 
 #[derive(Debug, Clone)]
@@ -107,70 +116,56 @@ impl Index {
             }
         }
         cells.sort_by(|a, b| (&a.task.id, &a.branch).cmp(&(&b.task.id, &b.branch)));
-        self.recency = self.compute_recency(repo, &cells)?;
+        self.change_times = self.compute_change_times(repo, &cells)?;
         self.matrix = Matrix { cells };
         Ok(())
     }
 
-    // When a task lives on several branches, the headline follows the branch that changed it most
-    // recently ("latest change wins"), so a version advanced in a worktree shows over the default
-    // branch's stale baseline — and, symmetrically, a fresher edit on the default branch wins over an
-    // older feature-branch one. Only tasks contested across branches need timing; a live uncommitted
-    // edit outranks any commit.
-    fn compute_recency(
+    // Every cell's last commit time, feeding both the task's `updated` and — through `recency_of` —
+    // the headline choice when a task lives on several branches. A dirty cell is left undated: its
+    // working-tree edit belongs to no commit, so both readings substitute their own answer.
+    fn compute_change_times(
         &mut self,
         repo: &Repo,
         cells: &[MatrixCell],
-    ) -> Result<HashMap<(String, String), u64>, IndexError> {
-        let mut per_id: HashMap<&str, Vec<&MatrixCell>> = HashMap::new();
-        for cell in cells {
-            if cell.kind != ChangeKind::Deleted {
-                per_id.entry(cell.task.id.as_str()).or_default().push(cell);
-            }
-        }
+    ) -> Result<HashMap<(String, String), Timestamp>, IndexError> {
         let mut request: HashMap<String, HashSet<String>> = HashMap::new();
-        let mut dirty: Vec<(String, String)> = Vec::new();
-        for group in per_id.values() {
-            if group.len() < 2 {
-                continue;
-            }
-            for cell in group {
-                if cell.dirty {
-                    dirty.push((cell.branch.clone(), cell.task.id.clone()));
-                } else {
-                    request
-                        .entry(cell.branch.clone())
-                        .or_default()
-                        .insert(cell.task.id.clone());
-                }
+        for cell in cells {
+            if cell.kind != ChangeKind::Deleted && !cell.dirty {
+                request
+                    .entry(cell.branch.clone())
+                    .or_default()
+                    .insert(cell.task.id.clone());
             }
         }
 
-        let mut recency = HashMap::new();
-        for (branch, ids) in &request {
-            let tip = repo.branch_commit(branch)?;
-            let times = match self.recency_cache.get(branch) {
-                Some((cached_tip, cached))
-                    if *cached_tip == tip && ids.iter().all(|id| cached.contains_key(id)) =>
-                {
-                    cached.clone()
+        let mut change_times = HashMap::new();
+        for (branch, ids) in request {
+            let tip = repo.branch_commit(&branch)?;
+            let times = match self.change_cache.get(&branch) {
+                Some(cached) if cached.tip == tip && ids.is_subset(&cached.requested) => {
+                    cached.times.clone()
                 }
                 _ => {
-                    let times = repo.task_change_times(branch, ids)?;
-                    self.recency_cache
-                        .insert(branch.clone(), (tip, times.clone()));
+                    let times = repo.task_change_times(&branch, &ids)?;
+                    self.change_cache.insert(
+                        branch.clone(),
+                        ChangeTimes {
+                            tip,
+                            requested: ids.clone(),
+                            times: times.clone(),
+                        },
+                    );
                     times
                 }
             };
             for id in ids {
-                let seconds = times.get(id).copied().unwrap_or(0);
-                recency.insert((branch.clone(), id.clone()), seconds);
+                if let Some(time) = times.get(&id) {
+                    change_times.insert((branch.clone(), id), *time);
+                }
             }
         }
-        for (branch, id) in dirty {
-            recency.insert((branch, id), u64::MAX);
-        }
-        Ok(recency)
+        Ok(change_times)
     }
 
     // Every non-baseline branch's task blobs at its merge-base(s) with the default branch, keyed by
@@ -398,13 +393,15 @@ impl Index {
     }
 
     pub fn task_branch_states(&self, id: &str) -> Vec<BranchState> {
-        let cells: Vec<&MatrixCell> = self
-            .matrix
+        branch_states(&self.cells_of(id))
+    }
+
+    fn cells_of(&self, id: &str) -> Vec<&MatrixCell> {
+        self.matrix
             .cells
             .iter()
             .filter(|cell| cell.task.id == id)
-            .collect();
-        branch_states(&cells)
+            .collect()
     }
 
     // The headline view (branch `None`) or a named branch's view, paired with every branch the task
@@ -417,28 +414,30 @@ impl Index {
         id: &str,
         branch: Option<&str>,
     ) -> Result<Option<TaskDetail>, IndexError> {
-        let cells: Vec<&MatrixCell> = self
-            .matrix
-            .cells
-            .iter()
-            .filter(|cell| cell.task.id == id)
-            .collect();
+        let cells = self.cells_of(id);
         if cells.is_empty() {
             return Ok(None);
         }
-        let raw = match branch {
-            Some(branch) => self.effective_raw(repo, id, branch)?,
-            None => Some(self.cell_raw(repo, self.select_headline(&cells))?),
+        let headline = self.select_headline(&cells);
+        let (raw, updated) = match branch {
+            Some(branch) => (
+                self.effective_raw(repo, id, branch)?,
+                self.task_updated(id, Some(branch)),
+            ),
+            None => (
+                Some(self.cell_raw(repo, headline)?),
+                self.cell_updated(headline),
+            ),
         };
         let Some(raw) = raw else {
             return Ok(None);
         };
-        let view = view_from_raw(id, &raw);
+        let view = view_from_raw(id, &raw, updated);
         let (parent_title, children, refs) =
             self.hierarchy_context(id, view.parent.as_deref(), &view.body);
         Ok(Some(TaskDetail {
             view,
-            headline: self.select_headline(&cells).branch.clone(),
+            headline: headline.branch.clone(),
             branches: branch_states(&cells),
             parent_title,
             children,
@@ -479,12 +478,7 @@ impl Index {
     // The branch a branchless read headlines with, for the write path which builds its own
     // `TaskDetail` from the just-written task rather than through `task_detail`.
     pub fn headline_branch(&self, id: &str) -> Option<String> {
-        let cells: Vec<&MatrixCell> = self
-            .matrix
-            .cells
-            .iter()
-            .filter(|cell| cell.task.id == id)
-            .collect();
+        let cells = self.cells_of(id);
         (!cells.is_empty()).then(|| self.select_headline(&cells).branch.clone())
     }
 
@@ -516,11 +510,41 @@ impl Index {
             .unwrap_or(cells[0])
     }
 
-    fn recency_of(&self, cell: &MatrixCell) -> u64 {
-        self.recency
+    // A live uncommitted edit outranks any commit; a cell no walk could date reads as oldest.
+    fn recency_of(&self, cell: &MatrixCell) -> i64 {
+        if cell.dirty {
+            return i64::MAX;
+        }
+        self.committed_time(cell)
+            .map_or(i64::MIN, Timestamp::as_second)
+    }
+
+    fn committed_time(&self, cell: &MatrixCell) -> Option<Timestamp> {
+        self.change_times
             .get(&(cell.branch.clone(), cell.task.id.clone()))
             .copied()
-            .unwrap_or(0)
+    }
+
+    // A working-tree edit has no commit to date it by, so it reads as happening now.
+    fn cell_updated(&self, cell: &MatrixCell) -> Option<Timestamp> {
+        if cell.dirty {
+            return Some(Timestamp::now());
+        }
+        self.committed_time(cell)
+    }
+
+    // The task's last-change time on one branch, or on its headline branch when `branch` is `None`.
+    pub fn task_updated(&self, id: &str, branch: Option<&str>) -> Option<Timestamp> {
+        match branch {
+            Some(branch) => self.cell_updated(self.cell(id, branch)?),
+            None => {
+                let cells = self.cells_of(id);
+                if cells.is_empty() {
+                    return None;
+                }
+                self.cell_updated(self.select_headline(&cells))
+            }
+        }
     }
 
     // A same-second tie prefers the current worktree, then the default branch, then stable order, so
@@ -578,7 +602,7 @@ impl Index {
     ) -> Result<Option<TaskView>, IndexError> {
         Ok(self
             .effective_raw(repo, id, branch)?
-            .map(|raw| view_from_raw(id, &raw)))
+            .map(|raw| view_from_raw(id, &raw, self.task_updated(id, Some(branch)))))
     }
 
     // The raw file text of one task as it effectively stands on `branch`: the live working copy if
@@ -765,9 +789,9 @@ fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
     refs
 }
 
-fn view_from_raw(id: &str, raw: &str) -> TaskView {
+fn view_from_raw(id: &str, raw: &str, updated: Option<Timestamp>) -> TaskView {
     match Task::from_file_string(raw) {
-        Ok(task) => TaskView::from_task(id.to_owned(), &task),
+        Ok(task) => TaskView::from_task(id.to_owned(), &task, updated),
         Err(_) => TaskView {
             id: id.to_owned(),
             title: best_effort_title(raw).unwrap_or_default(),
@@ -775,6 +799,8 @@ fn view_from_raw(id: &str, raw: &str) -> TaskView {
             parent: None,
             rank: None,
             deps: Vec::new(),
+            created: None,
+            updated,
             body: raw.to_owned(),
         },
     }

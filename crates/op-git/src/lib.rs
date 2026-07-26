@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use jiff::Timestamp;
+
 const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
 // A safety valve on the last-change walk: an id whose change lies deeper than this stays undated
 // (read as "old"), which only ever lets a more recent branch outrank it — never the reverse.
@@ -107,15 +109,16 @@ impl Repo {
         task_blobs(&tree)
     }
 
-    // The unix time of the newest commit on `branch` that changed each of `ids`, found by walking
+    // The author time of the newest commit on `branch` that changed each of `ids`, found by walking
     // history newest-first and stopping once every id is dated. Bounded to the requested ids — which
-    // the caller draws from the branch's divergent cells — so the walk exhausts the short branch tip
-    // rather than descending the whole default-branch history.
+    // the caller draws from the branch's cells — so a walk for a short branch tip need not descend
+    // the whole default-branch history. Author time, not commit time, so a rebase, squash, or amend
+    // does not restamp a task as freshly edited.
     pub fn task_change_times(
         &self,
         branch: &str,
         ids: &HashSet<String>,
-    ) -> Result<HashMap<String, u64>, GitError> {
+    ) -> Result<HashMap<String, Timestamp>, GitError> {
         if ids.is_empty() {
             return Ok(HashMap::new());
         }
@@ -139,7 +142,7 @@ impl Repo {
                 break;
             }
             let info = info.map_err(|e| GitError::Object(e.to_string()))?;
-            let seconds = info.commit_time().max(0) as u64;
+            let authored = author_time(&repo, info.id)?;
             let this = commit_task_map(&repo, info.id)?;
             let parent = match info.parent_ids.first() {
                 Some(pid) => commit_task_map(&repo, *pid)?,
@@ -147,7 +150,7 @@ impl Repo {
             };
             needed.retain(|id| match this.get(*id) {
                 Some(blob) if parent.get(*id) != Some(blob) => {
-                    times.insert((*id).to_owned(), seconds);
+                    times.insert((*id).to_owned(), authored);
                     false
                 }
                 _ => true,
@@ -246,6 +249,18 @@ impl Repo {
             .map_err(|e| GitError::Object(e.to_string()))?;
         Ok(oid.to_string())
     }
+}
+
+fn author_time(repo: &gix::Repository, commit: gix::ObjectId) -> Result<Timestamp, GitError> {
+    let object = repo
+        .find_object(commit)
+        .map_err(|e| GitError::Object(e.to_string()))?
+        .into_commit();
+    let author = object
+        .author()
+        .map_err(|e| GitError::Object(e.to_string()))?;
+    Timestamp::from_second(author.seconds())
+        .map_err(|e| GitError::Object(format!("commit {commit} has an unusable author date: {e}")))
 }
 
 fn commit_task_map(

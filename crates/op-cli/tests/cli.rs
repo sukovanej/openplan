@@ -2,6 +2,17 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
+use op_task::Timestamp;
+
+fn frontmatter_value(contents: &str, key: &str) -> String {
+    let prefix = format!("{key}: ");
+    contents
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("no {key} in {contents}"))
+        .to_owned()
+}
+
 fn oplan() -> Command {
     Command::new(env!("CARGO_BIN_EXE_oplan"))
 }
@@ -50,7 +61,7 @@ fn list_reports_real_status_and_title() {
     std::fs::create_dir_all(&tasks).unwrap();
     write(
         &tasks.join("shipit.md"),
-        "---\nstatus: done\n---\n# Ship it\n",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
     let out = oplan()
@@ -96,7 +107,7 @@ fn merge_driver_clean_conflict_and_read_error() {
     let base = dir.path().join("base.md");
     let ours = dir.path().join("ours.md");
     let theirs = dir.path().join("theirs.md");
-    let content = "---\nstatus: todo\n---\n# T\n\n## Plan\nhi\n";
+    let content = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\nhi\n";
     write(&base, content);
     write(&ours, content);
     write(&theirs, content);
@@ -111,7 +122,10 @@ fn merge_driver_clean_conflict_and_read_error() {
         "identical inputs should merge cleanly"
     );
 
-    write(&theirs, "---\nstatus: todo\n---\n# T\n\n## Plan\nBYE\n");
+    write(
+        &theirs,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\nBYE\n",
+    );
     let conflict = oplan()
         .arg("merge-driver")
         .args([&base, &ours, &theirs])
@@ -137,12 +151,21 @@ fn merge_driver_clean_conflict_and_read_error() {
 #[test]
 fn create_writes_slug_file_and_prints_id() {
     let dir = store();
+    let before = Timestamp::now();
     let id = create(dir.path(), "Wire the parser");
     assert!(id.starts_with("wire-the-parser-"), "id: {id}");
 
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     let contents = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(contents, "---\nstatus: todo\n---\n# Wire the parser\n");
+    let created = frontmatter_value(&contents, "created");
+    assert_eq!(
+        contents,
+        format!("---\nstatus: todo\ncreated: {created}\n---\n# Wire the parser\n")
+    );
+    assert!(
+        created.parse::<Timestamp>().unwrap() >= before,
+        "created must come from the clock at creation: {created}"
+    );
 
     let second = create(dir.path(), "Wire the parser");
     assert_ne!(id, second, "same title must yield a distinct id");
@@ -189,7 +212,7 @@ fn set_updates_only_frontmatter() {
 
     let contents = std::fs::read_to_string(&path).unwrap();
     assert!(
-        contents.starts_with("---\nstatus: in_progress\n---\n"),
+        contents.starts_with("---\nstatus: in_progress\ncreated: "),
         "{contents}"
     );
     assert_eq!(
@@ -279,7 +302,7 @@ fn set_preserves_unknown_frontmatter_keys() {
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     write(
         &path,
-        "---\nstatus: todo\nestimate: 3.5\nassignee: milan\n---\n# Task C\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nestimate: 3.5\nassignee: milan\n---\n# Task C\n",
     );
 
     assert!(
@@ -305,7 +328,8 @@ fn get_prints_the_file_verbatim() {
     let dir = store();
     let id = create(dir.path(), "Task D");
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
-    let raw = "---\nstatus: todo\nrank: 7\n---\n# Task D\n\nsome body\n";
+    let raw =
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: 7\n---\n# Task D\n\nsome body\n";
     write(&path, raw);
 
     let out = run(dir.path(), &["get", &id]);
@@ -337,9 +361,13 @@ fn create_with_body_places_content_below_title() {
     let id = stdout(&out).trim().to_owned();
 
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let contents = std::fs::read_to_string(&path).unwrap();
+    let created = frontmatter_value(&contents, "created");
     assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
-        "---\nstatus: todo\n---\n# Ship login\n\nSupport OAuth and email login.\n"
+        contents,
+        format!(
+            "---\nstatus: todo\ncreated: {created}\n---\n# Ship login\n\nSupport OAuth and email login.\n"
+        )
     );
 
     let view = run(dir.path(), &["get", &id, "--json"]);
@@ -501,14 +529,14 @@ fn diverged_repo() -> tempfile::TempDir {
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     write(
         &root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: todo\n---\n# Alpha\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     );
     git(root, &["add", "."]);
     git(root, &["commit", "-qm", "init"]);
     git(root, &["checkout", "-q", "-b", "feature"]);
     write(
         &root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: done\n---\n# Alpha done\n",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha done\n",
     );
     git(root, &["commit", "-qam", "edit alpha on feature"]);
     git(root, &["checkout", "-q", "main"]);

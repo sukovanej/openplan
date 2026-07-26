@@ -1,8 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
-pub use op_task::Status;
 use op_task::Task;
+pub use op_task::{Status, Timestamp};
 
 pub const ADMIN_HEADER: &str = "x-oplan-admin";
 
@@ -55,11 +55,23 @@ pub struct TaskView {
     pub rank: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deps: Vec<String>,
+    // Absent only for a file whose frontmatter does not parse — an unresolved merge, say — where
+    // there is no `created` to read and no commit the working copy corresponds to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>, format = DateTime)]
+    pub created: Option<Timestamp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>, format = DateTime)]
+    pub updated: Option<Timestamp>,
     pub body: String,
 }
 
 impl TaskView {
-    pub fn from_task(id: String, task: &Task) -> Self {
+    // `updated` is git-derived, so only a caller holding the history can supply it; a store-only
+    // read passes `None`. It is clamped up to `created` so a hand-set `created` later than the last
+    // edit cannot show a task updated before it existed.
+    pub fn from_task(id: String, task: &Task, updated: Option<Timestamp>) -> Self {
+        let created = task.frontmatter.created;
         Self {
             id,
             title: task.title().unwrap_or_default(),
@@ -67,6 +79,8 @@ impl TaskView {
             parent: task.frontmatter.parent.clone(),
             rank: task.frontmatter.rank.clone(),
             deps: task.frontmatter.deps.clone(),
+            created: Some(created),
+            updated: updated.map(|updated| updated.max(created)),
             body: task.body.clone(),
         }
     }
@@ -166,8 +180,8 @@ pub struct CreateTask {
 }
 
 impl CreateTask {
-    pub fn into_task(self) -> Task {
-        let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Todo));
+    pub fn into_task(self, created: Timestamp) -> Task {
+        let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Todo), created);
         task.set_parent(self.parent);
         task.set_deps(self.deps);
         if let Some(body) = &self.body {

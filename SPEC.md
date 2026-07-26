@@ -55,10 +55,11 @@ Frontmatter carries only what is *not* derivable from the file itself:
 | field | type | notes |
 |---|---|---|
 | `status` | enum | `backlog` / `todo` / `in_progress` / `in_review` / `done` / `cancelled`. `blocked` is **computed** from unmet `deps` — not stored. |
+| `created` | RFC3339 | UTC, set once when the task is written. Required. Its counterpart `updated` is **derived** from git — the author time of the last commit to touch the file — never stored. |
 | `parent` | id? | adjacency-list hierarchy (see §3.2). Absent = top-level. |
 | `deps` | id[] | task→task blocking dependencies; a ref may target a section (`task-id#Section`). Omitted when empty. |
 
-A task with no parent and no deps has frontmatter of just `status`.
+A task with no parent and no deps has frontmatter of just `status` and `created`.
 
 ### 3.2 Hierarchy & links
 - **Hierarchy is a reference graph, not physical nesting.** Subtasks are their own files

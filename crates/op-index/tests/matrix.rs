@@ -5,6 +5,7 @@ use op_api::{ChangeKind, Status};
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
+use op_task::Timestamp;
 
 fn git(dir: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -57,10 +58,18 @@ fn a_branch_unchanged_against_main_is_not_listed() {
     let root = dir.path();
     init(root);
 
-    task(root, "shared", "---\nstatus: todo\n---\n# Shared\n");
+    task(
+        root,
+        "shared",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Shared\n",
+    );
     commit(root, "add shared");
     git(root, &["branch", "feature"]);
-    task(root, "only-main", "---\nstatus: done\n---\n# Only main\n");
+    task(
+        root,
+        "only-main",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Only main\n",
+    );
     commit(root, "add only-main");
 
     let index = built(root);
@@ -81,10 +90,18 @@ fn a_committed_edit_on_a_branch_is_modified() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    );
     commit(root, "add a");
     git(root, &["checkout", "-q", "-b", "feature"]);
-    task(root, "a", "---\nstatus: done\n---\n# A done\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# A done\n",
+    );
     commit(root, "edit a");
     git(root, &["checkout", "-q", "main"]);
 
@@ -106,10 +123,18 @@ fn a_new_task_on_a_branch_is_added() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    );
     commit(root, "add a");
     git(root, &["checkout", "-q", "-b", "feature"]);
-    task(root, "new", "---\nstatus: todo\n---\n# New\n");
+    task(
+        root,
+        "new",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# New\n",
+    );
     commit(root, "add new");
     git(root, &["checkout", "-q", "main"]);
 
@@ -127,8 +152,16 @@ fn a_deletion_is_tagged_while_main_still_has_the_task() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "a", "---\nstatus: todo\n---\n# A\n");
-    task(root, "b", "---\nstatus: in_progress\n---\n# B\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    );
+    task(
+        root,
+        "b",
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# B\n",
+    );
     commit(root, "add a and b");
     git(root, &["checkout", "-q", "-b", "feature"]);
     std::fs::remove_file(root.join(".plan/tasks/b.md")).unwrap();
@@ -154,7 +187,11 @@ fn a_deletion_main_already_made_is_suppressed() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "x", "---\nstatus: todo\n---\n# X\n");
+    task(
+        root,
+        "x",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# X\n",
+    );
     commit(root, "add x");
     git(root, &["checkout", "-q", "-b", "feature"]);
     std::fs::remove_file(root.join(".plan/tasks/x.md")).unwrap();
@@ -176,7 +213,11 @@ fn an_uncommitted_edit_on_a_feature_worktree_is_modified_and_dirty() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "t", "---\nstatus: todo\n---\n# T\n");
+    task(
+        root,
+        "t",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
+    );
     commit(root, "add t");
     git(root, &["branch", "feature"]);
 
@@ -195,7 +236,11 @@ fn an_uncommitted_edit_on_a_feature_worktree_is_modified_and_dirty() {
     // The feature commit still matches main, but the working copy is edited. Divergence is judged
     // on the effective (working) state, so this surfaces as a dirty Modified — not hidden until
     // commit (the app's `oplan set` edits are uncommitted by nature).
-    task(&wt_path, "t", "---\nstatus: in_progress\n---\n# T edited\n");
+    task(
+        &wt_path,
+        "t",
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# T edited\n",
+    );
 
     let index = built(root);
     let feature = find(&index, "feature", "t").expect("uncommitted WIP must surface");
@@ -212,7 +257,11 @@ fn an_uncommitted_deletion_on_a_feature_worktree_is_deleted_and_dirty() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "t", "---\nstatus: in_progress\n---\n# T\n");
+    task(
+        root,
+        "t",
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
+    );
     commit(root, "add t");
     git(root, &["branch", "feature"]);
 
@@ -252,7 +301,11 @@ fn a_criss_cross_history_does_not_mislabel_an_unchanged_task() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "t", "---\nstatus: todo\n---\n# T\n");
+    task(
+        root,
+        "t",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
+    );
     write(&root.join("other.txt"), "o0\n");
     commit(root, "c0");
     git(root, &["branch", "a"]);
@@ -261,7 +314,11 @@ fn a_criss_cross_history_does_not_mislabel_an_unchanged_task() {
     // `a` edits the task; `b` edits an unrelated file. The two edits are disjoint, so the branches
     // merge without conflict and share two merge-bases (a1 and b1) — a criss-cross.
     git(root, &["checkout", "-q", "a"]);
-    task(root, "t", "---\nstatus: done\n---\n# T done\n");
+    task(
+        root,
+        "t",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# T done\n",
+    );
     commit(root, "a1: edit task");
     git(root, &["checkout", "-q", "b"]);
     write(&root.join("other.txt"), "oB\n");
@@ -294,10 +351,18 @@ fn without_a_default_branch_headline_prefers_the_checked_out_branch() {
     git(root, &["init", "-q", "-b", "alpha"]);
     git(root, &["config", "user.email", "t@example.com"]);
     git(root, &["config", "user.name", "Test"]);
-    task(root, "t", "---\nstatus: todo\n---\n# T\n");
+    task(
+        root,
+        "t",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
+    );
     commit(root, "add t on alpha");
     git(root, &["checkout", "-q", "-b", "zeta"]);
-    task(root, "t", "---\nstatus: done\n---\n# T done\n");
+    task(
+        root,
+        "t",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# T done\n",
+    );
     commit(root, "edit t on zeta");
     // Serve root stays on `zeta`, which sorts after `alpha`.
 
@@ -314,10 +379,18 @@ fn an_uncommitted_change_on_the_default_branch_is_dirty() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "t", "---\nstatus: todo\n---\n# T\n");
+    task(
+        root,
+        "t",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
+    );
     commit(root, "add t");
     // Serve root is checked out on main, so its working copy overlays the base row.
-    task(root, "t", "---\nstatus: in_progress\n---\n# T edited\n");
+    task(
+        root,
+        "t",
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# T edited\n",
+    );
 
     let index = built(root);
     let main = find(&index, "main", "t").expect("main base row");
@@ -332,10 +405,18 @@ fn a_new_uncommitted_task_on_the_default_branch_appears() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    );
     commit(root, "add a");
     // A freshly created (still uncommitted) task must show up right away, not vanish until commit.
-    task(root, "fresh", "---\nstatus: todo\n---\n# Fresh\n");
+    task(
+        root,
+        "fresh",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Fresh\n",
+    );
 
     let index = built(root);
     let fresh = find(&index, "main", "fresh").expect("uncommitted new task row");
@@ -348,10 +429,18 @@ fn oplan_default_branch_config_overrides_autodetect() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    );
     commit(root, "add a");
     git(root, &["checkout", "-q", "-b", "dev"]);
-    task(root, "a", "---\nstatus: done\n---\n# A done\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# A done\n",
+    );
     commit(root, "edit a on dev");
     git(root, &["checkout", "-q", "main"]);
     git(root, &["config", "oplan.defaultBranch", "dev"]);
@@ -372,10 +461,18 @@ fn without_a_default_branch_every_branch_is_a_presence_row() {
     git(root, &["init", "-q", "-b", "trunk"]);
     git(root, &["config", "user.email", "t@example.com"]);
     git(root, &["config", "user.name", "Test"]);
-    task(root, "a", "---\nstatus: todo\n---\n# A\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    );
     commit(root, "add a");
     git(root, &["checkout", "-q", "-b", "other"]);
-    task(root, "a", "---\nstatus: done\n---\n# A done\n");
+    task(
+        root,
+        "a",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# A done\n",
+    );
     commit(root, "edit a on other");
     git(root, &["checkout", "-q", "trunk"]);
 
@@ -397,7 +494,7 @@ fn unparseable_frontmatter_does_not_abort_rebuild() {
     init(root);
     write(
         &root.join(".plan/tasks/body.md"),
-        "---\nstatus: todo\n---\n# Body\n\n## Plan\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> other\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Body\n\n## Plan\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> other\n",
     );
     write(
         &root.join(".plan/tasks/head.md"),
@@ -413,4 +510,74 @@ fn unparseable_frontmatter_does_not_abort_rebuild() {
     assert_eq!(body.task.title, "Body");
     let head = cells.iter().find(|c| c.task.id == "head").unwrap();
     assert_eq!(head.task.title, "Head", "best-effort title survives");
+}
+
+fn commit_at(root: &Path, seconds: i64, message: &str) {
+    let date = format!("@{seconds} +0000");
+    git(root, &["add", "-A"]);
+    let status = Command::new("git")
+        .current_dir(root)
+        .args(["commit", "-qm", message])
+        .env("GIT_AUTHOR_DATE", &date)
+        .env("GIT_COMMITTER_DATE", &date)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git commit failed");
+}
+
+fn at(seconds: i64) -> Timestamp {
+    Timestamp::from_second(seconds).unwrap()
+}
+
+// Older than the commit dates below, so the view's `updated = max(created, updated)` clamp does not
+// mask what the history walk found.
+const CREATED_SECONDS: i64 = 900_000_000;
+
+fn dated(status: &str) -> String {
+    format!(
+        "---\nstatus: {status}\ncreated: {}\n---\n# T\n",
+        at(CREATED_SECONDS)
+    )
+}
+
+#[test]
+fn updated_follows_the_last_commit_to_touch_the_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "t", &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+
+    assert_eq!(built(root).task_updated("t", None), Some(at(1_000_000_000)));
+
+    // A status flip is a blob change like any other, so it counts as an update.
+    task(root, "t", &dated("done"));
+    commit_at(root, 1_000_000_500, "finish t");
+
+    let index = built(root);
+    assert_eq!(index.task_updated("t", None), Some(at(1_000_000_500)));
+    let view = index
+        .effective_view(&Repo::discover(root).unwrap(), "t", "main")
+        .unwrap()
+        .unwrap();
+    assert_eq!(view.updated, Some(at(1_000_000_500)));
+    assert_eq!(view.created, Some(at(CREATED_SECONDS)));
+}
+
+#[test]
+fn an_uncommitted_edit_reads_as_updated_now() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "t", &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+    let before = Timestamp::now();
+    task(root, "t", &dated("done"));
+
+    let updated = built(root).task_updated("t", None).unwrap();
+
+    assert!(
+        updated >= before,
+        "a working-tree edit belongs to no commit, so it reads as now: {updated}"
+    );
 }
