@@ -19,7 +19,7 @@ export interface DispatcherConfig {
 }
 
 export function activeScopes(overlayOpen: boolean, route: Scope): ReadonlyArray<Scope> {
-  return overlayOpen ? ["overlay"] : ["global", route]
+  return overlayOpen ? ["overlay"] : ["global", route, "rows"]
 }
 
 export function activeBindings(

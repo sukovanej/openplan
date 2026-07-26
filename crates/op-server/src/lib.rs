@@ -15,7 +15,7 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    ApiErrorBody, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
+    ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
     TaskView,
 };
 use op_git::Repo;
@@ -94,6 +94,7 @@ fn documented() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
         .routes(routes!(list_tasks, create_task))
+        .routes(routes!(get_board))
         .routes(routes!(get_task, patch_task, delete_task))
 }
 
@@ -340,6 +341,29 @@ async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListIt
     Ok(Json(items))
 }
 
+// The list view's whole data set in one read: tasks grouped by status and flattened into
+// render-ordered rows (§9). Built from the same branch-aware aggregation as `list_tasks`, so board
+// reads stay "reads global"; the client consumes it verbatim.
+#[utoipa::path(
+    get,
+    path = "/api/board",
+    responses((status = 200, description = "Every task grouped by status and flattened into render-ordered rows", body = Board))
+)]
+async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
+    let repo = state.repo.clone();
+    let store = state.store.clone();
+    let index = state.index.clone();
+    let board = tokio::task::spawn_blocking(move || -> Result<Board, IndexError> {
+        let mut index = index.lock().expect("index mutex poisoned");
+        index.rebuild(&repo, &store)?;
+        Ok(Board::build(&index.aggregated_tasks()))
+    })
+    .await
+    .map_err(join_error)?
+    .map_err(index_error)?;
+    Ok(Json(board))
+}
+
 #[utoipa::path(
     post,
     path = "/api/tasks",
@@ -466,21 +490,30 @@ async fn patch_task(
                 patch.apply(task);
                 Ok(())
             })?;
+            let view = TaskView::from_task(id, &task);
             // Echo the freshly written task rather than re-reading it from the matrix: a write that
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
             // would 404 a write that in fact succeeded.
-            let (headline, branches) = {
+            let (headline, branches, parent_title, children, refs) = {
                 let mut index = index.lock().expect("index mutex poisoned");
                 index.rebuild(&repo, &serve_store).map_err(index_error)?;
+                let (parent_title, children, refs) =
+                    index.hierarchy_context(&view.id, view.parent.as_deref(), &view.body);
                 (
-                    index.headline_branch(&id).unwrap_or_default(),
-                    index.task_branch_states(&id),
+                    index.headline_branch(&view.id).unwrap_or_default(),
+                    index.task_branch_states(&view.id),
+                    parent_title,
+                    children,
+                    refs,
                 )
             };
             let detail = TaskDetail {
-                view: TaskView::from_task(id, &task),
+                view,
                 headline,
                 branches,
+                parent_title,
+                children,
+                refs,
             };
             Ok((branch, detail))
         })

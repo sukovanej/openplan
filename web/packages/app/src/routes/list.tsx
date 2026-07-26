@@ -3,46 +3,36 @@ import { Link } from "react-router-dom"
 
 import { BranchBadges } from "@/components/branch-badges"
 import { ListSkeleton, Message } from "@/components/states"
-import { statusHeaderClass, StatusIcon, statusLabel, statusOrder } from "@/components/status-badge"
-import type { Status, TaskListItem } from "@/lib/api"
+import { statusHeaderClass, StatusIcon, statusLabel } from "@/components/status-badge"
+import type { Board, BoardRow, Status } from "@/lib/api"
 import { errorText } from "@/lib/format"
 import { rowCursor, useRowCursor } from "@/lib/row-cursor"
-import { tasksQuery, useQuery } from "@/lib/store"
+import { boardQuery, useQuery } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 export function ListRoute() {
-  const tasks = useQuery(tasksQuery)
-  switch (tasks._tag) {
+  const board = useQuery(boardQuery)
+  switch (board._tag) {
     case "loading":
       return <ListSkeleton />
     case "failure":
-      return <Message title="Could not load tasks" detail={errorText(tasks.error)} />
+      return <Message title="Could not load tasks" detail={errorText(board.error)} />
     case "success":
-      return tasks.value.length === 0
+      return board.value.groups.length === 0
         ? <Message title="No tasks yet" detail="Create one with `oplan create`." />
-        : <TaskGrid tasks={tasks.value} />
+        : <TaskGrid board={board.value} />
   }
 }
 
 const rowDomId = (id: string) => `task-row-${id}`
 
-interface Group {
-  readonly status: Status
-  readonly tasks: ReadonlyArray<TaskListItem>
-}
-
-function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
-  const groups = useMemo<ReadonlyArray<Group>>(
-    () =>
-      statusOrder
-        .map((status) => ({ status, tasks: tasks.filter((task) => task.status === status) }))
-        .filter((group) => group.tasks.length > 0),
-    [tasks],
-  )
-  const ordered = useMemo(() => groups.flatMap((group) => group.tasks), [groups])
-  const ids = useMemo(() => ordered.map((task) => task.id), [ordered])
+function TaskGrid({ board }: { board: Board }) {
+  // The board arrives already grouped, ordered, and flattened; the cursor walks the concatenation of
+  // every group's rows in that same visible order.
+  const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
+  const ids = useMemo(() => rows.map((row) => row.task.id), [rows])
   const { index } = useRowCursor(ids)
-  const activeId = index >= 0 && index < ordered.length ? rowDomId(ordered[index].id) : undefined
+  const activeId = index >= 0 && index < rows.length ? rowDomId(rows[index].task.id) : undefined
 
   let base = 0
   return (
@@ -62,22 +52,23 @@ function TaskGrid({ tasks }: { tasks: ReadonlyArray<TaskListItem> }) {
         Tasks
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {groups.map((group, groupIndex) => {
-          const groupBase = base
-          base += group.tasks.length
-          const lastGroup = groupIndex === groups.length - 1
+        {board.groups.map((group, groupIndex) => {
+          const lastGroup = groupIndex === board.groups.length - 1
           return (
             <div key={group.status} role="rowgroup" aria-label={statusLabel(group.status)}>
               <HeaderRow status={group.status} />
-              {group.tasks.map((task, j) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  index={groupBase + j}
-                  active={groupBase + j === index}
-                  tableLast={lastGroup && j === group.tasks.length - 1}
-                />
-              ))}
+              {group.rows.map((row, j) => {
+                const i = base++
+                return (
+                  <TaskRow
+                    key={row.task.id}
+                    row={row}
+                    active={i === index}
+                    tableLast={lastGroup && j === group.rows.length - 1}
+                    onFocus={() => rowCursor.focus(i)}
+                  />
+                )
+              })}
             </div>
           )
         })}
@@ -103,19 +94,20 @@ function HeaderRow({ status }: { status: Status }) {
 }
 
 function TaskRow(
-  { task, index, active, tableLast }: {
-    task: TaskListItem
-    index: number
+  { row, active, tableLast, onFocus }: {
+    row: BoardRow
     active: boolean
     tableLast: boolean
+    onFocus: () => void
   },
 ) {
+  const { task, depth, parent_title } = row
   return (
     <div
       id={rowDomId(task.id)}
       role="row"
       aria-selected={active}
-      onClick={() => rowCursor.focus(index)}
+      onClick={onFocus}
       className={cn(
         // Every row keeps a bottom border so its height never changes; it just goes transparent
         // for the selected row (the outline draws its edges) and the last row (no trailing divider).
@@ -128,10 +120,15 @@ function TaskRow(
           : "hover:bg-muted/30",
       )}
     >
-      <div role="gridcell" className="shrink-0 px-4 py-3">
+      <div
+        role="gridcell"
+        className="shrink-0 py-3"
+        // Indent nested tasks so the parent→child relationship reads at a glance.
+        style={{ paddingLeft: `${1 + depth * 1.5}rem` }}
+      >
         <StatusIcon status={task.status} />
       </div>
-      <div role="gridcell" className="min-w-0 flex-1 py-3">
+      <div className="min-w-0 flex-1 py-3 pl-3" role="gridcell">
         <Link
           to={`/task/${task.id}`}
           tabIndex={-1}
@@ -139,6 +136,17 @@ function TaskRow(
         >
           {task.title}
         </Link>
+        {parent_title !== undefined && task.parent !== undefined && (
+          <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="text-muted-foreground/70">Subtask of</span>
+            <Link
+              to={`/task/${task.parent}`}
+              className="text-foreground/90 relative z-10 max-w-[15rem] truncate hover:underline"
+            >
+              {parent_title}
+            </Link>
+          </span>
+        )}
       </div>
       <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">
         <BranchBadges branches={task.branches} headline={task.headline} />

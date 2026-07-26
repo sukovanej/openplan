@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub mod rank;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Backlog,
@@ -56,10 +58,12 @@ pub struct Frontmatter {
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deps: Vec<String>,
-    // Fields the model does not name (e.g. rank) are preserved verbatim across a
-    // read-modify-write so a `set` never silently drops them.
+    // Fields the model does not name are preserved verbatim across a read-modify-write
+    // so a `set` never silently drops them.
     #[serde(flatten)]
     pub extra: serde_yaml::Mapping,
 }
@@ -84,6 +88,7 @@ impl Task {
             frontmatter: Frontmatter {
                 status,
                 parent: None,
+                rank: None,
                 deps: Vec::new(),
                 extra: serde_yaml::Mapping::new(),
             },
@@ -106,6 +111,10 @@ impl Task {
 
     pub fn set_parent(&mut self, parent: Option<String>) {
         self.frontmatter.parent = parent;
+    }
+
+    pub fn set_rank(&mut self, rank: Option<String>) {
+        self.frontmatter.rank = rank;
     }
 
     pub fn set_deps(&mut self, deps: Vec<String>) {

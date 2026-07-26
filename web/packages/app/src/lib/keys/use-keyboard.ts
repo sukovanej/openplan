@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { focusedId, rowCursor } from "@/lib/row-cursor"
+import { detailActions, escapeOutcome } from "@/lib/detail-actions"
+import { focusedId, rowCursor, subtaskCursor } from "@/lib/row-cursor"
 
 import { bindings } from "./bindings"
 import { Dispatcher } from "./dispatcher"
+import { historyIndex } from "./history"
 import type { RouteScope, RunContext } from "./types"
 
 function routeScope(pathname: string): RouteScope {
@@ -21,10 +23,17 @@ export function useKeyboard(): Keyboard {
   const location = useLocation()
   const [overlayOpen, setOverlayOpen] = useState(false)
 
-  const live = useRef({ navigate, scope: routeScope(location.pathname), overlayOpen })
-  live.current = { navigate, scope: routeScope(location.pathname), overlayOpen }
+  const scope = routeScope(location.pathname)
+  const live = useRef({ navigate, scope, overlayOpen })
+  live.current = { navigate, scope, overlayOpen }
+
+  // How many entries Esc can pop before leaving the stack we arrived on. Read from the router's own
+  // history index rather than counted from navigation types, which report Back and Forward
+  // identically and so would unwind the count on a Forward.
+  const entryIndex = useRef(historyIndex())
 
   useEffect(() => {
+    const activeCursor = () => (live.current.scope === "detail" ? subtaskCursor : rowCursor)
     const context = (): RunContext => ({
       navigate: (to) => live.current.navigate(to),
       overlay: {
@@ -33,8 +42,20 @@ export function useKeyboard(): Keyboard {
         toggle: () => setOverlayOpen((open) => !open),
       },
       cursor: {
-        moveBy: rowCursor.moveBy,
-        focusedId: () => focusedId(rowCursor.getSnapshot()),
+        moveBy: (delta) => activeCursor().moveBy(delta),
+        focusedId: () => focusedId(activeCursor().getSnapshot()),
+      },
+      detail: {
+        editParent: () => detailActions.emit("edit-parent"),
+        addSubtask: () => detailActions.emit("add-subtask"),
+        goToParent: () => detailActions.emit("go-parent"),
+        escape: () => {
+          const canGoBack = historyIndex() > entryIndex.current
+          const outcome = escapeOutcome(subtaskCursor.getSnapshot().index >= 0, canGoBack)
+          if (outcome === "clear-selection") subtaskCursor.clear()
+          else if (outcome === "back") live.current.navigate(-1)
+          else live.current.navigate("/")
+        },
       },
     })
     const dispatcher = new Dispatcher({

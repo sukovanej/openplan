@@ -20,7 +20,7 @@ describe("help overlay content is derived from the registry", () => {
   })
 
   it("groups entries by their binding group", () => {
-    expect(groups.map((group) => group.name)).toEqual(["Navigation", "Help"])
+    expect(groups.map((group) => group.name)).toEqual(["Navigation", "Task", "Help"])
   })
 
   it("carries each binding's label and normalized keys verbatim", () => {

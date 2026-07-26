@@ -1,4 +1,4 @@
-export type Scope = "global" | "list" | "detail" | "overlay"
+export type Scope = "global" | "list" | "detail" | "overlay" | "rows"
 export type RouteScope = "list" | "detail"
 
 export type KeySpec = string | ReadonlyArray<string>
@@ -14,10 +14,18 @@ export interface CursorControls {
   readonly focusedId: () => string | undefined
 }
 
+export interface DetailControls {
+  readonly editParent: () => void
+  readonly addSubtask: () => void
+  readonly goToParent: () => void
+  readonly escape: () => void
+}
+
 export interface RunContext {
   readonly navigate: (to: string) => void
   readonly overlay: OverlayControls
   readonly cursor: CursorControls
+  readonly detail: DetailControls
 }
 
 export interface Binding {

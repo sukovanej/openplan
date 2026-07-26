@@ -1,13 +1,15 @@
 import { CircleDashed, Square, SquareCheckBig } from "lucide-react"
-import type { ReactNode } from "react"
+import { createContext, type ReactNode, useContext, useMemo } from "react"
 import Markdown, { type Components } from "react-markdown"
 import { Link } from "react-router-dom"
 import remarkGfm from "remark-gfm"
 
-import { tasksQuery, useQuery } from "@/lib/store"
+import type { TaskRef as TaskRefData } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { StatusIcon } from "./status-badge"
 import { remarkTaskLinks } from "./task-links"
+
+const RefsContext = createContext<ReadonlyMap<string, TaskRefData>>(new Map())
 
 const proseColors =
   "[--tw-prose-body:var(--color-neutral-700)] [--tw-prose-bold:var(--color-neutral-700)] [--tw-prose-headings:var(--color-neutral-900)] [--tw-prose-code:var(--color-neutral-900)] dark:[--tw-prose-invert-body:var(--color-neutral-300)] dark:[--tw-prose-invert-bold:var(--color-neutral-300)] dark:[--tw-prose-invert-headings:var(--color-neutral-200)] dark:[--tw-prose-invert-code:var(--color-neutral-200)]"
@@ -40,9 +42,9 @@ const chipClass =
 const TASK_ROUTE = "/task/"
 
 function TaskRef({ href, fallback }: { href: string; fallback: ReactNode }) {
-  const tasks = useQuery(tasksQuery)
+  const refs = useContext(RefsContext)
   const id = href.slice(TASK_ROUTE.length).split("#")[0]
-  const task = tasks._tag === "success" ? tasks.value.find((t) => t.id === id) : undefined
+  const task = refs.get(id)
   return (
     <Link
       to={href}
@@ -94,10 +96,18 @@ const components: Components = {
   },
 }
 
-export function TaskBody({ markdown }: { markdown: string }) {
+export function TaskBody(
+  { markdown, refs }: { markdown: string; refs?: ReadonlyArray<TaskRefData> },
+) {
+  const refMap = useMemo(
+    () => new Map((refs ?? []).map((ref) => [ref.id, ref])),
+    [refs],
+  )
   return (
-    <article data-keys-ignore className={proseClass}>
-      <Markdown remarkPlugins={[remarkGfm, remarkTaskLinks]} components={components}>{markdown}</Markdown>
-    </article>
+    <RefsContext.Provider value={refMap}>
+      <article data-keys-ignore className={proseClass}>
+        <Markdown remarkPlugins={[remarkGfm, remarkTaskLinks]} components={components}>{markdown}</Markdown>
+      </article>
+    </RefsContext.Provider>
   )
 }

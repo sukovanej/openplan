@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use op_api::{
-    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Status, TaskBranches, TaskDetail,
-    TaskListItem, TaskSummary, TaskVersion, TaskView,
+    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Status, TaskBranches, TaskChild,
+    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, list_item_cmp,
 };
 use op_git::{Repo, Worktree};
 use op_store::{Store, StoreError};
@@ -33,6 +33,7 @@ struct Version {
     title: String,
     status: Status,
     parent: Option<String>,
+    rank: Option<String>,
 }
 
 struct DiffCtx<'a> {
@@ -377,6 +378,7 @@ impl Index {
                     title: headline.task.title.clone(),
                     status: headline.task.status,
                     parent: headline.task.parent.clone(),
+                    rank: headline.task.rank.clone(),
                     headline: headline.branch.clone(),
                     branches: branch_states(&cells),
                 }
@@ -431,11 +433,47 @@ impl Index {
         let Some(raw) = raw else {
             return Ok(None);
         };
+        let view = view_from_raw(id, &raw);
+        let (parent_title, children, refs) =
+            self.hierarchy_context(id, view.parent.as_deref(), &view.body);
         Ok(Some(TaskDetail {
-            view: view_from_raw(id, &raw),
+            view,
             headline: self.select_headline(&cells).branch.clone(),
             branches: branch_states(&cells),
+            parent_title,
+            children,
+            refs,
         }))
+    }
+
+    // The immediate hierarchy around a task, from the aggregated set: the parent's title (when it
+    // resolves), the direct children in sibling order, and every `[[id]]` in `body` resolved to a
+    // title/status. Lets the detail read stand alone without shipping the whole task list.
+    pub fn hierarchy_context(
+        &self,
+        id: &str,
+        parent: Option<&str>,
+        body: &str,
+    ) -> (Option<String>, Vec<TaskChild>, Vec<TaskRef>) {
+        let aggregated = self.aggregated_tasks();
+        let by_id: HashMap<&str, &TaskListItem> =
+            aggregated.iter().map(|t| (t.id.as_str(), t)).collect();
+        let parent_title = parent.and_then(|p| by_id.get(p)).map(|t| t.title.clone());
+        let mut kids: Vec<&TaskListItem> = aggregated
+            .iter()
+            .filter(|t| t.parent.as_deref() == Some(id))
+            .collect();
+        kids.sort_by(|a, b| list_item_cmp(a, b));
+        let children = kids
+            .into_iter()
+            .map(|t| TaskChild {
+                id: t.id.clone(),
+                title: t.title.clone(),
+                status: t.status,
+                rank: t.rank.clone(),
+            })
+            .collect();
+        (parent_title, children, body_refs(body, &by_id))
     }
 
     // The branch a branchless read headlines with, for the write path which builds its own
@@ -665,6 +703,7 @@ impl Version {
             title: self.title.clone(),
             status: self.status,
             parent: self.parent.clone(),
+            rank: self.rank.clone(),
         }
     }
 }
@@ -676,6 +715,7 @@ fn parse_version(bytes: &[u8]) -> Version {
             title: task.title().unwrap_or_default(),
             status: task.frontmatter.status,
             parent: task.frontmatter.parent.clone(),
+            rank: task.frontmatter.rank.clone(),
         },
         // Unresolved merge markers can break the frontmatter fences; keep the cell rather than
         // abort the whole rebuild, best-effort title, status left at the unstarted default.
@@ -683,8 +723,46 @@ fn parse_version(bytes: &[u8]) -> Version {
             title: best_effort_title(&text).unwrap_or_default(),
             status: Status::Backlog,
             parent: None,
+            rank: None,
         },
     }
+}
+
+// Every `[[id]]` (or `[[id#Section]]`) in `body` that resolves to a known task, deduplicated in
+// first-seen order: inner text with no bracket or newline, id split off at the first `#`.
+// Unresolvable ids are skipped — the client renders those as a dangling chip anyway, so they need no
+// metadata. Deliberately looser than the web's matcher, which parses markdown and so also skips
+// `[[…]]` quoted inside code spans and fences: a superset here only costs a few unused entries,
+// where a subset would drop a chip's title and status.
+fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
+    let mut refs = Vec::new();
+    let mut seen = HashSet::new();
+    let mut rest = body;
+    while let Some(open) = rest.find("[[") {
+        let after = &rest[open + 2..];
+        let Some(close) = after.find("]]") else {
+            break;
+        };
+        let inner = &after[..close];
+        rest = &after[close + 2..];
+        if inner.contains(['[', ']', '\n']) {
+            continue;
+        }
+        let id = inner.split('#').next().unwrap_or(inner).trim();
+        if id.is_empty() {
+            continue;
+        }
+        if let Some(item) = by_id.get(id) {
+            if seen.insert(id.to_owned()) {
+                refs.push(TaskRef {
+                    id: item.id.clone(),
+                    title: item.title.clone(),
+                    status: item.status,
+                });
+            }
+        }
+    }
+    refs
 }
 
 fn view_from_raw(id: &str, raw: &str) -> TaskView {
@@ -695,6 +773,7 @@ fn view_from_raw(id: &str, raw: &str) -> TaskView {
             title: best_effort_title(raw).unwrap_or_default(),
             status: Status::Backlog,
             parent: None,
+            rank: None,
             deps: Vec::new(),
             body: raw.to_owned(),
         },

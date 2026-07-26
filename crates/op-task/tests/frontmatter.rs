@@ -13,6 +13,7 @@ fn frontmatter_roundtrips() {
         Frontmatter {
             status: Status::InProgress,
             parent: Some("epic-42".to_owned()),
+            rank: Some("m".to_owned()),
             deps: vec!["task-1".to_owned(), "task-2#Design".to_owned()],
             extra: Default::default(),
         },
@@ -30,6 +31,7 @@ fn minimal_frontmatter_is_just_status() {
         Frontmatter {
             status: Status::Todo,
             parent: None,
+            rank: None,
             deps: vec![],
             extra: Default::default(),
         },
@@ -54,14 +56,14 @@ fn parses_crlf_frontmatter_and_preserves_body() {
 
 #[test]
 fn unknown_frontmatter_keys_are_preserved() {
-    let text = "---\nstatus: todo\nrank: 3.5\nassignee: milan\n---\n# Task C\n";
+    let text = "---\nstatus: todo\nestimate: 3.5\nassignee: milan\n---\n# Task C\n";
     let mut parsed = Task::from_file_string(text).unwrap();
     parsed.set_status(Status::Done);
 
     let written = parsed.to_file_string().unwrap();
     assert!(
-        written.contains("rank: 3.5"),
-        "rank must survive: {written}"
+        written.contains("estimate: 3.5"),
+        "estimate must survive: {written}"
     );
     assert!(
         written.contains("assignee: milan"),
@@ -82,6 +84,7 @@ fn task_file_roundtrips_with_title() {
         Frontmatter {
             status: Status::Todo,
             parent: None,
+            rank: None,
             deps: vec![],
             extra: Default::default(),
         },

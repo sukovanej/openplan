@@ -186,11 +186,151 @@ async fn missing_task_routes_are_404() {
 }
 
 #[tokio::test]
+async fn patch_parent_null_clears_absent_leaves_id_sets() {
+    let (dir, state) = store_state();
+    std::fs::write(
+        dir.path().join(".plan/tasks/epic.md"),
+        "---\nstatus: todo\n---\n# Epic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join(".plan/tasks/child.md"),
+        "---\nstatus: todo\nparent: epic\n---\n# Child\n",
+    )
+    .unwrap();
+
+    // Absent key: parent untouched.
+    let untouched = send(
+        &state,
+        "PATCH",
+        "/api/tasks/child",
+        Some(json!({ "status": "in_progress" })),
+    )
+    .await;
+    assert_eq!(untouched.status(), StatusCode::OK);
+    assert_eq!(body_json(untouched).await["parent"], "epic");
+
+    // Explicit null: parent cleared to top level, and the key drops from the file.
+    let cleared = send(
+        &state,
+        "PATCH",
+        "/api/tasks/child",
+        Some(json!({ "parent": null })),
+    )
+    .await;
+    assert_eq!(cleared.status(), StatusCode::OK);
+    assert!(body_json(cleared).await.get("parent").is_none());
+    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/child.md")).unwrap();
+    assert!(!raw.contains("parent"), "cleared key must drop: {raw}");
+
+    // Explicit id: parent set again.
+    let set = send(
+        &state,
+        "PATCH",
+        "/api/tasks/child",
+        Some(json!({ "parent": "epic" })),
+    )
+    .await;
+    assert_eq!(set.status(), StatusCode::OK);
+    assert_eq!(body_json(set).await["parent"], "epic");
+}
+
+#[tokio::test]
+async fn board_groups_by_status_and_nests_same_status_children() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(
+        tasks.join("epic.md"),
+        "---\nstatus: in_progress\n---\n# Epic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("sub-open.md"),
+        "---\nstatus: in_progress\nparent: epic\nrank: m\n---\n# Sub open\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("sub-todo.md"),
+        "---\nstatus: todo\nparent: epic\n---\n# Sub todo\n",
+    )
+    .unwrap();
+
+    let board = body_json(send(&state, "GET", "/api/board", None).await).await;
+    let groups = board["groups"].as_array().unwrap();
+    let order: Vec<&str> = groups
+        .iter()
+        .map(|g| g["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(order, vec!["in_progress", "todo"]);
+
+    // Same-status child nests under the epic (depth 1); the todo child surfaces in its own group as
+    // a root carrying the parent hint.
+    let in_progress = &groups[0]["rows"];
+    assert_eq!(in_progress[0]["task"]["id"], "epic");
+    assert_eq!(in_progress[0]["depth"], 0);
+    assert_eq!(in_progress[0]["has_children"], true);
+    assert_eq!(in_progress[1]["task"]["id"], "sub-open");
+    assert_eq!(in_progress[1]["depth"], 1);
+
+    let todo = &groups[1]["rows"];
+    assert_eq!(todo[0]["task"]["id"], "sub-todo");
+    assert_eq!(todo[0]["depth"], 0);
+    assert_eq!(todo[0]["parent_title"], "Epic");
+}
+
+#[tokio::test]
+async fn task_detail_carries_parent_title_children_and_resolved_refs() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(tasks.join("epic.md"), "---\nstatus: todo\n---\n# Epic\n").unwrap();
+    std::fs::write(
+        tasks.join("child.md"),
+        "---\nstatus: in_progress\nparent: epic\nrank: m\n---\n# Child\n\nblocks [[epic]], not [[ghost-0000]] or `[[epic]]`.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("b.md"),
+        "---\nstatus: todo\nparent: child\nrank: t\n---\n# B\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("a.md"),
+        "---\nstatus: todo\nparent: child\nrank: m\n---\n# A\n",
+    )
+    .unwrap();
+
+    let detail = body_json(send(&state, "GET", "/api/tasks/child", None).await).await;
+    assert_eq!(detail["parent_title"], "Epic");
+
+    // Direct children arrive in rank order (a before b), each with title + status.
+    let children = detail["children"].as_array().unwrap();
+    assert_eq!(
+        children
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["a", "b"]
+    );
+    assert_eq!(children[0]["title"], "A");
+
+    // Only resolvable `[[id]]`s become refs, deduped; a dangling id is dropped.
+    let refs = detail["refs"].as_array().unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0]["id"], "epic");
+    assert_eq!(refs[0]["title"], "Epic");
+
+    // A top-level task reports no parent and no children.
+    let epic = body_json(send(&state, "GET", "/api/tasks/epic", None).await).await;
+    assert!(epic.get("parent_title").is_none());
+    assert_eq!(epic["children"][0]["id"], "child");
+}
+
+#[tokio::test]
 async fn patch_preserves_unknown_frontmatter_keys() {
     let (dir, state) = store_state();
     std::fs::write(
         dir.path().join(".plan/tasks/keep.md"),
-        "---\nstatus: todo\nrank: 9\n---\n# Keep\n",
+        "---\nstatus: todo\nestimate: 9\n---\n# Keep\n",
     )
     .unwrap();
 
@@ -204,7 +344,10 @@ async fn patch_preserves_unknown_frontmatter_keys() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/keep.md")).unwrap();
-    assert!(raw.contains("rank: 9"), "rank must survive PATCH: {raw}");
+    assert!(
+        raw.contains("estimate: 9"),
+        "estimate must survive PATCH: {raw}"
+    );
     assert!(raw.contains("status: done"));
 }
 
@@ -769,4 +912,84 @@ async fn swagger_ui_page_is_served() {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let html = String::from_utf8_lossy(&bytes);
     assert!(html.to_lowercase().contains("swagger"));
+}
+
+#[tokio::test]
+async fn patch_rejects_a_malformed_rank_with_its_reason() {
+    let (dir, state) = store_state();
+    std::fs::write(
+        dir.path().join(".plan/tasks/solo.md"),
+        "---\nstatus: todo\n---\n# Solo\n",
+    )
+    .unwrap();
+
+    let refused = send(
+        &state,
+        "PATCH",
+        "/api/tasks/solo",
+        Some(json!({ "rank": "NOT-BASE36" })),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let message = body_json(refused).await["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(message.contains("rank"), "message: {message}");
+    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/solo.md")).unwrap();
+    assert!(!raw.contains("rank"), "a refused rank must not land: {raw}");
+
+    let accepted = send(
+        &state,
+        "PATCH",
+        "/api/tasks/solo",
+        Some(json!({ "rank": "a5" })),
+    )
+    .await;
+    assert_eq!(accepted.status(), StatusCode::OK);
+    assert_eq!(body_json(accepted).await["rank"], "a5");
+}
+
+#[tokio::test]
+async fn patching_a_parent_that_would_cycle_is_refused_with_its_reason() {
+    // The web pickers exclude cycle-forming targets from a snapshot that can be stale by the time
+    // the write lands, so this rejection is reachable through the UI and must carry a usable reason.
+    let (dir, state) = store_state();
+    std::fs::write(
+        dir.path().join(".plan/tasks/epic.md"),
+        "---\nstatus: todo\n---\n# Epic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join(".plan/tasks/child.md"),
+        "---\nstatus: todo\nparent: epic\n---\n# Child\n",
+    )
+    .unwrap();
+
+    let refused = send(
+        &state,
+        "PATCH",
+        "/api/tasks/epic",
+        Some(json!({ "parent": "child" })),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let message = body_json(refused).await["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(message.contains("descendant"), "message: {message}");
+}
+
+#[test]
+fn the_openapi_spec_documents_every_json_api_route() {
+    let spec = serde_json::to_value(op_server::openapi()).unwrap();
+    let paths = spec["paths"].as_object().unwrap();
+    for route in ["/api/tasks", "/api/tasks/{id}", "/api/board", "/health"] {
+        assert!(paths.contains_key(route), "{route} missing from the spec");
+    }
+    assert!(
+        spec["components"]["schemas"].get("Board").is_some(),
+        "the board's schema must reach the spec the web client is generated from"
+    );
 }
