@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-15T15:11:28Z
 ---
 # Full subtask support: unparent, tree/move, ranking, and UI hierarchy
 
