@@ -11,5 +11,5 @@ dir = "web/packages/api-client"
 run = [
   "cargo run --quiet --manifest-path ../../../Cargo.toml -p op-cli -- server openapi > openapi.json",
   "pnpm exec openapigen -s openapi.json -f httpclient -n TasksClient > src/index.ts",
-  "pnpm exec dprint fmt src/index.ts",
+  "pnpm exec oxfmt src/index.ts",
 ]

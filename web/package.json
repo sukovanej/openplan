@@ -12,14 +12,14 @@
     "watch": "pnpm -r --parallel watch",
     "typecheck": "tsc -b",
     "lint": "oxlint",
-    "format": "dprint fmt",
-    "format:check": "dprint check",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "test": "vitest run"
   },
   "devDependencies": {
     "typescript": "catalog:",
     "oxlint": "catalog:",
-    "dprint": "catalog:",
+    "oxfmt": "catalog:",
     "vitest": "catalog:"
   }
 }
