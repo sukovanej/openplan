@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 ---
 # Replace dprint with the oxc formatter (oxfmt)
 
