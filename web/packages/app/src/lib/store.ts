@@ -1,8 +1,9 @@
+import type { Board, TaskDetail, TaskListItem } from "@open-planner/api-client"
 import { Effect, Result } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { useSyncExternalStore } from "react"
 
-import { type Board, getBoard, getTask, listTasks, type TaskDetail, type TaskListItem } from "./api"
+import { getBoard, getTask, listTasks } from "./api"
 import type { Invalidator } from "./events"
 import { runtime } from "./runtime"
 

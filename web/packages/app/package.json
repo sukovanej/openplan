@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
+    "@open-planner/api-client": "workspace:*",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "effect": "catalog:",

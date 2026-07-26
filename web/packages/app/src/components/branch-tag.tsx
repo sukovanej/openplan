@@ -1,4 +1,5 @@
-import type { BranchState, ChangeKind } from "@/lib/api"
+import type { BranchState, ChangeKind } from "@open-planner/api-client"
+
 import { cn } from "@/lib/utils"
 
 // Border and text share one hue per change kind, so a tag never pairs a grey border with coloured text.

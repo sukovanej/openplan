@@ -324,7 +324,11 @@ where
 #[utoipa::path(
     get,
     path = "/api/tasks",
-    responses((status = 200, description = "Every logical task, aggregated across branches", body = Vec<TaskListItem>))
+    responses(
+        (status = 200, description = "Every logical task, aggregated across branches", body = Vec<TaskListItem>),
+        (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+    )
 )]
 async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
     let repo = state.repo.clone();
@@ -347,7 +351,11 @@ async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListIt
 #[utoipa::path(
     get,
     path = "/api/board",
-    responses((status = 200, description = "Every task grouped by status and flattened into render-ordered rows", body = Board))
+    responses(
+        (status = 200, description = "Every task grouped by status and flattened into render-ordered rows", body = Board),
+        (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+    )
 )]
 async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
     let repo = state.repo.clone();
@@ -368,7 +376,11 @@ async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiErro
     post,
     path = "/api/tasks",
     request_body = CreateTask,
-    responses((status = 201, description = "Created", body = CreatedTask))
+    responses(
+        (status = 201, description = "Created", body = CreatedTask),
+        (status = 400, description = "The task is invalid (unknown parent or dependency)", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+    )
 )]
 async fn create_task(
     State(state): State<AppState>,
@@ -403,7 +415,9 @@ struct TaskQuery {
     ),
     responses(
         (status = 200, description = "The task on the requested branch", body = TaskDetail),
-        (status = 404, description = "No such task", body = ApiErrorBody)
+        (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
+        (status = 404, description = "No such task", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
 async fn get_task(
@@ -460,8 +474,10 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
     request_body = TaskPatch,
     responses(
         (status = 200, description = "The updated task", body = TaskDetail),
+        (status = 400, description = "The patch is invalid (unknown parent, or a parent cycle)", body = ApiErrorBody),
         (status = 404, description = "No such task", body = ApiErrorBody),
-        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody)
+        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
 async fn patch_task(
@@ -538,7 +554,10 @@ async fn patch_task(
     ),
     responses(
         (status = 204, description = "Deleted"),
-        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody)
+        (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
+        (status = 404, description = "No such task", body = ApiErrorBody),
+        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
 async fn delete_task(

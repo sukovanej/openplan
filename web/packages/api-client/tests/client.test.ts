@@ -36,6 +36,46 @@ it.effect("decodes GET /api/tasks through the generated client", () =>
   }),
 )
 
+it.effect("decodes the grouped, flattened board from GET /api/board", () =>
+  Effect.gen(function* () {
+    const tasks = make(
+      clientReturning(() =>
+        json({
+          groups: [
+            {
+              status: "todo",
+              rows: [
+                {
+                  task: { id: "epic-1", title: "Epic", status: "todo", headline: "main", branches: [] },
+                  depth: 0,
+                  has_children: true,
+                },
+                {
+                  task: {
+                    id: "kid-1",
+                    title: "Kid",
+                    status: "todo",
+                    parent: "epic-1",
+                    rank: "m",
+                    headline: "main",
+                    branches: [],
+                  },
+                  depth: 1,
+                  has_children: false,
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    const board = yield* tasks.getBoard(undefined)
+    expect(board.groups.map((group) => group.status)).toEqual(["todo"])
+    expect(board.groups[0].rows.map((row) => row.depth)).toEqual([0, 1])
+    expect(board.groups[0].rows[1].task.parent).toBe("epic-1")
+  }),
+)
+
 it.effect("decodes a branch-aware TaskDetail from GET /api/tasks/:id", () =>
   Effect.gen(function* () {
     const tasks = make(
