@@ -18,9 +18,11 @@ export function ListRoute() {
     case "failure":
       return <Message title="Could not load tasks" detail={errorText(board.error)} />
     case "success":
-      return board.value.groups.length === 0
-        ? <Message title="No tasks yet" detail="Create one with `oplan create`." />
-        : <TaskGrid board={board.value} />
+      return board.value.groups.length === 0 ? (
+        <Message title="No tasks yet" detail="Create one with `oplan create`." />
+      ) : (
+        <TaskGrid board={board.value} />
+      )
   }
 }
 
@@ -93,14 +95,17 @@ function HeaderRow({ status }: { status: Status }) {
   )
 }
 
-function TaskRow(
-  { row, active, tableLast, onFocus }: {
-    row: BoardRow
-    active: boolean
-    tableLast: boolean
-    onFocus: () => void
-  },
-) {
+function TaskRow({
+  row,
+  active,
+  tableLast,
+  onFocus,
+}: {
+  row: BoardRow
+  active: boolean
+  tableLast: boolean
+  onFocus: () => void
+}) {
   const { task, depth, parent_title } = row
   return (
     <div

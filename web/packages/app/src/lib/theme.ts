@@ -60,7 +60,7 @@ export class ThemeStore {
     this.state = { preference, resolved: resolve(preference) }
   }
 
-  readonly subscribe = (listener: () => void): () => void => {
+  readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     if (this.listeners.size === 1) this.connect()
     return () => {

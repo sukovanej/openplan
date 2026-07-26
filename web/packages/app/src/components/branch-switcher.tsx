@@ -5,14 +5,17 @@ import type { BranchState } from "@/lib/api"
 // one. `selected` is the pinned branch, or `undefined` for the default read — which resolves to
 // `headline`, the most recently changed branch, marked with a leading dot. Clicking the headline
 // returns to that clean default (no `?branch=`); any other branch pins it.
-export function BranchSwitcher(
-  { branches, selected, headline, onSelect }: {
-    branches: ReadonlyArray<BranchState>
-    selected: string | undefined
-    headline: string
-    onSelect: (branch: string | undefined) => void
-  },
-) {
+export function BranchSwitcher({
+  branches,
+  selected,
+  headline,
+  onSelect,
+}: {
+  branches: ReadonlyArray<BranchState>
+  selected: string | undefined
+  headline: string
+  onSelect: (branch: string | undefined) => void
+}) {
   if (branches.length < 2) return null
   const active = selected ?? headline
   return (

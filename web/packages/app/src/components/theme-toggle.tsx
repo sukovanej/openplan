@@ -32,9 +32,7 @@ export function ThemeToggle({ className, ...props }: React.ComponentProps<"div">
             onClick={() => setPreference(value)}
             className={cn(
               "focus-visible:ring-ring inline-flex size-7 items-center justify-center rounded-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
-              active
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
+              active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >
             <Icon className="size-4" aria-hidden="true" />

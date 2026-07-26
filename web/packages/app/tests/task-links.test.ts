@@ -16,11 +16,7 @@ it("links a bare task id", () => {
 
 it("links every reference in a line", () => {
   const nodes = splitTaskRefs("[[a-1a1a]] and [[b-2b2b]]")
-  expect(nodes?.map((n) => (n.type === "link" ? n.url : n.value))).toEqual([
-    "/task/a-1a1a",
-    " and ",
-    "/task/b-2b2b",
-  ])
+  expect(nodes?.map((n) => (n.type === "link" ? n.url : n.value))).toEqual(["/task/a-1a1a", " and ", "/task/b-2b2b"])
 })
 
 it("keeps the section suffix in the label and encodes it in the hash", () => {

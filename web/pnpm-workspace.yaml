@@ -34,14 +34,13 @@ catalog:
   happy-dom: 20.10.6
   typescript: 7.0.2
   oxlint: 1.73.0
-  dprint: 0.55.1
+  oxfmt: 0.60.0
 
 minimumReleaseAgeExclude:
-  - '@effect/vitest@4.0.0-beta.98'
+  - "@effect/vitest@4.0.0-beta.98"
   - effect@4.0.0-beta.98
-  - '@effect/platform-node@4.0.0-beta.98'
-  - '@effect/openapi-generator@4.0.0-beta.98'
+  - "@effect/platform-node@4.0.0-beta.98"
+  - "@effect/openapi-generator@4.0.0-beta.98"
 
 allowBuilds:
-  dprint: false
   msgpackr-extract: false

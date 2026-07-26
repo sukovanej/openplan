@@ -30,8 +30,7 @@ const proseTaskList = "[&_li.task-list-item]:list-none [&_ul:has(li.task-list-it
 const proseTable =
   "prose-table:my-0 prose-thead:bg-muted/40 prose-th:border-b prose-th:border-r prose-th:border-border prose-th:px-3 prose-th:py-1.5 prose-td:border-b prose-td:border-r prose-td:border-border prose-td:px-3 prose-td:py-1.5 [&_th:last-child]:border-r-0 [&_td:last-child]:border-r-0 [&_tbody_tr:last-child_td]:border-b-0"
 
-const proseClass =
-  `prose prose-base prose-neutral dark:prose-invert max-w-none ${proseColors} ${proseSpacing} ${proseCode} ${proseTaskList} ${proseTable}`
+const proseClass = `prose prose-base prose-neutral dark:prose-invert max-w-none ${proseColors} ${proseSpacing} ${proseCode} ${proseTaskList} ${proseTable}`
 
 const linkClass =
   "font-medium text-foreground underline decoration-1 decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
@@ -55,9 +54,11 @@ function TaskRef({ href, fallback }: { href: string; fallback: ReactNode }) {
           : "border-border bg-muted/40 text-foreground hover:bg-muted",
       )}
     >
-      {task === undefined
-        ? <CircleDashed className="size-4 shrink-0 text-muted-foreground/60" aria-hidden />
-        : <StatusIcon status={task.status} className="size-4 shrink-0" />}
+      {task === undefined ? (
+        <CircleDashed className="size-4 shrink-0 text-muted-foreground/60" aria-hidden />
+      ) : (
+        <StatusIcon status={task.status} className="size-4 shrink-0" />
+      )}
       <span className="min-w-0 truncate">{task?.title ?? fallback}</span>
     </Link>
   )
@@ -69,9 +70,17 @@ const components: Components = {
       return <TaskRef href={href} fallback={children} />
     }
     if (href !== undefined && href.startsWith("/")) {
-      return <Link to={href} className={linkClass}>{children}</Link>
+      return (
+        <Link to={href} className={linkClass}>
+          {children}
+        </Link>
+      )
     }
-    return <a href={href} target="_blank" rel="noreferrer">{children}</a>
+    return (
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    )
   },
   table({ children }) {
     return (
@@ -96,17 +105,14 @@ const components: Components = {
   },
 }
 
-export function TaskBody(
-  { markdown, refs }: { markdown: string; refs?: ReadonlyArray<TaskRefData> },
-) {
-  const refMap = useMemo(
-    () => new Map((refs ?? []).map((ref) => [ref.id, ref])),
-    [refs],
-  )
+export function TaskBody({ markdown, refs }: { markdown: string; refs?: ReadonlyArray<TaskRefData> }) {
+  const refMap = useMemo(() => new Map((refs ?? []).map((ref) => [ref.id, ref])), [refs])
   return (
     <RefsContext.Provider value={refMap}>
       <article data-keys-ignore className={proseClass}>
-        <Markdown remarkPlugins={[remarkGfm, remarkTaskLinks]} components={components}>{markdown}</Markdown>
+        <Markdown remarkPlugins={[remarkGfm, remarkTaskLinks]} components={components}>
+          {markdown}
+        </Markdown>
       </article>
     </RefsContext.Provider>
   )

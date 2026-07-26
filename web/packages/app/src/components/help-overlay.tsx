@@ -17,7 +17,7 @@ function keyLabel(token: string): string {
   return KEY_LABELS[token] ?? (token.length === 1 ? token.toUpperCase() : token)
 }
 
-const FOCUSABLE = "button, [href], [tabindex]:not([tabindex=\"-1\"])"
+const FOCUSABLE = 'button, [href], [tabindex]:not([tabindex="-1"])'
 
 const GROUPS = helpGroups(bindings)
 
@@ -83,11 +83,11 @@ export function HelpOverlay({ open, onClose }: { open: boolean; onClose: () => v
         <div className="space-y-5">
           {GROUPS.map((group) => (
             <section key={group.name}>
-              <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-                {group.name}
-              </h3>
+              <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">{group.name}</h3>
               <ul className="space-y-1.5">
-                {group.entries.map((entry) => <HelpRow key={entry.id} entry={entry} />)}
+                {group.entries.map((entry) => (
+                  <HelpRow key={entry.id} entry={entry} />
+                ))}
               </ul>
             </section>
           ))}
