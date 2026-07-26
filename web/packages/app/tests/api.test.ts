@@ -14,11 +14,13 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-const withResponse = (response: () => Response) => <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
-  effect.pipe(
-    Effect.provideService(HttpClient.HttpClient, clientReturning(response)),
-    Effect.provideService(ApiBaseUrl, "http://localhost"),
-  )
+const withResponse =
+  (response: () => Response) =>
+  <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
+    effect.pipe(
+      Effect.provideService(HttpClient.HttpClient, clientReturning(response)),
+      Effect.provideService(ApiBaseUrl, "http://localhost"),
+    )
 
 it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
   withResponse(() =>
@@ -41,9 +43,9 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
           { branch: "feature", status: "in_progress", blob_oid: "ccc", dirty: true, kind: "modified" },
         ],
       },
-    ])
+    ]),
   )(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const tasks = yield* listTasks
       expect(tasks.map((t) => t.id)).toEqual(["a-1", "b-2"])
       expect(tasks[0].branches.map((b) => b.branch)).toEqual(["main"])
@@ -51,7 +53,8 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
       expect(tasks[1].branches.length).toBe(2)
       expect(tasks[1].branches[1].dirty).toBe(true)
     }),
-  ))
+  ),
+)
 
 it.effect("decodes a task detail with its branch set and hierarchy from GET /api/tasks/:id", () =>
   withResponse(() =>
@@ -69,9 +72,9 @@ it.effect("decodes a task detail with its branch set and hierarchy from GET /api
       parent_title: "Epic",
       children: [{ id: "kid-1", title: "Kid", status: "in_progress", rank: "m" }],
       refs: [{ id: "epic-1", title: "Epic", status: "todo" }],
-    })
+    }),
   )(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const task = yield* getTask("a-1")
       expect(task.title).toBe("First")
       expect(task.status).toBe("todo")
@@ -82,7 +85,8 @@ it.effect("decodes a task detail with its branch set and hierarchy from GET /api
       expect(task.children?.map((c) => c.id)).toEqual(["kid-1"])
       expect(task.refs?.[0].title).toBe("Epic")
     }),
-  ))
+  ),
+)
 
 it.effect("decodes a task detail that omits the optional hierarchy fields", () =>
   withResponse(() =>
@@ -93,18 +97,19 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
       body: "# Solo\n",
       headline: "main",
       branches: [],
-    })
+    }),
   )(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const task = yield* getTask("solo-1")
       expect(task.parent_title).toBeUndefined()
       expect(task.children).toBeUndefined()
       expect(task.refs).toBeUndefined()
     }),
-  ))
+  ),
+)
 
 it.effect("requests a specific branch's version with ?branch=", () =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     let requested: string | undefined
     const client = HttpClient.make((request) => {
       requested = request.url
@@ -128,24 +133,27 @@ it.effect("requests a specific branch's version with ?branch=", () =>
     )
     expect(task.status).toBe("done")
     expect(requested).toContain("/api/tasks/a-1?branch=feature")
-  }))
+  }),
+)
 
 it.effect("maps a 404 response to TaskNotFound", () =>
   withResponse(() => json("no such task", 404))(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const failure = yield* Effect.flip(getTask("ghost"))
       expect(failure).toBeInstanceOf(TaskNotFound)
       expect((failure as TaskNotFound).id).toBe("ghost")
     }),
-  ))
+  ),
+)
 
 it.effect("rejects a malformed status with a decode failure", () =>
   withResponse(() => json([{ id: "a-1", title: "First", status: "bogus", headline: "main", branches: [] }]))(
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const outcome = yield* Effect.result(listTasks)
       expect(Result.isFailure(outcome)).toBe(true)
     }),
-  ))
+  ),
+)
 
 import { HttpClientRequest } from "effect/unstable/http"
 import { createTask, patchTask, TaskRejected } from "../src/lib/api"
@@ -173,40 +181,43 @@ const captureRequest = (response: () => Response) => {
 }
 
 it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
-      json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] })
+      json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] }),
     )
     const detail = yield* provide(patchTask("child", { parent: null }))
     expect(captured.request?.method).toBe("PATCH")
     expect(captured.request?.url).toContain("/api/tasks/child")
     expect(decodeBody(captured.request!)).toEqual({ parent: null })
     expect(detail.id).toBe("child")
-  }))
+  }),
+)
 
 it.effect("PATCH sends a parent id to reparent", () =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
-      json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] })
+      json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] }),
     )
     yield* provide(patchTask("child", { parent: "epic-1" }))
     expect(decodeBody(captured.request!)).toEqual({ parent: "epic-1" })
-  }))
+  }),
+)
 
 it.effect("POST creates a child under a parent and returns the new id", () =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const { captured, provide } = captureRequest(() => json({ id: "new-1" }, 201))
     const id = yield* provide(createTask({ title: "Subtask", parent: "root" }))
     expect(captured.request?.method).toBe("POST")
     expect(captured.request?.url).toContain("/api/tasks")
     expect(decodeBody(captured.request!)).toEqual({ title: "Subtask", parent: "root" })
     expect(id).toBe("new-1")
-  }))
+  }),
+)
 
 it.effect("a refused PATCH carries the server's reason, not just a status code", () =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const { provide } = captureRequest(() =>
-      json({ message: "cannot reparent epic under its own descendant child" }, 400)
+      json({ message: "cannot reparent epic under its own descendant child" }, 400),
     )
     const result = yield* Effect.result(provide(patchTask("epic", { parent: "child" })))
     expect(Result.isFailure(result)).toBe(true)
@@ -214,23 +225,26 @@ it.effect("a refused PATCH carries the server's reason, not just a status code",
     expect(error).toBeInstanceOf(TaskRejected)
     expect((error as TaskRejected).status).toBe(400)
     expect((error as TaskRejected).message).toContain("own descendant")
-  }))
+  }),
+)
 
 it.effect("a refused PATCH with no JSON body still fails with a readable reason", () =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const { provide } = captureRequest(() => new Response("boom", { status: 500 }))
     const result = yield* Effect.result(provide(patchTask("epic", { parent: "child" })))
     expect(Result.isFailure(result)).toBe(true)
     const error = Result.isFailure(result) ? result.failure : undefined
     expect(error).toBeInstanceOf(TaskRejected)
     expect((error as TaskRejected).message).toContain("500")
-  }))
+  }),
+)
 
 it.effect("a refused POST carries the server's reason", () =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const { provide } = captureRequest(() => json({ message: "parent nope does not exist" }, 400))
     const result = yield* Effect.result(provide(createTask({ title: "Subtask", parent: "nope" })))
     expect(Result.isFailure(result)).toBe(true)
     const error = Result.isFailure(result) ? result.failure : undefined
     expect((error as TaskRejected).message).toContain("does not exist")
-  }))
+  }),
+)

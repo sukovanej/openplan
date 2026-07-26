@@ -121,9 +121,10 @@ export function SearchCombobox({
           inline ? "shadow-sm" : "absolute z-30 shadow-md",
         )}
       >
-        {options.length === 0
-          ? <li className="text-muted-foreground px-2 py-3 text-center text-sm">{emptyLabel}</li>
-          : options.map((option, index) => (
+        {options.length === 0 ? (
+          <li className="text-muted-foreground px-2 py-3 text-center text-sm">{emptyLabel}</li>
+        ) : (
+          options.map((option, index) => (
             <li
               key={option.key}
               role="option"
@@ -140,7 +141,8 @@ export function SearchCombobox({
             >
               {option.content}
             </li>
-          ))}
+          ))
+        )}
       </ul>
     </div>
   )
@@ -151,9 +153,13 @@ export function FuzzyText({ text, indices }: { text: string; indices: ReadonlyAr
   return (
     <>
       {segments.map((segment, i) =>
-        segment.match
-          ? <strong key={i} className="text-foreground font-semibold">{segment.text}</strong>
-          : <span key={i}>{segment.text}</span>
+        segment.match ? (
+          <strong key={i} className="text-foreground font-semibold">
+            {segment.text}
+          </strong>
+        ) : (
+          <span key={i}>{segment.text}</span>
+        ),
       )}
     </>
   )

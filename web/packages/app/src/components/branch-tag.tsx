@@ -11,14 +11,17 @@ const kindColor: Record<ChangeKind, string> = {
 
 // The single branch tag used everywhere a branch is shown. Read-only (list badges) when `onSelect`
 // is omitted, a toggle button (detail switcher) when it is given.
-export function BranchTag(
-  { branch, headline = false, selected = false, onSelect }: {
-    branch: BranchState
-    headline?: boolean
-    selected?: boolean
-    onSelect?: () => void
-  },
-) {
+export function BranchTag({
+  branch,
+  headline = false,
+  selected = false,
+  onSelect,
+}: {
+  branch: BranchState
+  headline?: boolean
+  selected?: boolean
+  onSelect?: () => void
+}) {
   const interactive = onSelect !== undefined
   const className = cn(
     "inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] leading-tight",
@@ -36,13 +39,15 @@ export function BranchTag(
       <span>{branch.branch}</span>
     </>
   )
-  return onSelect === undefined
-    ? <span title={title} className={className}>{content}</span>
-    : (
-      <button type="button" onClick={onSelect} aria-pressed={selected} title={title} className={className}>
-        {content}
-      </button>
-    )
+  return onSelect === undefined ? (
+    <span title={title} className={className}>
+      {content}
+    </span>
+  ) : (
+    <button type="button" onClick={onSelect} aria-pressed={selected} title={title} className={className}>
+      {content}
+    </button>
+  )
 }
 
 function Dot({ className }: { className: string }) {

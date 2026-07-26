@@ -1,14 +1,7 @@
 import { Context, Data, Effect, Schema } from "effect"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 
-export const Status = Schema.Literals([
-  "backlog",
-  "todo",
-  "in_progress",
-  "in_review",
-  "done",
-  "cancelled",
-])
+export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
 export type Status = typeof Status.Type
 
 export const ChangeKind = Schema.Literals(["base", "added", "modified", "deleted"])
@@ -113,9 +106,7 @@ export class TaskRejected extends Data.TaggedError("TaskRejected")<{
 
 const ApiErrorBody = Schema.Struct({ message: Schema.String })
 
-const rejected = (
-  response: HttpClientResponse.HttpClientResponse,
-): Effect.Effect<never, TaskRejected> =>
+const rejected = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<never, TaskRejected> =>
   HttpClientResponse.schemaBodyJson(ApiErrorBody)(response).pipe(
     Effect.catch(() => Effect.succeed({ message: `request failed with status ${response.status}` })),
     Effect.flatMap((body) => Effect.fail(new TaskRejected({ status: response.status, message: body.message }))),
@@ -133,7 +124,7 @@ export const listTasks: Effect.Effect<
   ReadonlyArray<TaskListItem>,
   HttpClientError.HttpClientError | Schema.SchemaError,
   HttpClient.HttpClient
-> = Effect.gen(function*() {
+> = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient
   const base = yield* ApiBaseUrl
   const response = yield* client.get(`${base}/api/tasks`)
@@ -144,7 +135,7 @@ export const getBoard: Effect.Effect<
   Board,
   HttpClientError.HttpClientError | Schema.SchemaError,
   HttpClient.HttpClient
-> = Effect.gen(function*() {
+> = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient
   const base = yield* ApiBaseUrl
   const response = yield* client.get(`${base}/api/board`)
@@ -153,11 +144,8 @@ export const getBoard: Effect.Effect<
 
 // Omitting `branch` returns the headline (current-worktree) version; passing one returns that
 // branch's version. Either way the response carries every branch the task lives on.
-export const getTask = (
-  id: string,
-  branch?: string,
-): Effect.Effect<TaskDetail, TaskError, HttpClient.HttpClient> =>
-  Effect.gen(function*() {
+export const getTask = (id: string, branch?: string): Effect.Effect<TaskDetail, TaskError, HttpClient.HttpClient> =>
+  Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient
     const base = yield* ApiBaseUrl
     const query = branch === undefined ? "" : `?branch=${encodeURIComponent(branch)}`
@@ -178,7 +166,7 @@ export interface TaskPatch {
 }
 
 export const patchTask = (id: string, patch: TaskPatch) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient
     const base = yield* ApiBaseUrl
     const request = yield* HttpClientRequest.bodyJson(
@@ -204,13 +192,10 @@ export interface CreateTask {
 const CreatedTask = Schema.Struct({ id: Schema.String })
 
 export const createTask = (input: CreateTask) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient
     const base = yield* ApiBaseUrl
-    const request = yield* HttpClientRequest.bodyJson(
-      HttpClientRequest.post(`${base}/api/tasks`),
-      input,
-    )
+    const request = yield* HttpClientRequest.bodyJson(HttpClientRequest.post(`${base}/api/tasks`), input)
     const response = yield* client.execute(request)
     if (response.status >= 400) {
       return yield* rejected(response)

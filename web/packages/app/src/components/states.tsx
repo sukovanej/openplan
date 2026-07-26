@@ -3,7 +3,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 export function ListSkeleton() {
   return (
     <div className="space-y-3">
-      {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+      {[0, 1, 2, 3, 4].map((i) => (
+        <Skeleton key={i} className="h-14 w-full" />
+      ))}
     </div>
   )
 }

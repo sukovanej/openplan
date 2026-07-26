@@ -48,7 +48,7 @@ export class Dispatcher {
     this.chords = new Map(config.bindings.map((binding) => [binding, chordOf(binding.keys)]))
   }
 
-  readonly attach = (target: Window = window): () => void => {
+  readonly attach = (target: Window = window): (() => void) => {
     target.addEventListener("keydown", this.handleKeyDown)
     return () => {
       target.removeEventListener("keydown", this.handleKeyDown)

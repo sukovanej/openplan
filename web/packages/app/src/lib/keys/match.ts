@@ -22,7 +22,10 @@ function canonical(base: string, { mod, alt, shift }: Modifiers): string {
 }
 
 export function normalizeToken(authored: string): string {
-  const segments = authored.split("+").map((segment) => segment.trim()).filter((segment) => segment.length > 0)
+  const segments = authored
+    .split("+")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
   const base = segments.pop() ?? ""
   const modifiers = segments.map((segment) => segment.toLowerCase())
   return canonical(base, {
@@ -70,5 +73,5 @@ export function isActivationKey(event: KeyboardEvent): boolean {
 
 export function isActivationTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
-  return target.closest("a[href], button, summary, [role=\"button\"], [role=\"link\"]") !== null
+  return target.closest('a[href], button, summary, [role="button"], [role="link"]') !== null
 }

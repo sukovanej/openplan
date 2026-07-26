@@ -33,7 +33,7 @@ export class Query<A> {
     return this.listeners.size > 0
   }
 
-  readonly subscribe = (listener: () => void): () => void => {
+  readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     mounted.add(this)
     if (!this.started) {
@@ -100,9 +100,7 @@ export function boardTasks(board: Board): ReadonlyArray<TaskListItem> {
 
 export function listItem(id: string): TaskListItem | undefined {
   const snapshot = boardQuery.getSnapshot()
-  return snapshot._tag === "success"
-    ? boardTasks(snapshot.value).find((task) => task.id === id)
-    : undefined
+  return snapshot._tag === "success" ? boardTasks(snapshot.value).find((task) => task.id === id) : undefined
 }
 
 const MAX_TASK_QUERIES = 64
@@ -148,7 +146,7 @@ class MutationError {
   private state: unknown = undefined
   private readonly listeners = new Set<() => void>()
 
-  readonly subscribe = (listener: () => void): () => void => {
+  readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => {
       this.listeners.delete(listener)
@@ -176,9 +174,7 @@ export function useMutationError(): unknown {
 // Run a write, then refresh the list and every open task detail so the change shows at once —
 // without waiting for the daemon's SSE echo (which also refreshes, and covers external edits). A
 // refused write refreshes too, so the view snaps back to what the server actually holds.
-export function runMutation<A>(
-  effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
-): Promise<void> {
+export function runMutation<A>(effect: Effect.Effect<A, unknown, HttpClient.HttpClient>): Promise<void> {
   const refresh = () => {
     boardQuery.refresh()
     if (tasksQuery.hasListeners()) tasksQuery.refresh()

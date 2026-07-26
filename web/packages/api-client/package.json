@@ -14,8 +14,8 @@
   "devDependencies": {
     "@effect/openapi-generator": "catalog:",
     "@effect/platform-node": "catalog:",
-    "typescript": "catalog:",
     "@effect/vitest": "catalog:",
+    "typescript": "catalog:",
     "vitest": "catalog:"
   }
 }

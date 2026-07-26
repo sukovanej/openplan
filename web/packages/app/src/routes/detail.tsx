@@ -37,39 +37,33 @@ export function DetailRoute() {
   if (task._tag === "success") lastShown.current = { id, value: task.value }
 
   if (task._tag === "failure") {
-    return task.error instanceof TaskNotFound
-      ? <NotFound id={task.error.id} />
-      : <Message title="Could not load task" detail={errorText(task.error)} />
+    return task.error instanceof TaskNotFound ? (
+      <NotFound id={task.error.id} />
+    ) : (
+      <Message title="Could not load task" detail={errorText(task.error)} />
+    )
   }
-  const shown = task._tag === "success"
-    ? task.value
-    : lastShown.current?.id === id
-    ? lastShown.current.value
-    : null
+  const shown = task._tag === "success" ? task.value : lastShown.current?.id === id ? lastShown.current.value : null
   // The list cache already holds the header fields (title, status, branches); seed from it so the
   // header renders instantly and only the body and hierarchy stream in.
   const seed = shown ?? listItem(id)
   if (seed === undefined) return <DetailSkeleton />
-  return (
-    <TaskDetailView
-      task={seed}
-      detail={shown}
-      body={shown?.body}
-      selected={branch}
-      onSelect={onSelect}
-    />
-  )
+  return <TaskDetailView task={seed} detail={shown} body={shown?.body} selected={branch} onSelect={onSelect} />
 }
 
-function TaskDetailView(
-  { task, detail, body, selected, onSelect }: {
-    task: TaskDetail | TaskListItem
-    detail: TaskDetail | null
-    body: string | undefined
-    selected: string | undefined
-    onSelect: (branch: string | undefined) => void
-  },
-) {
+function TaskDetailView({
+  task,
+  detail,
+  body,
+  selected,
+  onSelect,
+}: {
+  task: TaskDetail | TaskListItem
+  detail: TaskDetail | null
+  body: string | undefined
+  selected: string | undefined
+  onSelect: (branch: string | undefined) => void
+}) {
   return (
     <div className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border">
       <div className="bg-muted/30 flex h-11 shrink-0 items-center gap-2 border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground">
@@ -86,12 +80,7 @@ function TaskDetailView(
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <h1 className="mb-4 text-2xl font-semibold tracking-tight">{task.title}</h1>
-        <BranchSwitcher
-          branches={task.branches}
-          selected={selected}
-          headline={task.headline}
-          onSelect={onSelect}
-        />
+        <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? <BodySkeleton /> : <TaskBody markdown={stripTitle(body)} refs={detail?.refs} />}
         <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
       </div>
@@ -166,14 +155,17 @@ function taskMatches(
 
 // The parent as a header-right "Subtask of <link>", retargetable in place. Clicking the pencil (or
 // pressing `p`) swaps the link for the shared search field; `g p` jumps to the parent.
-function HeaderParent(
-  { id, parent, parentTitle, ready }: {
-    id: string
-    parent: string | undefined
-    parentTitle: string | undefined
-    ready: boolean
-  },
-) {
+function HeaderParent({
+  id,
+  parent,
+  parentTitle,
+  ready,
+}: {
+  id: string
+  parent: string | undefined
+  parentTitle: string | undefined
+  ready: boolean
+}) {
   const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
   useDetailAction("edit-parent", () => setEditing(true))
@@ -193,35 +185,30 @@ function HeaderParent(
   const hasParent = parent !== undefined
   return (
     <div className="flex items-center gap-1 font-normal tracking-normal normal-case">
-      {parentTitle !== undefined
-        ? (
-          <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-            <span className="text-muted-foreground/70">Subtask of</span>
-            <Link
-              to={`/task/${parent}`}
-              className="text-foreground/90 max-w-[15rem] truncate hover:underline"
-            >
-              {parentTitle}
-            </Link>
-          </span>
-        )
-        : hasParent
-        ? <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
-        : null}
+      {parentTitle !== undefined ? (
+        <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground/70">Subtask of</span>
+          <Link to={`/task/${parent}`} className="text-foreground/90 max-w-[15rem] truncate hover:underline">
+            {parentTitle}
+          </Link>
+        </span>
+      ) : hasParent ? (
+        <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
+      ) : null}
       <button
         type="button"
         onClick={() => setEditing(true)}
         aria-label={hasParent ? "Change parent" : "Set parent"}
         className="text-muted-foreground/60 hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md px-1.5 py-1 text-xs"
       >
-        {hasParent
-          ? <Pencil className="size-3.5" />
-          : (
-            <>
-              <Plus className="size-3.5" />
-              Set parent
-            </>
-          )}
+        {hasParent ? (
+          <Pencil className="size-3.5" />
+        ) : (
+          <>
+            <Plus className="size-3.5" />
+            Set parent
+          </>
+        )}
       </button>
     </div>
   )
@@ -236,32 +223,35 @@ function ParentPicker({ id, onClose }: { id: string; onClose: () => void }) {
   }, [])
   const all = tasks._tag === "success" ? tasks.value : NO_TASKS
 
-  const buildOptions = useCallback((query: string): ReadonlyArray<ComboOption> => {
-    const self = all.find((task) => task.id === id)
-    const excluded = descendantIds(all, id)
-    excluded.add(id)
-    const options: ComboOption[] = []
-    if (self?.parent !== undefined) {
-      options.push({
-        key: " clear",
-        content: (
-          <span className="text-muted-foreground flex items-center gap-2">
-            <X className="size-4" />
-            Top level (no parent)
-          </span>
-        ),
-        onSelect: () => void runMutation(patchTask(id, { parent: null })),
-      })
-    }
-    for (const { task, indices } of taskMatches(all, query, excluded)) {
-      options.push({
-        key: task.id,
-        content: <ComboTaskRow task={task} indices={indices} />,
-        onSelect: () => void runMutation(patchTask(id, { parent: task.id })),
-      })
-    }
-    return options
-  }, [all, id])
+  const buildOptions = useCallback(
+    (query: string): ReadonlyArray<ComboOption> => {
+      const self = all.find((task) => task.id === id)
+      const excluded = descendantIds(all, id)
+      excluded.add(id)
+      const options: ComboOption[] = []
+      if (self?.parent !== undefined) {
+        options.push({
+          key: " clear",
+          content: (
+            <span className="text-muted-foreground flex items-center gap-2">
+              <X className="size-4" />
+              Top level (no parent)
+            </span>
+          ),
+          onSelect: () => void runMutation(patchTask(id, { parent: null })),
+        })
+      }
+      for (const { task, indices } of taskMatches(all, query, excluded)) {
+        options.push({
+          key: task.id,
+          content: <ComboTaskRow task={task} indices={indices} />,
+          onSelect: () => void runMutation(patchTask(id, { parent: task.id })),
+        })
+      }
+      return options
+    },
+    [all, id],
+  )
 
   return (
     <SearchCombobox
@@ -276,13 +266,7 @@ function ParentPicker({ id, onClose }: { id: string; onClose: () => void }) {
 
 // The direct children below the task body, plus an inline add box that either pulls an existing task
 // in as a child or creates a fresh one.
-function SubtasksSection(
-  { id, items, ready }: {
-    id: string
-    items: ReadonlyArray<TaskChild>
-    ready: boolean
-  },
-) {
+function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArray<TaskChild>; ready: boolean }) {
   const [adding, setAdding] = useState(false)
   useDetailAction("add-subtask", () => setAdding(true))
 
@@ -316,33 +300,34 @@ function SubtasksSection(
           <SubtaskPicker id={id} onClose={() => setAdding(false)} />
         </div>
       )}
-      {items.length === 0
-        ? (ready ? <p className="text-muted-foreground text-sm">No subtasks yet.</p> : null)
-        : (
-          <ul
-            className="space-y-0.5"
-            onMouseMove={() => {
-              if (index !== -1) subtaskCursor.clear()
-            }}
-          >
-            {items.map((child, i) => (
-              <li key={child.id} ref={i === index ? activeRow : undefined} aria-selected={i === index}>
-                <Link
-                  to={`/task/${child.id}`}
-                  onClick={() =>
-                    subtaskCursor.focus(i)}
-                  className={cn(
-                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                    i === index ? "bg-accent" : "hover:bg-muted/50",
-                  )}
-                >
-                  <StatusIcon status={child.status} className="size-4 shrink-0" />
-                  <span className="truncate">{child.title}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+      {items.length === 0 ? (
+        ready ? (
+          <p className="text-muted-foreground text-sm">No subtasks yet.</p>
+        ) : null
+      ) : (
+        <ul
+          className="space-y-0.5"
+          onMouseMove={() => {
+            if (index !== -1) subtaskCursor.clear()
+          }}
+        >
+          {items.map((child, i) => (
+            <li key={child.id} ref={i === index ? activeRow : undefined} aria-selected={i === index}>
+              <Link
+                to={`/task/${child.id}`}
+                onClick={() => subtaskCursor.focus(i)}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+                  i === index ? "bg-accent" : "hover:bg-muted/50",
+                )}
+              >
+                <StatusIcon status={child.status} className="size-4 shrink-0" />
+                <span className="truncate">{child.title}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }
@@ -357,34 +342,37 @@ function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
   }, [])
   const all = tasks._tag === "success" ? tasks.value : NO_TASKS
 
-  const buildOptions = useCallback((query: string): ReadonlyArray<ComboOption> => {
-    const excluded = ancestorIds(all, id)
-    excluded.add(id)
-    const options: ComboOption[] = []
-    if (query !== "") {
-      options.push({
-        key: " create",
-        content: (
-          <span className="flex items-center gap-2">
-            <Plus className="text-muted-foreground size-4" />
-            <span>
-              Create <span className="font-medium">“{query}”</span> as a new subtask
+  const buildOptions = useCallback(
+    (query: string): ReadonlyArray<ComboOption> => {
+      const excluded = ancestorIds(all, id)
+      excluded.add(id)
+      const options: ComboOption[] = []
+      if (query !== "") {
+        options.push({
+          key: " create",
+          content: (
+            <span className="flex items-center gap-2">
+              <Plus className="text-muted-foreground size-4" />
+              <span>
+                Create <span className="font-medium">“{query}”</span> as a new subtask
+              </span>
             </span>
-          </span>
-        ),
-        onSelect: () => void runMutation(createTask({ title: query, parent: id })),
-      })
-    }
-    for (const { task, indices } of taskMatches(all, query, excluded)) {
-      if (task.parent === id) continue
-      options.push({
-        key: task.id,
-        content: <ComboTaskRow task={task} indices={indices} />,
-        onSelect: () => void runMutation(patchTask(task.id, { parent: id })),
-      })
-    }
-    return options
-  }, [all, id])
+          ),
+          onSelect: () => void runMutation(createTask({ title: query, parent: id })),
+        })
+      }
+      for (const { task, indices } of taskMatches(all, query, excluded)) {
+        if (task.parent === id) continue
+        options.push({
+          key: task.id,
+          content: <ComboTaskRow task={task} indices={indices} />,
+          onSelect: () => void runMutation(patchTask(task.id, { parent: id })),
+        })
+      }
+      return options
+    },
+    [all, id],
+  )
 
   return (
     <SearchCombobox

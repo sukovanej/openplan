@@ -12,7 +12,7 @@ export function escapeOutcome(hasSelection: boolean, canGoBack: boolean): Escape
 class DetailActionsBus {
   private readonly listeners = new Map<DetailAction, Set<() => void>>()
 
-  readonly on = (action: DetailAction, listener: () => void): () => void => {
+  readonly on = (action: DetailAction, listener: () => void): (() => void) => {
     const set = this.listeners.get(action) ?? new Set<() => void>()
     set.add(listener)
     this.listeners.set(action, set)

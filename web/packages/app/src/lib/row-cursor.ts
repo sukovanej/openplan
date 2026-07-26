@@ -50,7 +50,7 @@ class RowCursorStore {
   private state: CursorState = emptyCursor
   private readonly listeners = new Set<() => void>()
 
-  readonly subscribe = (listener: () => void): () => void => {
+  readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => {
       this.listeners.delete(listener)
@@ -89,7 +89,7 @@ class KeyedRowCursor {
   private readonly saved = new Map<string, number>()
   private readonly listeners = new Set<() => void>()
 
-  readonly subscribe = (listener: () => void): () => void => {
+  readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => {
       this.listeners.delete(listener)
