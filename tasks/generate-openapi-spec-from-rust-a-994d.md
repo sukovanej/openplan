@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 ---
 # Generate OpenAPI spec from Rust API; generated Effect HTTP client package
 
