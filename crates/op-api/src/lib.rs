@@ -68,8 +68,7 @@ pub struct TaskView {
 
 impl TaskView {
     // `updated` is git-derived, so only a caller holding the history can supply it; a store-only
-    // read passes `None`. It is clamped up to `created` so a hand-set `created` later than the last
-    // edit cannot show a task updated before it existed.
+    // read passes `None`.
     pub fn from_task(id: String, task: &Task, updated: Option<Timestamp>) -> Self {
         let created = task.frontmatter.created;
         Self {
@@ -80,9 +79,19 @@ impl TaskView {
             rank: task.frontmatter.rank.clone(),
             deps: task.frontmatter.deps.clone(),
             created: Some(created),
-            updated: updated.map(|updated| updated.max(created)),
+            updated: clamp_updated(Some(created), updated),
             body: task.body.clone(),
         }
+    }
+}
+
+// A hand-set `created` later than the last edit would otherwise show a task updated before it
+// existed. Every surface reporting `updated` clamps the same way, so a task cannot read one age in
+// the list and another on its own page.
+pub fn clamp_updated(created: Option<Timestamp>, updated: Option<Timestamp>) -> Option<Timestamp> {
+    match (created, updated) {
+        (Some(created), Some(updated)) => Some(updated.max(created)),
+        _ => updated,
     }
 }
 
@@ -142,6 +151,9 @@ pub struct TaskListItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub rank: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>, format = DateTime)]
+    pub updated: Option<Timestamp>,
     pub headline: String,
     pub branches: Vec<BranchState>,
 }

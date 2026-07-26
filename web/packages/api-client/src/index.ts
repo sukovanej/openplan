@@ -84,6 +84,7 @@ export type TaskListItem = {
   readonly rank?: string
   readonly status: Status
   readonly title: string
+  readonly updated?: string
 }
 export const TaskListItem = Schema.Struct({
   branches: Schema.Array(BranchState),
@@ -93,6 +94,7 @@ export const TaskListItem = Schema.Struct({
   rank: Schema.optionalKey(Schema.String),
   status: Status,
   title: Schema.String,
+  updated: Schema.optionalKey(Schema.Union([Schema.String.annotate({ format: "date-time" })])),
 })
 export type TaskDetail = {
   readonly body: string

@@ -7,6 +7,7 @@ fn item(id: &str, status: Status, parent: Option<&str>, rank: Option<&str>) -> T
         status,
         parent: parent.map(str::to_owned),
         rank: rank.map(str::to_owned),
+        updated: None,
         headline: "main".to_owned(),
         branches: Vec::new(),
     }

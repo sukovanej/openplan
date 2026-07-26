@@ -3,7 +3,8 @@ use std::path::Path;
 
 use op_api::{
     BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Status, TaskBranches, TaskChild,
-    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, list_item_cmp,
+    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, clamp_updated,
+    list_item_cmp,
 };
 use op_git::{Repo, Worktree};
 use op_store::{Store, StoreError};
@@ -43,6 +44,7 @@ struct Version {
     status: Status,
     parent: Option<String>,
     rank: Option<String>,
+    created: Option<Timestamp>,
 }
 
 struct DiffCtx<'a> {
@@ -379,6 +381,7 @@ impl Index {
                     status: headline.task.status,
                     parent: headline.task.parent.clone(),
                     rank: headline.task.rank.clone(),
+                    updated: clamp_updated(self.created_of(headline), self.cell_updated(headline)),
                     headline: headline.branch.clone(),
                     branches: branch_states(&cells),
                 }
@@ -522,6 +525,12 @@ impl Index {
         }
         self.committed_time(cell)
             .map_or(i64::MIN, Timestamp::as_second)
+    }
+
+    // `created` is a property of the blob, so it comes from the same parse the cell's title and
+    // status do rather than a second read of the file.
+    fn created_of(&self, cell: &MatrixCell) -> Option<Timestamp> {
+        self.blob_cache.get(&cell.blob_oid)?.created
     }
 
     fn committed_time(&self, cell: &MatrixCell) -> Option<Timestamp> {
@@ -745,6 +754,7 @@ fn parse_version(bytes: &[u8]) -> Version {
             status: task.frontmatter.status,
             parent: task.frontmatter.parent.clone(),
             rank: task.frontmatter.rank.clone(),
+            created: Some(task.frontmatter.created),
         },
         // Unresolved merge markers can break the frontmatter fences; keep the cell rather than
         // abort the whole rebuild, best-effort title, status left at the unstarted default.
@@ -753,6 +763,7 @@ fn parse_version(bytes: &[u8]) -> Version {
             status: Status::Backlog,
             parent: None,
             rank: None,
+            created: None,
         },
     }
 }

@@ -6,6 +6,7 @@ import type { Board, BoardRow, Status } from "@open-planner/api-client"
 import { BranchBadges } from "../components/branch-badges"
 import { ListSkeleton, Message } from "../components/states"
 import { statusHeaderClass, StatusIcon, statusLabel } from "../components/status-badge"
+import { TimeAgo } from "../components/time-ago"
 import { errorText } from "../lib/format"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { boardQuery, useQuery } from "../lib/store"
@@ -154,6 +155,14 @@ function TaskRow({
           </span>
         )}
       </div>
+      {task.updated !== undefined && (
+        <div
+          role="gridcell"
+          className="text-muted-foreground shrink-0 py-3 pl-3 text-xs whitespace-nowrap"
+        >
+          <TimeAgo iso={task.updated} label="Updated" />
+        </div>
+      )}
       <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">
         <BranchBadges branches={task.branches} headline={task.headline} />
       </div>

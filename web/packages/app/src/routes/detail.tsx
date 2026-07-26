@@ -9,6 +9,7 @@ import { type ComboOption, FuzzyText, SearchCombobox } from "../components/searc
 import { BodySkeleton, DetailSkeleton, Message } from "../components/states"
 import { StatusIcon } from "../components/status-badge"
 import { TaskBody } from "../components/task-body"
+import { TimeAgo } from "../components/time-ago"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
 import { errorText } from "../lib/format"
@@ -81,11 +82,32 @@ function TaskDetailView({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        <h1 className="mb-4 text-2xl font-semibold tracking-tight">{task.title}</h1>
+        <h1 className="mb-1.5 text-2xl font-semibold tracking-tight">{task.title}</h1>
+        <TaskTimes created={detail?.created} updated={task.updated} />
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? <BodySkeleton /> : <TaskBody markdown={stripTitle(body)} refs={detail?.refs} />}
         <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
       </div>
+    </div>
+  )
+}
+
+// `created` arrives with the full detail while `updated` is already on the seeded list item, so the
+// line renders as soon as the header does and fills in rather than shifting the body twice.
+function TaskTimes({ created, updated }: { created: string | undefined; updated: string | undefined }) {
+  return (
+    <div className="text-muted-foreground mb-4 flex h-4 items-center gap-1.5 text-xs">
+      {created !== undefined && (
+        <span>
+          Created <TimeAgo iso={created} label="Created" />
+        </span>
+      )}
+      {created !== undefined && updated !== undefined && <span aria-hidden>·</span>}
+      {updated !== undefined && (
+        <span>
+          Updated <TimeAgo iso={updated} label="Updated" />
+        </span>
+      )}
     </div>
   )
 }
