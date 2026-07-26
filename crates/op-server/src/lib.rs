@@ -16,7 +16,7 @@ use axum::{
 };
 use op_api::{
     ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
-    TaskView, Timestamp,
+    TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -387,7 +387,7 @@ async fn create_task(
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
     let store = state.store.clone();
-    let created = Timestamp::now();
+    let created = op_task::now();
     let id = blocking(move || store.create(&body.into_task(created))).await?;
     publish(
         &state,

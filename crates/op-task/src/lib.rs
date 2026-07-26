@@ -5,6 +5,13 @@ pub use jiff::Timestamp;
 
 pub mod rank;
 
+// Task files are hand-written and diffed, so a stored timestamp carries whole seconds — the clock's
+// sub-second tail is noise no reader of a task file wants.
+pub fn now() -> Timestamp {
+    Timestamp::from_second(Timestamp::now().as_second())
+        .expect("a whole second of the current time is in range")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
@@ -111,10 +118,6 @@ impl Task {
 
     pub fn set_status(&mut self, status: Status) {
         self.frontmatter.status = status;
-    }
-
-    pub fn set_created(&mut self, created: Timestamp) {
-        self.frontmatter.created = created;
     }
 
     pub fn set_parent(&mut self, parent: Option<String>) {

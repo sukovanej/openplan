@@ -94,6 +94,11 @@ impl Index {
         };
 
         let branches = repo.local_branches()?;
+        // A cache entry is keyed by branch name and only ever checked against that branch's tip, so
+        // a deleted branch's walk would sit there for the daemon's whole life — and a new branch
+        // reusing the name would meet a stale entry.
+        self.change_cache
+            .retain(|branch, _| branches.contains(branch));
         let base_blobs = self.base_blobs_by_branch(repo, &branches, default_commit.as_deref())?;
         let no_base = HashMap::new();
 

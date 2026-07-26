@@ -303,7 +303,7 @@ fn create(
             deps,
             body,
         }
-        .into_task(Timestamp::now()),
+        .into_task(op_task::now()),
     )?;
     println!("{id}");
     Ok(())
@@ -415,7 +415,7 @@ fn get(root: &Path, id: &str, json: bool, branch: Option<&str>) -> Result<()> {
     let store = Store::discover(root)?;
     if json {
         let task = store.read(id)?;
-        let view = TaskView::from_task(id.to_owned(), &task, headline_updated(root, id));
+        let view = TaskView::from_task(id.to_owned(), &task, local_updated(root, id));
         println!("{}", serde_json::to_string_pretty(&view)?);
     } else {
         // Print the file verbatim; re-serializing would normalize formatting and is a lossy
@@ -494,10 +494,14 @@ fn show_branches(root: &Path, id: &str) -> Result<()> {
 }
 
 // `updated` is git-derived, so a store that sits outside a repository — or a task no commit holds —
-// simply has none to report.
-fn headline_updated(root: &Path, id: &str) -> Option<Timestamp> {
+// simply has none to report. It dates the checked-out branch, the one whose file was just read; a
+// task matching its merge-base has no cell of its own there, and falls back to the branch that did
+// last change it.
+fn local_updated(root: &Path, id: &str) -> Option<Timestamp> {
     let (_repo, index) = build_index(root).ok()?;
-    index.task_updated(id, None)
+    index
+        .task_updated(id, index.current_branch())
+        .or_else(|| index.task_updated(id, None))
 }
 
 fn build_index(root: &Path) -> Result<(Repo, Index)> {

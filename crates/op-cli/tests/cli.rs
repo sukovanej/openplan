@@ -151,7 +151,7 @@ fn merge_driver_clean_conflict_and_read_error() {
 #[test]
 fn create_writes_slug_file_and_prints_id() {
     let dir = store();
-    let before = Timestamp::now();
+    let before = op_task::now();
     let id = create(dir.path(), "Wire the parser");
     assert!(id.starts_with("wire-the-parser-"), "id: {id}");
 
@@ -165,6 +165,10 @@ fn create_writes_slug_file_and_prints_id() {
     assert!(
         created.parse::<Timestamp>().unwrap() >= before,
         "created must come from the clock at creation: {created}"
+    );
+    assert!(
+        !created.contains('.'),
+        "a stored timestamp carries whole seconds: {created}"
     );
 
     let second = create(dir.path(), "Wire the parser");
@@ -894,4 +898,47 @@ fn a_refused_move_leaves_sibling_ranks_untouched() {
         before,
         "a refused move must not rewrite the target group"
     );
+}
+
+fn commit_at(root: &Path, seconds: i64, message: &str) {
+    let date = format!("@{seconds} +0000");
+    git(root, &["add", "-A"]);
+    let status = Command::new("git")
+        .current_dir(root)
+        .args(["commit", "-qm", message])
+        .env("GIT_AUTHOR_DATE", &date)
+        .env("GIT_COMMITTER_DATE", &date)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git commit failed");
+}
+
+#[test]
+fn get_json_dates_the_checked_out_branch_not_the_headline() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    // `created` predates both commits, so the view's clamp cannot mask which one is reported.
+    write(
+        &root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: todo\ncreated: 2000-01-01T00:00:00Z\n---\n# Alpha\n",
+    );
+    commit_at(root, 1_000_000_000, "add alpha");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write(
+        &root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: done\ncreated: 2000-01-01T00:00:00Z\n---\n# Alpha done\n",
+    );
+    commit_at(root, 2_000_000_000, "edit alpha on feature");
+    git(root, &["checkout", "-q", "main"]);
+
+    let out = run(root, &["get", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+
+    // `feature` headlines the task, but the file `get` read is main's — so is its date.
+    assert_eq!(view["title"], "Alpha");
+    assert_eq!(view["updated"], "2001-09-09T01:46:40Z");
 }
