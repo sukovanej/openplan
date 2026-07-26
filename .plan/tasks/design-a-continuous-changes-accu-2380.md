@@ -1,5 +1,6 @@
 ---
-status: backlog
+status: in_review
+parent: continuous-changes-accumulation-v-0cb0
 ---
 # Design a continuous-changes accumulation branch
 
@@ -132,17 +133,87 @@ the §7.10 single-machine boundary).
 
 ## Open questions
 
-- **Merge driver under rebase:** confirm the custom §7.7 driver actually fires
-  during a `git rebase` replay (expected, since rebase uses the merge machinery),
-  and whether a worktree-less path (`git merge-tree --write-tree` / gitoxide)
-  could invoke it and drop the ephemeral worktree entirely. Verify in the spike.
+- ~~**Merge driver under rebase:**~~ **Resolved by spike (see below).** The custom
+  §7.7 driver fires during `git rebase` replay *and* under the worktree-less
+  `git merge-tree --write-tree` path — so the ephemeral worktree is dropped from
+  the primary flow.
 - **Presence & claims** (§7.6) — the cross-branch collision-warning question for
   ambient edits is tracked on `presence-show-who-s-working-on-w-7185`, not here.
 - **v2 fan-out:** publishing ambient edits to active feature branches, not just
   `main`.
 
-## Deliverable
+## Spike results — merge driver under rebase / merge-tree
 
-A redline to SPEC.md (new subsection under §7) covering the branch home, the
-bidirectional flow, the conflict-gated manual publish, routing rules, and the UI
-surface — plus a phased implementation plan.
+Ran on git 2.50.1 with a logging `merge=openplan` driver registered via
+`.gitattributes`, against a task file edited on divergent refs.
+
+- **Rebase replay invokes the custom driver.** `git rebase updates onto main`
+  calls the driver for `.plan/*.md` on any conflicting hunk; the content it
+  writes to `%A` is what lands in the replayed commit. Confirmed for both
+  non-overlapping and same-line edits.
+- **`git merge-tree --write-tree` invokes it too — worktree-less.** The driver
+  runs against object-DB temp files; on a clean merge the command prints the
+  merged tree OID and exits `0`; on a genuine conflict (driver exits non-zero) it
+  exits `1` and prints stage-1/2/3 index entries naming exactly which blobs
+  conflicted. Trivial non-overlapping edits are resolved in-core without calling
+  the driver at all (same as a normal merge).
+- **Consequence:** the refresh reconcile needs **no checkout**. The daemon merges
+  trees in the object DB (`merge-tree --write-tree`), reads the conflict set from
+  the plumbing output, and builds/CAS-es the new ref tip. The ephemeral worktree
+  becomes a fallback, not the primary path. The SPEC redline (§7.11) reflects
+  this.
+
+## Deliverable — status
+
+- [x] SPEC.md redline: new **§7.11 Ambient edits & the rolling-updates ref**
+  (branch home, bidirectional flow, conflict-gated manual publish, routing rules,
+  UI surface, backup, scope).
+- [x] Spike resolving the merge-driver open question (above).
+- [x] Phased implementation plan (below).
+
+## Implementation plan (phased)
+
+Each phase is independently shippable and leaves the tree green
+(`build` / `test` / `fmt` / `clippy`). Crates per §7 layout.
+
+- **Phase 0 — Real section merge driver (unblocks everything).** Replace the
+  `op-cli merge-driver` stub (`crates/op-cli/src/mergedriver.rs`, currently
+  conflicts on any diff) with the actual 3-way frontmatter-field + section merge
+  (§7.7), reusing `op-md` heading/section addressing and `op-task` parsing. Ship
+  `/.plan/**.md merge=openplan` in a repo `.gitattributes` and register the
+  driver in local git config on project init. *Verify:* non-overlapping
+  section/field edits auto-merge; same-section overlap exits non-zero. Tests in
+  `crates/op-cli/tests/`.
+- **Phase 1 — Ref plumbing in `op-git`.** Worktree-less writer for
+  `refs/open-plan/rolling-updates`: blob → tree → commit(parent=tip) → ref CAS;
+  read tip; merge-base vs a branch; `merge-tree --write-tree` reconcile returning
+  `{tree, conflicts: Vec<TaskId>}`. No daemon wiring yet. *Verify:* unit tests
+  drive a temp repo through accumulate → reconcile-clean → reconcile-conflict.
+- **Phase 2 — Daemon ownership: accumulate + serialize.** Route ambient writes
+  (Phase 3 rules) into the ref through a single in-process serialized writer with
+  inbound **debounce/coalesce**. Track pending-count + per-task change summary for
+  the API. *Verify:* burst of edits collapses to few commits; ref tip advances.
+- **Phase 3 — Routing.** Apply the §7.11 routing table at the write boundary
+  (UI global vs. swimlane; CLI trunk vs. feature worktree) and add the
+  `--ambient` CLI escape hatch. *Verify:* `op-cli` tests assert target ref per
+  context.
+- **Phase 4 — Refresh engine.** Event-driven off the §7.5 ref-watcher, debounced
+  (~1 min quiet window); reconcile worktree-less; on conflict mark the named
+  tasks `conflicted` and hold at last good tip; periodic sweep + startup
+  reconcile as safety nets. *Verify:* moving `main` triggers one coalesced
+  refresh; injected same-section conflict yields a held ref + conflicted tasks.
+- **Phase 5 — Publish.** Manual, explicit, fast-forward-only advance of `main` to
+  the ref tip; refuse (never merge) if not a fast-forward. Expose via API + CLI.
+  *Verify:* publish FFs `main`; a non-FF state is rejected, not merged.
+- **Phase 6 — Backup.** Force-push the ref to a configured mirror remote; opt-in
+  config; best-effort, non-blocking. *Verify:* mirror receives the ref; absence
+  of config is a no-op.
+- **Phase 7 — UI.** Header sync control (5 states) + "Rolling updates" review
+  popover with in-popover **Publish N** and, when blocked, **Resolve conflict**.
+  Wire to the daemon's pending/conflict/state feed. Mockup already at
+  `.plan/assets/sync-button-options.html`. *Verify:* each state renders; Publish
+  and Resolve invoke the Phase 4/5 endpoints.
+
+**Sequencing:** 0 → 1 gate the rest. 2–3 and 4–5 are the two functional halves
+(accumulate, then refresh/publish); 6 and 7 layer on once the ref lifecycle
+works. v1 stops at publish-to-`main`; feature-branch fan-out is v2.

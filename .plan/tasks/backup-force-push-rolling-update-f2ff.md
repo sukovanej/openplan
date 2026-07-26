@@ -1,0 +1,59 @@
+---
+status: todo
+parent: continuous-changes-accumulation-v-0cb0
+deps:
+- daemon-ambient-writer-accumulate-e2f2
+---
+# Backup: force-push rolling-updates to a mirror remote (durability)
+
+**Phase 6** of the rolling-updates plan
+([[design-a-continuous-changes-accu-2380]] §7.11). Durability only: un-published
+ambient edits survive disk/machine loss. Sole-writer, no distributed concurrency;
+multi-machine / collaborative sync stays out of scope.
+
+## Mechanism
+
+`gix` 0.85 has fetch/transport but **no push**, so backup **shells to
+`git push --force`** — a legitimate git-op (unlike the merge-driver reconcile,
+where shelling was forbidden). 
+
+## Design
+
+**Opt-in config.** Git-config key `oplan.backupRemote` (remote name or URL), read
+like `default_branch` reads `oplan.defaultBranch` (`config_snapshot().string`).
+Unset -> backup disabled, clean no-op. No new config format.
+
+**`BackupPusher` — separate, non-blocking, coalescing.** NOT on the ref-owner
+actor's critical path ([[daemon-ambient-writer-accumulate-e2f2]]); it must never
+delay an ambient ack or a refresh. Notified "tip moved" whenever the actor
+advances `rolling-updates` (accumulate flush / refresh / publish),
+debounces/coalesces a burst into one push of the latest tip:
+
+```
+git push --force <remote> refs/open-plan/rolling-updates:refs/open-plan/rolling-updates
+```
+
+Force is safe (§7.11): sole writer, write-only mirror nobody pulls.
+
+**Best-effort.** A failed push logs `warn` and is NOT propagated to the edit; it
+retries on the next tip move. A **startup push** of the current tip covers a
+final push that failed as the daemon last exited. Optionally record a
+`last_backup` ok/failed timestamp for diagnostics; no user-facing surface in v1.
+
+**No read coupling.** The push only reads the ref and talks to the remote; it
+writes no local ref, so it cannot collide with the sole-writer invariant and runs
+concurrently.
+
+## Scope
+
+Config + pusher + startup push. No UI (a backup-health indicator is a later
+nicety). Refresh / publish / routing untouched.
+
+## Verify
+
+- `oplan.backupRemote` set -> a ref advance pushes `refs/open-plan/rolling-updates`
+  to the mirror (assert against a local bare remote); unset -> no push.
+- a burst of advances coalesces to one push of the latest tip.
+- push failure (unreachable remote) logs `warn`, does not fail the edit, retries
+  on the next advance.
+- startup push sends the current tip once on boot.

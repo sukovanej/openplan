@@ -229,6 +229,85 @@ tagged with the request's route and id.
   a real shared server and breaks local-first — out of scope.
 - Scope = local branches (`refs/heads/*`) + worktrees. Remote-tracking refs may be shown read-only.
 
+### 7.11 Ambient edits & the rolling-updates ref
+
+§7.1's "reads global, writes local" fits **code-coupled** edits — an agent on `feat/auth`
+flipping `status` as part of its loop (§7.8), where the edit is genuinely a branch fact (§7.2).
+It leaves a gap for **ambient / triage edits that belong to no feature branch**: reprioritizing,
+rewriting a description, adding a subtask, changing `rank`, or any edit made through the global UI.
+Today those land on whatever branch is checked out, which is arbitrary. The **rolling-updates ref**
+is a dedicated lane where such edits accumulate over time and are then published into `main`.
+
+**Storage — a custom ref, not a branch.** The lane lives at **`refs/open-plan/rolling-updates`**, a
+custom ref *outside* `refs/heads/*`. Consequences: excluded from the default push refspec (can't be
+accidentally shared), invisible to `git branch` / `git checkout` and the feature-branch swimlane,
+addressed by the daemon by full ref path. It is still *explicitly* pushable for backup (below).
+
+**Accumulation is worktree-less.** No standing worktree exists for the ref. An ambient edit is
+committed straight into the object DB: write blob → build tree → commit (parent = current tip) →
+compare-and-swap the ref. The daemon is the **sole writer**, serializing writes in-process — no
+cross-process lock. Inbound edits are **debounced/coalesced** so rapid UI keystrokes and
+drag-reorder collapse into few commits, keeping history legible.
+
+**Reconciliation is also worktree-less** — the §7.7 section merge runs in-process. The daemon
+**replays** each pending ambient commit `C` onto the new `main` as a sequence of **3-way tree
+merges** (`gix::merge::tree`): per step, `base = tree(parent(C))`, `ours = ` the accumulated tip,
+`theirs = tree(C)` — cherry-pick semantics, so the base is `C`'s *own parent*, never a single fixed
+merge-base (that would re-merge already-replayed edits). Each step hands its content conflicts to the
+same section-merge library the `merge=openplan` driver wraps; non-overlapping section/field edits
+auto-merge, a genuine same-section overlap yields the conflicting `.plan/*.md` set. The chain stays a
+linear `main` + ambient stack, and no checkout is ever needed. The merge machinery being unable to
+run is a hard error, not a shell-out fallback. (An **ephemeral worktree** running `git rebase` is a
+fallback only if the section merge ever needs a real working tree; not the primary path. The spike
+confirmed the driver fires under git's own merge machinery — `rebase` replay and `merge-tree` — which
+is the same machinery `gix::merge::tree` reuses.)
+
+**Flow — refresh to track `main`, fast-forward to publish:**
+- `main → updates` **refresh** — keep the ref reconciled with `main` so it is always
+  `main` + the pending ambient delta. **Event-driven** off the ref-watcher (§7.5): triggered when
+  `main` moves, not on a timer, and **debounced** on a quiet window (default ~1 min) so a burst of
+  ref moves coalesces into one refresh once `main` settles. Reconcile worktree-less (above): the
+  driver auto-merges non-overlapping section/field edits; a real same-section overlap surfaces from
+  the merge-tree conflict set → mark those tasks **conflicted** in the UI (§7.7), hold the ref at its
+  last good tip, and retry on the next refresh once a human reconciles. Refresh is **daemon-only**;
+  if the daemon is down nothing refreshes (acceptable — refresh isn't urgent, publish is manual). A
+  **periodic sweep** + **startup reconcile** (compare the ref's merge-base against current `main`) are
+  in-daemon safety nets for watcher events dropped under load or missed while the daemon was off —
+  **not** a daemon-down path.
+- `updates → main` **publish** — **manual / explicit only**, and a pure **fast-forward**: because
+  the ref is always reconciled on top of `main`, publish just advances `main` to the ref's tip. No
+  merge commit on `main`, and publish **can never conflict** — every conflict is forced to surface
+  earlier, at refresh. No background process ever mutates `main`.
+
+**Routing — which write goes to the ref.** "Ambient" = a write with no feature-branch context:
+- **UI**, global task-centric view (no worktree context) → `rolling-updates`.
+- **UI**, worktree swimlane scoped to a branch → that branch (a feature context; consistent with §9).
+- **CLI / agent** in the **`main`** (trunk) worktree → `rolling-updates` (trunk is not a feature lane).
+- **CLI / agent** in a feature worktree → that branch (the §7.1 default).
+- Escape hatch: `--ambient` forces a CLI write to `rolling-updates` even from a feature worktree, for
+  triage edits unrelated to the current branch.
+
+**Backup — durability only.** The daemon **force-pushes** `refs/open-plan/rolling-updates` to a
+configured mirror remote so un-published ambient edits survive disk/machine loss. Safe because this
+machine is the **sole writer** and the mirror is write-only (nobody pulls it) — no distributed
+concurrency. Multi-machine / collaborative sync is **out of scope**: it would forbid the rewrite,
+require a merge-based flow with push-race handling, and cross the §7.10 single-machine boundary.
+
+**UI surface — one header control + review popover.** A single color-coded sync icon sits in the
+header (beside daemon status / theme toggle) with a pending-count pill, reusing the app's convention
+(`emerald`=good, `amber`=warn) plus blue for "action available":
+- *In sync* — muted, check: "nothing to publish." *Pending (N)* — blue pill: "N changes ready to
+  publish to `main`." *Syncing* — blue spinner: publish or auto-refresh running. *Blocked* — amber,
+  warning: a refresh conflict paused sync. *Offline* — dim, disabled: daemon down.
+- Click opens a **"Rolling updates" review popover** — it never publishes blind. It lists the pending
+  ambient changes (task + what changed), flags conflicting ones in amber, and carries the primary
+  **"Publish N to `main`"** action inside, keeping publish manual and reviewable. In *blocked* state
+  it shows the conflict and a **"Resolve conflict"** action instead. Mockup:
+  [`.plan/assets/sync-button-options.html`](.plan/assets/sync-button-options.html).
+
+**Scope.** v1 publishes to **`main` only**. Fan-out to active feature branches is v2. The
+cross-branch collision warning for ambient edits is presence (§7.6), tracked separately.
+
 ## 8. CLI surface (sketch)
 
 Design rules: **JSON output for agents** (`--json`), pretty for humans; every read supports
