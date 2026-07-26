@@ -993,3 +993,62 @@ fn the_openapi_spec_documents_every_json_api_route() {
         "the board's schema must reach the spec the web client is generated from"
     );
 }
+
+// Every refusal a caller can act on must be documented with its `ApiErrorBody`: the generated web
+// client turns exactly these into typed errors carrying the server's reason, and an undocumented
+// status reaches the UI as a bare status code instead.
+#[test]
+fn the_openapi_spec_documents_every_refusal_with_its_reason() {
+    let spec = serde_json::to_value(op_server::openapi()).unwrap();
+    for (method, route, status) in [
+        ("get", "/api/tasks", "400"),
+        ("get", "/api/tasks", "500"),
+        ("post", "/api/tasks", "400"),
+        ("post", "/api/tasks", "500"),
+        ("get", "/api/board", "400"),
+        ("get", "/api/board", "500"),
+        ("get", "/api/tasks/{id}", "400"),
+        ("get", "/api/tasks/{id}", "404"),
+        ("get", "/api/tasks/{id}", "500"),
+        ("patch", "/api/tasks/{id}", "400"),
+        ("patch", "/api/tasks/{id}", "404"),
+        ("patch", "/api/tasks/{id}", "409"),
+        ("patch", "/api/tasks/{id}", "500"),
+        ("delete", "/api/tasks/{id}", "400"),
+        ("delete", "/api/tasks/{id}", "404"),
+        ("delete", "/api/tasks/{id}", "409"),
+        ("delete", "/api/tasks/{id}", "500"),
+    ] {
+        let schema = &spec["paths"][route][method]["responses"][status]["content"]["application/json"]
+            ["schema"];
+        assert_eq!(
+            schema["$ref"], "#/components/schemas/ApiErrorBody",
+            "{method} {route} -> {status} must document its reason body"
+        );
+    }
+}
+
+// A field the server skips when empty is absent, never null, so the spec must not widen it to
+// nullable — that would push an impossible `| null` into every generated client type.
+#[test]
+fn optional_response_fields_are_absent_rather_than_nullable() {
+    let spec = serde_json::to_value(op_server::openapi()).unwrap();
+    let schemas = &spec["components"]["schemas"];
+    for (schema, field) in [
+        ("TaskView", "parent"),
+        ("TaskView", "rank"),
+        ("TaskChild", "rank"),
+        ("TaskListItem", "parent"),
+        ("TaskListItem", "rank"),
+        ("BoardRow", "parent_title"),
+    ] {
+        assert_eq!(
+            schemas[schema]["properties"][field]["type"], "string",
+            "{schema}.{field} must be a plain optional string"
+        );
+    }
+    assert_eq!(
+        schemas["TaskDetail"]["allOf"][1]["properties"]["parent_title"]["type"], "string",
+        "TaskDetail.parent_title must be a plain optional string"
+    );
+}

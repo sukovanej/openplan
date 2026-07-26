@@ -48,8 +48,10 @@ pub struct TaskView {
     pub title: String,
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub rank: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deps: Vec<String>,
@@ -78,6 +80,7 @@ pub struct TaskChild {
     pub title: String,
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub rank: Option<String>,
 }
 
@@ -103,6 +106,7 @@ pub struct TaskDetail {
     pub headline: String,
     pub branches: Vec<BranchState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub parent_title: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<TaskChild>,
@@ -119,8 +123,10 @@ pub struct TaskListItem {
     pub title: String,
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub rank: Option<String>,
     pub headline: String,
     pub branches: Vec<BranchState>,
@@ -194,13 +200,16 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for FieldUpdate<T> {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, ToSchema)]
 pub struct TaskPatch {
     #[serde(default)]
+    #[schema(nullable = false)]
     pub status: Option<Status>,
     #[serde(default)]
     #[schema(value_type = Option<String>)]
     pub parent: FieldUpdate<String>,
     #[serde(default)]
+    #[schema(nullable = false)]
     pub rank: Option<String>,
     #[serde(default)]
+    #[schema(nullable = false)]
     pub deps: Option<Vec<String>>,
 }
 
@@ -360,6 +369,7 @@ pub struct BoardRow {
     pub depth: usize,
     pub has_children: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub parent_title: Option<String>,
 }
 

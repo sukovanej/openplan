@@ -1,3 +1,4 @@
+import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
 import { Pencil, Plus, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
@@ -7,7 +8,7 @@ import { type ComboOption, FuzzyText, SearchCombobox } from "@/components/search
 import { BodySkeleton, DetailSkeleton, Message } from "@/components/states"
 import { StatusIcon } from "@/components/status-badge"
 import { TaskBody } from "@/components/task-body"
-import { createTask, patchTask, type TaskChild, type TaskDetail, type TaskListItem, TaskNotFound } from "@/lib/api"
+import { createTask, patchTask, TaskNotFound } from "@/lib/api"
 import { useDetailAction } from "@/lib/detail-actions"
 import { errorText } from "@/lib/format"
 import { fuzzyMatch } from "@/lib/fuzzy"

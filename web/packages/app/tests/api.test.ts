@@ -1,11 +1,8 @@
 import { expect, it } from "@effect/vitest"
 import { Effect, Result } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/unstable/http"
 
-import { ApiBaseUrl, getTask, listTasks, TaskNotFound } from "../src/lib/api"
-
-const clientReturning = (response: () => Response) =>
-  HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, response())))
+import { ApiBaseUrl, createTask, getTask, listTasks, patchTask, TaskNotFound, TaskRejected } from "../src/lib/api"
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -14,13 +11,29 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-const withResponse =
-  (response: () => Response) =>
-  <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
+const captureRequest = (response: () => Response) => {
+  const captured: { request?: HttpClientRequest.HttpClientRequest } = {}
+  const client = HttpClient.make((request) => {
+    captured.request = request
+    return Effect.succeed(HttpClientResponse.fromWeb(request, response()))
+  })
+  const provide = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
     effect.pipe(
-      Effect.provideService(HttpClient.HttpClient, clientReturning(response)),
+      Effect.provideService(HttpClient.HttpClient, client),
       Effect.provideService(ApiBaseUrl, "http://localhost"),
     )
+  return { captured, provide }
+}
+
+const withResponse = (response: () => Response) => captureRequest(response).provide
+
+function requestBody(request: HttpClientRequest.HttpClientRequest): unknown {
+  const body = request.body
+  if (body._tag === "Uint8Array") {
+    return JSON.parse(new TextDecoder().decode(body.body))
+  }
+  return undefined
+}
 
 it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
   withResponse(() =>
@@ -108,40 +121,65 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
   ),
 )
 
+const detailResponse = () =>
+  json({ id: "a-1", title: "First", status: "done", body: "# First\n", headline: "feature", branches: [] })
+
 it.effect("requests a specific branch's version with ?branch=", () =>
   Effect.gen(function* () {
-    let requested: string | undefined
-    const client = HttpClient.make((request) => {
-      requested = request.url
-      return Effect.succeed(
-        HttpClientResponse.fromWeb(
-          request,
-          json({
-            id: "a-1",
-            title: "First",
-            status: "done",
-            body: "# First\n",
-            headline: "feature",
-            branches: [],
-          }),
-        ),
-      )
-    })
-    const task = yield* getTask("a-1", "feature").pipe(
-      Effect.provideService(HttpClient.HttpClient, client),
-      Effect.provideService(ApiBaseUrl, "http://localhost"),
-    )
+    const { captured, provide } = captureRequest(detailResponse)
+    const task = yield* provide(getTask("a-1", "feature"))
     expect(task.status).toBe("done")
-    expect(requested).toContain("/api/tasks/a-1?branch=feature")
+    expect(captured.request?.url).toContain("/api/tasks/a-1")
+    expect(UrlParams.toString(captured.request!.urlParams)).toBe("branch=feature")
+  }),
+)
+
+it.effect("omits the query entirely for a headline read", () =>
+  Effect.gen(function* () {
+    const { captured, provide } = captureRequest(detailResponse)
+    yield* provide(getTask("a-1"))
+    expect(UrlParams.toString(captured.request!.urlParams)).toBe("")
   }),
 )
 
 it.effect("maps a 404 response to TaskNotFound", () =>
-  withResponse(() => json("no such task", 404))(
+  withResponse(() => json({ message: "no such task: ghost" }, 404))(
     Effect.gen(function* () {
       const failure = yield* Effect.flip(getTask("ghost"))
       expect(failure).toBeInstanceOf(TaskNotFound)
       expect((failure as TaskNotFound).id).toBe("ghost")
+    }),
+  ),
+)
+
+// The status decides what happened, not the body: a 404 from something other than the daemon (a
+// proxy's error page, a bodyless response) must still reach the not-found view.
+const foreign404 = {
+  "a plain-text body": () => new Response("no such task", { status: 404 }),
+  "an HTML body": () =>
+    new Response("<html>Not Found</html>", { status: 404, headers: { "content-type": "text/html" } }),
+  "a bodyless response": () => new Response(null, { status: 404 }),
+}
+
+for (const [shape, response] of Object.entries(foreign404)) {
+  it.effect(`maps a 404 with ${shape} to TaskNotFound`, () =>
+    withResponse(response)(
+      Effect.gen(function* () {
+        const failure = yield* Effect.flip(getTask("ghost"))
+        expect(failure).toBeInstanceOf(TaskNotFound)
+        expect((failure as TaskNotFound).id).toBe("ghost")
+      }),
+    ),
+  )
+}
+
+it.effect("a read that fails on a malformed task carries the server's reason", () =>
+  withResponse(() => json({ message: "invalid frontmatter in ghost.md" }, 500))(
+    Effect.gen(function* () {
+      const failure = yield* Effect.flip(getTask("ghost"))
+      expect(failure).toBeInstanceOf(TaskRejected)
+      expect((failure as TaskRejected).status).toBe(500)
+      expect((failure as TaskRejected).message).toContain("invalid frontmatter")
     }),
   ),
 )
@@ -155,31 +193,6 @@ it.effect("rejects a malformed status with a decode failure", () =>
   ),
 )
 
-import { HttpClientRequest } from "effect/unstable/http"
-import { createTask, patchTask, TaskRejected } from "../src/lib/api"
-
-function decodeBody(request: HttpClientRequest.HttpClientRequest): unknown {
-  const body = request.body
-  if (body._tag === "Uint8Array") {
-    return JSON.parse(new TextDecoder().decode(body.body))
-  }
-  return undefined
-}
-
-const captureRequest = (response: () => Response) => {
-  const captured: { request?: HttpClientRequest.HttpClientRequest } = {}
-  const client = HttpClient.make((request) => {
-    captured.request = request
-    return Effect.succeed(HttpClientResponse.fromWeb(request, response()))
-  })
-  const provide = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
-    effect.pipe(
-      Effect.provideService(HttpClient.HttpClient, client),
-      Effect.provideService(ApiBaseUrl, "http://localhost"),
-    )
-  return { captured, provide }
-}
-
 it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
   Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
@@ -188,7 +201,7 @@ it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
     const detail = yield* provide(patchTask("child", { parent: null }))
     expect(captured.request?.method).toBe("PATCH")
     expect(captured.request?.url).toContain("/api/tasks/child")
-    expect(decodeBody(captured.request!)).toEqual({ parent: null })
+    expect(requestBody(captured.request!)).toEqual({ parent: null })
     expect(detail.id).toBe("child")
   }),
 )
@@ -199,7 +212,7 @@ it.effect("PATCH sends a parent id to reparent", () =>
       json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] }),
     )
     yield* provide(patchTask("child", { parent: "epic-1" }))
-    expect(decodeBody(captured.request!)).toEqual({ parent: "epic-1" })
+    expect(requestBody(captured.request!)).toEqual({ parent: "epic-1" })
   }),
 )
 
@@ -209,7 +222,7 @@ it.effect("POST creates a child under a parent and returns the new id", () =>
     const id = yield* provide(createTask({ title: "Subtask", parent: "root" }))
     expect(captured.request?.method).toBe("POST")
     expect(captured.request?.url).toContain("/api/tasks")
-    expect(decodeBody(captured.request!)).toEqual({ title: "Subtask", parent: "root" })
+    expect(requestBody(captured.request!)).toEqual({ title: "Subtask", parent: "root" })
     expect(id).toBe("new-1")
   }),
 )
@@ -228,6 +241,30 @@ it.effect("a refused PATCH carries the server's reason, not just a status code",
   }),
 )
 
+it.effect("a PATCH aimed at a branch no worktree holds carries the 409 reason", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() =>
+      json({ message: "branch feature is not checked out in a writable worktree" }, 409),
+    )
+    const result = yield* Effect.result(provide(patchTask("a-1", { status: "done" })))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect(error).toBeInstanceOf(TaskRejected)
+    expect((error as TaskRejected).status).toBe(409)
+    expect((error as TaskRejected).message).toContain("writable worktree")
+  }),
+)
+
+it.effect("a write that fails inside the store carries the server's reason", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() => json({ message: "permission denied writing epic.md" }, 500))
+    const result = yield* Effect.result(provide(patchTask("epic", { parent: "child" })))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect(error).toBeInstanceOf(TaskRejected)
+    expect((error as TaskRejected).status).toBe(500)
+    expect((error as TaskRejected).message).toContain("permission denied")
+  }),
+)
+
 it.effect("a refused PATCH with no JSON body still fails with a readable reason", () =>
   Effect.gen(function* () {
     const { provide } = captureRequest(() => new Response("boom", { status: 500 }))
@@ -236,6 +273,17 @@ it.effect("a refused PATCH with no JSON body still fails with a readable reason"
     const error = Result.isFailure(result) ? result.failure : undefined
     expect(error).toBeInstanceOf(TaskRejected)
     expect((error as TaskRejected).message).toContain("500")
+  }),
+)
+
+// A status no route documents reaches the UI as the one fact worth reporting.
+it.effect("an undocumented failure status still fails with its status", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() => new Response("<html>Bad Gateway</html>", { status: 502 }))
+    const result = yield* Effect.result(provide(patchTask("epic", { parent: "child" })))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect(error).toBeInstanceOf(TaskRejected)
+    expect((error as TaskRejected).status).toBe(502)
   }),
 )
 

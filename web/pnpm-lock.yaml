@@ -129,6 +129,9 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.9
         version: 5.2.9
+      '@open-planner/api-client':
+        specifier: workspace:*
+        version: link:../api-client
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
