@@ -1,4 +1,4 @@
-use op_api::{Status, TaskPatch, TaskSummary, TaskTree};
+use op_api::{FieldUpdate, Status, TaskPatch, TaskSummary, TaskTree};
 use op_task::Task;
 
 fn summary(id: &str, parent: Option<&str>, rank: Option<&str>) -> TaskSummary {
@@ -81,7 +81,7 @@ fn unknown_root_yields_none() {
 #[test]
 fn patch_parent_absent_leaves_it_unchanged() {
     let patch: TaskPatch = serde_json::from_value(serde_json::json!({ "status": "done" })).unwrap();
-    assert_eq!(patch.parent, None);
+    assert_eq!(patch.parent, FieldUpdate::Keep);
     let mut task = Task::new("T", Status::Todo);
     task.set_parent(Some("p".to_owned()));
     patch.apply(&mut task);
@@ -91,7 +91,7 @@ fn patch_parent_absent_leaves_it_unchanged() {
 #[test]
 fn patch_parent_null_clears_it() {
     let patch: TaskPatch = serde_json::from_value(serde_json::json!({ "parent": null })).unwrap();
-    assert_eq!(patch.parent, Some(None));
+    assert_eq!(patch.parent, FieldUpdate::Clear);
     let mut task = Task::new("T", Status::Todo);
     task.set_parent(Some("p".to_owned()));
     patch.apply(&mut task);
@@ -102,7 +102,7 @@ fn patch_parent_null_clears_it() {
 fn patch_parent_id_sets_it() {
     let patch: TaskPatch =
         serde_json::from_value(serde_json::json!({ "parent": "epic-1" })).unwrap();
-    assert_eq!(patch.parent, Some(Some("epic-1".to_owned())));
+    assert_eq!(patch.parent, FieldUpdate::Set("epic-1".to_owned()));
     let mut task = Task::new("T", Status::Todo);
     patch.apply(&mut task);
     assert_eq!(task.frontmatter.parent.as_deref(), Some("epic-1"));

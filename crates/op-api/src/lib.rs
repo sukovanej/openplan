@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
 pub use op_task::Status;
@@ -171,21 +171,36 @@ impl CreateTask {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+// A three-state PATCH field: an absent key leaves the value untouched, JSON `null` clears it, and a
+// value sets it. serde cannot natively tell "absent" from "null", so `Keep` comes from the field's
+// `#[serde(default)]` while this `Deserialize` maps a present `null`/value to `Clear`/`Set`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum FieldUpdate<T> {
+    #[default]
+    Keep,
+    Clear,
+    Set(T),
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for FieldUpdate<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match Option::<T>::deserialize(deserializer)? {
+            None => FieldUpdate::Clear,
+            Some(value) => FieldUpdate::Set(value),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, ToSchema)]
 pub struct TaskPatch {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub status: Option<Status>,
-    // Three-state so a client can tell "leave the parent alone" from "clear it": an absent key is
-    // `None`, JSON `null` is `Some(None)` (unparent to top level), and an id is `Some(Some(id))`.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "double_option"
-    )]
-    pub parent: Option<Option<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    #[schema(value_type = Option<String>)]
+    pub parent: FieldUpdate<String>,
+    #[serde(default)]
     pub rank: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub deps: Option<Vec<String>>,
 }
 
@@ -194,8 +209,10 @@ impl TaskPatch {
         if let Some(status) = self.status {
             task.set_status(status);
         }
-        if let Some(parent) = self.parent {
-            task.set_parent(parent);
+        match self.parent {
+            FieldUpdate::Keep => {}
+            FieldUpdate::Clear => task.set_parent(None),
+            FieldUpdate::Set(id) => task.set_parent(Some(id)),
         }
         if let Some(rank) = self.rank {
             task.set_rank(Some(rank));
@@ -204,13 +221,6 @@ impl TaskPatch {
             task.set_deps(deps);
         }
     }
-}
-
-fn double_option<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Deserialize::deserialize(deserializer).map(Some)
 }
 
 // The subtree rooted at one task: siblings within `children` are ordered by `rank` (§3.2), the tree
