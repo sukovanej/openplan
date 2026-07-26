@@ -339,12 +339,12 @@ const BOARD_ORDER: [Status; 6] = [
 // each already flattened into render-ordered rows. The client renders it verbatim — no grouping,
 // sorting, or tree-walking. A task always lands in its own status group; within a group it nests
 // under its parent only when the parent shares that status, otherwise it is a group-local root.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Board {
     pub groups: Vec<BoardGroup>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct BoardGroup {
     pub status: Status,
     pub rows: Vec<BoardRow>,
@@ -354,7 +354,7 @@ pub struct BoardGroup {
 // and `has_children` for a nested row beneath it. `parent_title` is set only when the row is a
 // group-local root whose real parent sits in another status group (the cross-status edge was cut),
 // so the client can show an "under <parent>" hint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct BoardRow {
     pub task: TaskListItem,
     pub depth: usize,

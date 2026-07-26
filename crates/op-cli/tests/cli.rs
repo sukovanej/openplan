@@ -784,3 +784,86 @@ fn move_unranked_siblings_then_reorder_lists_in_new_order() {
     );
     assert_eq!(tree_ids(dir.path(), &root), vec![z, a]);
 }
+
+fn set_rank(root: &Path, id: &str, rank: &str) {
+    let path = root.join(".plan/tasks").join(format!("{id}.md"));
+    let raw = std::fs::read_to_string(&path).unwrap();
+    let patched = raw.replacen("---\n", &format!("---\nrank: {rank}\n"), 1);
+    write(&path, &patched);
+}
+
+fn rank_of(root: &Path, id: &str) -> Option<String> {
+    let path = root.join(".plan/tasks").join(format!("{id}.md"));
+    std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .find_map(|line| line.strip_prefix("rank: "))
+        .map(|value| value.trim().to_owned())
+}
+
+#[test]
+fn move_between_neighbours_naming_the_same_point_rebalances() {
+    // Hand-edited frontmatter can give two siblings ranks that differ as text but name one point
+    // (`a` and `a0`). There is no key between them, so the group has to be rebalanced rather than
+    // searched forever for a gap that cannot exist.
+    let dir = store();
+    let root = create(dir.path(), "Root");
+    let a = child(dir.path(), "A", &root);
+    let b = child(dir.path(), "B", &root);
+    let c = child(dir.path(), "C", &root);
+    set_rank(dir.path(), &a, "a");
+    set_rank(dir.path(), &b, "a0");
+
+    let out = run(dir.path(), &["move", &c, "--parent", &root, "--after", &a]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(tree_ids(dir.path(), &root), vec![a, c, b]);
+}
+
+#[test]
+fn move_within_a_group_holding_a_malformed_rank_rebalances() {
+    let dir = store();
+    let root = create(dir.path(), "Root");
+    let a = child(dir.path(), "A", &root);
+    let b = child(dir.path(), "B", &root);
+    set_rank(dir.path(), &a, "NOT-BASE36");
+
+    let out = run(dir.path(), &["move", &b, "--parent", &root, "--before", &a]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(tree_ids(dir.path(), &root), vec![b.clone(), a.clone()]);
+    for id in [&a, &b] {
+        let rank = rank_of(dir.path(), id).expect("rebalance ranks the whole group");
+        assert!(
+            rank.bytes()
+                .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()),
+            "{id} kept a malformed rank: {rank}"
+        );
+    }
+}
+
+#[test]
+fn a_refused_move_leaves_sibling_ranks_untouched() {
+    // The rebalance path rewrites every sibling, so the moved task is written first: its write is
+    // the one that fails the cycle check, and a refused command must not have edited anything.
+    let dir = store();
+    let a = create(dir.path(), "A");
+    let b = child(dir.path(), "B", &a);
+    let c = child(dir.path(), "C", &b);
+    let sibling = child(dir.path(), "Sibling", &c);
+    let before = rank_of(dir.path(), &sibling);
+
+    let out = run(dir.path(), &["move", &a, "--parent", &c]);
+    assert!(!out.status.success(), "cycle must be refused");
+    assert_eq!(
+        rank_of(dir.path(), &sibling),
+        before,
+        "a refused move must not rewrite the target group"
+    );
+}

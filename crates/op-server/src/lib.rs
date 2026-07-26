@@ -94,6 +94,7 @@ fn documented() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
         .routes(routes!(list_tasks, create_task))
+        .routes(routes!(get_board))
         .routes(routes!(get_task, patch_task, delete_task))
 }
 
@@ -106,7 +107,6 @@ pub fn app(state: AppState) -> Router {
     router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
         .route("/api/events", get(events))
-        .route("/api/board", get(get_board))
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
         .layer(
@@ -344,6 +344,11 @@ async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListIt
 // The list view's whole data set in one read: tasks grouped by status and flattened into
 // render-ordered rows (§9). Built from the same branch-aware aggregation as `list_tasks`, so board
 // reads stay "reads global"; the client consumes it verbatim.
+#[utoipa::path(
+    get,
+    path = "/api/board",
+    responses((status = 200, description = "Every task grouped by status and flattened into render-ordered rows", body = Board))
+)]
 async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
     let repo = state.repo.clone();
     let store = state.store.clone();

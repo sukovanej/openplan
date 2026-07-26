@@ -913,3 +913,83 @@ async fn swagger_ui_page_is_served() {
     let html = String::from_utf8_lossy(&bytes);
     assert!(html.to_lowercase().contains("swagger"));
 }
+
+#[tokio::test]
+async fn patch_rejects_a_malformed_rank_with_its_reason() {
+    let (dir, state) = store_state();
+    std::fs::write(
+        dir.path().join(".plan/tasks/solo.md"),
+        "---\nstatus: todo\n---\n# Solo\n",
+    )
+    .unwrap();
+
+    let refused = send(
+        &state,
+        "PATCH",
+        "/api/tasks/solo",
+        Some(json!({ "rank": "NOT-BASE36" })),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let message = body_json(refused).await["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(message.contains("rank"), "message: {message}");
+    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/solo.md")).unwrap();
+    assert!(!raw.contains("rank"), "a refused rank must not land: {raw}");
+
+    let accepted = send(
+        &state,
+        "PATCH",
+        "/api/tasks/solo",
+        Some(json!({ "rank": "a5" })),
+    )
+    .await;
+    assert_eq!(accepted.status(), StatusCode::OK);
+    assert_eq!(body_json(accepted).await["rank"], "a5");
+}
+
+#[tokio::test]
+async fn patching_a_parent_that_would_cycle_is_refused_with_its_reason() {
+    // The web pickers exclude cycle-forming targets from a snapshot that can be stale by the time
+    // the write lands, so this rejection is reachable through the UI and must carry a usable reason.
+    let (dir, state) = store_state();
+    std::fs::write(
+        dir.path().join(".plan/tasks/epic.md"),
+        "---\nstatus: todo\n---\n# Epic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join(".plan/tasks/child.md"),
+        "---\nstatus: todo\nparent: epic\n---\n# Child\n",
+    )
+    .unwrap();
+
+    let refused = send(
+        &state,
+        "PATCH",
+        "/api/tasks/epic",
+        Some(json!({ "parent": "child" })),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let message = body_json(refused).await["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(message.contains("descendant"), "message: {message}");
+}
+
+#[test]
+fn the_openapi_spec_documents_every_json_api_route() {
+    let spec = serde_json::to_value(op_server::openapi()).unwrap();
+    let paths = spec["paths"].as_object().unwrap();
+    for route in ["/api/tasks", "/api/tasks/{id}", "/api/board", "/health"] {
+        assert!(paths.contains_key(route), "{route} missing from the spec");
+    }
+    assert!(
+        spec["components"]["schemas"].get("Board").is_some(),
+        "the board's schema must reach the spec the web client is generated from"
+    );
+}

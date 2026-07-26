@@ -148,7 +148,7 @@ it.effect("rejects a malformed status with a decode failure", () =>
   ))
 
 import { HttpClientRequest } from "effect/unstable/http"
-import { createTask, patchTask } from "../src/lib/api"
+import { createTask, patchTask, TaskRejected } from "../src/lib/api"
 
 function decodeBody(request: HttpClientRequest.HttpClientRequest): unknown {
   const body = request.body
@@ -201,4 +201,36 @@ it.effect("POST creates a child under a parent and returns the new id", () =>
     expect(captured.request?.url).toContain("/api/tasks")
     expect(decodeBody(captured.request!)).toEqual({ title: "Subtask", parent: "root" })
     expect(id).toBe("new-1")
+  }))
+
+it.effect("a refused PATCH carries the server's reason, not just a status code", () =>
+  Effect.gen(function*() {
+    const { provide } = captureRequest(() =>
+      json({ message: "cannot reparent epic under its own descendant child" }, 400)
+    )
+    const result = yield* Effect.result(provide(patchTask("epic", { parent: "child" })))
+    expect(Result.isFailure(result)).toBe(true)
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect(error).toBeInstanceOf(TaskRejected)
+    expect((error as TaskRejected).status).toBe(400)
+    expect((error as TaskRejected).message).toContain("own descendant")
+  }))
+
+it.effect("a refused PATCH with no JSON body still fails with a readable reason", () =>
+  Effect.gen(function*() {
+    const { provide } = captureRequest(() => new Response("boom", { status: 500 }))
+    const result = yield* Effect.result(provide(patchTask("epic", { parent: "child" })))
+    expect(Result.isFailure(result)).toBe(true)
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect(error).toBeInstanceOf(TaskRejected)
+    expect((error as TaskRejected).message).toContain("500")
+  }))
+
+it.effect("a refused POST carries the server's reason", () =>
+  Effect.gen(function*() {
+    const { provide } = captureRequest(() => json({ message: "parent nope does not exist" }, 400))
+    const result = yield* Effect.result(provide(createTask({ title: "Subtask", parent: "nope" })))
+    expect(Result.isFailure(result)).toBe(true)
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect((error as TaskRejected).message).toContain("does not exist")
   }))

@@ -62,8 +62,8 @@ pub struct Frontmatter {
     pub rank: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deps: Vec<String>,
-    // Fields the model does not name (e.g. rank) are preserved verbatim across a
-    // read-modify-write so a `set` never silently drops them.
+    // Fields the model does not name are preserved verbatim across a read-modify-write
+    // so a `set` never silently drops them.
     #[serde(flatten)]
     pub extra: serde_yaml::Mapping,
 }

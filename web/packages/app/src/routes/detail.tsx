@@ -250,14 +250,14 @@ function ParentPicker({ id, onClose }: { id: string; onClose: () => void }) {
             Top level (no parent)
           </span>
         ),
-        onSelect: () => void runMutation(patchTask(id, { parent: null })).catch(() => {}),
+        onSelect: () => void runMutation(patchTask(id, { parent: null })),
       })
     }
     for (const { task, indices } of taskMatches(all, query, excluded)) {
       options.push({
         key: task.id,
         content: <ComboTaskRow task={task} indices={indices} />,
-        onSelect: () => void runMutation(patchTask(id, { parent: task.id })).catch(() => {}),
+        onSelect: () => void runMutation(patchTask(id, { parent: task.id })),
       })
     }
     return options
@@ -372,7 +372,7 @@ function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
             </span>
           </span>
         ),
-        onSelect: () => void runMutation(createTask({ title: query, parent: id })).catch(() => {}),
+        onSelect: () => void runMutation(createTask({ title: query, parent: id })),
       })
     }
     for (const { task, indices } of taskMatches(all, query, excluded)) {
@@ -380,7 +380,7 @@ function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
       options.push({
         key: task.id,
         content: <ComboTaskRow task={task} indices={indices} />,
-        onSelect: () => void runMutation(patchTask(task.id, { parent: id })).catch(() => {}),
+        onSelect: () => void runMutation(patchTask(task.id, { parent: id })),
       })
     }
     return options

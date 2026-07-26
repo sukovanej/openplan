@@ -141,17 +141,59 @@ function refreshTaskQueries(id: string): void {
   }
 }
 
+// The reason the last write was refused, held until it is dismissed or a later write succeeds. A
+// picker's exclusions are built from a snapshot that can be stale by the time the server sees the
+// write, so a refusal is reachable through the UI and must be shown rather than dropped.
+class MutationError {
+  private state: unknown = undefined
+  private readonly listeners = new Set<() => void>()
+
+  readonly subscribe = (listener: () => void): () => void => {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  readonly getSnapshot = (): unknown => this.state
+
+  readonly report = (error: unknown): void => this.set(error)
+  readonly clear = (): void => this.set(undefined)
+
+  private set(next: unknown): void {
+    if (next === this.state) return
+    this.state = next
+    for (const listener of this.listeners) listener()
+  }
+}
+
+export const mutationError = new MutationError()
+
+export function useMutationError(): unknown {
+  return useSyncExternalStore(mutationError.subscribe, mutationError.getSnapshot)
+}
+
 // Run a write, then refresh the list and every open task detail so the change shows at once —
-// without waiting for the daemon's SSE echo (which also refreshes, and covers external edits).
+// without waiting for the daemon's SSE echo (which also refreshes, and covers external edits). A
+// refused write refreshes too, so the view snaps back to what the server actually holds.
 export function runMutation<A>(
   effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
-): Promise<A> {
-  return runtime.runPromise(effect).then((value) => {
+): Promise<void> {
+  const refresh = () => {
     boardQuery.refresh()
     if (tasksQuery.hasListeners()) tasksQuery.refresh()
     for (const query of taskQueries.values()) query.refresh()
-    return value
-  })
+  }
+  return runtime.runPromise(effect).then(
+    () => {
+      mutationError.clear()
+      refresh()
+    },
+    (error: unknown) => {
+      mutationError.report(error)
+      refresh()
+    },
+  )
 }
 
 export const storeInvalidator: Invalidator = {

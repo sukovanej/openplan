@@ -103,6 +103,24 @@ export class TaskNotFound extends Data.TaggedError("TaskNotFound")<{
   readonly id: string
 }> {}
 
+// A write the server refused, carrying its reason ("cannot reparent … under its own descendant …").
+// `filterStatusOk` alone would reduce that to a bare status code, which is exactly the detail a user
+// needs to understand why nothing happened.
+export class TaskRejected extends Data.TaggedError("TaskRejected")<{
+  readonly status: number
+  readonly message: string
+}> {}
+
+const ApiErrorBody = Schema.Struct({ message: Schema.String })
+
+const rejected = (
+  response: HttpClientResponse.HttpClientResponse,
+): Effect.Effect<never, TaskRejected> =>
+  HttpClientResponse.schemaBodyJson(ApiErrorBody)(response).pipe(
+    Effect.catch(() => Effect.succeed({ message: `request failed with status ${response.status}` })),
+    Effect.flatMap((body) => Effect.fail(new TaskRejected({ status: response.status, message: body.message }))),
+  )
+
 export type TaskError = TaskNotFound | HttpClientError.HttpClientError | Schema.SchemaError
 
 // "" in the browser (same-origin, relative). Tests supply an absolute base because node's
@@ -171,8 +189,10 @@ export const patchTask = (id: string, patch: TaskPatch) =>
     if (response.status === 404) {
       return yield* Effect.fail(new TaskNotFound({ id }))
     }
-    const ok = yield* HttpClientResponse.filterStatusOk(response)
-    return yield* HttpClientResponse.schemaBodyJson(TaskDetail)(ok)
+    if (response.status >= 400) {
+      return yield* rejected(response)
+    }
+    return yield* HttpClientResponse.schemaBodyJson(TaskDetail)(response)
   }).pipe(Effect.scoped)
 
 export interface CreateTask {
@@ -192,7 +212,9 @@ export const createTask = (input: CreateTask) =>
       input,
     )
     const response = yield* client.execute(request)
-    const ok = yield* HttpClientResponse.filterStatusOk(response)
-    const created = yield* HttpClientResponse.schemaBodyJson(CreatedTask)(ok)
+    if (response.status >= 400) {
+      return yield* rejected(response)
+    }
+    const created = yield* HttpClientResponse.schemaBodyJson(CreatedTask)(response)
     return created.id
   }).pipe(Effect.scoped)

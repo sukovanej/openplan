@@ -185,15 +185,23 @@ The actual CLI is flat (`oplan tree`, not `oplan task tree`); match the existing
   id (stable). `rank` is a first-class `Frontmatter` field, `skip_serializing_if`
   empty so a rank-less task's frontmatter stays minimal.
 - **`move` rank computation** is local (CLI writes files directly): when a
-  sibling group already has unique ranks it inserts a single fractional key
-  between neighbours; when ranks are missing/colliding it rebalances the whole
-  group to fresh evenly-spaced keys in one pass (the migration path). The server
-  `PATCH` carries `{parent, rank}` for single-key moves.
+  sibling group's ranks are all valid and strictly increasing it inserts a single
+  fractional key between neighbours; otherwise — missing, colliding, malformed,
+  or same-point (`a` and `a0`) — it rebalances the whole group onto keys spread
+  evenly across the range in one pass (the migration path, and how a group heals
+  from hand-edited frontmatter). The server `PATCH` carries `{parent, rank}` for
+  single-key moves. The moved task is written before its siblings, so a refused
+  move leaves the group untouched.
+- **Rank keys are untrusted input**: task files are hand-editable and `PATCH`
+  takes a `rank`, so `op-store` rejects a newly written key that is not base-36,
+  and `rank::between` returns `None` for a malformed or gapless pair rather than
+  descending forever. A rank already on disk never blocks an unrelated edit — the
+  rebalance path is what repairs it.
 - **Cycle safety**: `op-store` refuses reparenting under a descendant; `tree`
   (CLI + `TaskTree::build`) is cycle-safe via a path-visited set and reports the
-  offending id instead of hanging.
+  offending id instead of hanging. The web pickers exclude cycle-forming targets
+  from a list snapshot that can be stale, so the server's refusal is reachable
+  and surfaces in the UI rather than being swallowed.
 - **Drag-to-reorder is deferred** to a follow-up (see Out of scope). This task
   ships `rank`-ordered rendering, a parent breadcrumb, a direct-children list,
   and reparent / unparent / create-child controls in the web UI.
-</content>
-</invoke>

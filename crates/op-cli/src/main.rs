@@ -709,23 +709,25 @@ fn move_task(
                 Ok(())
             })?;
         }
-        // A sibling group with missing or colliding ranks can't be split by a single fractional
-        // key, so materialize a fresh, evenly-spaced order for the whole group in one pass (§4).
+        // A sibling group with missing, colliding, or malformed ranks can't be split by a single
+        // fractional key, so materialize a fresh, evenly-spaced order for the whole group (§4).
         RankPlan::Rebalance {
             siblings: assigned,
             x_rank,
         } => {
+            // The moved task goes first: its write is the one the store validates (parent exists,
+            // no cycle), so a refused move leaves the siblings' ranks untouched.
+            store.update(id, |task| {
+                task.set_parent(new_parent.clone());
+                task.set_rank(Some(x_rank.clone()));
+                Ok(())
+            })?;
             for (sibling_id, sibling_rank) in assigned {
                 store.update(&sibling_id, |task| {
                     task.set_rank(Some(sibling_rank.clone()));
                     Ok(())
                 })?;
             }
-            store.update(id, |task| {
-                task.set_parent(new_parent.clone());
-                task.set_rank(Some(x_rank.clone()));
-                Ok(())
-            })?;
         }
     }
     Ok(())
@@ -764,42 +766,24 @@ enum RankPlan {
 
 fn rank_plan(siblings: &[&TaskSummary], insert: usize) -> RankPlan {
     let ranks: Vec<&str> = siblings.iter().filter_map(|s| s.rank.as_deref()).collect();
-    let all_ranked = ranks.len() == siblings.len();
-    let unique = {
-        let set: std::collections::BTreeSet<&str> = ranks.iter().copied().collect();
-        set.len() == ranks.len()
-    };
-    if all_ranked && unique {
-        let lower = insert
-            .checked_sub(1)
-            .map(|i| siblings[i].rank.as_deref().unwrap());
-        let upper = siblings.get(insert).map(|s| s.rank.as_deref().unwrap());
-        RankPlan::Single(rank::between(lower, upper))
-    } else {
-        let keys = spaced_keys(siblings.len() + 1);
-        let assigned = siblings
-            .iter()
-            .enumerate()
-            .map(|(i, s)| {
-                let slot = if i < insert { i } else { i + 1 };
-                (s.id.clone(), keys[slot].clone())
-            })
-            .collect();
-        RankPlan::Rebalance {
-            siblings: assigned,
-            x_rank: keys[insert].clone(),
+    if ranks.len() == siblings.len() && rank::is_ordered(&ranks) {
+        let neighbour = |i: usize| ranks.get(i).copied();
+        let between = rank::between(insert.checked_sub(1).and_then(neighbour), neighbour(insert));
+        if let Some(new_rank) = between {
+            return RankPlan::Single(new_rank);
         }
     }
-}
-
-// `n` strictly-increasing rank keys, evenly stepping up from the open start toward the open end.
-fn spaced_keys(n: usize) -> Vec<String> {
-    let mut keys = Vec::with_capacity(n);
-    let mut prev: Option<String> = None;
-    for _ in 0..n {
-        let key = rank::between(prev.as_deref(), None);
-        prev = Some(key.clone());
-        keys.push(key);
+    let keys = rank::spaced(siblings.len() + 1);
+    let assigned = siblings
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let slot = if i < insert { i } else { i + 1 };
+            (s.id.clone(), keys[slot].clone())
+        })
+        .collect();
+    RankPlan::Rebalance {
+        siblings: assigned,
+        x_rank: keys[insert].clone(),
     }
-    keys
 }

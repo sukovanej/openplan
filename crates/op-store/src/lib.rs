@@ -3,7 +3,7 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt as _;
-use op_task::{Frontmatter, Task};
+use op_task::{Frontmatter, Task, rank};
 
 pub const STORE_DIR: &str = ".plan";
 
@@ -241,6 +241,14 @@ impl Store {
                 if let Some(id) = id {
                     self.reject_parent_cycle(id, parent)?;
                 }
+            }
+        }
+        if let Some(value) = &new.rank {
+            let unchanged = old.and_then(|o| o.rank.as_deref()) == Some(value.as_str());
+            if !unchanged && !rank::is_valid(value) {
+                return Err(StoreError::Invalid(format!(
+                    "rank {value} is not a base-36 key (0-9a-z)"
+                )));
             }
         }
         for dep in &new.deps {

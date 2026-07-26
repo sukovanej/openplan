@@ -729,9 +729,11 @@ fn parse_version(bytes: &[u8]) -> Version {
 }
 
 // Every `[[id]]` (or `[[id#Section]]`) in `body` that resolves to a known task, deduplicated in
-// first-seen order. Mirrors the web's `[[…]]` matcher: inner text with no bracket or newline, id
-// split off at the first `#`. Unresolvable ids are skipped — the client renders those as a dangling
-// chip anyway, so they need no metadata.
+// first-seen order: inner text with no bracket or newline, id split off at the first `#`.
+// Unresolvable ids are skipped — the client renders those as a dangling chip anyway, so they need no
+// metadata. Deliberately looser than the web's matcher, which parses markdown and so also skips
+// `[[…]]` quoted inside code spans and fences: a superset here only costs a few unused entries,
+// where a subset would drop a chip's title and status.
 fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
     let mut refs = Vec::new();
     let mut seen = HashSet::new();
