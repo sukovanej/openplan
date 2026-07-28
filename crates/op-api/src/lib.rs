@@ -18,9 +18,10 @@ pub struct DaemonInfo {
     pub version: String,
     pub started_at: u64,
     // The git common directory of the repository it indexes — the same for every worktree of that
-    // repository, so a client can tell whether this daemon's answers are about its own store.
-    // Optional because this file outlives the binary that wrote it: a newer CLI must still be able
-    // to read, and stop, a daemon started before the field existed.
+    // repository, so a client can tell whether this daemon's answers are about its own store, and a
+    // write routed here cannot land in a same-named branch of another repository. Optional because
+    // this file outlives the binary that wrote it: a newer CLI must still be able to read, and stop,
+    // a daemon started before the field existed.
     #[serde(default)]
     pub repo: Option<String>,
 }
@@ -452,18 +453,35 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for FieldUpdate<T> {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, ToSchema)]
+// `Keep` means "omit the key", which only the holding field's `skip_serializing_if` can express; a
+// `Keep` that reaches here anyway serializes as `null`, the nearest wire value.
+impl<T: Serialize> Serialize for FieldUpdate<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            FieldUpdate::Keep | FieldUpdate::Clear => serializer.serialize_none(),
+            FieldUpdate::Set(value) => serializer.serialize_some(value),
+        }
+    }
+}
+
+impl<T> FieldUpdate<T> {
+    pub fn is_keep(&self) -> bool {
+        matches!(self, FieldUpdate::Keep)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskPatch {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub status: Option<Status>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "FieldUpdate::is_keep")]
     #[schema(value_type = Option<String>)]
     pub parent: FieldUpdate<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub rank: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub deps: Option<Vec<String>>,
 }

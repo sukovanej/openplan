@@ -21,22 +21,61 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
-fn store() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
-    dir
+// A project every write can reach: a git repository (the daemon that owns writes resolves the target
+// worktree by branch, so it needs one) plus a private OPLAN_HOME so each test gets its own daemon,
+// auto-started on the first write. OPLAN_PORT=0 keeps those daemons off a shared port.
+struct Project {
+    home: tempfile::TempDir,
+    root: tempfile::TempDir,
 }
 
-fn run(root: &Path, args: &[&str]) -> Output {
-    oplan().arg("--root").arg(root).args(args).output().unwrap()
+impl Project {
+    fn new() -> Self {
+        let project = Self {
+            home: tempfile::tempdir().unwrap(),
+            root: tempfile::tempdir().unwrap(),
+        };
+        git(project.path(), &["init", "-q", "-b", "main"]);
+        git(project.path(), &["config", "user.email", "t@example.com"]);
+        git(project.path(), &["config", "user.name", "Test"]);
+        std::fs::create_dir_all(project.path().join(".plan/tasks")).unwrap();
+        project
+    }
+
+    fn path(&self) -> &Path {
+        self.root.path()
+    }
+
+    fn cmd(&self) -> Command {
+        let mut cmd = oplan();
+        cmd.env("OPLAN_HOME", self.home.path())
+            .env("OPLAN_PORT", "0");
+        cmd
+    }
+}
+
+impl Drop for Project {
+    fn drop(&mut self) {
+        let _ = self.cmd().args(["server", "stop"]).output();
+    }
+}
+
+fn run(project: &Project, args: &[&str]) -> Output {
+    project
+        .cmd()
+        .arg("--root")
+        .arg(project.path())
+        .args(args)
+        .output()
+        .unwrap()
 }
 
 fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).unwrap()
 }
 
-fn create(root: &Path, title: &str) -> String {
-    let out = run(root, &["create", title]);
+fn create(project: &Project, title: &str) -> String {
+    let out = run(project, &["create", title]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -150,10 +189,10 @@ fn merge_driver_clean_conflict_and_read_error() {
 
 #[test]
 fn create_writes_slug_file_and_prints_id() {
-    let dir = store();
+    let dir = Project::new();
     let before = op_task::now();
-    let id = create(dir.path(), "Wire the parser");
-    assert!(id.starts_with("wire-the-parser-"), "id: {id}");
+    let id = create(&dir, "Wire the parser");
+    assert_eq!(id, "wire-the-parser-1");
 
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     let contents = std::fs::read_to_string(&path).unwrap();
@@ -171,28 +210,156 @@ fn create_writes_slug_file_and_prints_id() {
         "a stored timestamp carries whole seconds: {created}"
     );
 
-    let second = create(dir.path(), "Wire the parser");
-    assert_ne!(id, second, "same title must yield a distinct id");
+    // The number is allocated, not derived from the title, so the same title yields the next id.
+    assert_eq!(create(&dir, "Wire the parser"), "wire-the-parser-2");
+    assert!(
+        dir.home.path().join("daemon.json").is_file(),
+        "the first write brought the daemon up on its own"
+    );
+}
+
+#[test]
+fn a_write_from_a_linked_worktree_lands_on_that_worktrees_branch() {
+    let dir = Project::new();
+    let anchor = create(&dir, "Anchor");
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "anchor"]);
+    let feature = dir.path().join(".worktrees/feature");
+    git(
+        dir.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            feature.to_str().unwrap(),
+        ],
+    );
+
+    // The daemon serves the main checkout, but the write names the caller's branch — so it lands in
+    // the worktree that holds that branch, not in the daemon's own.
+    let out = dir
+        .cmd()
+        .arg("--root")
+        .arg(&feature)
+        .args(["create", "From the worktree"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = stdout(&out).trim().to_owned();
+
+    let path = format!(".plan/tasks/{id}.md");
+    assert!(feature.join(&path).is_file(), "written on feature: {id}");
+    assert!(
+        !dir.path().join(&path).exists(),
+        "main's worktree is untouched"
+    );
+    assert_ne!(id, anchor, "the allocator's floor spans both branches");
+}
+
+#[test]
+fn a_write_with_no_reachable_daemon_fails_explicitly() {
+    let dir = Project::new();
+    let out = dir
+        .cmd()
+        .args(["--daemon", "http://127.0.0.1:1", "--root"])
+        .arg(dir.path())
+        .args(["create", "Ship login"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "an unreachable daemon must not pass");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("no oplan daemon at http://127.0.0.1:1"),
+        "stderr: {stderr}"
+    );
+    assert!(stdout(&run(&dir, &["list"])).contains("no tasks yet"));
+}
+
+#[test]
+fn a_write_outside_a_git_repository_is_refused() {
+    // Writes resolve their target worktree by branch, so a store with no repository has none.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
+    let out = oplan()
+        .env("OPLAN_HOME", dir.path().join("home"))
+        .env("OPLAN_PORT", "0")
+        .arg("--root")
+        .arg(dir.path())
+        .args(["create", "Ship login"])
+        .output()
+        .unwrap();
+
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("require a git repository"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn a_write_is_refused_by_a_daemon_serving_another_repository() {
+    let served = Project::new();
+    let other = Project::new();
+    // One daemon per OPLAN_HOME, and it serves one repository. A branch name means nothing outside
+    // that repository, so a write from another one must be refused rather than resolved there.
+    create(&served, "Anchor");
+
+    let out = oplan()
+        .env("OPLAN_HOME", served.home.path())
+        .env("OPLAN_PORT", "0")
+        .arg("--root")
+        .arg(other.path())
+        .args(["create", "Ship login"])
+        .output()
+        .unwrap();
+
+    assert!(
+        !out.status.success(),
+        "a foreign repository must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("serves"), "stderr: {stderr}");
+    assert!(
+        std::fs::read_dir(other.path().join(".plan/tasks"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "nothing was written into either repository"
+    );
+    assert_eq!(
+        std::fs::read_dir(served.path().join(".plan/tasks"))
+            .unwrap()
+            .count(),
+        1,
+        "and nothing leaked into the served one"
+    );
 }
 
 #[test]
 fn get_show_and_missing_id() {
-    let dir = store();
-    let id = create(dir.path(), "Ship it");
+    let dir = Project::new();
+    let id = create(&dir, "Ship it");
 
-    let show = run(dir.path(), &["show", &id]);
+    let show = run(&dir, &["show", &id]);
     assert!(show.status.success());
     let text = stdout(&show);
     assert!(text.contains("status: todo"), "{text}");
     assert!(text.contains("title:  Ship it"), "{text}");
 
-    let get = run(dir.path(), &["get", &id, "--json"]);
+    let get = run(&dir, &["get", &id, "--json"]);
     assert!(get.status.success());
     let view: serde_json::Value = serde_json::from_slice(&get.stdout).unwrap();
     assert_eq!(view["title"], "Ship it");
     assert_eq!(view["metadata"]["status"], "todo");
 
-    let missing = run(dir.path(), &["get", "does-not-exist"]);
+    let missing = run(&dir, &["get", "does-not-exist"]);
     assert!(
         !missing.status.success(),
         "get on a missing id must exit non-zero"
@@ -202,12 +369,12 @@ fn get_show_and_missing_id() {
 
 #[test]
 fn set_updates_only_frontmatter() {
-    let dir = store();
-    let id = create(dir.path(), "Ship it");
+    let dir = Project::new();
+    let id = create(&dir, "Ship it");
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     let body_before = task_body(&path);
 
-    let set = run(dir.path(), &["set", &id, "status", "in_progress"]);
+    let set = run(&dir, &["set", &id, "status", "in_progress"]);
     assert!(
         set.status.success(),
         "stderr: {}",
@@ -225,13 +392,13 @@ fn set_updates_only_frontmatter() {
         "body must be byte-for-byte unchanged"
     );
 
-    let bad_status = run(dir.path(), &["set", &id, "status", "bogus"]);
+    let bad_status = run(&dir, &["set", &id, "status", "bogus"]);
     assert!(
         !bad_status.status.success(),
         "invalid status must be rejected"
     );
 
-    let bad_parent = run(dir.path(), &["set", &id, "parent", "ghost"]);
+    let bad_parent = run(&dir, &["set", &id, "parent", "ghost"]);
     assert!(
         !bad_parent.status.success(),
         "non-existent parent must be rejected"
@@ -240,16 +407,16 @@ fn set_updates_only_frontmatter() {
 
 #[test]
 fn delete_removes_the_file() {
-    let dir = store();
-    let id = create(dir.path(), "Temporary");
+    let dir = Project::new();
+    let id = create(&dir, "Temporary");
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     assert!(path.exists());
 
-    let del = run(dir.path(), &["delete", &id, "--yes"]);
+    let del = run(&dir, &["delete", &id, "--yes"]);
     assert!(del.status.success());
     assert!(!path.exists(), "delete must remove the file");
 
-    let list = run(dir.path(), &["list"]);
+    let list = run(&dir, &["list"]);
     assert!(
         !stdout(&list).contains(&id),
         "deleted id must not appear in list"
@@ -258,16 +425,16 @@ fn delete_removes_the_file() {
 
 #[test]
 fn list_json_filters_by_status() {
-    let dir = store();
-    let todo = create(dir.path(), "Still to do");
-    let done = create(dir.path(), "Already done");
+    let dir = Project::new();
+    let todo = create(&dir, "Still to do");
+    let done = create(&dir, "Already done");
     assert!(
-        run(dir.path(), &["set", &done, "status", "done"])
+        run(&dir, &["set", &done, "status", "done"])
             .status
             .success()
     );
 
-    let out = run(dir.path(), &["list", "--json", "--status", "todo"]);
+    let out = run(&dir, &["list", "--json", "--status", "todo"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -281,39 +448,35 @@ fn list_json_filters_by_status() {
 
 #[test]
 fn set_status_survives_a_deleted_dependency() {
-    let dir = store();
-    let a = create(dir.path(), "Task A");
-    let b_out = run(dir.path(), &["create", "Task B", "--dep", &a]);
+    let dir = Project::new();
+    let a = create(&dir, "Task A");
+    let b_out = run(&dir, &["create", "Task B", "--dep", &a]);
     assert!(b_out.status.success());
     let b = stdout(&b_out).trim().to_owned();
 
-    assert!(run(dir.path(), &["delete", &a, "--yes"]).status.success());
+    assert!(run(&dir, &["delete", &a, "--yes"]).status.success());
 
     // B still lists A as a dep, but changing B's status is unrelated and must succeed.
-    let set = run(dir.path(), &["set", &b, "status", "done"]);
+    let set = run(&dir, &["set", &b, "status", "done"]);
     assert!(
         set.status.success(),
         "a deleted dep must not block a status change: {}",
         String::from_utf8_lossy(&set.stderr)
     );
-    assert!(stdout(&run(dir.path(), &["show", &b])).contains("status: done"));
+    assert!(stdout(&run(&dir, &["show", &b])).contains("status: done"));
 }
 
 #[test]
 fn set_preserves_unknown_frontmatter_keys() {
-    let dir = store();
-    let id = create(dir.path(), "Task C");
+    let dir = Project::new();
+    let id = create(&dir, "Task C");
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     write(
         &path,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nestimate: 3.5\nassignee: milan\n---\n# Task C\n",
     );
 
-    assert!(
-        run(dir.path(), &["set", &id, "status", "done"])
-            .status
-            .success()
-    );
+    assert!(run(&dir, &["set", &id, "status", "done"]).status.success());
 
     let contents = std::fs::read_to_string(&path).unwrap();
     assert!(
@@ -329,14 +492,14 @@ fn set_preserves_unknown_frontmatter_keys() {
 
 #[test]
 fn get_prints_the_file_verbatim() {
-    let dir = store();
-    let id = create(dir.path(), "Task D");
+    let dir = Project::new();
+    let id = create(&dir, "Task D");
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     let raw =
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: 7\n---\n# Task D\n\nsome body\n";
     write(&path, raw);
 
-    let out = run(dir.path(), &["get", &id]);
+    let out = run(&dir, &["get", &id]);
     assert!(out.status.success());
     assert_eq!(
         stdout(&out),
@@ -347,9 +510,9 @@ fn get_prints_the_file_verbatim() {
 
 #[test]
 fn create_with_body_places_content_below_title() {
-    let dir = store();
+    let dir = Project::new();
     let out = run(
-        dir.path(),
+        &dir,
         &[
             "create",
             "Ship login",
@@ -374,7 +537,7 @@ fn create_with_body_places_content_below_title() {
         )
     );
 
-    let view = run(dir.path(), &["get", &id, "--json"]);
+    let view = run(&dir, &["get", &id, "--json"]);
     let json: serde_json::Value = serde_json::from_slice(&view.stdout).unwrap();
     assert_eq!(json["title"], "Ship login");
     assert_eq!(
@@ -385,12 +548,12 @@ fn create_with_body_places_content_below_title() {
 
 #[test]
 fn create_with_body_file_reads_the_file() {
-    let dir = store();
+    let dir = Project::new();
     let notes = dir.path().join("notes.md");
     write(&notes, "## Goals\n- OAuth\n- Email + password\n");
 
     let out = run(
-        dir.path(),
+        &dir,
         &[
             "create",
             "Ship login",
@@ -414,8 +577,9 @@ fn create_with_body_file_reads_the_file() {
 
 #[test]
 fn create_with_body_file_dash_reads_stdin() {
-    let dir = store();
-    let mut child = oplan()
+    let dir = Project::new();
+    let mut child = dir
+        .cmd()
         .arg("--root")
         .arg(dir.path())
         .args(["create", "Ship login", "--body-file", "-"])
@@ -447,9 +611,9 @@ fn create_with_body_file_dash_reads_stdin() {
 
 #[test]
 fn create_rejects_body_with_body_file() {
-    let dir = store();
+    let dir = Project::new();
     let out = run(
-        dir.path(),
+        &dir,
         &[
             "create",
             "Ship login",
@@ -463,40 +627,40 @@ fn create_rejects_body_with_body_file() {
         !out.status.success(),
         "--body and --body-file are mutually exclusive"
     );
-    assert!(stdout(&run(dir.path(), &["list"])).contains("no tasks yet"));
+    assert!(stdout(&run(&dir, &["list"])).contains("no tasks yet"));
 }
 
 #[test]
 fn create_rejects_malformed_title() {
-    let dir = store();
+    let dir = Project::new();
     assert!(
-        !run(dir.path(), &["create", ""]).status.success(),
+        !run(&dir, &["create", ""]).status.success(),
         "an empty title must be rejected"
     );
     assert!(
-        !run(dir.path(), &["create", "line one\n# line two"])
+        !run(&dir, &["create", "line one\n# line two"])
             .status
             .success(),
         "a title producing two H1 headings must be rejected"
     );
-    assert!(stdout(&run(dir.path(), &["list"])).contains("no tasks yet"));
+    assert!(stdout(&run(&dir, &["list"])).contains("no tasks yet"));
 }
 
 #[test]
 fn list_distinguishes_empty_store_from_empty_filter() {
-    let dir = store();
-    assert!(stdout(&run(dir.path(), &["list"])).contains("no tasks yet"));
+    let dir = Project::new();
+    assert!(stdout(&run(&dir, &["list"])).contains("no tasks yet"));
 
-    create(dir.path(), "A todo");
-    let filtered = stdout(&run(dir.path(), &["list", "--status", "done"]));
+    create(&dir, "A todo");
+    let filtered = stdout(&run(&dir, &["list", "--status", "done"]));
     assert!(filtered.contains("no matching tasks"), "{filtered}");
     assert!(!filtered.contains("no tasks yet"), "{filtered}");
 }
 
 #[test]
 fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
-    let dir = store();
-    let good = create(dir.path(), "Good one");
+    let dir = Project::new();
+    let good = create(&dir, "Good one");
     write(
         &dir.path().join(".plan/tasks/broken.md"),
         "this file has no frontmatter\n",
@@ -506,7 +670,7 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
         "---\nstatus: in_progress\n---\n# Legacy\n",
     );
 
-    let out = run(dir.path(), &["list", "--json"]);
+    let out = run(&dir, &["list", "--json"]);
     assert!(out.status.success());
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
     let by_id = |id: &str| {
@@ -527,14 +691,14 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
 
 #[test]
 fn list_filters_by_status_across_an_unreadable_task() {
-    let dir = store();
+    let dir = Project::new();
     write(
         &dir.path().join(".plan/tasks/broken.md"),
         "this file has no frontmatter\n",
     );
-    let good = create(dir.path(), "Good one");
+    let good = create(&dir, "Good one");
 
-    let out = run(dir.path(), &["list", "--json", "--status", "todo"]);
+    let out = run(&dir, &["list", "--json", "--status", "todo"]);
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
 
     // A task with no readable status matches no status filter, rather than matching the default.
@@ -551,35 +715,33 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed");
 }
 
-// A repo whose `alpha` task diverges: `todo`/`# Alpha` on main, `done`/`# Alpha done` on feature.
-// The working tree is left on main.
-fn diverged_repo() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
-    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
-    write(
-        &root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
-    );
-    git(root, &["add", "."]);
-    git(root, &["commit", "-qm", "init"]);
-    git(root, &["checkout", "-q", "-b", "feature"]);
-    write(
-        &root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha done\n",
-    );
-    git(root, &["commit", "-qam", "edit alpha on feature"]);
-    git(root, &["checkout", "-q", "main"]);
-    dir
+impl Project {
+    // A project whose `alpha` task diverges: `todo`/`# Alpha` on main, `done`/`# Alpha done` on
+    // feature. The working tree is left on main.
+    fn diverged() -> Self {
+        let project = Project::new();
+        let root = project.path();
+        write(
+            &root.join(".plan/tasks/alpha.md"),
+            "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
+        );
+        git(root, &["add", "."]);
+        git(root, &["commit", "-qm", "init"]);
+        git(root, &["checkout", "-q", "-b", "feature"]);
+        write(
+            &root.join(".plan/tasks/alpha.md"),
+            "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha done\n",
+        );
+        git(root, &["commit", "-qam", "edit alpha on feature"]);
+        git(root, &["checkout", "-q", "main"]);
+        project
+    }
 }
 
 #[test]
 fn list_all_branches_json_has_one_row_per_task_branch() {
-    let dir = diverged_repo();
-    let out = run(dir.path(), &["list", "--all-branches", "--json"]);
+    let dir = Project::diverged();
+    let out = run(&dir, &["list", "--all-branches", "--json"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -605,8 +767,8 @@ fn list_all_branches_json_has_one_row_per_task_branch() {
 
 #[test]
 fn list_branch_reads_other_branch_without_checking_it_out() {
-    let dir = diverged_repo();
-    let out = run(dir.path(), &["list", "--branch", "feature", "--json"]);
+    let dir = Project::diverged();
+    let out = run(&dir, &["list", "--branch", "feature", "--json"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -619,7 +781,7 @@ fn list_branch_reads_other_branch_without_checking_it_out() {
     assert_eq!(tasks[0]["title"], "Alpha done");
 
     // The current worktree is untouched: still on main, alpha still `todo`.
-    let head = run(dir.path(), &["get", "alpha", "--json"]);
+    let head = run(&dir, &["get", "alpha", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&head.stdout).unwrap();
     assert_eq!(
         view["metadata"]["status"], "todo",
@@ -634,8 +796,8 @@ fn list_branch_reads_other_branch_without_checking_it_out() {
 
 #[test]
 fn list_branch_nonexistent_errors_nonzero() {
-    let dir = diverged_repo();
-    let out = run(dir.path(), &["list", "--branch", "ghost"]);
+    let dir = Project::diverged();
+    let out = run(&dir, &["list", "--branch", "ghost"]);
     assert!(!out.status.success(), "a missing branch must fail");
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("no such branch"),
@@ -646,8 +808,8 @@ fn list_branch_nonexistent_errors_nonzero() {
 
 #[test]
 fn get_branch_prints_that_branchs_version() {
-    let dir = diverged_repo();
-    let out = run(dir.path(), &["get", "alpha", "--branch", "feature"]);
+    let dir = Project::diverged();
+    let out = run(&dir, &["get", "alpha", "--branch", "feature"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -657,7 +819,7 @@ fn get_branch_prints_that_branchs_version() {
     assert!(text.contains("status: done"), "{text}");
     assert!(text.contains("# Alpha done"), "{text}");
 
-    let missing = run(dir.path(), &["get", "ghost", "--branch", "feature"]);
+    let missing = run(&dir, &["get", "ghost", "--branch", "feature"]);
     assert!(
         !missing.status.success(),
         "a missing task on a branch must fail"
@@ -666,8 +828,8 @@ fn get_branch_prints_that_branchs_version() {
 
 #[test]
 fn show_branches_groups_and_flags_divergence() {
-    let dir = diverged_repo();
-    let out = run(dir.path(), &["show", "alpha", "--branches"]);
+    let dir = Project::diverged();
+    let out = run(&dir, &["show", "alpha", "--branches"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -684,10 +846,10 @@ fn show_branches_groups_and_flags_divergence() {
 
 #[test]
 fn set_rejects_a_cross_branch_write() {
-    let dir = diverged_repo();
+    let dir = Project::diverged();
     // There is deliberately no cross-branch write flag; `--branch` is not a valid arg for `set`.
     let out = run(
-        dir.path(),
+        &dir,
         &["set", "alpha", "--branch", "feature", "status", "done"],
     );
     assert!(
@@ -696,16 +858,13 @@ fn set_rejects_a_cross_branch_write() {
     );
 
     // feature's committed version is untouched by the failed attempt.
-    let feature = run(
-        dir.path(),
-        &["get", "alpha", "--branch", "feature", "--json"],
-    );
+    let feature = run(&dir, &["get", "alpha", "--branch", "feature", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&feature.stdout).unwrap();
     assert_eq!(view["metadata"]["status"], "done");
 }
 
-fn child(root: &Path, title: &str, parent: &str) -> String {
-    let out = run(root, &["create", title, "--parent", parent]);
+fn child(project: &Project, title: &str, parent: &str) -> String {
+    let out = run(project, &["create", title, "--parent", parent]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -714,8 +873,8 @@ fn child(root: &Path, title: &str, parent: &str) -> String {
     stdout(&out).trim().to_owned()
 }
 
-fn tree_ids(root: &Path, id: &str) -> Vec<String> {
-    let out = run(root, &["tree", id, "--json"]);
+fn tree_ids(project: &Project, id: &str) -> Vec<String> {
+    let out = run(project, &["tree", id, "--json"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -732,17 +891,13 @@ fn tree_ids(root: &Path, id: &str) -> Vec<String> {
 
 #[test]
 fn set_parent_empty_clears_to_top_level() {
-    let dir = store();
-    let parent = create(dir.path(), "Parent");
-    let kid = child(dir.path(), "Kid", &parent);
+    let dir = Project::new();
+    let parent = create(&dir, "Parent");
+    let kid = child(&dir, "Kid", &parent);
 
-    assert!(
-        run(dir.path(), &["set", &kid, "parent", ""])
-            .status
-            .success()
-    );
+    assert!(run(&dir, &["set", &kid, "parent", ""]).status.success());
 
-    let show = run(dir.path(), &["show", &kid]);
+    let show = run(&dir, &["show", &kid]);
     assert!(stdout(&show).contains("parent: -"), "{}", stdout(&show));
     let path = dir.path().join(".plan/tasks").join(format!("{kid}.md"));
     assert!(
@@ -753,12 +908,12 @@ fn set_parent_empty_clears_to_top_level() {
 
 #[test]
 fn tree_bounds_by_depth_and_reports_json() {
-    let dir = store();
-    let root = create(dir.path(), "Root");
-    let a = child(dir.path(), "A", &root);
-    let _grandchild = child(dir.path(), "A1", &a);
+    let dir = Project::new();
+    let root = create(&dir, "Root");
+    let a = child(&dir, "A", &root);
+    let _grandchild = child(&dir, "A1", &a);
 
-    let out = run(dir.path(), &["tree", &root, "--depth", "1", "--json"]);
+    let out = run(&dir, &["tree", &root, "--depth", "1", "--json"]);
     assert!(out.status.success());
     let tree: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(tree["children"][0]["id"], a.as_str());
@@ -773,53 +928,50 @@ fn tree_bounds_by_depth_and_reports_json() {
 
 #[test]
 fn move_reorders_siblings_via_before_and_after() {
-    let dir = store();
-    let root = create(dir.path(), "Root");
-    let a = child(dir.path(), "A", &root);
-    let b = child(dir.path(), "B", &root);
-    let c = child(dir.path(), "C", &root);
+    let dir = Project::new();
+    let root = create(&dir, "Root");
+    let a = child(&dir, "A", &root);
+    let b = child(&dir, "B", &root);
+    let c = child(&dir, "C", &root);
 
     // Move C before A, then B after C.
     assert!(
-        run(dir.path(), &["move", &c, "--parent", &root, "--before", &a])
+        run(&dir, &["move", &c, "--parent", &root, "--before", &a])
             .status
             .success()
     );
     assert!(
-        run(dir.path(), &["move", &b, "--parent", &root, "--after", &c])
+        run(&dir, &["move", &b, "--parent", &root, "--after", &c])
             .status
             .success()
     );
-    assert_eq!(
-        tree_ids(dir.path(), &root),
-        vec![c.clone(), b.clone(), a.clone()]
-    );
+    assert_eq!(tree_ids(&dir, &root), vec![c.clone(), b.clone(), a.clone()]);
 }
 
 #[test]
 fn move_reparents_across_parents() {
-    let dir = store();
-    let root = create(dir.path(), "Root");
-    let other = create(dir.path(), "Other");
-    let kid = child(dir.path(), "Kid", &root);
+    let dir = Project::new();
+    let root = create(&dir, "Root");
+    let other = create(&dir, "Other");
+    let kid = child(&dir, "Kid", &root);
 
     assert!(
-        run(dir.path(), &["move", &kid, "--parent", &other])
+        run(&dir, &["move", &kid, "--parent", &other])
             .status
             .success()
     );
-    assert_eq!(tree_ids(dir.path(), &root), Vec::<String>::new());
-    assert_eq!(tree_ids(dir.path(), &other), vec![kid]);
+    assert_eq!(tree_ids(&dir, &root), Vec::<String>::new());
+    assert_eq!(tree_ids(&dir, &other), vec![kid]);
 }
 
 #[test]
 fn move_under_own_descendant_is_refused() {
-    let dir = store();
-    let a = create(dir.path(), "A");
-    let b = child(dir.path(), "B", &a);
-    let c = child(dir.path(), "C", &b);
+    let dir = Project::new();
+    let a = create(&dir, "A");
+    let b = child(&dir, "B", &a);
+    let c = child(&dir, "C", &b);
 
-    let out = run(dir.path(), &["move", &a, "--parent", &c]);
+    let out = run(&dir, &["move", &a, "--parent", &c]);
     assert!(!out.status.success(), "cycle must be refused");
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("descendant"),
@@ -830,31 +982,31 @@ fn move_under_own_descendant_is_refused() {
 
 #[test]
 fn move_unranked_siblings_then_reorder_lists_in_new_order() {
-    let dir = store();
-    let root = create(dir.path(), "Root");
+    let dir = Project::new();
+    let root = create(&dir, "Root");
     // Created without explicit order — unranked, so they list by id first.
-    let a = child(dir.path(), "A", &root);
-    let z = child(dir.path(), "Z", &root);
-    assert_eq!(tree_ids(dir.path(), &root), vec![a.clone(), z.clone()]);
+    let a = child(&dir, "A", &root);
+    let z = child(&dir, "Z", &root);
+    assert_eq!(tree_ids(&dir, &root), vec![a.clone(), z.clone()]);
 
     // Reorder Z before A; the group migrates to ranks and the new order sticks.
     assert!(
-        run(dir.path(), &["move", &z, "--parent", &root, "--before", &a])
+        run(&dir, &["move", &z, "--parent", &root, "--before", &a])
             .status
             .success()
     );
-    assert_eq!(tree_ids(dir.path(), &root), vec![z, a]);
+    assert_eq!(tree_ids(&dir, &root), vec![z, a]);
 }
 
-fn set_rank(root: &Path, id: &str, rank: &str) {
-    let path = root.join(".plan/tasks").join(format!("{id}.md"));
+fn set_rank(project: &Project, id: &str, rank: &str) {
+    let path = project.path().join(".plan/tasks").join(format!("{id}.md"));
     let raw = std::fs::read_to_string(&path).unwrap();
     let patched = raw.replacen("---\n", &format!("---\nrank: {rank}\n"), 1);
     write(&path, &patched);
 }
 
-fn rank_of(root: &Path, id: &str) -> Option<String> {
-    let path = root.join(".plan/tasks").join(format!("{id}.md"));
+fn rank_of(project: &Project, id: &str) -> Option<String> {
+    let path = project.path().join(".plan/tasks").join(format!("{id}.md"));
     std::fs::read_to_string(&path)
         .unwrap()
         .lines()
@@ -867,40 +1019,40 @@ fn move_between_neighbours_naming_the_same_point_rebalances() {
     // Hand-edited frontmatter can give two siblings ranks that differ as text but name one point
     // (`a` and `a0`). There is no key between them, so the group has to be rebalanced rather than
     // searched forever for a gap that cannot exist.
-    let dir = store();
-    let root = create(dir.path(), "Root");
-    let a = child(dir.path(), "A", &root);
-    let b = child(dir.path(), "B", &root);
-    let c = child(dir.path(), "C", &root);
-    set_rank(dir.path(), &a, "a");
-    set_rank(dir.path(), &b, "a0");
+    let dir = Project::new();
+    let root = create(&dir, "Root");
+    let a = child(&dir, "A", &root);
+    let b = child(&dir, "B", &root);
+    let c = child(&dir, "C", &root);
+    set_rank(&dir, &a, "a");
+    set_rank(&dir, &b, "a0");
 
-    let out = run(dir.path(), &["move", &c, "--parent", &root, "--after", &a]);
+    let out = run(&dir, &["move", &c, "--parent", &root, "--after", &a]);
     assert!(
         out.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert_eq!(tree_ids(dir.path(), &root), vec![a, c, b]);
+    assert_eq!(tree_ids(&dir, &root), vec![a, c, b]);
 }
 
 #[test]
 fn move_within_a_group_holding_a_malformed_rank_rebalances() {
-    let dir = store();
-    let root = create(dir.path(), "Root");
-    let a = child(dir.path(), "A", &root);
-    let b = child(dir.path(), "B", &root);
-    set_rank(dir.path(), &a, "NOT-BASE36");
+    let dir = Project::new();
+    let root = create(&dir, "Root");
+    let a = child(&dir, "A", &root);
+    let b = child(&dir, "B", &root);
+    set_rank(&dir, &a, "NOT-BASE36");
 
-    let out = run(dir.path(), &["move", &b, "--parent", &root, "--before", &a]);
+    let out = run(&dir, &["move", &b, "--parent", &root, "--before", &a]);
     assert!(
         out.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert_eq!(tree_ids(dir.path(), &root), vec![b.clone(), a.clone()]);
+    assert_eq!(tree_ids(&dir, &root), vec![b.clone(), a.clone()]);
     for id in [&a, &b] {
-        let rank = rank_of(dir.path(), id).expect("rebalance ranks the whole group");
+        let rank = rank_of(&dir, id).expect("rebalance ranks the whole group");
         assert!(
             rank.bytes()
                 .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()),
@@ -913,17 +1065,17 @@ fn move_within_a_group_holding_a_malformed_rank_rebalances() {
 fn a_refused_move_leaves_sibling_ranks_untouched() {
     // The rebalance path rewrites every sibling, so the moved task is written first: its write is
     // the one that fails the cycle check, and a refused command must not have edited anything.
-    let dir = store();
-    let a = create(dir.path(), "A");
-    let b = child(dir.path(), "B", &a);
-    let c = child(dir.path(), "C", &b);
-    let sibling = child(dir.path(), "Sibling", &c);
-    let before = rank_of(dir.path(), &sibling);
+    let dir = Project::new();
+    let a = create(&dir, "A");
+    let b = child(&dir, "B", &a);
+    let c = child(&dir, "C", &b);
+    let sibling = child(&dir, "Sibling", &c);
+    let before = rank_of(&dir, &sibling);
 
-    let out = run(dir.path(), &["move", &a, "--parent", &c]);
+    let out = run(&dir, &["move", &a, "--parent", &c]);
     assert!(!out.status.success(), "cycle must be refused");
     assert_eq!(
-        rank_of(dir.path(), &sibling),
+        rank_of(&dir, &sibling),
         before,
         "a refused move must not rewrite the target group"
     );
@@ -944,12 +1096,8 @@ fn commit_at(root: &Path, seconds: i64, message: &str) {
 
 #[test]
 fn get_json_dates_the_checked_out_branch_not_the_headline() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = Project::new();
     let root = dir.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
-    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     // `created` predates both commits, so the view's clamp cannot mask which one is reported.
     write(
         &root.join(".plan/tasks/alpha.md"),
@@ -964,7 +1112,7 @@ fn get_json_dates_the_checked_out_branch_not_the_headline() {
     commit_at(root, 2_000_000_000, "edit alpha on feature");
     git(root, &["checkout", "-q", "main"]);
 
-    let out = run(root, &["get", "alpha", "--json"]);
+    let out = run(&dir, &["get", "alpha", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
 
     // `feature` headlines the task, but the file `get` read is main's — so is its date.
@@ -974,13 +1122,13 @@ fn get_json_dates_the_checked_out_branch_not_the_headline() {
 
 #[test]
 fn set_on_a_task_without_created_explains_what_to_add() {
-    let dir = store();
+    let dir = Project::new();
     write(
         &dir.path().join(".plan/tasks/legacy.md"),
         "---\nstatus: todo\n---\n# Legacy\n",
     );
 
-    let out = run(dir.path(), &["set", "legacy", "status", "done"]);
+    let out = run(&dir, &["set", "legacy", "status", "done"]);
 
     assert!(!out.status.success());
     let err = String::from_utf8(out.stderr).unwrap();

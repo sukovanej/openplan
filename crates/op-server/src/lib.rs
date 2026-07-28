@@ -37,10 +37,27 @@ use utoipa_swagger_ui::SwaggerUi;
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 const SLOW_REQUEST: Duration = Duration::from_millis(1000);
+const ID_ATTEMPTS: usize = 16;
 
 #[derive(RustEmbed)]
 #[folder = "../../web/packages/app/dist"]
 struct Assets;
+
+// The one place task ids are handed out. Handlers release the index mutex before their flock write,
+// so two concurrent creates would each compute the same `max + 1` from the matrix; this counter is
+// bumped atomically instead, and re-seeded from the floor on every call so a merge bringing in
+// higher ids — or a restart — advances it. Nothing is persisted: the matrix is the durable floor.
+#[derive(Debug, Default)]
+struct IdCounter(Mutex<u64>);
+
+impl IdCounter {
+    fn issue_above(&self, floor: u64) -> u64 {
+        let mut next = self.0.lock().expect("id counter mutex poisoned");
+        let issued = (*next).max(floor.saturating_add(1));
+        *next = issued + 1;
+        issued
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -48,6 +65,7 @@ pub struct AppState {
     pub presence: Arc<Mutex<Registry>>,
     store: Store,
     repo: Repo,
+    ids: Arc<IdCounter>,
     shutdown: Arc<watch::Sender<bool>>,
     health: Option<Arc<DaemonInfo>>,
     events: broadcast::Sender<ChangeEvent>,
@@ -60,6 +78,7 @@ impl AppState {
             presence: Arc::new(Mutex::new(Registry::new())),
             store,
             repo,
+            ids: Arc::new(IdCounter::default()),
             shutdown: Arc::new(watch::channel(false).0),
             health: None,
             events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
@@ -310,22 +329,9 @@ fn join_error(err: tokio::task::JoinError) -> ApiError {
     ))))
 }
 
-// The store does blocking file I/O and flock waits; run it off the async worker threads so a
-// lock held elsewhere (e.g. a CLI write) can never stall the runtime.
-async fn blocking<T>(
-    f: impl FnOnce() -> Result<T, StoreError> + Send + 'static,
-) -> Result<T, ApiError>
-where
-    T: Send + 'static,
-{
-    match tokio::task::spawn_blocking(f).await {
-        Ok(result) => result.map_err(ApiError::Store),
-        Err(err) => Err(join_error(err)),
-    }
-}
-
 // Rebuild the index from the serve root's repo + worktrees, then return one entry per logical task
-// with every branch it lives on.
+// with every branch it lives on. Like every handler it works inside `spawn_blocking`: the rebuild
+// reads the object DB and the store waits on flocks, which must never stall an async worker thread.
 #[utoipa::path(
     get,
     path = "/api/tasks",
@@ -377,28 +383,68 @@ async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiErro
     Ok(Json(board))
 }
 
+// Creation is branch-local like every other write: it lands in the live worktree of the target
+// branch or is refused. The id number comes from the machine-wide counter above a floor taken across
+// every local branch, so a number is issued once repo-wide and two branches can never mint different
+// tasks under one id.
 #[utoipa::path(
     post,
     path = "/api/tasks",
+    params(("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")),
     request_body = CreateTask,
     responses(
         (status = 201, description = "Created", body = CreatedTask),
         (status = 400, description = "The task is invalid (unknown parent or dependency)", body = ApiErrorBody),
+        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
 async fn create_task(
     State(state): State<AppState>,
+    Query(query): Query<TaskQuery>,
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
-    let store = state.store.clone();
+    let repo = state.repo.clone();
+    let serve_store = state.store.clone();
+    let index = state.index.clone();
+    let ids = state.ids.clone();
     let created = op_task::now();
-    let id = blocking(move || store.create(&body.into_task(created))).await?;
+    let (branch, id) =
+        tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
+            // Resolve the write target under the lock, then release it so the store's flock wait below
+            // does not block concurrent reads sharing the same index mutex.
+            let (branch, store, floor) = {
+                let mut index = index.lock().expect("index mutex poisoned");
+                index.rebuild(&repo, &serve_store).map_err(index_error)?;
+                let branch = write_branch(&index, query.branch)?;
+                let store = index
+                    .live_store(&branch)
+                    .ok_or_else(|| ApiError::NotWritable(branch.clone()))?;
+                (branch, store, index.max_id_number().unwrap_or(0))
+            };
+            let task = body.into_task(created);
+            let mut taken = 0;
+            let id = loop {
+                match store.create(&task, ids.issue_above(floor)) {
+                    Ok(id) => break id,
+                    // The floor only covers ids the rebuild could see; a file written out of band since
+                    // then can still hold the number, and the next one is free.
+                    Err(StoreError::IdTaken { id }) if taken + 1 < ID_ATTEMPTS => {
+                        taken += 1;
+                        tracing::warn!(%id, "id already on disk; taking the next one");
+                    }
+                    Err(err) => return Err(ApiError::Store(err)),
+                }
+            };
+            Ok((branch, id))
+        })
+        .await
+        .map_err(join_error)??;
     publish(
         &state,
         ChangeEvent::TaskChanged {
             id: id.clone(),
-            branch: String::new(),
+            branch,
         },
     );
     Ok((StatusCode::CREATED, Json(CreatedTask { id })).into_response())

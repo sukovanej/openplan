@@ -63,6 +63,15 @@ impl Repo {
         Ok(names)
     }
 
+    // The branch this worktree has checked out; `None` on a detached HEAD.
+    pub fn current_branch(&self) -> Option<String> {
+        self.repo()
+            .head_name()
+            .ok()
+            .flatten()
+            .map(|name| name.shorten().to_string())
+    }
+
     pub fn op_in_progress(&self) -> bool {
         op_markers_present(self.repo().git_dir())
     }

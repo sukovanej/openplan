@@ -1,4 +1,6 @@
-use op_store::{Store, StoreError};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use op_store::{Store, StoreError, id_number, task_id};
 use op_task::{Status, Task, Timestamp};
 
 fn stamp() -> Timestamp {
@@ -10,6 +12,12 @@ fn make_store() -> (tempfile::TempDir, Store) {
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
     let store = Store::open(dir.path()).unwrap();
     (dir, store)
+}
+
+// The daemon owns allocation repo-wide; a store test only needs each number to be fresh.
+fn create(store: &Store, task: &Task) -> Result<String, StoreError> {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    store.create(task, NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
 fn temp_files(store: &Store) -> Vec<String> {
@@ -105,9 +113,7 @@ fn with_lock_does_not_create_missing_task() {
 fn create_read_update_delete_roundtrip() {
     let (_dir, store) = make_store();
 
-    let id = store
-        .create(&Task::new("Wire the parser", Status::Todo, stamp()))
-        .unwrap();
+    let id = create(&store, &Task::new("Wire the parser", Status::Todo, stamp())).unwrap();
     assert!(id.starts_with("wire-the-parser-"), "slug id: {id}");
 
     let created = store.read(&id).unwrap();
@@ -137,14 +143,43 @@ fn create_read_update_delete_roundtrip() {
 #[test]
 fn create_gives_distinct_ids_for_same_title() {
     let (_dir, store) = make_store();
-    let a = store
-        .create(&Task::new("Same title", Status::Todo, stamp()))
-        .unwrap();
-    let b = store
-        .create(&Task::new("Same title", Status::Todo, stamp()))
-        .unwrap();
+    let a = create(&store, &Task::new("Same title", Status::Todo, stamp())).unwrap();
+    let b = create(&store, &Task::new("Same title", Status::Todo, stamp())).unwrap();
     assert_ne!(a, b);
     assert!(store.exists(&a) && store.exists(&b));
+}
+
+#[test]
+fn create_names_the_file_after_the_allocated_number() {
+    let (_dir, store) = make_store();
+    let task = Task::new("Wire the parser", Status::Todo, stamp());
+
+    let id = store.create(&task, 7).unwrap();
+    assert_eq!(id, "wire-the-parser-7");
+    assert_eq!(task_id("Wire the parser", 7), id);
+    assert_eq!(id_number(&id), Some(7));
+
+    // The allocator must not hand the same number out twice; if it does, the store refuses rather
+    // than let one task's file be overwritten by another's.
+    let reused = store.create(&task, 7);
+    assert!(
+        matches!(&reused, Err(StoreError::IdTaken { id }) if id == "wire-the-parser-7"),
+        "a taken id must be reported, not clobbered: {reused:?}"
+    );
+    assert!(
+        temp_files(&store).is_empty(),
+        "a refused create leaves no temp file: {:?}",
+        temp_files(&store)
+    );
+}
+
+#[test]
+fn id_number_reads_only_ids_from_the_scheme() {
+    assert_eq!(id_number("ship-login-42"), Some(42));
+    assert_eq!(id_number("sprint-42-7"), Some(7));
+    assert_eq!(id_number("ship-login-3d0c"), None);
+    assert_eq!(id_number("ship-login-"), None);
+    assert_eq!(id_number("shiplogin"), None);
 }
 
 #[test]
@@ -191,16 +226,17 @@ fn missing_task_mutations_are_not_found() {
 #[test]
 fn create_and_update_validate_references() {
     let (_dir, store) = make_store();
-    let parent = store
-        .create(&Task::new("Parent", Status::Todo, stamp()))
-        .unwrap();
+    let parent = create(&store, &Task::new("Parent", Status::Todo, stamp())).unwrap();
 
     let mut child = Task::new("Child", Status::Todo, stamp());
     child.set_parent(Some("does-not-exist".to_owned()));
-    assert!(matches!(store.create(&child), Err(StoreError::Invalid(_))));
+    assert!(matches!(
+        create(&store, &child),
+        Err(StoreError::Invalid(_))
+    ));
 
     child.set_parent(Some(parent.clone()));
-    let child = store.create(&child).unwrap();
+    let child = create(&store, &child).unwrap();
 
     let self_parent = store.update(&child, |task| {
         task.set_parent(Some(child.clone()));
@@ -220,17 +256,15 @@ fn create_and_update_validate_references() {
 #[test]
 fn reparenting_under_a_descendant_is_refused() {
     let (_dir, store) = make_store();
-    let a = store
-        .create(&Task::new("A", Status::Todo, stamp()))
-        .unwrap();
+    let a = create(&store, &Task::new("A", Status::Todo, stamp())).unwrap();
 
     let mut b = Task::new("B", Status::Todo, stamp());
     b.set_parent(Some(a.clone()));
-    let b = store.create(&b).unwrap();
+    let b = create(&store, &b).unwrap();
 
     let mut c = Task::new("C", Status::Todo, stamp());
     c.set_parent(Some(b.clone()));
-    let c = store.create(&c).unwrap();
+    let c = create(&store, &c).unwrap();
 
     // A is an ancestor of C; making C the parent of A would close a cycle.
     let cycle = store.update(&a, |task| {
@@ -251,13 +285,11 @@ fn reparenting_under_a_descendant_is_refused() {
 #[test]
 fn dangling_reference_does_not_block_unrelated_edit() {
     let (_dir, store) = make_store();
-    let a = store
-        .create(&Task::new("A", Status::Todo, stamp()))
-        .unwrap();
+    let a = create(&store, &Task::new("A", Status::Todo, stamp())).unwrap();
 
     let mut b = Task::new("B", Status::Todo, stamp());
     b.set_deps(vec![a.clone()]);
-    let b = store.create(&b).unwrap();
+    let b = create(&store, &b).unwrap();
 
     store.delete(&a).unwrap();
 
@@ -280,7 +312,7 @@ fn create_rejects_malformed_title() {
     for body in ["no heading at all\n", "# \n", "# One\n# Two\n"] {
         bad.body = body.to_owned();
         assert!(
-            matches!(store.create(&bad), Err(StoreError::Invalid(_))),
+            matches!(create(&store, &bad), Err(StoreError::Invalid(_))),
             "body {body:?} must be rejected as a malformed title"
         );
     }
@@ -318,9 +350,7 @@ fn update_preserves_unknown_frontmatter_keys() {
 #[test]
 fn concurrent_updates_to_one_task_serialize() {
     let (_dir, store) = make_store();
-    let id = store
-        .create(&Task::new("Contended", Status::Todo, stamp()))
-        .unwrap();
+    let id = create(&store, &Task::new("Contended", Status::Todo, stamp())).unwrap();
 
     let threads = 8;
     let handles: Vec<_> = (0..threads)
@@ -358,9 +388,7 @@ fn concurrent_updates_to_one_task_serialize() {
 #[test]
 fn happy_path_leaves_no_temp_files() {
     let (_dir, store) = make_store();
-    let id = store
-        .create(&Task::new("Clean", Status::Todo, stamp()))
-        .unwrap();
+    let id = create(&store, &Task::new("Clean", Status::Todo, stamp())).unwrap();
     store
         .update(&id, |task| {
             task.set_status(Status::Done);
@@ -377,9 +405,7 @@ fn happy_path_leaves_no_temp_files() {
 #[test]
 fn a_malformed_rank_is_refused() {
     let (_dir, store) = make_store();
-    let id = store
-        .create(&Task::new("A", Status::Todo, stamp()))
-        .unwrap();
+    let id = create(&store, &Task::new("A", Status::Todo, stamp())).unwrap();
 
     for bad in ["A", "1.5", "", "a b"] {
         let result = store.update(&id, |task| {
@@ -414,9 +440,7 @@ fn an_already_persisted_malformed_rank_does_not_block_an_unrelated_edit() {
     // Task files are hand-editable, so a bad rank can predate the write being validated. Blocking
     // an unrelated status change on it would strand the task; `move` rebalances the group instead.
     let (_dir, store) = make_store();
-    let id = store
-        .create(&Task::new("A", Status::Todo, stamp()))
-        .unwrap();
+    let id = create(&store, &Task::new("A", Status::Todo, stamp())).unwrap();
     let path = store.tasks_dir().join(format!("{id}.md"));
     let raw = std::fs::read_to_string(&path).unwrap();
     std::fs::write(
@@ -437,9 +461,7 @@ fn an_already_persisted_malformed_rank_does_not_block_an_unrelated_edit() {
 #[test]
 fn a_status_change_preserves_created() {
     let (_dir, store) = make_store();
-    let id = store
-        .create(&Task::new("A", Status::Todo, stamp()))
-        .unwrap();
+    let id = create(&store, &Task::new("A", Status::Todo, stamp())).unwrap();
 
     store
         .update(&id, |task| {

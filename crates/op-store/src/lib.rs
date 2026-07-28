@@ -23,6 +23,8 @@ pub enum StoreError {
     StoreMissing,
     #[error("no such task: {id}")]
     NotFound { id: String },
+    #[error("task id already taken: {id}")]
+    IdTaken { id: String },
     #[error("{0}")]
     Invalid(String),
     #[error(
@@ -124,34 +126,29 @@ impl Store {
         }
     }
 
-    pub fn create(&self, task: &Task) -> Result<String, StoreError> {
+    // `number` is the task's identity and must come from the daemon's allocator, the single writer
+    // that can see every local branch; the store itself has no repo-wide view to allocate from.
+    pub fn create(&self, task: &Task, number: u64) -> Result<String, StoreError> {
         let title = single_title(&task.body)?;
         self.validate(None, None, &task.frontmatter)?;
         std::fs::create_dir_all(self.tasks_dir())?;
         let contents = task.to_file_string()?;
         let tmp = self.write_temp(contents.as_bytes())?;
-        let result = self.link_new_id(&tmp, &slug(&title));
-        // Clean up the temp link on every exit (success, collision-exhaustion, or an
-        // early error such as a randomness failure) so no orphan .tmp is left behind.
+        let result = self.link_id(&tmp, task_id(&title, number));
+        // Clean up the temp link on every exit (success, a taken id, or an early error such as a
+        // randomness failure) so no orphan .tmp is left behind.
         let _ = std::fs::remove_file(&tmp);
         result
     }
 
-    // Publish the fully-written temp under a fresh id with a non-clobbering hard link:
-    // the watcher only ever sees a complete file, and a slug collision links onto an
-    // existing name (AlreadyExists) instead of overwriting another task.
-    fn link_new_id(&self, tmp: &Path, base: &str) -> Result<String, StoreError> {
-        for _ in 0..ID_ATTEMPTS {
-            let id = format!("{base}-{}", rand_hex(2)?);
-            match std::fs::hard_link(tmp, self.task_path(&id)) {
-                Ok(()) => return Ok(id),
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(e.into()),
-            }
+    // Publish the fully-written temp under its id with a non-clobbering hard link: the watcher only
+    // ever sees a complete file, and a taken name is reported instead of overwriting another task.
+    fn link_id(&self, tmp: &Path, id: String) -> Result<String, StoreError> {
+        match std::fs::hard_link(tmp, self.task_path(&id)) {
+            Ok(()) => Ok(id),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(StoreError::IdTaken { id }),
+            Err(e) => Err(e.into()),
         }
-        Err(StoreError::Io(io::Error::other(format!(
-            "could not allocate a unique id for {base:?} after {ID_ATTEMPTS} attempts"
-        ))))
     }
 
     pub fn write(&self, id: &str, task: &Task) -> Result<(), StoreError> {
@@ -344,6 +341,21 @@ fn single_title(body: &str) -> Result<String, StoreError> {
         _ => Err(StoreError::Invalid(
             "a task must have exactly one non-empty `# ` title heading".to_owned(),
         )),
+    }
+}
+
+pub fn task_id(title: &str, number: u64) -> String {
+    format!("{}-{number}", slug(title))
+}
+
+// The identity an allocated id carries, so a floor can be derived from the ids already on disk. An
+// id from outside the scheme (hand-written, or pre-dating it) has none.
+pub fn id_number(id: &str) -> Option<u64> {
+    let (_, number) = id.rsplit_once('-')?;
+    if number.bytes().all(|b| b.is_ascii_digit()) {
+        number.parse().ok()
+    } else {
+        None
     }
 }
 

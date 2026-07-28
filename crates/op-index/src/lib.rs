@@ -388,6 +388,16 @@ impl Index {
         self.current_branch.as_deref()
     }
 
+    // The highest id number in use on any local branch, including branches that only deleted the
+    // task — the floor an allocator must clear for a number to be unissued repo-wide.
+    pub fn max_id_number(&self) -> Option<u64> {
+        self.matrix
+            .cells
+            .iter()
+            .filter_map(|cell| op_store::id_number(&cell.task.id))
+            .max()
+    }
+
     // The already-opened store of the worktree that has `branch` checked out and is writable — not
     // `op_in_progress`. `None` when the branch is not checked out live, so a caller can refuse a
     // write rather than fabricate a commit onto a branch no worktree holds.
