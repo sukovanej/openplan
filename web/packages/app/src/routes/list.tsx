@@ -156,10 +156,7 @@ function TaskRow({
         )}
       </div>
       {task.updated !== undefined && (
-        <div
-          role="gridcell"
-          className="text-muted-foreground shrink-0 py-3 pl-3 text-xs whitespace-nowrap"
-        >
+        <div role="gridcell" className="text-muted-foreground shrink-0 py-3 pl-3 text-xs whitespace-nowrap">
           <TimeAgo iso={task.updated} label="Updated" />
         </div>
       )}

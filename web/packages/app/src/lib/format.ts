@@ -24,7 +24,9 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
   const seconds = (at - now) / 1000
   for (const [unit, size] of UNITS) {
     const count = seconds / size
-    if (Math.abs(count) >= 1) return RELATIVE.format(Math.round(count), unit)
+    // Truncated, not rounded: the unit is picked from the whole part, so rounding it back up would
+    // print the next unit's value in this one's name — "24 hours ago", "60 minutes ago".
+    if (Math.abs(count) >= 1) return RELATIVE.format(Math.trunc(count), unit)
   }
   return "just now"
 }

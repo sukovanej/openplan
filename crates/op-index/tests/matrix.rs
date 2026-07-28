@@ -581,3 +581,49 @@ fn an_uncommitted_edit_reads_as_updated_now() {
         "a working-tree edit belongs to no commit, so it reads as now: {updated}"
     );
 }
+
+#[test]
+fn the_aggregated_list_dates_a_task_like_its_detail_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "t", &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+
+    let index = built(root);
+    let listed = index
+        .aggregated_tasks()
+        .into_iter()
+        .find(|item| item.id == "t")
+        .unwrap();
+
+    // The board renders `updated` from here, so it must agree with the task's own page.
+    assert_eq!(listed.updated, Some(at(1_000_000_000)));
+    assert_eq!(listed.updated, index.task_updated("t", None));
+}
+
+#[test]
+fn the_aggregated_list_clamps_updated_up_to_created() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    // A hand-set `created` after the last commit: the list must not report an age older than the
+    // task itself, the same backstop the detail view applies.
+    task(
+        root,
+        "t",
+        "---\nstatus: todo\ncreated: 2030-01-01T00:00:00Z\n---\n# T\n",
+    );
+    commit_at(root, 1_000_000_000, "add t");
+
+    let listed = built(root)
+        .aggregated_tasks()
+        .into_iter()
+        .find(|item| item.id == "t")
+        .unwrap();
+
+    assert_eq!(
+        listed.updated,
+        Some("2030-01-01T00:00:00Z".parse().unwrap())
+    );
+}

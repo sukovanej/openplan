@@ -113,7 +113,7 @@ impl Repo {
     // history newest-first and stopping once every id is dated. Bounded to the requested ids — which
     // the caller draws from the branch's cells — so a walk for a short branch tip need not descend
     // the whole default-branch history. Author time, not commit time, so a rebase, squash, or amend
-    // does not restamp a task as freshly edited.
+    // does not restamp a task as freshly edited — matching `git log -1 --format=%aI -- <path>`.
     pub fn task_change_times(
         &self,
         branch: &str,
@@ -144,12 +144,17 @@ impl Repo {
             let info = info.map_err(|e| GitError::Object(e.to_string()))?;
             let authored = author_time(&repo, info.id)?;
             let this = commit_task_map(&repo, info.id)?;
-            let parent = match info.parent_ids.first() {
-                Some(pid) => commit_task_map(&repo, *pid)?,
-                None => HashMap::new(),
-            };
+            let parents: Vec<HashMap<String, String>> = info
+                .parent_ids
+                .iter()
+                .map(|parent| commit_task_map(&repo, *parent))
+                .collect::<Result<_, _>>()?;
             needed.retain(|id| match this.get(*id) {
-                Some(blob) if parent.get(*id) != Some(blob) => {
+                // Every parent, not just the first: a merge carrying a task version unchanged from
+                // either side did not edit it, and crediting the merge would restamp every task the
+                // merged branch touched. Only a version matching no parent — a conflict resolved by
+                // hand — is the merge's own change.
+                Some(blob) if parents.iter().all(|parent| parent.get(*id) != Some(blob)) => {
                     times.insert((*id).to_owned(), authored);
                     false
                 }

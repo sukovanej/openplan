@@ -85,3 +85,40 @@ fn the_newest_change_wins_and_untouched_tasks_keep_their_own_date() {
     assert_eq!(times.get("a"), Some(&at(1_000_000_500)));
     assert_eq!(times.get("b"), Some(&at(1_000_000_000)));
 }
+
+#[test]
+fn a_merge_does_not_restamp_what_the_merged_branch_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    task(root, "a", "todo");
+    git(root, &["add", "-A"]);
+    commit_at(root, 1_600_000_000, 1_600_000_000, "add a");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    task(root, "a", "done");
+    commit_at(root, 1_700_000_000, 1_700_000_000, "finish a on feature");
+    git(root, &["checkout", "-q", "main"]);
+    merge_at(root, 1_790_000_000, "feature");
+
+    let times = Repo::discover(root)
+        .unwrap()
+        .task_change_times("main", &ids("a"))
+        .unwrap();
+
+    // The merge introduced no version of its own, so the task is still dated by the edit itself.
+    assert_eq!(times.get("a"), Some(&at(1_700_000_000)));
+}
+
+fn merge_at(dir: &Path, seconds: i64, branch: &str) {
+    let date = format!("@{seconds} +0000");
+    let status = Command::new("git")
+        .current_dir(dir)
+        .args(["merge", "-q", "--no-ff", "-m", "merge", branch])
+        .env("GIT_AUTHOR_DATE", &date)
+        .env("GIT_COMMITTER_DATE", &date)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git merge failed");
+}
