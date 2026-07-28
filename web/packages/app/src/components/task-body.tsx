@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm"
 import type { TaskRef as TaskRefData } from "@open-planner/api-client"
 
 import { cn } from "../lib/utils"
-import { StatusIcon } from "./status-badge"
+import { StatusChip } from "./status-badge"
 import { remarkTaskLinks } from "./task-links"
 
 const RefsContext = createContext<ReadonlyMap<string, TaskRefData>>(new Map())
@@ -58,7 +58,7 @@ function TaskRef({ href, fallback }: { href: string; fallback: ReactNode }) {
       {task === undefined ? (
         <CircleDashed className="size-4 shrink-0 text-muted-foreground/60" aria-hidden />
       ) : (
-        <StatusIcon status={task.status} className="size-4 shrink-0" />
+        <StatusChip status={task.status} className="size-4 shrink-0" />
       )}
       <span className="min-w-0 truncate">{task?.title ?? fallback}</span>
     </Link>

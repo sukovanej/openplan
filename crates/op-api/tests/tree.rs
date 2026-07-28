@@ -1,4 +1,6 @@
-use op_api::{FieldUpdate, Status, TaskPatch, TaskSummary, TaskTree};
+use op_api::{
+    Field, FieldUpdate, FrontmatterFields, Metadata, Status, TaskPatch, TaskSummary, TaskTree,
+};
 use op_task::{Task, Timestamp};
 
 fn stamp() -> Timestamp {
@@ -9,9 +11,13 @@ fn summary(id: &str, parent: Option<&str>, rank: Option<&str>) -> TaskSummary {
     TaskSummary {
         id: id.to_owned(),
         title: id.to_owned(),
-        status: Status::Todo,
-        parent: parent.map(str::to_owned),
-        rank: rank.map(str::to_owned),
+        metadata: Metadata::Fields(FrontmatterFields {
+            status: Field::Value(Status::Todo),
+            created: Field::Value("2026-01-01T00:00:00Z".to_owned()),
+            parent: Field::Value(parent.map(str::to_owned)),
+            rank: Field::Value(rank.map(str::to_owned)),
+            deps: Field::Value(Vec::new()),
+        }),
     }
 }
 

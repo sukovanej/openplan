@@ -75,7 +75,7 @@ fn list_reports_real_status_and_title() {
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("shipit"), "{stdout}");
     assert!(
-        stdout.contains("Done"),
+        stdout.contains("done"),
         "status must be read from the file: {stdout}"
     );
     assert!(
@@ -190,7 +190,7 @@ fn get_show_and_missing_id() {
     assert!(get.status.success());
     let view: serde_json::Value = serde_json::from_slice(&get.stdout).unwrap();
     assert_eq!(view["title"], "Ship it");
-    assert_eq!(view["status"], "todo");
+    assert_eq!(view["metadata"]["status"], "todo");
 
     let missing = run(dir.path(), &["get", "does-not-exist"]);
     assert!(
@@ -276,7 +276,7 @@ fn list_json_filters_by_status() {
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(tasks.len(), 1, "only the todo task should match: {tasks:?}");
     assert_eq!(tasks[0]["id"], todo);
-    assert_eq!(tasks[0]["status"], "todo");
+    assert_eq!(tasks[0]["metadata"]["status"], "todo");
 }
 
 #[test]
@@ -494,23 +494,52 @@ fn list_distinguishes_empty_store_from_empty_filter() {
 }
 
 #[test]
-fn list_json_reports_unreadable_tasks_on_stderr() {
+fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
     let dir = store();
     let good = create(dir.path(), "Good one");
     write(
         &dir.path().join(".plan/tasks/broken.md"),
         "this file has no frontmatter\n",
     );
+    write(
+        &dir.path().join(".plan/tasks/legacy.md"),
+        "---\nstatus: in_progress\n---\n# Legacy\n",
+    );
 
     let out = run(dir.path(), &["list", "--json"]);
     assert!(out.status.success());
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(tasks.len(), 1, "only the readable task appears: {tasks:?}");
-    assert_eq!(tasks[0]["id"], good);
-    assert!(
-        String::from_utf8_lossy(&out.stderr).contains("broken"),
-        "the unreadable task must be reported on stderr"
+    let by_id = |id: &str| {
+        tasks
+            .iter()
+            .find(|t| t["id"] == id)
+            .unwrap_or_else(|| panic!("{id} missing from {tasks:?}"))
+            .clone()
+    };
+
+    assert_eq!(by_id(&good)["metadata"]["status"], "todo");
+    // A file with no readable frontmatter says so, instead of borrowing a status it never claimed.
+    assert_eq!(by_id("broken")["metadata"]["kind"], "error");
+    // One unreadable field costs only itself: the status is still the file's own.
+    assert_eq!(by_id("legacy")["metadata"]["status"], "in_progress");
+    assert_eq!(by_id("legacy")["metadata"]["created"]["kind"], "missing");
+}
+
+#[test]
+fn list_filters_by_status_across_an_unreadable_task() {
+    let dir = store();
+    write(
+        &dir.path().join(".plan/tasks/broken.md"),
+        "this file has no frontmatter\n",
     );
+    let good = create(dir.path(), "Good one");
+
+    let out = run(dir.path(), &["list", "--json", "--status", "todo"]);
+    let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+
+    // A task with no readable status matches no status filter, rather than matching the default.
+    assert_eq!(tasks.len(), 1, "{tasks:?}");
+    assert_eq!(tasks[0]["id"], good);
 }
 
 fn git(dir: &Path, args: &[&str]) {
@@ -586,14 +615,14 @@ fn list_branch_reads_other_branch_without_checking_it_out() {
 
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(tasks.len(), 1);
-    assert_eq!(tasks[0]["status"], "done", "feature's version");
+    assert_eq!(tasks[0]["metadata"]["status"], "done", "feature's version");
     assert_eq!(tasks[0]["title"], "Alpha done");
 
     // The current worktree is untouched: still on main, alpha still `todo`.
     let head = run(dir.path(), &["get", "alpha", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&head.stdout).unwrap();
     assert_eq!(
-        view["status"], "todo",
+        view["metadata"]["status"], "todo",
         "reading a branch must not mutate the worktree"
     );
     let on_disk = std::fs::read_to_string(dir.path().join(".plan/tasks/alpha.md")).unwrap();
@@ -672,7 +701,7 @@ fn set_rejects_a_cross_branch_write() {
         &["get", "alpha", "--branch", "feature", "--json"],
     );
     let view: serde_json::Value = serde_json::from_slice(&feature.stdout).unwrap();
-    assert_eq!(view["status"], "done");
+    assert_eq!(view["metadata"]["status"], "done");
 }
 
 fn child(root: &Path, title: &str, parent: &str) -> String {

@@ -529,7 +529,11 @@ async fn patch_task(
             };
             let view = TaskView::from_task(id, &task, updated);
             let detail = TaskDetail {
-                view,
+                id: view.id,
+                title: view.title,
+                metadata: view.metadata,
+                body: view.body,
+                updated: view.updated,
                 headline,
                 branches,
                 parent_title,
@@ -543,7 +547,7 @@ async fn patch_task(
     publish(
         &state,
         ChangeEvent::TaskChanged {
-            id: detail.view.id.clone(),
+            id: detail.id.clone(),
             branch,
         },
     );

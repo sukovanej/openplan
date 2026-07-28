@@ -61,6 +61,14 @@ Frontmatter carries only what is *not* derivable from the file itself:
 
 A task with no parent and no deps has frontmatter of just `status` and `created`.
 
+**Writes are strict, reads are per-field.** A write parses the whole frontmatter or refuses, so a
+file is never rewritten from a version we could not fully understand. A read never fails: each field
+is parsed on its own and carries either its value or its own error (`missing` / `invalid`), and a
+file whose fence or YAML is unreadable reports that once for the whole frontmatter. Nothing
+substitutes a plausible value for one it could not read — a task with an unreadable `status` has no
+status, is grouped apart on the board rather than filed under one it never claimed, and matches no
+status filter.
+
 ### 3.2 Hierarchy & links
 - **Hierarchy is a reference graph, not physical nesting.** Subtasks are their own files
   with a `parent` pointer. (A project task with 200 subtasks stays 200 small files, not one

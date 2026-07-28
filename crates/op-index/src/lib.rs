@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use op_api::{
-    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Status, TaskBranches, TaskChild,
+    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Metadata, TaskBranches, TaskChild,
     TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, clamp_updated,
     list_item_cmp,
 };
 use op_git::{Repo, Worktree};
 use op_store::{Store, StoreError};
-use op_task::{Task, Timestamp};
+use op_task::Timestamp;
 
 #[derive(Debug, Default)]
 pub struct Index {
@@ -41,10 +41,7 @@ struct ChangeTimes {
 #[derive(Debug, Clone)]
 struct Version {
     title: String,
-    status: Status,
-    parent: Option<String>,
-    rank: Option<String>,
-    created: Option<Timestamp>,
+    metadata: Metadata,
 }
 
 struct DiffCtx<'a> {
@@ -378,9 +375,7 @@ impl Index {
                 TaskListItem {
                     id: id.to_owned(),
                     title: headline.task.title.clone(),
-                    status: headline.task.status,
-                    parent: headline.task.parent.clone(),
-                    rank: headline.task.rank.clone(),
+                    metadata: headline.task.metadata.clone(),
                     updated: clamp_updated(self.created_of(headline), self.cell_updated(headline)),
                     headline: headline.branch.clone(),
                     branches: branch_states(&cells),
@@ -442,9 +437,13 @@ impl Index {
         };
         let view = view_from_raw(id, &raw, updated);
         let (parent_title, children, refs) =
-            self.hierarchy_context(id, view.parent.as_deref(), &view.body);
+            self.hierarchy_context(id, view.metadata.parent(), &view.body);
         Ok(Some(TaskDetail {
-            view,
+            id: view.id,
+            title: view.title,
+            metadata: view.metadata,
+            body: view.body,
+            updated: view.updated,
             headline: headline.branch.clone(),
             branches: branch_states(&cells),
             parent_title,
@@ -468,7 +467,7 @@ impl Index {
         let parent_title = parent.and_then(|p| by_id.get(p)).map(|t| t.title.clone());
         let mut kids: Vec<&TaskListItem> = aggregated
             .iter()
-            .filter(|t| t.parent.as_deref() == Some(id))
+            .filter(|t| t.metadata.parent() == Some(id))
             .collect();
         kids.sort_by(|a, b| list_item_cmp(a, b));
         let children = kids
@@ -476,8 +475,8 @@ impl Index {
             .map(|t| TaskChild {
                 id: t.id.clone(),
                 title: t.title.clone(),
-                status: t.status,
-                rank: t.rank.clone(),
+                status: t.metadata.status_field(),
+                rank: t.metadata.rank().map(str::to_owned),
             })
             .collect();
         (parent_title, children, body_refs(body, &by_id))
@@ -530,7 +529,12 @@ impl Index {
     // `created` is a property of the blob, so it comes from the same parse the cell's title and
     // status do rather than a second read of the file.
     fn created_of(&self, cell: &MatrixCell) -> Option<Timestamp> {
-        self.blob_cache.get(&cell.blob_oid)?.created
+        self.blob_cache
+            .get(&cell.blob_oid)?
+            .metadata
+            .created()?
+            .parse()
+            .ok()
     }
 
     fn committed_time(&self, cell: &MatrixCell) -> Option<Timestamp> {
@@ -673,7 +677,7 @@ fn branch_states(cells: &[&MatrixCell]) -> Vec<BranchState> {
         .iter()
         .map(|cell| BranchState {
             branch: cell.branch.clone(),
-            status: cell.task.status,
+            status: cell.task.metadata.status_field(),
             blob_oid: cell.blob_oid.clone(),
             dirty: cell.dirty,
             kind: cell.kind,
@@ -739,32 +743,17 @@ impl Version {
         TaskSummary {
             id: id.to_owned(),
             title: self.title.clone(),
-            status: self.status,
-            parent: self.parent.clone(),
-            rank: self.rank.clone(),
+            metadata: self.metadata.clone(),
         }
     }
 }
 
 fn parse_version(bytes: &[u8]) -> Version {
     let text = String::from_utf8_lossy(bytes);
-    match Task::from_file_string(&text) {
-        Ok(task) => Version {
-            title: task.title().unwrap_or_default(),
-            status: task.frontmatter.status,
-            parent: task.frontmatter.parent.clone(),
-            rank: task.frontmatter.rank.clone(),
-            created: Some(task.frontmatter.created),
-        },
-        // Unresolved merge markers can break the frontmatter fences; keep the cell rather than
-        // abort the whole rebuild, best-effort title, status left at the unstarted default.
-        Err(_) => Version {
-            title: best_effort_title(&text).unwrap_or_default(),
-            status: Status::Backlog,
-            parent: None,
-            rank: None,
-            created: None,
-        },
+    let partial = op_task::parse_partial(&text);
+    Version {
+        title: partial.title.unwrap_or_default(),
+        metadata: partial.metadata.into(),
     }
 }
 
@@ -797,7 +786,7 @@ fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
                 refs.push(TaskRef {
                     id: item.id.clone(),
                     title: item.title.clone(),
-                    status: item.status,
+                    status: item.metadata.status_field(),
                 });
             }
         }
@@ -806,26 +795,16 @@ fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
 }
 
 fn view_from_raw(id: &str, raw: &str, updated: Option<Timestamp>) -> TaskView {
-    match Task::from_file_string(raw) {
-        Ok(task) => TaskView::from_task(id.to_owned(), &task, updated),
-        Err(_) => TaskView {
-            id: id.to_owned(),
-            title: best_effort_title(raw).unwrap_or_default(),
-            status: Status::Backlog,
-            parent: None,
-            rank: None,
-            deps: Vec::new(),
-            created: None,
-            updated,
-            body: raw.to_owned(),
-        },
+    let partial = op_task::parse_partial(raw);
+    let metadata: Metadata = partial.metadata.into();
+    let created = metadata.created().and_then(|at| at.parse().ok());
+    TaskView {
+        id: id.to_owned(),
+        title: partial.title.unwrap_or_default(),
+        updated: clamp_updated(created, updated),
+        metadata,
+        body: partial.body,
     }
-}
-
-fn best_effort_title(text: &str) -> Option<String> {
-    text.lines()
-        .find_map(|line| line.strip_prefix("# ").map(|title| title.trim().to_owned()))
-        .filter(|title| !title.is_empty())
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {

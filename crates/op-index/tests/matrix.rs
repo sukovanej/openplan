@@ -109,11 +109,11 @@ fn a_committed_edit_on_a_branch_is_modified() {
 
     let main = find(&index, "main", "a").expect("main base row");
     assert_eq!(main.kind, ChangeKind::Base);
-    assert_eq!(main.task.status, Status::Todo);
+    assert_eq!(main.task.metadata.status(), Some(Status::Todo));
 
     let feature = find(&index, "feature", "a").expect("feature row");
     assert_eq!(feature.kind, ChangeKind::Modified);
-    assert_eq!(feature.task.status, Status::Done);
+    assert_eq!(feature.task.metadata.status(), Some(Status::Done));
     assert_eq!(feature.task.title, "A done");
     assert!(!feature.dirty);
 }
@@ -174,7 +174,7 @@ fn a_deletion_is_tagged_while_main_still_has_the_task() {
     assert_eq!(deleted.kind, ChangeKind::Deleted);
     assert!(!deleted.dirty, "a committed removal is not dirty");
     // The row carries the pre-deletion version, so the UI can show what is being removed.
-    assert_eq!(deleted.task.status, Status::InProgress);
+    assert_eq!(deleted.task.metadata.status(), Some(Status::InProgress));
     assert_eq!(deleted.task.title, "B");
 
     // A deleted task is not "on" the branch for a plain per-branch listing.
@@ -246,7 +246,7 @@ fn an_uncommitted_edit_on_a_feature_worktree_is_modified_and_dirty() {
     let feature = find(&index, "feature", "t").expect("uncommitted WIP must surface");
     assert_eq!(feature.kind, ChangeKind::Modified);
     assert!(feature.dirty, "uncommitted edit is dirty");
-    assert_eq!(feature.task.status, Status::InProgress);
+    assert_eq!(feature.task.metadata.status(), Some(Status::InProgress));
     assert_eq!(feature.task.title, "T edited");
     let main = find(&index, "main", "t").expect("main base row");
     assert_eq!(main.kind, ChangeKind::Base);
@@ -289,8 +289,8 @@ fn an_uncommitted_deletion_on_a_feature_worktree_is_deleted_and_dirty() {
         "working-tree removal without commit is dirty"
     );
     assert_eq!(
-        feature.task.status,
-        Status::InProgress,
+        feature.task.metadata.status(),
+        Some(Status::InProgress),
         "pre-deletion version"
     );
     assert!(find(&index, "main", "t").is_some(), "main still carries t");
@@ -340,7 +340,7 @@ fn a_criss_cross_history_does_not_mislabel_an_unchanged_task() {
         index.matrix().cells
     );
     let main = find(&index, "main", "t").expect("main base row");
-    assert_eq!(main.task.status, Status::Done);
+    assert_eq!(main.task.metadata.status(), Some(Status::Done));
 }
 
 #[test]
@@ -370,7 +370,7 @@ fn without_a_default_branch_headline_prefers_the_checked_out_branch() {
     let items = index.aggregated_tasks();
     let item = items.iter().find(|i| i.id == "t").expect("task t");
     // The headline reflects the checked-out branch (zeta), not the alphabetically-first (alpha).
-    assert_eq!(item.status, Status::Done);
+    assert_eq!(item.metadata.status(), Some(Status::Done));
     assert_eq!(item.title, "T done");
 }
 
@@ -396,7 +396,7 @@ fn an_uncommitted_change_on_the_default_branch_is_dirty() {
     let main = find(&index, "main", "t").expect("main base row");
     assert_eq!(main.kind, ChangeKind::Base);
     assert!(main.dirty, "uncommitted working-copy edit is dirty");
-    assert_eq!(main.task.status, Status::InProgress);
+    assert_eq!(main.task.metadata.status(), Some(Status::InProgress));
     assert_eq!(main.task.title, "T edited");
 }
 
@@ -450,7 +450,7 @@ fn oplan_default_branch_config_overrides_autodetect() {
     // dev is now the baseline; main is unchanged since the fork, so it contributes nothing.
     let dev = find(&index, "dev", "a").expect("dev base row");
     assert_eq!(dev.kind, ChangeKind::Base);
-    assert_eq!(dev.task.status, Status::Done);
+    assert_eq!(dev.task.metadata.status(), Some(Status::Done));
     assert!(find(&index, "main", "a").is_none(), "main unchanged vs dev");
 }
 
@@ -483,8 +483,8 @@ fn without_a_default_branch_every_branch_is_a_presence_row() {
     let other = find(&index, "other", "a").expect("other row");
     assert_eq!(trunk.kind, ChangeKind::Base);
     assert_eq!(other.kind, ChangeKind::Base);
-    assert_eq!(trunk.task.status, Status::Todo);
-    assert_eq!(other.task.status, Status::Done);
+    assert_eq!(trunk.task.metadata.status(), Some(Status::Todo));
+    assert_eq!(other.task.metadata.status(), Some(Status::Done));
 }
 
 #[test]
@@ -561,7 +561,10 @@ fn updated_follows_the_last_commit_to_touch_the_task() {
         .unwrap()
         .unwrap();
     assert_eq!(view.updated, Some(at(1_000_000_500)));
-    assert_eq!(view.created, Some(at(CREATED_SECONDS)));
+    assert_eq!(
+        view.metadata.created(),
+        Some(at(CREATED_SECONDS).to_string().as_str())
+    );
 }
 
 #[test]
@@ -626,4 +629,59 @@ fn the_aggregated_list_clamps_updated_up_to_created() {
         listed.updated,
         Some("2030-01-01T00:00:00Z".parse().unwrap())
     );
+}
+
+// The case that made this model necessary: a file written before `created` existed is not corrupt,
+// and must not be reported as if its status were `backlog`.
+#[test]
+fn a_field_the_strict_parser_rejects_costs_only_that_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "epic", &dated("todo"));
+    task(
+        root,
+        "legacy",
+        "---\nstatus: in_progress\nparent: epic\n---\n# Legacy\n",
+    );
+    commit_at(root, 1_000_000_000, "add tasks");
+
+    let index = built(root);
+    let cell = find(&index, "main", "legacy").unwrap();
+
+    assert_eq!(cell.task.metadata.status(), Some(Status::InProgress));
+    assert_eq!(cell.task.metadata.parent(), Some("epic"));
+    assert_eq!(cell.task.title, "Legacy");
+    // Only `created` failed, and it says so rather than going missing silently.
+    let fields = cell.task.metadata.fields().unwrap();
+    assert_eq!(
+        fields.created,
+        op_api::Field::Error(op_api::FieldError::Missing)
+    );
+    assert_eq!(index.task_updated("legacy", None), Some(at(1_000_000_000)));
+}
+
+#[test]
+fn a_file_with_no_readable_metadata_reports_that_instead_of_a_status() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(
+        root,
+        "broken",
+        "---\n<<<<<<< HEAD\nstatus: todo\n=======\nstatus: done\n>>>>>>> other\n---\n# Broken\n",
+    );
+    commit_at(root, 1_000_000_000, "add broken");
+
+    let index = built(root);
+    let cell = find(&index, "main", "broken").unwrap();
+
+    assert_eq!(cell.task.metadata.status(), None, "no status is claimed");
+    assert!(matches!(cell.task.metadata, op_api::Metadata::Error { .. }));
+    assert_eq!(cell.task.title, "Broken", "best-effort title still shows");
+
+    // The board gives it its own group rather than filing it under a status it never had.
+    let board = op_api::Board::build(&index.aggregated_tasks());
+    assert_eq!(board.groups[0].status, None);
+    assert_eq!(board.groups[0].rows[0].task.id, "broken");
 }

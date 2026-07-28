@@ -5,9 +5,10 @@ import type { Board, BoardRow, Status } from "@open-planner/api-client"
 
 import { BranchBadges } from "../components/branch-badges"
 import { ListSkeleton, Message } from "../components/states"
-import { statusHeaderClass, StatusIcon, statusLabel } from "../components/status-badge"
+import { statusHeaderClass, StatusField, statusLabel } from "../components/status-badge"
 import { TimeAgo } from "../components/time-ago"
 import { errorText } from "../lib/format"
+import { parentOf, problems } from "../lib/metadata"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { boardQuery, useQuery } from "../lib/store"
 import { cn } from "../lib/utils"
@@ -59,7 +60,7 @@ function TaskGrid({ board }: { board: Board }) {
         {board.groups.map((group, groupIndex) => {
           const lastGroup = groupIndex === board.groups.length - 1
           return (
-            <div key={group.status} role="rowgroup" aria-label={statusLabel(group.status)}>
+            <div key={group.status ?? "unreadable"} role="rowgroup" aria-label={groupLabel(group.status)}>
               <HeaderRow status={group.status} />
               {group.rows.map((row, j) => {
                 const i = base++
@@ -81,17 +82,23 @@ function TaskGrid({ board }: { board: Board }) {
   )
 }
 
-function HeaderRow({ status }: { status: Status }) {
+// A group with no status holds the tasks whose own status could not be read; it is not a status
+// they claimed, so it gets its own header rather than borrowing one.
+const groupLabel = (status: Status | undefined) => (status === undefined ? "Unreadable" : statusLabel(status))
+
+const UNREADABLE_HEADER = "bg-red-500/8 border-red-500/20 text-red-600/80 dark:text-red-300/80"
+
+function HeaderRow({ status }: { status: Status | undefined }) {
   return (
     <div role="row" className="bg-muted/20 border-b p-2">
       <span
         role="columnheader"
         className={cn(
           "inline-block rounded-md border px-2 py-0.5 text-xs font-medium tracking-wide uppercase",
-          statusHeaderClass(status),
+          status === undefined ? UNREADABLE_HEADER : statusHeaderClass(status),
         )}
       >
-        {statusLabel(status)}
+        {groupLabel(status)}
       </span>
     </div>
   )
@@ -109,6 +116,8 @@ function TaskRow({
   onFocus: () => void
 }) {
   const { task, depth, parent_title } = row
+  const parent = parentOf(task.metadata)
+  const broken = problems(task.metadata)
   return (
     <div
       id={rowDomId(task.id)}
@@ -133,7 +142,7 @@ function TaskRow({
         // Indent nested tasks so the parent→child relationship reads at a glance.
         style={{ paddingLeft: `${1 + depth * 1.5}rem` }}
       >
-        <StatusIcon status={task.status} />
+        <StatusField metadata={task.metadata} />
       </div>
       <div className="min-w-0 flex-1 py-3 pl-3" role="gridcell">
         <Link
@@ -143,15 +152,20 @@ function TaskRow({
         >
           {task.title}
         </Link>
-        {parent_title !== undefined && task.parent !== undefined && (
+        {parent_title !== undefined && parent !== undefined && (
           <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
             <span className="text-muted-foreground/70">Subtask of</span>
             <Link
-              to={`/task/${task.parent}`}
+              to={`/task/${parent}`}
               className="text-foreground/90 relative z-10 max-w-[15rem] truncate hover:underline"
             >
               {parent_title}
             </Link>
+          </span>
+        )}
+        {broken.length > 0 && (
+          <span className="flex min-w-0 items-center gap-1.5 text-xs text-red-600/90 dark:text-red-400/90">
+            {broken.map(({ field, message }) => `${field}: ${message}`).join(" · ")}
           </span>
         )}
       </div>

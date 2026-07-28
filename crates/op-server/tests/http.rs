@@ -148,7 +148,7 @@ async fn tasks_crud_roundtrip() {
     assert_eq!(got.status(), StatusCode::OK);
     let view = body_json(got).await;
     assert_eq!(view["title"], "Wire the parser");
-    assert_eq!(view["status"], "todo");
+    assert_eq!(view["metadata"]["status"], "todo");
     assert_eq!(view["body"], "# Wire the parser\n");
 
     let patched = send(
@@ -159,7 +159,10 @@ async fn tasks_crud_roundtrip() {
     )
     .await;
     assert_eq!(patched.status(), StatusCode::OK);
-    assert_eq!(body_json(patched).await["status"], "in_progress");
+    assert_eq!(
+        body_json(patched).await["metadata"]["status"],
+        "in_progress"
+    );
 
     let deleted = send(&state, "DELETE", &format!("/api/tasks/{id}"), None).await;
     assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
@@ -208,7 +211,7 @@ async fn patch_parent_null_clears_absent_leaves_id_sets() {
     )
     .await;
     assert_eq!(untouched.status(), StatusCode::OK);
-    assert_eq!(body_json(untouched).await["parent"], "epic");
+    assert_eq!(body_json(untouched).await["metadata"]["parent"], "epic");
 
     // Explicit null: parent cleared to top level, and the key drops from the file.
     let cleared = send(
@@ -232,7 +235,7 @@ async fn patch_parent_null_clears_absent_leaves_id_sets() {
     )
     .await;
     assert_eq!(set.status(), StatusCode::OK);
-    assert_eq!(body_json(set).await["parent"], "epic");
+    assert_eq!(body_json(set).await["metadata"]["parent"], "epic");
 }
 
 #[tokio::test]
@@ -614,7 +617,7 @@ async fn list_tasks_is_branch_aware() {
     let alpha = &items[0];
     assert_eq!(alpha["id"], "alpha");
     // Headline follows the most recently changed branch: `feature` edited alpha after main's init.
-    assert_eq!(alpha["status"], "done");
+    assert_eq!(alpha["metadata"]["status"], "done");
     assert_eq!(alpha["title"], "Alpha done");
     assert_eq!(
         alpha["headline"], "feature",
@@ -638,12 +641,12 @@ async fn cross_branch_task_read_reflects_the_other_branch() {
     let response = send(&state, "GET", "/api/tasks/alpha?branch=feature", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
-    assert_eq!(view["status"], "done");
+    assert_eq!(view["metadata"]["status"], "done");
     assert_eq!(view["title"], "Alpha done");
 
     // Omitting the branch headlines the most recently changed version, which here is feature's.
     let local = send(&state, "GET", "/api/tasks/alpha", None).await;
-    assert_eq!(body_json(local).await["status"], "done");
+    assert_eq!(body_json(local).await["metadata"]["status"], "done");
 }
 
 #[tokio::test]
@@ -662,7 +665,7 @@ async fn branchless_get_carries_the_branch_set() {
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
     // Headline is the most recently changed version (feature), flattened alongside the branch set.
-    assert_eq!(view["status"], "done");
+    assert_eq!(view["metadata"]["status"], "done");
     assert_eq!(view["title"], "Alpha done");
     assert_eq!(
         view["headline"], "feature",
@@ -777,7 +780,7 @@ async fn patch_reverting_a_branch_to_its_base_echoes_the_written_task() {
     assert_eq!(patch.status(), StatusCode::OK);
     let view = body_json(patch).await;
     assert_eq!(view["id"], "alpha");
-    assert_eq!(view["status"], "todo");
+    assert_eq!(view["metadata"]["status"], "todo");
     assert_eq!(view["title"], "Alpha");
 }
 
@@ -882,13 +885,13 @@ async fn headline_follows_the_most_recent_change_even_on_the_default_branch() {
         .unwrap()
         .clone();
     assert_eq!(
-        alpha["status"], "done",
+        alpha["metadata"]["status"], "done",
         "main's newer change headlines over feature's older one"
     );
     assert_eq!(alpha["title"], "Alpha done");
 
     let detail = send(&state, "GET", "/api/tasks/alpha", None).await;
-    assert_eq!(body_json(detail).await["status"], "done");
+    assert_eq!(body_json(detail).await["metadata"]["status"], "done");
 }
 
 #[tokio::test]
@@ -951,7 +954,7 @@ async fn patch_rejects_a_malformed_rank_with_its_reason() {
     )
     .await;
     assert_eq!(accepted.status(), StatusCode::OK);
-    assert_eq!(body_json(accepted).await["rank"], "a5");
+    assert_eq!(body_json(accepted).await["metadata"]["rank"], "a5");
 }
 
 #[tokio::test]
@@ -1033,26 +1036,21 @@ fn the_openapi_spec_documents_every_refusal_with_its_reason() {
 }
 
 // A field the server skips when empty is absent, never null, so the spec must not widen it to
-// nullable — that would push an impossible `| null` into every generated client type.
+// nullable — that would push an impossible `| null` into every generated client type. A frontmatter
+// field is a different case: it is always present, as a value or as an error, and `null` there is a
+// real value (no parent), so it is exempt.
 #[test]
 fn optional_response_fields_are_absent_rather_than_nullable() {
     let spec = serde_json::to_value(op_server::openapi()).unwrap();
     let schemas = &spec["components"]["schemas"];
     for (schema, field) in [
-        ("TaskView", "parent"),
-        ("TaskView", "rank"),
         ("TaskChild", "rank"),
-        ("TaskListItem", "parent"),
-        ("TaskListItem", "rank"),
         ("BoardRow", "parent_title"),
+        ("TaskDetail", "parent_title"),
     ] {
         assert_eq!(
             schemas[schema]["properties"][field]["type"], "string",
             "{schema}.{field} must be a plain optional string"
         );
     }
-    assert_eq!(
-        schemas["TaskDetail"]["allOf"][1]["properties"]["parent_title"]["type"], "string",
-        "TaskDetail.parent_title must be a plain optional string"
-    );
 }

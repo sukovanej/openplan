@@ -1,7 +1,8 @@
-import { CircleCheck, CircleDot, CircleEllipsis, CircleX, Clock, Eye, type LucideIcon } from "lucide-react"
+import { CircleAlert, CircleCheck, CircleDot, CircleEllipsis, CircleX, Clock, Eye, type LucideIcon } from "lucide-react"
 
-import type { Status } from "@open-planner/api-client"
+import type { Field_Status, Metadata, Status } from "@open-planner/api-client"
 
+import { fieldValue, statusOf } from "../lib/metadata"
 import { cn } from "../lib/utils"
 
 interface Palette {
@@ -49,7 +50,29 @@ export const statusLabel = (status: Status): string => styles[status].label
 
 export const statusHeaderClass = (status: Status): string => styles[status].palette.header
 
+// A single status field, for a chip that has one but no surrounding metadata.
+export function StatusChip({ status, className }: { status: Field_Status; className?: string }) {
+  const value = fieldValue(status)
+  return value === undefined ? (
+    <CircleAlert className={cn("size-5 text-red-500", className)} aria-label="Status could not be read" />
+  ) : (
+    <StatusIcon status={value} className={className} />
+  )
+}
+
 export function StatusIcon({ status, className }: { status: Status; className?: string }) {
   const { icon: Icon, label, palette } = styles[status]
   return <Icon className={cn("size-5", palette.icon, className)} aria-label={label} />
+}
+
+// A status that could not be read gets its own mark, so a broken file never wears a status it does
+// not claim. Takes the whole metadata because a file whose frontmatter did not parse has no status
+// field at all.
+export function StatusField({ metadata, className }: { metadata: Metadata; className?: string }) {
+  const value = statusOf(metadata)
+  return value === undefined ? (
+    <CircleAlert className={cn("size-5 text-red-500", className)} aria-label="Status could not be read" />
+  ) : (
+    <StatusIcon status={value} className={className} />
+  )
 }
