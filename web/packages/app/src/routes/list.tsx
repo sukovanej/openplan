@@ -8,7 +8,7 @@ import { ListSkeleton, Message } from "../components/states"
 import { statusHeaderClass, StatusField, statusLabel } from "../components/status-badge"
 import { TimeAgo } from "../components/time-ago"
 import { errorText } from "../lib/format"
-import { parentOf, problems } from "../lib/metadata"
+import { createdOf, parentOf, problems } from "../lib/metadata"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { boardQuery, useQuery } from "../lib/store"
 import { cn } from "../lib/utils"
@@ -117,6 +117,7 @@ function TaskRow({
 }) {
   const { task, depth, parent_title } = row
   const parent = parentOf(task.metadata)
+  const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
   return (
     <div
@@ -152,28 +153,37 @@ function TaskRow({
         >
           {task.title}
         </Link>
-        {parent_title !== undefined && parent !== undefined && (
-          <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-            <span className="text-muted-foreground/70">Subtask of</span>
-            <Link
-              to={`/task/${parent}`}
-              className="text-foreground/90 relative z-10 max-w-[15rem] truncate hover:underline"
-            >
-              {parent_title}
-            </Link>
-          </span>
-        )}
+        {/* Separators come from the siblings themselves, so any subset of these can be absent
+            without leaving a stray dot behind. */}
+        <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs [&>*+*]:before:mr-1.5 [&>*+*]:before:content-['·']">
+          {parent_title !== undefined && parent !== undefined && (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="text-muted-foreground/70">Subtask of</span>
+              <Link
+                to={`/task/${parent}`}
+                className="text-foreground/90 relative z-10 max-w-[15rem] truncate hover:underline"
+              >
+                {parent_title}
+              </Link>
+            </span>
+          )}
+          {created !== undefined && (
+            <span className="whitespace-nowrap">
+              Created <TimeAgo iso={created} label="Created" />
+            </span>
+          )}
+          {task.updated !== undefined && (
+            <span className="whitespace-nowrap">
+              Updated <TimeAgo iso={task.updated} label="Updated" />
+            </span>
+          )}
+        </div>
         {broken.length > 0 && (
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-red-600/90 dark:text-red-400/90">
             {broken.map(({ field, message }) => `${field}: ${message}`).join(" · ")}
           </span>
         )}
       </div>
-      {task.updated !== undefined && (
-        <div role="gridcell" className="text-muted-foreground shrink-0 py-3 pl-3 text-xs whitespace-nowrap">
-          <TimeAgo iso={task.updated} label="Updated" />
-        </div>
-      )}
       <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">
         <BranchBadges branches={task.branches} headline={task.headline} />
       </div>
