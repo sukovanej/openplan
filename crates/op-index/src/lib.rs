@@ -3,7 +3,7 @@ use std::path::Path;
 
 use op_api::{
     BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Metadata, TaskBranches, TaskChild,
-    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, list_item_cmp,
+    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, id_cmp, list_item_cmp,
     updated_field,
 };
 use op_git::{ChangeTime, Repo, Worktree};
@@ -51,7 +51,7 @@ struct DiffCtx<'a> {
     committed: &'a HashMap<String, String>,
     base: &'a HashMap<String, HashSet<String>>,
     default_blobs: &'a HashMap<String, String>,
-    live: Option<&'a Store>,
+    live: Option<&'a BTreeMap<String, String>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -111,7 +111,7 @@ impl Index {
         for branch in &branches {
             let committed: HashMap<String, String> =
                 repo.branch_task_blobs(branch)?.into_iter().collect();
-            let live = self.live.get(branch).cloned();
+            let live = self.live.get(branch).map(Store::read_all_raw).transpose()?;
             let present = present_ids(&committed, live.as_ref())?;
             // Every id the branch holds, not just the cells it contributes: a task identical to its
             // merge base is skipped below, and its number would otherwise read as free.
@@ -138,7 +138,7 @@ impl Index {
             }
         }
         self.max_id = max_id;
-        cells.sort_by(|a, b| (&a.task.id, &a.branch).cmp(&(&b.task.id, &b.branch)));
+        cells.sort_by(|a, b| id_cmp(&a.task.id, &b.task.id).then_with(|| a.branch.cmp(&b.branch)));
         self.change_times = self.compute_change_times(repo, &cells)?;
         self.matrix = Matrix { cells };
         Ok(())
@@ -245,7 +245,7 @@ impl Index {
         branch: &str,
         present: &BTreeSet<String>,
         committed: &HashMap<String, String>,
-        live: Option<&Store>,
+        live: Option<&BTreeMap<String, String>>,
         cells: &mut Vec<MatrixCell>,
     ) -> Result<(), IndexError> {
         for id in present {
@@ -323,19 +323,18 @@ impl Index {
         id: &str,
         committed_oid: Option<&String>,
         kind: ChangeKind,
-        live: Option<&Store>,
+        live: Option<&BTreeMap<String, String>>,
     ) -> Result<Option<MatrixCell>, IndexError> {
         if let Some(worktree) = live {
-            return match worktree.read_raw(id) {
-                Ok(text) => {
-                    let bytes = text.into_bytes();
-                    let working_oid = repo.hash_blob(&bytes)?;
+            return match worktree.get(id) {
+                Some(text) => {
+                    let bytes = text.as_bytes();
+                    let working_oid = repo.hash_blob(bytes)?;
                     let dirty = committed_oid != Some(&working_oid);
-                    let version = self.cache_bytes(&working_oid, &bytes);
+                    let version = self.cache_bytes(&working_oid, bytes);
                     Ok(Some(cell(branch, id, &working_oid, kind, dirty, &version)))
                 }
-                Err(StoreError::NotFound { .. }) => Ok(None),
-                Err(err) => Err(err.into()),
+                None => Ok(None),
             };
         }
         match committed_oid {
@@ -376,16 +375,16 @@ impl Index {
     // One row per logical task across all branches, headlined by the branch that changed it most
     // recently (see `select_headline`).
     pub fn aggregated_tasks(&self) -> Vec<TaskListItem> {
-        let mut groups: BTreeMap<&str, Vec<&MatrixCell>> = BTreeMap::new();
-        for cell in &self.matrix.cells {
-            groups.entry(cell.task.id.as_str()).or_default().push(cell);
-        }
-        groups
-            .into_iter()
-            .map(|(id, cells)| {
+        // The cells are ordered by id already, so grouping the runs keeps that order — collecting
+        // into a map keyed by the id would re-sort it as text, filing 10 between 1 and 2.
+        self.matrix
+            .cells
+            .chunk_by(|a, b| a.task.id == b.task.id)
+            .map(|group| {
+                let cells: Vec<&MatrixCell> = group.iter().collect();
                 let headline = self.select_headline(&cells);
                 TaskListItem {
-                    id: id.to_owned(),
+                    id: headline.task.id.clone(),
                     title: headline.task.title.clone(),
                     metadata: headline.task.metadata.clone(),
                     updated: updated_field(self.created_of(headline), self.cell_updated(headline)),
@@ -725,7 +724,7 @@ fn branch_states(cells: &[&MatrixCell]) -> Vec<BranchState> {
 
 fn present_ids(
     committed: &HashMap<String, String>,
-    live: Option<&Store>,
+    live: Option<&BTreeMap<String, String>>,
 ) -> Result<BTreeSet<String>, IndexError> {
     // The tree lists whatever `.plan/tasks/*.md` a commit holds; only files a task id names are
     // tasks, so the matrix and the store agree on what exists.
@@ -735,9 +734,7 @@ fn present_ids(
         .cloned()
         .collect();
     if let Some(worktree) = live {
-        for id in worktree.task_ids()? {
-            ids.insert(id);
-        }
+        ids.extend(worktree.keys().cloned());
     }
     Ok(ids)
 }

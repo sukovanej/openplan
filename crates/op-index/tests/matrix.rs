@@ -794,3 +794,64 @@ fn the_id_floor_counts_a_worktree_mid_merge() {
 
     assert_eq!(built(root).max_id(), Some(9));
 }
+
+#[test]
+fn ids_are_ordered_as_numbers_not_as_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    for number in [1, 2, 9, 10, 11, 100] {
+        task(
+            root,
+            &number.to_string(),
+            "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
+        );
+    }
+    commit(root, "add tasks");
+
+    let index = built(root);
+    let expected = ["1", "2", "9", "10", "11", "100"];
+    assert_eq!(
+        index
+            .aggregated_tasks()
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        index
+            .branch_summaries("main")
+            .iter()
+            .map(|summary| summary.id.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[test]
+fn two_files_of_one_number_resolve_to_the_lowest_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    // A hand-made state a merge can produce: one task renamed on one side, both names kept. The
+    // store and the git reader must pick the same file, or a read and a write disagree.
+    write(
+        &root.join(".plan/tasks/00007-alpha.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
+    );
+    write(
+        &root.join(".plan/tasks/00007-beta.md"),
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Beta\n",
+    );
+    commit(root, "add both names");
+
+    let items = built(root).aggregated_tasks();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, "7");
+    assert_eq!(items[0].title, "Alpha");
+    assert_eq!(
+        Store::open(root).unwrap().read("7").unwrap().title(),
+        Some("Alpha".to_owned())
+    );
+}

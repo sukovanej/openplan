@@ -1,4 +1,5 @@
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fs::OpenOptions;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -88,18 +89,26 @@ impl Store {
             .ok_or_else(|| StoreError::NotFound { id: id.to_owned() })
     }
 
+    fn task_file(&self, id: &str) -> Result<Option<PathBuf>, StoreError> {
+        let number = parse_id(id).ok_or_else(|| StoreError::InvalidId { id: id.to_owned() })?;
+        Ok(self.task_files()?.remove(&number))
+    }
+
     // The file names carry a title slug the id does not (§3.1), so a task is found by the number its
     // name starts with rather than by a name built from its id. The lowest name wins, so a store
     // hand-edited into two files of one number resolves to the same one every time.
-    fn task_file(&self, id: &str) -> Result<Option<PathBuf>, StoreError> {
-        let number = parse_id(id).ok_or_else(|| StoreError::InvalidId { id: id.to_owned() })?;
-        let mut found: Option<PathBuf> = None;
-        self.for_each_task_file(|path, candidate| {
-            if candidate == number && found.as_ref().is_none_or(|kept| &path < kept) {
-                found = Some(path);
+    fn task_files(&self) -> Result<BTreeMap<u64, PathBuf>, StoreError> {
+        let mut files = BTreeMap::new();
+        self.for_each_task_file(|path, number| match files.entry(number) {
+            Entry::Vacant(slot) => {
+                slot.insert(path);
             }
+            Entry::Occupied(mut slot) if path < *slot.get() => {
+                slot.insert(path);
+            }
+            Entry::Occupied(_) => {}
         })?;
-        Ok(found)
+        Ok(files)
     }
 
     fn for_each_task_file(&self, mut visit: impl FnMut(PathBuf, u64)) -> Result<(), StoreError> {
@@ -124,11 +133,24 @@ impl Store {
     }
 
     pub fn task_ids(&self) -> Result<Vec<String>, StoreError> {
-        let mut numbers = BTreeSet::new();
-        self.for_each_task_file(|_, number| {
-            numbers.insert(number);
-        })?;
-        Ok(numbers.into_iter().map(|n| n.to_string()).collect())
+        Ok(self
+            .task_files()?
+            .into_keys()
+            .map(|number| number.to_string())
+            .collect())
+    }
+
+    // One scan and one open per task, for a caller that wants them all: resolving each id on its own
+    // rescans the directory, which turns a whole-store read into quadratic work.
+    pub fn read_all_raw(&self) -> Result<BTreeMap<String, String>, StoreError> {
+        self.task_files()?
+            .into_iter()
+            .map(|(number, path)| {
+                let id = number.to_string();
+                let text = read_file(&path, &id)?;
+                Ok((id, text))
+            })
+            .collect()
     }
 
     pub fn read(&self, id: &str) -> Result<Task, StoreError> {
