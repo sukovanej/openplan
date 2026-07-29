@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-16T13:00:27Z
 ---
 # Serve Swagger UI (interactive API docs) from op-server
 

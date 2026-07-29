@@ -1,5 +1,6 @@
 ---
 status: backlog
+created: 2026-07-14T22:12:23Z
 ---
 # Store and embed assets (images, artifacts, files) in tasks
 

@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T16:10:14Z
 ---
 # Clickable links for [[task-id]] references in markdown
 

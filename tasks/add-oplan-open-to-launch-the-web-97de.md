@@ -1,5 +1,6 @@
 ---
 status: todo
+created: 2026-07-14T10:31:08Z
 ---
 # Add `oplan open` to launch the web UI in a browser
 

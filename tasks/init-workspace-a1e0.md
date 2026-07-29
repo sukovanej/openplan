@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-13T21:19:38Z
 ---
 
 # Initialize the Rust multi-crate workspace

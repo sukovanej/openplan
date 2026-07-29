@@ -1,5 +1,6 @@
 ---
 status: todo
+created: 2026-07-14T17:30:13Z
 ---
 # Presence: show who's working on what, from Claude Code sessions
 

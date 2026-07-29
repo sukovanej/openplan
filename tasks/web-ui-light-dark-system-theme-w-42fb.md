@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T10:53:32Z
 ---
 # Web UI: light / dark / system theme with persistence
 

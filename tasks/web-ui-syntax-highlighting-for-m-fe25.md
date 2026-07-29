@@ -1,5 +1,6 @@
 ---
 status: todo
+created: 2026-07-15T20:23:28Z
 ---
 # Web UI: syntax highlighting for markdown code fences
 

@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-15T21:38:11Z
 ---
 # Generate OpenAPI spec from Rust API; generated Effect HTTP client package
 

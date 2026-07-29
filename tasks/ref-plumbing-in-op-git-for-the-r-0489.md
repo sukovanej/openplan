@@ -1,5 +1,6 @@
 ---
 status: todo
+created: 2026-07-26T15:40:55Z
 parent: continuous-changes-accumulation-v-0cb0
 deps:
 - implement-the-section-aware-merg-381e

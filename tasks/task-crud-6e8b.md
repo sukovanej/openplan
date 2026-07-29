@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-13T23:01:08Z
 ---
 
 # Task CRUD across the store, daemon, and CLI

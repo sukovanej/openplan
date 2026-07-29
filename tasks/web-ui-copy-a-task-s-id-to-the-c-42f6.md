@@ -1,5 +1,6 @@
 ---
 status: todo
+created: 2026-07-26T14:32:08Z
 ---
 # Web UI: copy a task's id to the clipboard with Cmd+.
 

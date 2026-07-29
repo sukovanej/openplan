@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T10:33:04Z
 ---
 # Aggregate tasks across all branches and worktrees (task×branch matrix)
 

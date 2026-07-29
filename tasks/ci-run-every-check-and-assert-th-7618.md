@@ -1,5 +1,6 @@
 ---
 status: todo
+created: 2026-07-26T15:27:08Z
 ---
 # CI: run every check and assert the tree is unchanged
 

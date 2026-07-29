@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T10:53:41Z
 ---
 # Web UI: task list as a table (id · title · status) with a row cursor
 
