@@ -63,7 +63,7 @@ fn a_change_carries_both_clocks_of_the_commit_that_made_it() {
 
     let when = times.get("a").unwrap();
     assert_eq!(when.authored, Ok(at(1_000_000_000)));
-    assert_eq!(when.committed, 2_000_000_000);
+    assert_eq!(when.committed_seconds, 2_000_000_000);
 }
 
 #[test]

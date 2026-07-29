@@ -7,7 +7,7 @@ fn item(id: &str, status: Status, parent: Option<&str>, rank: Option<&str>) -> T
 fn fields(status: Field<Status>, parent: Option<&str>, rank: Option<&str>) -> Metadata {
     Metadata::Fields(FrontmatterFields {
         status,
-        created: Field::Value("2026-01-01T00:00:00Z".to_owned()),
+        created: Field::Value(op_api::Rfc3339("2026-01-01T00:00:00Z".parse().unwrap())),
         parent: Field::Value(parent.map(str::to_owned)),
         rank: Field::Value(rank.map(str::to_owned)),
         deps: Field::Value(Vec::new()),

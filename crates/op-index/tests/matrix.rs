@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use op_api::{ChangeKind, Field, Status};
+use op_api::{ChangeKind, Field, Rfc3339, Status};
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
@@ -572,11 +572,8 @@ fn updated_follows_the_last_commit_to_touch_the_task() {
         .effective_view(&Repo::discover(root).unwrap(), "t", "main")
         .unwrap()
         .unwrap();
-    assert_eq!(view.updated, Field::Value(at(1_000_000_500).to_string()));
-    assert_eq!(
-        view.metadata.created(),
-        Some(at(CREATED_SECONDS).to_string().as_str())
-    );
+    assert_eq!(view.updated, Field::Value(Rfc3339(at(1_000_000_500))));
+    assert_eq!(view.metadata.created(), Some(at(CREATED_SECONDS)));
 }
 
 #[test]
@@ -613,10 +610,10 @@ fn the_aggregated_list_dates_a_task_like_its_detail_does() {
         .unwrap();
 
     // The board renders `updated` from here, so it must agree with the task's own page.
-    assert_eq!(listed.updated, Field::Value(at(1_000_000_000).to_string()));
+    assert_eq!(listed.updated, Field::Value(Rfc3339(at(1_000_000_000))));
     assert_eq!(
         listed.updated,
-        Field::from(index.task_updated("t", None).map(|at| at.to_string()))
+        Field::from(index.task_updated("t", None).map(Rfc3339))
     );
 }
 
@@ -642,7 +639,7 @@ fn the_aggregated_list_clamps_updated_up_to_created() {
 
     assert_eq!(
         listed.updated,
-        Field::Value("2030-01-01T00:00:00Z".to_owned())
+        Field::Value(Rfc3339("2030-01-01T00:00:00Z".parse().unwrap()))
     );
 }
 
@@ -743,7 +740,7 @@ fn a_rebased_branch_headlines_over_the_branch_it_was_rebased_onto() {
     // Still reported by author time: the rebase moved no work, so it must not restamp the task.
     assert_eq!(
         listed.updated,
-        Field::Value(at(1_000_100_000).to_string()),
+        Field::Value(Rfc3339(at(1_000_100_000))),
         "the rebase must not restamp the task as freshly edited"
     );
 }

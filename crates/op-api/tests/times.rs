@@ -1,4 +1,4 @@
-use op_api::{Field, FieldError, TaskView};
+use op_api::{Field, FieldError, Rfc3339, TaskView};
 use op_task::{Status, Task, Timestamp};
 
 fn at(text: &str) -> Timestamp {
@@ -13,10 +13,10 @@ fn view(created: &str, updated: Result<&str, op_task::FieldError>) -> TaskView {
 #[test]
 fn a_git_derived_update_after_creation_is_reported_as_is() {
     let view = view("2026-01-01T00:00:00Z", Ok("2026-02-01T00:00:00Z"));
-    assert_eq!(view.metadata.created(), Some("2026-01-01T00:00:00Z"));
+    assert_eq!(view.metadata.created(), Some(at("2026-01-01T00:00:00Z")));
     assert_eq!(
         view.updated,
-        Field::Value("2026-02-01T00:00:00Z".to_owned())
+        Field::Value(Rfc3339(at("2026-02-01T00:00:00Z")))
     );
 }
 
@@ -25,14 +25,14 @@ fn an_update_before_creation_clamps_up_to_created() {
     let view = view("2026-03-01T00:00:00Z", Ok("2026-02-01T00:00:00Z"));
     assert_eq!(
         view.updated,
-        Field::Value("2026-03-01T00:00:00Z".to_owned())
+        Field::Value(Rfc3339(at("2026-03-01T00:00:00Z")))
     );
 }
 
 #[test]
 fn a_store_only_read_reports_created_and_no_update() {
     let view = view("2026-01-01T00:00:00Z", Err(op_task::FieldError::Missing));
-    assert_eq!(view.metadata.created(), Some("2026-01-01T00:00:00Z"));
+    assert_eq!(view.metadata.created(), Some(at("2026-01-01T00:00:00Z")));
     assert_eq!(view.updated, Field::Error(FieldError::Missing));
 }
 

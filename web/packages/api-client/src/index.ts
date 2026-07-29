@@ -42,13 +42,15 @@ export const Field_Option_String = Schema.Union(
   [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError],
   { mode: "oneOf" },
 )
+export type Field_Rfc3339 = string | FieldError
+export const Field_Rfc3339 = Schema.Union([Schema.String.annotate({ format: "date-time" }), FieldError], {
+  mode: "oneOf",
+})
 export type Field_Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled" | FieldError
 export const Field_Status = Schema.Union(
   [Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]), FieldError],
   { mode: "oneOf" },
 )
-export type Field_String = string | FieldError
-export const Field_String = Schema.Union([Schema.String, FieldError], { mode: "oneOf" })
 export type Field_Vec_String = ReadonlyArray<string> | FieldError
 export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError], { mode: "oneOf" })
 export type CreateTask = {
@@ -106,14 +108,14 @@ export const TaskChild = Schema.Struct({
 export type TaskRef = { readonly id: string; readonly status: Field_Status; readonly title: string }
 export const TaskRef = Schema.Struct({ id: Schema.String, status: Field_Status, title: Schema.String })
 export type FrontmatterFields = {
-  readonly created: Field_String
+  readonly created: Field_Rfc3339
   readonly deps: Field_Vec_String
   readonly parent: Field_Option_String
   readonly rank: Field_Option_String
   readonly status: Field_Status
 }
 export const FrontmatterFields = Schema.Struct({
-  created: Field_String,
+  created: Field_Rfc3339,
   deps: Field_Vec_String,
   parent: Field_Option_String,
   rank: Field_Option_String,
@@ -134,7 +136,7 @@ export type TaskDetail = {
   readonly parent_title?: string
   readonly refs?: ReadonlyArray<TaskRef>
   readonly title: string
-  readonly updated: Field_String
+  readonly updated: Field_Rfc3339
 }
 export const TaskDetail = Schema.Struct({
   body: Schema.String,
@@ -146,7 +148,7 @@ export const TaskDetail = Schema.Struct({
   parent_title: Schema.optionalKey(Schema.String),
   refs: Schema.optionalKey(Schema.Array(TaskRef)),
   title: Schema.String,
-  updated: Field_String,
+  updated: Field_Rfc3339,
 })
 export type TaskListItem = {
   readonly branches: ReadonlyArray<BranchState>
@@ -154,7 +156,7 @@ export type TaskListItem = {
   readonly id: string
   readonly metadata: Metadata
   readonly title: string
-  readonly updated: Field_String
+  readonly updated: Field_Rfc3339
 }
 export const TaskListItem = Schema.Struct({
   branches: Schema.Array(BranchState),
@@ -162,7 +164,7 @@ export const TaskListItem = Schema.Struct({
   id: Schema.String,
   metadata: Metadata,
   title: Schema.String,
-  updated: Field_String,
+  updated: Field_Rfc3339,
 })
 export type BoardRow = {
   readonly depth: number

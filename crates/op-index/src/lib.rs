@@ -526,18 +526,13 @@ impl Index {
             return i64::MAX;
         }
         self.change_time(cell)
-            .map_or(i64::MIN, |when| when.committed)
+            .map_or(i64::MIN, |when| when.committed_seconds)
     }
 
     // `created` is a property of the blob, so it comes from the same parse the cell's title and
     // status do rather than a second read of the file.
     fn created_of(&self, cell: &MatrixCell) -> Option<Timestamp> {
-        self.blob_cache
-            .get(&cell.blob_oid)?
-            .metadata
-            .created()?
-            .parse()
-            .ok()
+        self.blob_cache.get(&cell.blob_oid)?.metadata.created()
     }
 
     fn change_time(&self, cell: &MatrixCell) -> Option<&ChangeTime> {
@@ -821,7 +816,7 @@ fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
 fn view_from_raw(id: &str, raw: &str, updated: FieldResult<Timestamp>) -> TaskView {
     let partial = op_task::parse_partial(raw);
     let metadata: Metadata = partial.metadata.into();
-    let created = metadata.created().and_then(|at| at.parse().ok());
+    let created = metadata.created();
     TaskView {
         id: id.to_owned(),
         title: partial.title.unwrap_or_default(),

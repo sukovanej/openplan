@@ -13,7 +13,7 @@ fn summary(id: &str, parent: Option<&str>, rank: Option<&str>) -> TaskSummary {
         title: id.to_owned(),
         metadata: Metadata::Fields(FrontmatterFields {
             status: Field::Value(Status::Todo),
-            created: Field::Value("2026-01-01T00:00:00Z".to_owned()),
+            created: Field::Value(op_api::Rfc3339("2026-01-01T00:00:00Z".parse().unwrap())),
             parent: Field::Value(parent.map(str::to_owned)),
             rank: Field::Value(rank.map(str::to_owned)),
             deps: Field::Value(Vec::new()),

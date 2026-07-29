@@ -10,13 +10,14 @@ const HISTORY_WALK_BUDGET: usize = 4096;
 
 // When a task last changed, read two ways from the same commit. `authored` is what to report: a
 // rebase, squash, or amend preserves it, so an untouched task does not read as freshly edited — and
-// it may be a reason instead of a time, since git accepts any i64 there. `committed` is what to rank
-// by, in bare seconds: a rebased branch carries older author times than the branch it was rebased
-// onto, so ranking by those would headline the version the rebase superseded.
+// it may be a reason instead of a time, since git accepts any i64 there. `committed_seconds` is what
+// to rank by: a rebased branch carries older author times than the branch it was rebased onto, so
+// ranking by those would headline the version the rebase superseded. It stays raw seconds because an
+// ordering needs no calendar value — which is also what leaves it, unlike `authored`, unable to fail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangeTime {
     pub authored: Result<Timestamp, String>,
-    pub committed: i64,
+    pub committed_seconds: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -169,7 +170,7 @@ impl Repo {
                 Some(blob) if parents.iter().all(|parent| parent.get(*id) != Some(blob)) => {
                     let at = when.get_or_insert_with(|| ChangeTime {
                         authored: author_time(&repo, info.id),
-                        committed: info.commit_time(),
+                        committed_seconds: info.commit_time(),
                     });
                     times.insert((*id).to_owned(), at.clone());
                     false

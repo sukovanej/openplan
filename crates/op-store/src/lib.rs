@@ -31,7 +31,7 @@ pub enum StoreError {
          {example}\n\nIf the file is already committed, the date it first appeared is:\n\n    git \
          log --diff-filter=A --format=%aI -1 -- {path}"
     )]
-    MissingCreated { path: String, example: String },
+    MissingCreated { path: PathBuf, example: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -107,7 +107,7 @@ impl Store {
     pub fn read(&self, id: &str) -> Result<Task, StoreError> {
         Task::from_file_string(&self.read_raw(id)?).map_err(|err| match err {
             op_task::TaskError::MissingCreated => StoreError::MissingCreated {
-                path: self.task_path(id).display().to_string(),
+                path: self.task_path(id),
                 example: op_task::now().to_string(),
             },
             other => other.into(),

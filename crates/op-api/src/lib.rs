@@ -54,7 +54,7 @@ pub struct TaskView {
     pub metadata: Metadata,
     pub body: String,
     // Derived from git rather than read from the file, so it sits outside `metadata`.
-    pub updated: Field<String>,
+    pub updated: Field<Rfc3339>,
 }
 
 impl TaskView {
@@ -64,7 +64,7 @@ impl TaskView {
         updated: op_task::FieldResult<Timestamp>,
     ) -> Self {
         let metadata: Metadata = partial.metadata.into();
-        let created = metadata.created().and_then(|at| at.parse().ok());
+        let created = metadata.created();
         Self {
             id,
             title: partial.title.unwrap_or_default(),
@@ -84,6 +84,26 @@ impl TaskView {
             metadata: Metadata::from_frontmatter(&task.frontmatter),
             body: task.body.clone(),
         }
+    }
+}
+
+// An instant on the wire. JSON has no time type, so it travels as RFC3339 text; wrapping it keeps
+// the Rust side a real `Timestamp` instead of re-parsing at each use, and gives utoipa a schema for
+// a type it cannot see inside `Field<T>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
+#[schema(value_type = String, format = DateTime)]
+pub struct Rfc3339(pub Timestamp);
+
+impl From<Timestamp> for Rfc3339 {
+    fn from(at: Timestamp) -> Self {
+        Self(at)
+    }
+}
+
+impl std::fmt::Display for Rfc3339 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -130,7 +150,7 @@ pub struct FrontmatterFields {
     pub status: Field<Status>,
     // RFC3339 UTC, already validated by the parser — a value that did not parse arrives as an error
     // rather than as text.
-    pub created: Field<String>,
+    pub created: Field<Rfc3339>,
     pub parent: Field<Option<String>>,
     pub rank: Field<Option<String>>,
     pub deps: Field<Vec<String>>,
@@ -164,7 +184,7 @@ impl From<op_task::PartialMetadata> for Metadata {
             },
             op_task::PartialMetadata::Fields(fields) => Metadata::Fields(FrontmatterFields {
                 status: fields.status.into(),
-                created: Field::from(fields.created).map(|at| at.to_string()),
+                created: Field::from(fields.created).map(Rfc3339),
                 parent: fields.parent.into(),
                 rank: fields.rank.into(),
                 deps: fields.deps.into(),
@@ -200,7 +220,7 @@ impl Metadata {
     pub fn from_frontmatter(fm: &op_task::Frontmatter) -> Self {
         Metadata::Fields(FrontmatterFields {
             status: Field::Value(fm.status),
-            created: Field::Value(fm.created.to_string()),
+            created: Field::Value(Rfc3339(fm.created)),
             parent: Field::Value(fm.parent.clone()),
             rank: Field::Value(fm.rank.clone()),
             deps: Field::Value(fm.deps.clone()),
@@ -242,8 +262,8 @@ impl Metadata {
         self.fields()?.rank.as_value()?.as_deref()
     }
 
-    pub fn created(&self) -> Option<&str> {
-        self.fields()?.created.as_value().map(String::as_str)
+    pub fn created(&self) -> Option<Timestamp> {
+        self.fields()?.created.as_value().map(|at| at.0)
     }
 
     // Every field that failed, named, for a surface that reports what is wrong rather than only
@@ -284,11 +304,11 @@ impl Metadata {
 pub fn updated_field(
     created: Option<Timestamp>,
     updated: op_task::FieldResult<Timestamp>,
-) -> Field<String> {
+) -> Field<Rfc3339> {
     updated
         .map(|at| match created {
-            Some(created) => at.max(created).to_string(),
-            None => at.to_string(),
+            Some(created) => Rfc3339(at.max(created)),
+            None => Rfc3339(at),
         })
         .into()
 }
@@ -326,7 +346,7 @@ pub struct TaskDetail {
     pub title: String,
     pub metadata: Metadata,
     pub body: String,
-    pub updated: Field<String>,
+    pub updated: Field<Rfc3339>,
     pub headline: String,
     pub branches: Vec<BranchState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -346,7 +366,7 @@ pub struct TaskListItem {
     pub id: String,
     pub title: String,
     pub metadata: Metadata,
-    pub updated: Field<String>,
+    pub updated: Field<Rfc3339>,
     pub headline: String,
     pub branches: Vec<BranchState>,
 }

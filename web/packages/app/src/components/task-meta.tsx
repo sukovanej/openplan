@@ -1,4 +1,4 @@
-import type { Field_String } from "@open-planner/api-client"
+import type { Field_Rfc3339 } from "@open-planner/api-client"
 import { CalendarPlus, CircleAlert, CornerLeftUp, History, type LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
@@ -51,7 +51,7 @@ export function TaskTimes({
   problems,
 }: {
   created: string | undefined
-  updated: Field_String | undefined
+  updated: Field_Rfc3339 | undefined
   problems: ReadonlyArray<FieldProblem>
 }) {
   const updatedAt = updated === undefined ? undefined : fieldValue(updated)
