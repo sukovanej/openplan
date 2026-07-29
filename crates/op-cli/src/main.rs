@@ -643,6 +643,11 @@ fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
 }
 
 fn delete(root: &Path, daemon_url: Option<&str>, id: &str, yes: bool) -> Result<ExitCode> {
+    // A local read answers this: the delete targets the caller's branch, whose worktree is this one.
+    // Prompting — and starting a daemon — for a typo would be the daemon's 404 arriving too late.
+    if !Store::discover(root)?.exists(id) {
+        bail!("no such task: {id}");
+    }
     if !yes && !confirm(id)? {
         println!("aborted");
         return Ok(ExitCode::SUCCESS);

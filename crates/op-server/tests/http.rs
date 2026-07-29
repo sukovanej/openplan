@@ -855,6 +855,46 @@ async fn create_numbers_ids_above_every_local_branch() {
     }
 }
 
+#[tokio::test]
+async fn create_never_reuses_a_number_a_branch_still_holds() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(
+        root.join(".plan/tasks/alpha-5.md"),
+        "---\nstatus: todo\n---\n# Alpha\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+    // `feature` keeps alpha-5 exactly as the merge base has it, so it never shows up as divergence;
+    // main then drops the task. The number is still in use — on a branch the matrix has no cell for.
+    git(root, &["branch", "feature"]);
+    std::fs::remove_file(root.join(".plan/tasks/alpha-5.md")).unwrap();
+    git(root, &["commit", "-qam", "drop alpha"]);
+
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = AppState::new(repo, store);
+
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks",
+        Some(json!({ "title": "Beta" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    assert_eq!(
+        body_json(created).await["id"],
+        "beta-6",
+        "reissuing 5 would put two unrelated tasks under one id once feature merges"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn concurrent_creates_never_share_an_id() {
     let (_dir, state) = store_state();

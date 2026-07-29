@@ -54,7 +54,9 @@ impl IdCounter {
     fn issue_above(&self, floor: u64) -> u64 {
         let mut next = self.0.lock().expect("id counter mutex poisoned");
         let issued = (*next).max(floor.saturating_add(1));
-        *next = issued + 1;
+        // Saturating rather than wrapping: a hand-written id near u64::MAX must degrade into "this
+        // number is taken" refusals, not silently restart the counter below the floor.
+        *next = issued.saturating_add(1);
         issued
     }
 }

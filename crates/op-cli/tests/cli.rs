@@ -424,6 +424,23 @@ fn delete_removes_the_file() {
 }
 
 #[test]
+fn delete_of_a_missing_id_fails_before_touching_the_daemon() {
+    let dir = Project::new();
+    let out = run(&dir, &["delete", "ghost", "--yes"]);
+
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no such task: ghost"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !dir.home.path().join("daemon.json").exists(),
+        "a local read settles this; no daemon should have been started"
+    );
+}
+
+#[test]
 fn list_json_filters_by_status() {
     let dir = Project::new();
     let todo = create(&dir, "Still to do");

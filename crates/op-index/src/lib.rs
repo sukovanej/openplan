@@ -27,6 +27,7 @@ pub struct Index {
     // branch -> a walk result reusable across the per-request rebuilds, instead of re-walking
     // history every time.
     change_cache: HashMap<String, ChangeTimes>,
+    max_id_number: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +47,7 @@ struct Version {
 
 struct DiffCtx<'a> {
     branch: &'a str,
+    present: &'a BTreeSet<String>,
     committed: &'a HashMap<String, String>,
     base: &'a HashMap<String, HashSet<String>>,
     default_blobs: &'a HashMap<String, String>,
@@ -102,15 +104,33 @@ impl Index {
         let no_base = HashMap::new();
 
         let mut cells = Vec::new();
+        let mut max_id_number = None;
         for branch in &branches {
             let committed: HashMap<String, String> =
                 repo.branch_task_blobs(branch)?.into_iter().collect();
             let live = self.live.get(branch).cloned();
+            let present = present_ids(&committed, live.as_ref())?;
+            // Every id the branch holds, not just the cells it contributes: a task identical to its
+            // merge base is skipped below, and its number would otherwise read as free.
+            max_id_number = max_id_number.max(
+                present
+                    .iter()
+                    .filter_map(|id| op_store::id_number(id))
+                    .max(),
+            );
             if self.is_baseline(branch) {
-                self.baseline_cells(repo, branch, &committed, live.as_ref(), &mut cells)?;
+                self.baseline_cells(
+                    repo,
+                    branch,
+                    &present,
+                    &committed,
+                    live.as_ref(),
+                    &mut cells,
+                )?;
             } else {
                 let ctx = DiffCtx {
                     branch,
+                    present: &present,
                     committed: &committed,
                     base: base_blobs.get(branch).unwrap_or(&no_base),
                     default_blobs: &default_blobs,
@@ -119,6 +139,7 @@ impl Index {
                 self.diff_cells(repo, &ctx, &mut cells)?;
             }
         }
+        self.max_id_number = max_id_number;
         cells.sort_by(|a, b| (&a.task.id, &a.branch).cmp(&(&b.task.id, &b.branch)));
         self.change_times = self.compute_change_times(repo, &cells)?;
         self.matrix = Matrix { cells };
@@ -224,19 +245,15 @@ impl Index {
         &mut self,
         repo: &Repo,
         branch: &str,
+        present: &BTreeSet<String>,
         committed: &HashMap<String, String>,
         live: Option<&Store>,
         cells: &mut Vec<MatrixCell>,
     ) -> Result<(), IndexError> {
-        for id in present_ids(committed, live)? {
-            if let Some(cell) = self.present_cell(
-                repo,
-                branch,
-                &id,
-                committed.get(&id),
-                ChangeKind::Base,
-                live,
-            )? {
+        for id in present {
+            if let Some(cell) =
+                self.present_cell(repo, branch, id, committed.get(id), ChangeKind::Base, live)?
+            {
                 cells.push(cell);
             }
         }
@@ -249,17 +266,14 @@ impl Index {
         ctx: &DiffCtx,
         cells: &mut Vec<MatrixCell>,
     ) -> Result<(), IndexError> {
-        let ids: BTreeSet<String> = present_ids(ctx.committed, ctx.live)?
-            .into_iter()
-            .chain(ctx.base.keys().cloned())
-            .collect();
+        let ids: BTreeSet<&String> = ctx.present.iter().chain(ctx.base.keys()).collect();
         for id in ids {
-            let base_oids = ctx.base.get(&id);
-            let committed_oid = ctx.committed.get(&id);
+            let base_oids = ctx.base.get(id);
+            let committed_oid = ctx.committed.get(id);
             match self.present_cell(
                 repo,
                 ctx.branch,
-                &id,
+                id,
                 committed_oid,
                 ChangeKind::Base,
                 ctx.live,
@@ -281,13 +295,13 @@ impl Index {
                 // when the commit still has the task and only the working tree dropped it.
                 None => {
                     if let Some(bases) = base_oids {
-                        if ctx.default_blobs.contains_key(&id) {
-                            let blob = deletion_blob(bases, ctx.default_blobs.get(&id));
+                        if ctx.default_blobs.contains_key(id) {
+                            let blob = deletion_blob(bases, ctx.default_blobs.get(id));
                             let version = self.committed_version(repo, blob)?;
                             let dirty = committed_oid.is_some();
                             cells.push(cell(
                                 ctx.branch,
-                                &id,
+                                id,
                                 blob,
                                 ChangeKind::Deleted,
                                 dirty,
@@ -388,14 +402,11 @@ impl Index {
         self.current_branch.as_deref()
     }
 
-    // The highest id number in use on any local branch, including branches that only deleted the
-    // task — the floor an allocator must clear for a number to be unissued repo-wide.
+    // The highest id number any local branch holds — the floor an allocator must clear for a number
+    // to be unissued repo-wide. Read from the branches themselves rather than from the matrix, whose
+    // cells only cover divergence.
     pub fn max_id_number(&self) -> Option<u64> {
-        self.matrix
-            .cells
-            .iter()
-            .filter_map(|cell| op_store::id_number(&cell.task.id))
-            .max()
+        self.max_id_number
     }
 
     // The already-opened store of the worktree that has `branch` checked out and is writable — not

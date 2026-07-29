@@ -16,6 +16,13 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 pub enum ClientError {
     #[error("cannot reach the oplan daemon: {0}")]
     Unreachable(String),
+    // Giving up on the response says nothing about the write: the daemon is still waiting on the
+    // file's lock and will finish. Retrying is what duplicates a task, so say so.
+    #[error(
+        "the oplan daemon did not answer within {}s (another writer may be holding the file); the write may still have completed — check before retrying",
+        WRITE_TIMEOUT.as_secs()
+    )]
+    TimedOut,
     #[error("{message}")]
     Refused { status: u16, message: String },
 }
@@ -107,10 +114,13 @@ impl Client {
 }
 
 fn send(request: RequestBuilder) -> Result<Response, ClientError> {
-    request
-        .timeout(WRITE_TIMEOUT)
-        .send()
-        .map_err(|err| ClientError::Unreachable(err.to_string()))
+    request.timeout(WRITE_TIMEOUT).send().map_err(|err| {
+        if err.is_timeout() {
+            ClientError::TimedOut
+        } else {
+            ClientError::Unreachable(err.to_string())
+        }
+    })
 }
 
 // The daemon answers every refusal with an `ApiErrorBody`; anything else (a proxy's page, an empty
