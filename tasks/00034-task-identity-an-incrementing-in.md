@@ -1,25 +1,25 @@
 ---
-status: backlog
+status: done
 created: 2026-07-16T18:50:25Z
-deps:
-- daemon-as-single-write-id-author-c1e9
+dependencies:
+- ./00033-daemon-as-single-write-id-author.md
 ---
-# Task identity: incrementing integer id prefix instead of the random 4-char suffix
+# Task identity: an incrementing integer
 
-Task identity is currently a **random** id: `slug(title)` plus a 2-byte random hex
-suffix, e.g. `ship-login-page-3d0c` (`op-store` `link_new_id` → `rand_hex(2)`).
-Replace that random suffix with a **monotonically incrementing integer prefix**
-that becomes the task's identity, e.g. `42-ship-login-page`. The number is the
-stable identity; the slug tail is human-readable decoration only.
+Task identity was a **random** id: `slug(title)` plus a 2-byte random hex suffix,
+e.g. `ship-login-page-3d0c`. It becomes a **monotonically incrementing integer**
+and nothing else, e.g. `42`. The file keeps a readable name —
+`00042-ship-login-page.md` — but the padding and the slug are decoration outside
+the id: the task is found by the number its file name starts with.
 
 ## Motivation
 
 Sequential ids (`42`) are shorter, memorable, orderable, and pleasant to type and
-reference (`[[42]]`) versus opaque random hex.
+reference (`[[./00042-publish-fast-forward-main-to-the.md]]`) versus opaque random hex.
 
 ## Allocation model (settled — single-machine)
 
-open-plan is single-machine, so [[daemon-as-single-write-id-author-c1e9]] makes
+open-plan is single-machine, so [[./00033-daemon-as-single-write-id-author.md]] makes
 the machine daemon the sole writer. Allocation follows from that:
 
 - `next = max(numeric id over all local branches) + 1`, computed from the set the
@@ -36,9 +36,11 @@ a per-branch `op-store` counter here; allocation belongs behind the daemon.
 
 ## Scope
 
-- Id format: `<n>-<slug>`. Keep `slug()`; replace only the identity component
-  (drop `rand_hex(2)` from `link_new_id`). Define the canonical id grammar and
-  reject/normalize malformed ids.
+- Id format: `<n>`. Drop `rand_hex(2)` outright. Define the canonical id grammar —
+  decimal, no sign, no padding — and reject anything else as an id.
+- File name: `<nnnnn>-<slug(title)>.md`, zero-padded so a listing sorts in task
+  order. A file is resolved by its numeric prefix, so re-slugging it by hand
+  keeps the task.
 - Allocation source lives behind the daemon (see the dependency), not in a
   per-branch `op-store` high-water mark.
 - Migration: rename existing `.plan/tasks/*.md` and rewrite every reference to old

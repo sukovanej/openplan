@@ -9,7 +9,7 @@ allocation happens in exactly one place. Route `oplan` CLI mutations through the
 daemon's HTTP API (the same `POST /api/tasks`, `PATCH /api/tasks/{id}`,
 `DELETE /api/tasks/{id}` the web UI already uses) instead of calling `op-store`
 directly. This is the allocation mechanism that unblocks
-[[task-identity-incrementing-integ-a4a7]] (incrementing integer ids): a single
+[[./00034-task-identity-an-incrementing-in.md]] (incrementing integer ids): a single
 writer with a view across all local branches can hand out monotonic ids.
 
 ## Today — most of the machinery already exists

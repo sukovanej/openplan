@@ -117,7 +117,7 @@ oplan server ping                              # status only: prints pid/port/up
 - Everything already deferred by task-crud (section addressing, matrix, presence).
 
 ## Notes
-- **Supersedes the `ping` change in [[task-crud-6e8b]]:** that task's "real `ping`" is now
+- **Supersedes the `ping` change in [[./00003-task-crud-across-the-store-daemo.md]]:** that task's "real `ping`" is now
   `oplan server ping`, delivered here. task-crud's local CRUD does not call `ensure_daemon`.
 - Keep timeouts tight: health probe ~250ms; readiness poll a few seconds with backoff, then a
   clear timeout error pointing at `daemon.log`.

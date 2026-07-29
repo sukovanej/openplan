@@ -26,10 +26,10 @@ Three branches. `main` holds the task; `feat-x` edits it later; `mine` forks fro
 From the `mine` worktree:
 
 ```
-$ cat .plan/tasks/shared-0001.md
+$ cat .plan/tasks/7.md
 status: todo
 
-$ oplan get shared-0001 --json
+$ oplan get 7 --json
 status:  todo                     # main's content, from Feb 2025
 updated: 2026-05-28T20:26:40Z     # feat-x's commit
 ```
@@ -57,7 +57,7 @@ report Feb 2025, which is exactly right.
 Today the walk is only ever asked about branches' *cells*, so a task with no cell
 on a branch is never asked about for that branch at all. The fix is to ask.
 
-Note the tension with [[restore-the-last-change-walk-s-e-f70d]]: asking for more
+Note the tension with [[./00048-restore-the-last-change-walk-s-e.md]]: asking for more
 ids widens the walk, which is the thing that task is trying to narrow. Settle the
 walk's shape first, then make this read ask it the right question.
 

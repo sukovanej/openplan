@@ -12,9 +12,9 @@ out worktree — so those same rows 404 when a user acts on them.
 Observed while verifying #37 against a live daemon:
 
 ```
-GET  /api/board                      -> row: continuous-changes-accumulation-v-0cb0
-PATCH /api/tasks/continuous-changes-accumulation-v-0cb0
-  -> 404 {"message":"no such task: continuous-changes-accumulation-v-0cb0"}
+GET  /api/board                      -> row: 39
+PATCH /api/tasks/39
+  -> 404 {"message":"no such task: 39"}
 ```
 
 Nothing in the row tells the client the task is unreachable for writes, so the

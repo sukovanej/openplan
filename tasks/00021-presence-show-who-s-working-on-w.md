@@ -90,7 +90,7 @@ first, this second.
 - Reuses the SSE broadcast + `notify` watcher infra from
   `emit-change-events-for-all-branches-and-worktrees`.
 - Independent of `branch-aware-crud`.
-- **Cross-branch collision warning (from `design-a-continuous-changes-accu-2380`).**
+- **Cross-branch collision warning (from `23`).**
   That design adds *ambient* edits routed to `refs/open-plan/rolling-updates`,
   which are **unclaimed by nature** — a human's quick UI triage edit heartbeats no
   session and lands on a branch nobody has checked out. It creates a new collision

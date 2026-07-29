@@ -4,7 +4,7 @@ created: 2026-07-26T14:32:08Z
 ---
 # Web UI: copy a task's id to the clipboard with Cmd+.
 
-`Cmd+.` copies a task's id (the slug, e.g. `replace-dprint-with-the-oxc-form-a105`)
+`Cmd+.` copies a task's id (e.g. `28`)
 to the system clipboard. It works on the list route for the task under the mouse
 pointer, and on the detail route for the task being viewed.
 
@@ -67,7 +67,7 @@ pointer, and on the detail route for the task being viewed.
    - A `flash` store (message + tone, auto-clearing after ~1.6s) and a
      `<CopyFlash />` pill rendered once in the app shell, bottom-right, alongside
      the existing `ConnectionStatus`/`MutationError` chrome: `Copied
-     replace-dprint-…-a105` on success, `Copy failed` on rejection. Same store
+     28` on success, `Copy failed` on rejection. Same store
      serves any future copy action.
 
 ## Acceptance criteria

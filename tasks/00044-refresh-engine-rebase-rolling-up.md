@@ -1,24 +1,24 @@
 ---
 status: todo
 created: 2026-07-26T15:40:55Z
-parent: continuous-changes-accumulation-v-0cb0
-deps:
-- daemon-ambient-writer-accumulate-e2f2
+parent: ./00039-continuous-changes-accumulation-v.md
+dependencies:
+- ./00040-daemon-ambient-writer-accumulate.md
 ---
 # Refresh engine: rebase rolling-updates onto main (event-driven)
 
 **Phase 4** of the rolling-updates plan
-([[design-a-continuous-changes-accu-2380]] §7.11). Keep
+([[./00023-design-a-continuous-changes-accu.md]] §7.11). Keep
 `refs/open-plan/rolling-updates` reconciled onto `main` so it is always
 `main` + the pending ambient stack, worktree-less, conflict-gated.
 
 ## Coordination constraint
 
-The AmbientWriter ([[daemon-ambient-writer-accumulate-e2f2]]) is the **sole
+The AmbientWriter ([[./00040-daemon-ambient-writer-accumulate.md]]) is the **sole
 writer** of the ref. Refresh also moves the ref, so it must be a **command that
 same actor processes**, never a second writer. Phase 4 = a scheduler that
 enqueues `Refresh`, plus the `Refresh` handler; it reuses Phase 1's
-`replay_onto` ([[ref-plumbing-in-op-git-for-the-r-0489]]).
+`replay_onto` ([[./00043-ref-plumbing-in-op-git-for-the-r.md]]).
 
 ## 1. A `main`-moved signal (op-watch / op-api)
 

@@ -1,7 +1,7 @@
 ---
 status: in_review
 created: 2026-07-14T22:20:31Z
-parent: continuous-changes-accumulation-v-0cb0
+parent: ./00039-continuous-changes-accumulation-v.md
 ---
 # Design a continuous-changes accumulation branch
 
@@ -139,7 +139,7 @@ the §7.10 single-machine boundary).
   `git merge-tree --write-tree` path — so the ephemeral worktree is dropped from
   the primary flow.
 - **Presence & claims** (§7.6) — the cross-branch collision-warning question for
-  ambient edits is tracked on `presence-show-who-s-working-on-w-7185`, not here.
+  ambient edits is tracked on `21`, not here.
 - **v2 fan-out:** publishing ambient edits to active feature branches, not just
   `main`.
 
