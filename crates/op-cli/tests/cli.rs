@@ -971,3 +971,19 @@ fn get_json_dates_the_checked_out_branch_not_the_headline() {
     assert_eq!(view["title"], "Alpha");
     assert_eq!(view["updated"], "2001-09-09T01:46:40Z");
 }
+
+#[test]
+fn set_on_a_task_without_created_explains_what_to_add() {
+    let dir = store();
+    write(
+        &dir.path().join(".plan/tasks/legacy.md"),
+        "---\nstatus: todo\n---\n# Legacy\n",
+    );
+
+    let out = run(dir.path(), &["set", "legacy", "status", "done"]);
+
+    assert!(!out.status.success());
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(err.contains("created:"), "{err}");
+    assert!(err.contains("git log --diff-filter=A"), "{err}");
+}

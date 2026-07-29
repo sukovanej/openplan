@@ -25,6 +25,13 @@ pub enum StoreError {
     NotFound { id: String },
     #[error("{0}")]
     Invalid(String),
+    #[error(
+        "{path} has no `created:` field, so it cannot be written — a write must not invent when \
+         the task was created.\n\nAdd the field to its frontmatter by hand:\n\n    created: \
+         {example}\n\nIf the file is already committed, the date it first appeared is:\n\n    git \
+         log --diff-filter=A --format=%aI -1 -- {path}"
+    )]
+    MissingCreated { path: String, example: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -98,7 +105,13 @@ impl Store {
     }
 
     pub fn read(&self, id: &str) -> Result<Task, StoreError> {
-        Ok(Task::from_file_string(&self.read_raw(id)?)?)
+        Task::from_file_string(&self.read_raw(id)?).map_err(|err| match err {
+            op_task::TaskError::MissingCreated => StoreError::MissingCreated {
+                path: self.task_path(id).display().to_string(),
+                example: op_task::now().to_string(),
+            },
+            other => other.into(),
+        })
     }
 
     pub fn read_raw(&self, id: &str) -> Result<String, StoreError> {

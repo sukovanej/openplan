@@ -452,3 +452,29 @@ fn a_status_change_preserves_created() {
     assert_eq!(task.frontmatter.status, Status::InReview);
     assert_eq!(task.frontmatter.created, stamp());
 }
+
+#[test]
+fn a_file_without_created_refuses_to_be_written_and_says_how_to_fix_it() {
+    let (dir, store) = make_store();
+    let path = dir.path().join(".plan/tasks/legacy.md");
+    std::fs::write(&path, "---\nstatus: in_progress\n---\n# Legacy\n").unwrap();
+
+    let err = store
+        .update("legacy", |task| {
+            task.set_status(Status::Done);
+            Ok(())
+        })
+        .expect_err("a write must not invent the date the task was created");
+
+    assert!(matches!(err, StoreError::MissingCreated { .. }), "{err:?}");
+    let message = err.to_string();
+    // The reader is told which file, which field, and the two ways to get the value.
+    assert!(message.contains(&path.display().to_string()), "{message}");
+    assert!(message.contains("created:"), "{message}");
+    assert!(message.contains("--diff-filter=A"), "{message}");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "---\nstatus: in_progress\n---\n# Legacy\n",
+        "a refused write leaves the file alone"
+    );
+}

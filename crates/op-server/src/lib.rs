@@ -281,6 +281,11 @@ impl IntoResponse for ApiError {
                 (StatusCode::NOT_FOUND, format!("no such task: {id}"))
             }
             ApiError::Store(StoreError::Invalid(message)) => (StatusCode::BAD_REQUEST, message),
+            // The request is fine and the daemon is fine; the stored file is the thing that has to
+            // change, and only a human can change it.
+            ApiError::Store(err @ StoreError::MissingCreated { .. }) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, err.to_string())
+            }
             ApiError::Store(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             ApiError::NotWritable(branch) => (
                 StatusCode::CONFLICT,

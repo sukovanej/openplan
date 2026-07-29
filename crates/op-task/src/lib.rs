@@ -90,6 +90,10 @@ pub enum TaskError {
     Frontmatter(#[from] serde_yaml::Error),
     #[error("missing frontmatter fence")]
     MissingFrontmatter,
+    // Its own variant, not a plain YAML error, because it is the one parse failure a caller can
+    // explain in terms of what the reader must do — see `StoreError::MissingCreated`.
+    #[error("no `created:` field")]
+    MissingCreated,
 }
 
 impl Task {
@@ -143,11 +147,17 @@ impl Task {
 
     pub fn from_file_string(input: &str) -> Result<Self, TaskError> {
         let (fm_src, body) = split_frontmatter(input).ok_or(TaskError::MissingFrontmatter)?;
-        let frontmatter: Frontmatter = serde_yaml::from_str(&fm_src.replace('\r', ""))?;
-        Ok(Self {
-            frontmatter,
-            body: body.to_owned(),
-        })
+        let fm_src = fm_src.replace('\r', "");
+        match serde_yaml::from_str::<Frontmatter>(&fm_src) {
+            Ok(frontmatter) => Ok(Self {
+                frontmatter,
+                body: body.to_owned(),
+            }),
+            Err(err) => Err(match serde_yaml::from_str::<serde_yaml::Mapping>(&fm_src) {
+                Ok(map) if !map.contains_key("created") => TaskError::MissingCreated,
+                _ => TaskError::Frontmatter(err),
+            }),
+        }
     }
 }
 
