@@ -52,9 +52,6 @@ function TaskGrid({ board }: { board: Board }) {
       aria-label="Tasks"
       aria-activedescendant={activeId}
       tabIndex={0}
-      onMouseMove={() => {
-        if (index !== -1) rowCursor.clear()
-      }}
       // Box outline is an inset ring, not `border`, so the selected row's own inset ring lands on
       // the same pixels and reads as one line instead of doubling up against a container border.
       className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border text-sm focus:outline-none"
@@ -151,7 +148,19 @@ function TaskRow({
       role="row"
       aria-selected={active}
       onClick={onFocus}
-      onMouseMove={() => hoveredRow.enter(task.id)}
+      // Scrolling a list under a still pointer moves `:hover` to another row without a mousemove,
+      // so the row the pointer marks is only in step with the store if entering counts too. It must
+      // not count while the keyboard drives, or walking with `j` would hand rows it scrolls past
+      // back to the pointer.
+      onMouseEnter={() => {
+        if (hoverable) hoveredRow.enter(task.id)
+      }}
+      // Moving the pointer is what hands the current row back to it — and only over a row, so a
+      // nudge across a group header or the scrollbar leaves the keyboard's row where it was.
+      onMouseMove={() => {
+        hoveredRow.enter(task.id)
+        rowCursor.clear()
+      }}
       onMouseLeave={() => hoveredRow.leave(task.id)}
       className={cn(
         "relative flex cursor-pointer items-center border-b transition-colors",

@@ -58,7 +58,12 @@ export function useKeyboard(): Keyboard {
           hoveredRow.clear()
           cursor.moveBy(delta, hovered)
         },
-        focusedId: () => focusedId(activeCursor().getSnapshot()),
+        // The hovered row renders as the current one, so it answers for the cursor when there is
+        // no selection.
+        focusedId: () => {
+          const cursor = activeCursor().getSnapshot()
+          return focusedId(cursor) ?? hoveredRow.among(cursor.ids)
+        },
       },
       copy: {
         taskId: () => {

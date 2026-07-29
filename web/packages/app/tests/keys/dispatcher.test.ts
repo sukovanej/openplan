@@ -40,7 +40,10 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
         hoveredRow.clear()
         rowCursor.moveBy(delta, hovered)
       },
-      focusedId: () => focusedId(rowCursor.getSnapshot()),
+      focusedId: () => {
+        const cursor = rowCursor.getSnapshot()
+        return focusedId(cursor) ?? hoveredRow.among(cursor.ids)
+      },
     },
     copy: {
       taskId: () => {
@@ -309,13 +312,23 @@ describe("scope resolution", () => {
   it("j resumes from the hovered row, and from the first row when nothing is hovered", () => {
     const h = mount()
     rowCursor.setRows(["12", "13", "14"])
-    hoveredRow.enter("14")
+    hoveredRow.enter("13")
     press("j")
     expect(focusedId(rowCursor.getSnapshot())).toBe("14")
 
     rowCursor.clear()
     press("j")
     expect(focusedId(rowCursor.getSnapshot())).toBe("12")
+    h.detach()
+  })
+
+  it("Enter opens the hovered row, which reads as the current one", () => {
+    const h = mount()
+    rowCursor.setRows(["12", "13"])
+    hoveredRow.enter("13")
+
+    press("Enter")
+    expect(h.navigations).toEqual(["/task/13"])
     h.detach()
   })
 
