@@ -40,6 +40,10 @@ oplan server stop                # stop the background daemon
 oplan merge-driver <O> <A> <B>   # git merge driver for .plan/**.md
 ```
 
+Reads work straight off the files; writes (`create`, `set`, `move`, `delete`) go through the daemon
+and start it if it is down. `OPLAN_HOME` picks the daemon's state directory (default `~/.plan`),
+`OPLAN_PORT` its port (default 7373).
+
 ## License
 
 MIT OR Apache-2.0.

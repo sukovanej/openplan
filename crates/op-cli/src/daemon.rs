@@ -25,6 +25,23 @@ pub enum Started {
     Fresh(DaemonInfo),
 }
 
+impl Started {
+    pub fn into_info(self) -> DaemonInfo {
+        match self {
+            Started::Already(info) | Started::Fresh(info) => info,
+        }
+    }
+}
+
+// The port the daemon binds unless told otherwise. A write brings the daemon up itself, with no
+// `--port` to carry, so the override has to be reachable from the environment too.
+pub fn default_port() -> u16 {
+    std::env::var("OPLAN_PORT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(DEFAULT_PORT)
+}
+
 enum StopOutcome {
     NotRunning,
     RemovedStale { pid: u32 },
@@ -226,7 +243,7 @@ impl Control {
             return Ok(StopOutcome::RemovedStale { pid: info.pid });
         }
 
-        let clean = self.serves_identity(&info) && self.client.shutdown(&base(info.port));
+        let clean = self.serves_identity(&info) && self.client.shutdown(&base_url(info.port));
         if !clean {
             signal_term(info.pid)?;
         }
@@ -311,7 +328,7 @@ impl Control {
         if !same_path(Path::new(info.repo.as_deref()?), repo_dir) || !self.serves_identity(&info) {
             return None;
         }
-        let base = base(info.port);
+        let base = base_url(info.port);
         let detail = self.client.task(&base, id, branch)?;
         let updated = detail.updated.into_result().map(|at| at.0);
         // A branch matching its merge-base has no cell there, so the daemon reports nothing for it;
@@ -330,7 +347,7 @@ impl Control {
 
     fn serves_identity(&self, info: &DaemonInfo) -> bool {
         self.client
-            .health(&base(info.port))
+            .health(&base_url(info.port))
             .is_some_and(|live| live.pid == info.pid)
     }
 
@@ -420,14 +437,14 @@ fn signal_term(pid: u32) -> Result<()> {
     }
 }
 
-fn same_path(a: &Path, b: &Path) -> bool {
+pub fn same_path(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
         _ => a == b,
     }
 }
 
-fn base(port: u16) -> String {
+pub fn base_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 

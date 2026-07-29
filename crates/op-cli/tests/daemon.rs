@@ -27,7 +27,10 @@ impl Daemon {
 
     fn cmd(&self) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_oplan"));
+        // A write starts the daemon itself, with no `--port` to carry, so without this it would
+        // reach for the real 7373 — the developer's own daemon, or another test's.
         cmd.env("OPLAN_HOME", self.home.path())
+            .env("OPLAN_PORT", "0")
             .arg("--root")
             .arg(self.root.path());
         cmd

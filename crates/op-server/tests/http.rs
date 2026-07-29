@@ -766,6 +766,194 @@ fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
 }
 
 #[tokio::test]
+async fn create_lands_in_the_requested_branch_s_own_worktree() {
+    let (dir, state) = git_state_live_feature();
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks?branch=feature",
+        Some(json!({ "title": "Ship login" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let id = body_json(created).await["id"].as_str().unwrap().to_owned();
+
+    let path = format!(".plan/tasks/{id}.md");
+    assert!(
+        dir.path().join(".worktrees/feature").join(&path).is_file(),
+        "the new task belongs to feature's worktree"
+    );
+    assert!(
+        !dir.path().join(&path).exists(),
+        "creation is branch-local: main's worktree is untouched"
+    );
+}
+
+#[tokio::test]
+async fn create_on_a_branch_without_a_live_worktree_is_refused() {
+    let (dir, state) = git_state();
+    // `feature` exists but no worktree holds it, so there is nowhere to write without fabricating a
+    // commit — the same refusal patch and delete make.
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks?branch=feature",
+        Some(json!({ "title": "Ship login" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        std::fs::read_dir(dir.path().join(".plan/tasks"))
+            .unwrap()
+            .count(),
+        1,
+        "a refused create must not fall back to the serve root"
+    );
+}
+
+#[tokio::test]
+async fn create_numbers_ids_above_every_local_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(
+        root.join(".plan/tasks/alpha-2.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+    // The highest number in the repo sits on a branch that is not checked out. An allocator that
+    // only looked at the working tree would hand out 3 and collide with it on the next merge.
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    std::fs::write(
+        root.join(".plan/tasks/beta-9.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Beta\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "beta on feature"]);
+    git(root, &["checkout", "-q", "main"]);
+
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = AppState::new(repo, store);
+
+    for expected in ["ship-login-10", "ship-login-11"] {
+        let created = send(
+            &state,
+            "POST",
+            "/api/tasks",
+            Some(json!({ "title": "Ship login" })),
+        )
+        .await;
+        assert_eq!(created.status(), StatusCode::CREATED);
+        assert_eq!(body_json(created).await["id"], expected);
+    }
+}
+
+#[tokio::test]
+async fn create_never_reuses_a_number_a_branch_still_holds() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(
+        root.join(".plan/tasks/alpha-5.md"),
+        "---\nstatus: todo\n---\n# Alpha\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+    // `feature` keeps alpha-5 exactly as the merge base has it, so it never shows up as divergence;
+    // main then drops the task. The number is still in use — on a branch the matrix has no cell for.
+    git(root, &["branch", "feature"]);
+    std::fs::remove_file(root.join(".plan/tasks/alpha-5.md")).unwrap();
+    git(root, &["commit", "-qam", "drop alpha"]);
+
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = AppState::new(repo, store);
+
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks",
+        Some(json!({ "title": "Beta" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    assert_eq!(
+        body_json(created).await["id"],
+        "beta-6",
+        "reissuing 5 would put two unrelated tasks under one id once feature merges"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_creates_never_share_an_id() {
+    let (_dir, state) = store_state();
+    // Same title, so the slug cannot tell the ids apart — only the allocated number can. Each
+    // request rebuilds the index and reads the same floor, so a per-request `max + 1` would collide.
+    let mut requests = Vec::new();
+    for _ in 0..8 {
+        let state = state.clone();
+        requests.push(tokio::spawn(async move {
+            let created = send(
+                &state,
+                "POST",
+                "/api/tasks",
+                Some(json!({ "title": "Contended" })),
+            )
+            .await;
+            assert_eq!(created.status(), StatusCode::CREATED);
+            body_json(created).await["id"].as_str().unwrap().to_owned()
+        }));
+    }
+
+    let mut ids = Vec::new();
+    for request in requests {
+        ids.push(request.await.unwrap());
+    }
+    let distinct: std::collections::HashSet<&String> = ids.iter().collect();
+    assert_eq!(distinct.len(), ids.len(), "ids collided: {ids:?}");
+
+    let list = send(&state, "GET", "/api/tasks", None).await;
+    assert_eq!(
+        body_json(list).await.as_array().unwrap().len(),
+        ids.len(),
+        "every create landed as its own task"
+    );
+}
+
+#[tokio::test]
+async fn create_takes_the_next_number_when_one_is_already_on_disk() {
+    let (dir, state) = store_state();
+    // A file written outside the daemon can hold the number the floor just cleared; the create takes
+    // the next one instead of failing.
+    std::fs::write(
+        dir.path().join(".plan/tasks/contended-1.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Contended\n",
+    )
+    .unwrap();
+
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks",
+        Some(json!({ "title": "Contended" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    assert_eq!(body_json(created).await["id"], "contended-2");
+}
+
+#[tokio::test]
 async fn patch_reverting_a_branch_to_its_base_echoes_the_written_task() {
     let (_dir, state) = git_state_live_feature();
     // feature's alpha is `done`; main's base is `todo`. Reverting feature back to `todo` makes it
@@ -1012,6 +1200,7 @@ fn the_openapi_spec_documents_every_refusal_with_its_reason() {
         ("get", "/api/tasks", "400"),
         ("get", "/api/tasks", "500"),
         ("post", "/api/tasks", "400"),
+        ("post", "/api/tasks", "409"),
         ("post", "/api/tasks", "500"),
         ("get", "/api/board", "400"),
         ("get", "/api/board", "500"),
@@ -1054,4 +1243,123 @@ fn optional_response_fields_are_absent_rather_than_nullable() {
             "{schema}.{field} must be a plain optional string"
         );
     }
+}
+
+#[tokio::test]
+async fn a_restart_never_reissues_a_number_only_a_file_holds() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    // No commit yet, so nothing the branch walk can see holds these numbers — only the files do.
+    let store = op_store::Store::open(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = AppState::new(repo.clone(), store.clone());
+    for title in ["Alpha", "Beta"] {
+        let created = send(
+            &state,
+            "POST",
+            "/api/tasks",
+            Some(json!({ "title": title })),
+        )
+        .await;
+        assert_eq!(created.status(), StatusCode::CREATED);
+    }
+
+    // A fresh state is a restarted daemon: the counter is gone and the floor must come off disk.
+    let restarted = AppState::new(repo, store);
+    let created = send(
+        &restarted,
+        "POST",
+        "/api/tasks",
+        Some(json!({ "title": "Gamma" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    assert_eq!(body_json(created).await["id"], "gamma-3");
+}
+
+#[tokio::test]
+async fn create_refuses_once_the_highest_number_is_taken() {
+    let (dir, state) = store_state();
+    let taken = format!(".plan/tasks/alpha-{}.md", u64::MAX);
+    std::fs::write(
+        dir.path().join(taken),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
+    )
+    .unwrap();
+
+    // Reissuing the top number would put two unrelated tasks under one, since only the slug would
+    // tell them apart. Refusing is the only answer that keeps a number naming one task.
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks",
+        Some(json!({ "title": "Beta" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CONFLICT);
+    assert!(
+        body_json(created).await["message"]
+            .as_str()
+            .unwrap()
+            .contains("no number is left to issue")
+    );
+}
+
+#[tokio::test]
+async fn a_write_names_the_vanished_root_rather_than_the_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(
+        root.join(".plan/tasks/alpha-1.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+    let feature = root.join("wt");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            feature.to_str().unwrap(),
+        ],
+    );
+
+    let state = AppState::new(
+        op_git::Repo::discover(&feature).unwrap(),
+        op_store::Store::open(&feature).unwrap(),
+    );
+    git(
+        root,
+        &["worktree", "remove", "--force", feature.to_str().unwrap()],
+    );
+
+    // Every branch reads as unwritable once the root is gone, so blaming the branch would send the
+    // user to inspect a checkout that is fine.
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks?branch=main",
+        Some(json!({ "title": "Beta" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CONFLICT);
+    let message = body_json(created).await["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(message.contains("no longer exists"), "{message}");
+    assert!(message.contains("oplan server restart"), "{message}");
 }

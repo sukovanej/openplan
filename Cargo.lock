@@ -2164,7 +2164,9 @@ dependencies = [
  "op-server",
  "op-store",
  "reqwest",
+ "serde",
  "tempfile",
+ "thiserror",
  "tokio",
 ]
 

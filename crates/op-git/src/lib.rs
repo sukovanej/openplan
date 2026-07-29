@@ -63,6 +63,15 @@ impl Repo {
         Ok(names)
     }
 
+    // The branch this worktree has checked out; `None` on a detached HEAD.
+    pub fn current_branch(&self) -> Option<String> {
+        self.repo()
+            .head_name()
+            .ok()
+            .flatten()
+            .map(|name| name.shorten().to_string())
+    }
+
     pub fn op_in_progress(&self) -> bool {
         op_markers_present(self.repo().git_dir())
     }
@@ -71,6 +80,12 @@ impl Repo {
     // `refs/`, `packed-refs`, `HEAD`, and `worktrees/` live — the git-side change sources to watch.
     pub fn git_common_dir(&self) -> PathBuf {
         self.repo().common_dir().to_path_buf()
+    }
+
+    // The main checkout's working copy — the one worktree a repository cannot lose, unlike the
+    // linked worktrees that come and go. `None` for a bare repository.
+    pub fn main_worktree(&self) -> Option<PathBuf> {
+        worktree_of(&self.repo().main_repo().ok()?).map(|worktree| worktree.path)
     }
 
     // Every worktree (main + linked) with a working copy on disk, paired with its checked-out

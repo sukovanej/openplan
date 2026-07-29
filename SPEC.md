@@ -45,8 +45,11 @@ a section-addressable markdown body.
 ## 3. Data model
 
 ### 3.1 Identity, title & frontmatter
-- **Identity = the filename** (`<id>.md`). `id` is never stored in the file. The id is a random
-  slug (collision-free across agents/branches).
+- **Identity = the filename** (`<id>.md`). `id` is never stored in the file. The id is
+  `<slug(title)>-<n>`, where `n` is a number the daemon allocates (§7.3) above the highest already in
+  use on *any* local branch **or in any worktree's files** — a number is taken from the moment a file
+  carries it, before any commit does — so a number is issued once per repository and no two tasks, on
+  any branch, can ever share an id. The slug is decoration; `n` carries the identity.
 - **Title = the body's single `# H1`.** Every task **must** contain **exactly one level-1
   heading**, and that is the title. Never stored in frontmatter.
 
@@ -129,6 +132,9 @@ Every file body is an `mdast`-style tree: **document → section (heading) → b
 
 ## 6. Concurrency
 
+- **One in-band writer**: every mutation — web UI, CLI, agent — goes through the machine daemon's
+  HTTP API (§7.3), so id allocation happens in exactly one place and creation cannot race. The store's
+  locking below still stands: a hand-edit, an editor, or a `git` operation writes outside the daemon.
 - **Per-file advisory lock**: acquire lock on the file → read-modify-write → release.
   Different files run fully in parallel; same file serializes. We don't need sub-file
   concurrency — simple and correct.
@@ -148,9 +154,11 @@ versioning substrate — we read it, we don't rebuild it. Single machine only.
 ### 7.1 Model — one logical task, many branch-versions
 - **Logical identity = id/filename**, immutable and stable across branches (`title` is just a
   field; renaming never changes identity).
-- Each branch holds its own **version** of a task. Random-slug IDs mean independent creations
-  on different branches never falsely unify; a task shared across branches shares its filename
-  through common ancestry.
+- Each branch holds its own **version** of a task. Because ids come from one allocator whose floor
+  spans every local branch (§3.1), independent creations on different branches never collide *or*
+  falsely unify; a task shared across branches shares its filename through common ancestry. Two
+  branches can only ever hold two *versions* of one task `N`, never two different tasks — so a merge
+  is a content merge, never a renumbering.
 - **Core invariant: reads are global, writes are local.** You can read any task on any branch
   (from the object DB); you can only *mutate* a task on the branch whose worktree you have
   checked out. Cross-branch access is read-only aggregation.
@@ -176,10 +184,19 @@ Per project it:
   the object DB (§7.4);
 - overlays live **working-tree** state for each active worktree;
 - holds the **presence registry** (§7.6);
-- pushes to the UI and answers CLI coordination queries.
+- pushes to the UI and answers CLI coordination queries;
+- **is the sole in-band writer**: it serves every create/update/delete, allocating ids from one
+  in-memory counter (§3.1). A write names its target **branch**, which the daemon resolves to that
+  branch's live worktree at write time — or refuses (§7.9). Nothing durable holds the counter: a
+  committed file would conflict on every parallel-branch merge, so a restart re-seeds from the
+  branches and worktree files instead — the ids on disk are the durable floor.
 
 **Degraded fallback:** if the daemon is down, the CLI reads files / the object DB directly and
-uses the on-disk claims file (file-locked), so headless agents still function.
+uses the on-disk claims file (file-locked), so headless agents still function. **Reads** degrade;
+**writes** do not — a CLI write starts the daemon (auto-start, one per machine) and fails loudly if
+it cannot, rather than writing behind the allocator's back. Auto-start roots the daemon at the
+repository's **main checkout**, never at the caller's worktree: worktrees come and go per task, and a
+daemon rooted in a removed one can no longer resolve any branch.
 
 **Logging tiers** (`RUST_LOG`, default `info`): `info` covers lifecycle only — startup,
 lifecycle failures, and change publications. `debug` adds one line per HTTP request (method,
@@ -215,7 +232,7 @@ tagged with the request's route and id.
   when the daemon is down. Orthogonal to the branch-scoped `status` field.
 
 ### 7.7 Conflicts & the section-aware merge driver
-- **Creation never conflicts** (one file per task + random slugs → different files).
+- **Creation never conflicts** (one file per task + repo-wide id allocation → different files).
 - **Same-region edits on two branches** can conflict on merge → detect `<<<<<<<` markers, mark
   the task **conflicted** in the UI, offer a resolution view; the parser never chokes on markers.
 - **Section-aware merge driver**, registered via `.gitattributes` (`/.plan/**.md merge=openplan`):
@@ -236,12 +253,22 @@ tagged with the request's route and id.
 - `op task show <id> --branches` → status matrix across all branches.
 - `op task list --all-branches` / `--branch <name>` (read-only for non-checked-out branches).
 - `op task claim | release | claim-status <id>`.
-- Writes always target the current worktree; cross-branch is read-only.
+- Writes always target the current worktree; cross-branch is read-only. Reads go straight to the
+  files and the object DB; **writes** go to the daemon (§7.3) carrying the caller's branch — including
+  from a linked worktree the daemon does not itself serve, since the branch, not a path, names the
+  target. A checkout that moves the branch between the call and the write therefore yields the
+  correct worktree or a refusal, never a wrong-branch write.
+- A write to a branch **no live worktree holds** is refused (the daemon never fabricates a commit),
+  and *creation obeys the same rule* — a task can only be created on a branch that is checked out
+  somewhere. A worktree mid-`merge`/`rebase` counts as not live (§7.8).
 
 ### 7.10 Boundaries
 - **Single machine only.** Cross-machine coordination (cloud worktrees on different hosts) needs
   a real shared server and breaks local-first — out of scope.
 - Scope = local branches (`refs/heads/*`) + worktrees. Remote-tracking refs may be shown read-only.
+- **One repository per daemon, for now.** §7.3's N registered projects are not built yet, and a branch
+  name means nothing outside its repository, so a write whose repository the running daemon does not
+  serve is refused rather than resolved against a same-named branch elsewhere.
 
 ### 7.11 Ambient edits & the rolling-updates ref
 

@@ -126,6 +126,7 @@ export const createTask = (input: Api.CreateTask): Effect.Effect<string, ApiErro
     Effect.map((created) => created.id),
     Effect.catchTags({
       CreateTask400: refusal,
+      CreateTask409: refusal,
       CreateTask500: refusal,
       HttpClientError: unexpected,
     }),

@@ -1,6 +1,7 @@
 mod daemon;
 mod mergedriver;
 mod serve;
+mod writer;
 
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -9,15 +10,16 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand};
 use op_api::{
-    BranchMark, ChangeKind, CreateTask, Matrix, MatrixCell, Metadata, TaskSummary, TaskTree,
-    TaskView, sibling_cmp,
+    BranchMark, ChangeKind, CreateTask, FieldUpdate, Matrix, MatrixCell, Metadata, TaskPatch,
+    TaskSummary, TaskTree, TaskView, sibling_cmp,
 };
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
 use op_task::{FieldError, FieldResult, Status, Timestamp, rank};
 
-use daemon::{Control, DEFAULT_PORT, Home};
+use daemon::{Control, Home};
+use writer::Writer;
 
 #[derive(Parser)]
 #[command(name = "oplan", version, about = "open-planner — local-first task CLI")]
@@ -133,7 +135,7 @@ enum Command {
 enum ServerCommand {
     /// Start the daemon detached; a no-op if one is already running
     Start {
-        #[arg(long, default_value_t = DEFAULT_PORT)]
+        #[arg(long, default_value_t = daemon::default_port())]
         port: u16,
         /// Run in the foreground instead of detaching (also used internally)
         #[arg(long)]
@@ -143,7 +145,7 @@ enum ServerCommand {
     Stop,
     /// Stop the running daemon, then start a fresh one
     Restart {
-        #[arg(long, default_value_t = DEFAULT_PORT)]
+        #[arg(long, default_value_t = daemon::default_port())]
         port: u16,
     },
     /// Report daemon status without starting it
@@ -164,6 +166,7 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<ExitCode> {
+    let daemon_url = cli.daemon.as_deref();
     match cli.command {
         Command::Create {
             title,
@@ -174,7 +177,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             body_file,
         } => {
             let body = resolve_body(body, body_file)?;
-            create(&cli.root, title, parent, status, deps, body).map(|()| ExitCode::SUCCESS)
+            create(&cli.root, daemon_url, title, parent, status, deps, body)
+                .map(|()| ExitCode::SUCCESS)
         }
         Command::List {
             status,
@@ -205,13 +209,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
             parent,
             before,
             after,
-        } => move_task(&cli.root, &id, parent, before, after).map(|()| ExitCode::SUCCESS),
-        Command::Set { id, field, value } => {
-            set(&cli.root, &id, &field, &value).map(|()| ExitCode::SUCCESS)
+        } => {
+            move_task(&cli.root, daemon_url, &id, parent, before, after).map(|()| ExitCode::SUCCESS)
         }
-        Command::Delete { id, yes } => delete(&cli.root, &id, yes),
+        Command::Set { id, field, value } => {
+            set(&cli.root, daemon_url, &id, &field, &value).map(|()| ExitCode::SUCCESS)
+        }
+        Command::Delete { id, yes } => delete(&cli.root, daemon_url, &id, yes),
         Command::Branches => branches(&cli.root).map(|()| ExitCode::SUCCESS),
-        Command::Server { command } => server(command, &cli.root, cli.daemon.as_deref()),
+        Command::Server { command } => server(command, &cli.root, daemon_url),
         Command::MergeDriver {
             ancestor,
             current,
@@ -288,23 +294,20 @@ fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Optio
 
 fn create(
     root: &Path,
+    daemon_url: Option<&str>,
     title: String,
     parent: Option<String>,
     status: Option<Status>,
     deps: Vec<String>,
     body: Option<String>,
 ) -> Result<()> {
-    let store = Store::discover(root)?;
-    let id = store.create(
-        &CreateTask {
-            title,
-            status,
-            parent,
-            deps,
-            body,
-        }
-        .into_task(op_task::now()),
-    )?;
+    let id = Writer::resolve(root, daemon_url)?.create(&CreateTask {
+        title,
+        status,
+        parent,
+        deps,
+        body,
+    })?;
     println!("{id}");
     Ok(())
 }
@@ -599,14 +602,26 @@ fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
 
-fn set(root: &Path, id: &str, field: &str, value: &str) -> Result<()> {
-    let store = Store::discover(root)?;
-    store.update(id, |task| {
-        match field {
-            "status" => task.set_status(value.parse().map_err(invalid)?),
-            // "" or "-" clears the parent (top level), mirroring how `deps ""` clears deps.
-            "parent" => task.set_parent(parse_parent(value)),
-            "deps" => task.set_deps(
+fn set(root: &Path, daemon_url: Option<&str>, id: &str, field: &str, value: &str) -> Result<()> {
+    // Parse before reaching for the daemon so a typo fails without starting one.
+    let patch = parse_field(field, value)?;
+    Writer::resolve(root, daemon_url)?.patch(id, &patch)?;
+    Ok(())
+}
+
+fn parse_field(field: &str, value: &str) -> Result<TaskPatch> {
+    Ok(match field {
+        "status" => TaskPatch {
+            status: Some(value.parse()?),
+            ..TaskPatch::default()
+        },
+        // "" or "-" clears the parent (top level), mirroring how `deps ""` clears deps.
+        "parent" => TaskPatch {
+            parent: parent_update(parse_parent(value)),
+            ..TaskPatch::default()
+        },
+        "deps" => TaskPatch {
+            deps: Some(
                 value
                     .split(',')
                     .map(str::trim)
@@ -614,27 +629,30 @@ fn set(root: &Path, id: &str, field: &str, value: &str) -> Result<()> {
                     .map(str::to_owned)
                     .collect(),
             ),
-            other => {
-                return Err(invalid(format!(
-                    "unknown field {other:?}; expected status | parent | deps"
-                )));
-            }
-        }
-        Ok(())
-    })?;
-    Ok(())
+            ..TaskPatch::default()
+        },
+        other => bail!("unknown field {other:?}; expected status | parent | deps"),
+    })
 }
 
-fn delete(root: &Path, id: &str, yes: bool) -> Result<ExitCode> {
-    let store = Store::discover(root)?;
-    if !store.exists(id) {
+fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
+    match parent {
+        Some(id) => FieldUpdate::Set(id),
+        None => FieldUpdate::Clear,
+    }
+}
+
+fn delete(root: &Path, daemon_url: Option<&str>, id: &str, yes: bool) -> Result<ExitCode> {
+    // A local read answers this: the delete targets the caller's branch, whose worktree is this one.
+    // Prompting — and starting a daemon — for a typo would be the daemon's 404 arriving too late.
+    if !Store::discover(root)?.exists(id) {
         bail!("no such task: {id}");
     }
     if !yes && !confirm(id)? {
         println!("aborted");
         return Ok(ExitCode::SUCCESS);
     }
-    store.delete(id)?;
+    Writer::resolve(root, daemon_url)?.delete(id)?;
     println!("deleted {id}");
     Ok(ExitCode::SUCCESS)
 }
@@ -648,10 +666,6 @@ fn confirm(id: &str) -> Result<bool> {
         answer.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
     ))
-}
-
-fn invalid(msg: impl std::fmt::Display) -> op_store::StoreError {
-    op_store::StoreError::Invalid(msg.to_string())
 }
 
 fn branches(root: &Path) -> Result<()> {
@@ -720,11 +734,13 @@ fn print_tree(node: &TaskTree, depth: usize) {
 
 fn move_task(
     root: &Path,
+    daemon_url: Option<&str>,
     id: &str,
     parent: Option<String>,
     before: Option<String>,
     after: Option<String>,
 ) -> Result<()> {
+    // The sibling group is read locally — reads are global, writes go through the daemon.
     let store = Store::discover(root)?;
     let current_parent = store.read(id)?.frontmatter.parent;
     let new_parent = match parent {
@@ -739,13 +755,17 @@ fn move_task(
     siblings.sort_by(|a, b| sibling_cmp(a, b));
     let insert = insert_index(&siblings, before.as_deref(), after.as_deref())?;
 
+    let writer = Writer::resolve(root, daemon_url)?;
     match rank_plan(&siblings, insert) {
         RankPlan::Single(new_rank) => {
-            store.update(id, |task| {
-                task.set_parent(new_parent.clone());
-                task.set_rank(Some(new_rank.clone()));
-                Ok(())
-            })?;
+            writer.patch(
+                id,
+                &TaskPatch {
+                    parent: parent_update(new_parent),
+                    rank: Some(new_rank),
+                    ..TaskPatch::default()
+                },
+            )?;
         }
         // A sibling group with missing, colliding, or malformed ranks can't be split by a single
         // fractional key, so materialize a fresh, evenly-spaced order for the whole group (§4).
@@ -755,16 +775,22 @@ fn move_task(
         } => {
             // The moved task goes first: its write is the one the store validates (parent exists,
             // no cycle), so a refused move leaves the siblings' ranks untouched.
-            store.update(id, |task| {
-                task.set_parent(new_parent.clone());
-                task.set_rank(Some(x_rank.clone()));
-                Ok(())
-            })?;
+            writer.patch(
+                id,
+                &TaskPatch {
+                    parent: parent_update(new_parent),
+                    rank: Some(x_rank),
+                    ..TaskPatch::default()
+                },
+            )?;
             for (sibling_id, sibling_rank) in assigned {
-                store.update(&sibling_id, |task| {
-                    task.set_rank(Some(sibling_rank.clone()));
-                    Ok(())
-                })?;
+                writer.patch(
+                    &sibling_id,
+                    &TaskPatch {
+                        rank: Some(sibling_rank),
+                        ..TaskPatch::default()
+                    },
+                )?;
             }
         }
     }

@@ -10,6 +10,8 @@ repository.workspace = true
 [dependencies]
 op-api.workspace = true
 reqwest.workspace = true
+serde.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 op-server.workspace = true

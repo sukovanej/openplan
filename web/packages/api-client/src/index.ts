@@ -197,12 +197,16 @@ export type ListTasks400 = ApiErrorBody
 export const ListTasks400 = ApiErrorBody
 export type ListTasks500 = ApiErrorBody
 export const ListTasks500 = ApiErrorBody
+export type CreateTaskParams = { readonly branch?: string }
+export const CreateTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type CreateTaskRequestJson = CreateTask
 export const CreateTaskRequestJson = CreateTask
 export type CreateTask201 = CreatedTask
 export const CreateTask201 = CreatedTask
 export type CreateTask400 = ApiErrorBody
 export const CreateTask400 = ApiErrorBody
+export type CreateTask409 = ApiErrorBody
+export const CreateTask409 = ApiErrorBody
 export type CreateTask500 = ApiErrorBody
 export const CreateTask500 = ApiErrorBody
 export type GetTaskParams = { readonly branch?: string }
@@ -340,11 +344,13 @@ export const make = (
       ),
     createTask: (options) =>
       HttpClientRequest.post(`/api/tasks`).pipe(
+        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
         HttpClientRequest.bodyJsonUnsafe(options.payload),
         withResponse(options.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(CreateTask201),
             "400": decodeError("CreateTask400", CreateTask400),
+            "409": decodeError("CreateTask409", CreateTask409),
             "500": decodeError("CreateTask500", CreateTask500),
             orElse: unexpectedStatus,
           }),
@@ -425,6 +431,7 @@ export interface TasksClient {
     | TasksClientError<"ListTasks500", typeof ListTasks500.Type>
   >
   readonly createTask: <Config extends OperationConfig>(options: {
+    readonly params?: typeof CreateTaskParams.Encoded | undefined
     readonly payload: typeof CreateTaskRequestJson.Encoded
     readonly config?: Config | undefined
   }) => Effect.Effect<
@@ -432,6 +439,7 @@ export interface TasksClient {
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"CreateTask400", typeof CreateTask400.Type>
+    | TasksClientError<"CreateTask409", typeof CreateTask409.Type>
     | TasksClientError<"CreateTask500", typeof CreateTask500.Type>
   >
   readonly getTask: <Config extends OperationConfig>(
