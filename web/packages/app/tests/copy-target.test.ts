@@ -6,20 +6,28 @@ beforeEach(() => {
   hoveredRow.clear()
 })
 
+const rendered = ["12", "13"]
+
 describe("hovered row", () => {
   it("tracks the row the pointer is over", () => {
-    expect(hoveredRow.current()).toBeUndefined()
+    expect(hoveredRow.among(rendered)).toBeUndefined()
     hoveredRow.enter("12")
-    expect(hoveredRow.current()).toBe("12")
+    expect(hoveredRow.among(rendered)).toBe("12")
     hoveredRow.leave("12")
-    expect(hoveredRow.current()).toBeUndefined()
+    expect(hoveredRow.among(rendered)).toBeUndefined()
   })
 
   it("keeps the newer hover when the row left behind reports its leave last", () => {
     hoveredRow.enter("12")
     hoveredRow.enter("13")
     hoveredRow.leave("12")
-    expect(hoveredRow.current()).toBe("13")
+    expect(hoveredRow.among(rendered)).toBe("13")
+  })
+
+  it("drops a hover whose row is gone, since an unmounted row reports no leave", () => {
+    hoveredRow.enter("13")
+    expect(hoveredRow.among(["12"])).toBeUndefined()
+    expect(hoveredRow.among([])).toBeUndefined()
   })
 })
 

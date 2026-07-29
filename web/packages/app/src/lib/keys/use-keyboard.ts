@@ -50,16 +50,18 @@ export function useKeyboard(): Keyboard {
         toggle: () => setOverlayOpen((open) => !open),
       },
       cursor: {
-        moveBy: (delta) => activeCursor().moveBy(delta),
+        // The mouse clears the keyboard cursor (the row lists do that on mousemove); moving the
+        // cursor hands the selection back, so it drops the hover the same way.
+        moveBy: (delta) => {
+          hoveredRow.clear()
+          activeCursor().moveBy(delta)
+        },
         focusedId: () => focusedId(activeCursor().getSnapshot()),
       },
       copy: {
         taskId: () => {
-          const id = copyTargetId(
-            hoveredRow.current(),
-            focusedId(activeCursor().getSnapshot()),
-            routeTaskId(live.current.pathname),
-          )
+          const cursor = activeCursor().getSnapshot()
+          const id = copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), routeTaskId(live.current.pathname))
           if (id !== undefined) copyTaskId(id)
         },
       },

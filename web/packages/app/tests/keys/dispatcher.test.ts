@@ -35,12 +35,17 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
       toggle: () => void overlay.toggle++,
     },
     cursor: {
-      moveBy: rowCursor.moveBy,
+      moveBy: (delta) => {
+        hoveredRow.clear()
+        rowCursor.moveBy(delta)
+      },
       focusedId: () => focusedId(rowCursor.getSnapshot()),
     },
     copy: {
-      taskId: () =>
-        void copied.push(copyTargetId(hoveredRow.current(), focusedId(rowCursor.getSnapshot()), routeTaskId(pathname))),
+      taskId: () => {
+        const cursor = rowCursor.getSnapshot()
+        copied.push(copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), routeTaskId(pathname)))
+      },
     },
     detail: {
       editParent: () => void detail.editParent++,
@@ -286,6 +291,17 @@ describe("scope resolution", () => {
     press(".", window, { metaKey: true })
     press(".", window, { ctrlKey: true })
     expect(h.copied).toEqual(["13", "13"])
+    h.detach()
+  })
+
+  it("copies the row j moved to, not the one the pointer was left resting on", () => {
+    const h = mount()
+    rowCursor.setRows(["12", "13"])
+    hoveredRow.enter("13")
+
+    press("j")
+    press(".", window, { metaKey: true })
+    expect(h.copied).toEqual(["12"])
     h.detach()
   })
 

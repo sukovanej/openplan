@@ -4,15 +4,18 @@ export const hoveredRow = {
   enter: (id: string): void => {
     hovered = id
   },
-  // A pointer crossing a row boundary enters the new row before it leaves the old one, so a leave
-  // naming a row the pointer has already moved past must not clear the newer hover.
+  // Guards against a leave that names a row the store has already moved past, whatever order the
+  // leaving and entering rows report in.
   leave: (id: string): void => {
     if (hovered === id) hovered = undefined
   },
   clear: (): void => {
     hovered = undefined
   },
-  current: (): string | undefined => hovered,
+  // A row that goes away under a still pointer — deleted, reparented, refreshed out of the list —
+  // fires no mouseleave, so a hover counts only while its row is one of those on screen.
+  among: (rendered: ReadonlyArray<string>): string | undefined =>
+    hovered !== undefined && rendered.includes(hovered) ? hovered : undefined,
 }
 
 export function copyTargetId(

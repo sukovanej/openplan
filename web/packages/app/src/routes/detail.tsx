@@ -338,7 +338,7 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
               key={child.id}
               ref={i === index ? activeRow : undefined}
               aria-selected={i === index}
-              onMouseEnter={() => hoveredRow.enter(child.id)}
+              onMouseMove={() => hoveredRow.enter(child.id)}
               onMouseLeave={() => hoveredRow.leave(child.id)}
             >
               <Link

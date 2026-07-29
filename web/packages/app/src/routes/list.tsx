@@ -126,7 +126,7 @@ function TaskRow({
       role="row"
       aria-selected={active}
       onClick={onFocus}
-      onMouseEnter={() => hoveredRow.enter(task.id)}
+      onMouseMove={() => hoveredRow.enter(task.id)}
       onMouseLeave={() => hoveredRow.leave(task.id)}
       className={cn(
         // Every row keeps a bottom border so its height never changes; it just goes transparent
