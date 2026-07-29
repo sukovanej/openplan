@@ -149,7 +149,7 @@ async fn tasks_crud_roundtrip() {
     assert_eq!(got.status(), StatusCode::OK);
     let view = body_json(got).await;
     assert_eq!(view["title"], "Wire the parser");
-    assert_eq!(view["metadata"]["status"], "todo");
+    assert_eq!(view["metadata"]["status"], "backlog");
     assert_eq!(view["body"], "# Wire the parser\n");
 
     let patched = send(

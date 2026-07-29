@@ -220,7 +220,7 @@ fn create_names_the_file_after_the_id_and_the_title() {
     let created = frontmatter_value(&contents, "created");
     assert_eq!(
         contents,
-        format!("---\nstatus: todo\ncreated: {created}\n---\n# Wire the parser\n")
+        format!("---\nstatus: backlog\ncreated: {created}\n---\n# Wire the parser\n")
     );
     assert!(
         created.parse::<Timestamp>().unwrap() >= before,
@@ -433,14 +433,14 @@ fn get_show_and_missing_id() {
     let show = run(&dir, &["show", &id]);
     assert!(show.status.success());
     let text = stdout(&show);
-    assert!(text.contains("status: todo"), "{text}");
+    assert!(text.contains("status: backlog"), "{text}");
     assert!(text.contains("title:  Ship it"), "{text}");
 
     let get = run(&dir, &["get", &id, "--json"]);
     assert!(get.status.success());
     let view: serde_json::Value = serde_json::from_slice(&get.stdout).unwrap();
     assert_eq!(view["title"], "Ship it");
-    assert_eq!(view["metadata"]["status"], "todo");
+    assert_eq!(view["metadata"]["status"], "backlog");
 
     let missing = run(&dir, &["get", "does-not-exist"]);
     assert!(
@@ -528,11 +528,9 @@ fn list_json_filters_by_status() {
     let dir = Project::new();
     let todo = create(&dir, "Still to do");
     let done = create(&dir, "Already done");
-    assert!(
-        run(&dir, &["set", &done, "status", "done"])
-            .status
-            .success()
-    );
+    for (id, status) in [(&todo, "todo"), (&done, "done")] {
+        assert!(run(&dir, &["set", id, "status", status]).status.success());
+    }
 
     let out = run(&dir, &["list", "--json", "--status", "todo"]);
     assert!(
@@ -633,7 +631,7 @@ fn create_with_body_places_content_below_title() {
     assert_eq!(
         contents,
         format!(
-            "---\nstatus: todo\ncreated: {created}\n---\n# Ship login\n\nSupport OAuth and email login.\n"
+            "---\nstatus: backlog\ncreated: {created}\n---\n# Ship login\n\nSupport OAuth and email login.\n"
         )
     );
 
@@ -781,7 +779,7 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
             .clone()
     };
 
-    assert_eq!(by_id(&good)["metadata"]["status"], "todo");
+    assert_eq!(by_id(&good)["metadata"]["status"], "backlog");
     // A file with no readable frontmatter says so, instead of borrowing a status it never claimed.
     assert_eq!(by_id("2")["metadata"]["kind"], "error");
     // One unreadable field costs only itself: the status is still the file's own.
@@ -798,7 +796,7 @@ fn list_filters_by_status_across_an_unreadable_task() {
     );
     let good = create(&dir, "Good one");
 
-    let out = run(&dir, &["list", "--json", "--status", "todo"]);
+    let out = run(&dir, &["list", "--json", "--status", "backlog"]);
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
 
     // A task with no readable status matches no status filter, rather than matching the default.

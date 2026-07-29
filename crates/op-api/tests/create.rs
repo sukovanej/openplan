@@ -21,7 +21,7 @@ fn into_task_without_body_is_title_only() {
     let task = create("Ship login", None);
     assert_eq!(task.body, "# Ship login\n");
     assert_eq!(task.title().as_deref(), Some("Ship login"));
-    assert_eq!(task.frontmatter.status, Status::Todo);
+    assert_eq!(task.frontmatter.status, Status::Backlog);
 }
 
 #[test]

@@ -30,12 +30,13 @@ oplan get  <id> --json           # {id,title,status,parent,dependencies,body}
 
 ## Create
 
-Prints the new id. Default status is `todo`.
+Prints the new id. Default status is `backlog` — a new task is not ready to be
+picked up until a human says so. Pass `--status` only when the user asks for one.
 
 ```sh
 oplan create "Ship login page"
 oplan create "Add validation" --parent <id>
-oplan create "Deploy" --status backlog --dependency <id> --dependency <id2>
+oplan create "Deploy" --status todo --dependency <id> --dependency <id2>
 oplan create "Ship login" --body "Support OAuth and email login."
 oplan create "Ship login" --body-file notes.md   # or --body-file - for stdin
 ```
