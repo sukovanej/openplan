@@ -2,13 +2,13 @@ import type { Board, BoardRow, Status } from "@open-planner/api-client"
 import { useMemo } from "react"
 import { Link } from "react-router-dom"
 
-import { BranchBadges } from "@/components/branch-badges"
-import { ListSkeleton, Message } from "@/components/states"
-import { statusHeaderClass, StatusIcon, statusLabel } from "@/components/status-badge"
-import { errorText } from "@/lib/format"
-import { rowCursor, useRowCursor } from "@/lib/row-cursor"
-import { boardQuery, useQuery } from "@/lib/store"
-import { cn } from "@/lib/utils"
+import { BranchBadges } from "../components/branch-badges"
+import { ListSkeleton, Message } from "../components/states"
+import { statusHeaderClass, StatusIcon, statusLabel } from "../components/status-badge"
+import { errorText } from "../lib/format"
+import { rowCursor, useRowCursor } from "../lib/row-cursor"
+import { boardQuery, useQuery } from "../lib/store"
+import { cn } from "../lib/utils"
 
 export function ListRoute() {
   const board = useQuery(boardQuery)

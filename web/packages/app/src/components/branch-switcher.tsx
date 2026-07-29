@@ -1,6 +1,6 @@
 import type { BranchState } from "@open-planner/api-client"
 
-import { BranchTag } from "@/components/branch-tag"
+import { BranchTag } from "./branch-tag"
 
 // A task can live on several branches with diverging content; the switcher lets the reader pin any
 // one. `selected` is the pinned branch, or `undefined` for the default read — which resolves to

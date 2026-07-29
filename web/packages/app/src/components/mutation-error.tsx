@@ -1,7 +1,7 @@
 import { X } from "lucide-react"
 
-import { errorText } from "@/lib/format"
-import { mutationError, useMutationError } from "@/lib/store"
+import { errorText } from "../lib/format"
+import { mutationError, useMutationError } from "../lib/store"
 
 export function MutationError() {
   const error = useMutationError()

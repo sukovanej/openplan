@@ -1,6 +1,6 @@
 import type { BranchState, ChangeKind } from "@open-planner/api-client"
 
-import { BranchTag } from "@/components/branch-tag"
+import { BranchTag } from "./branch-tag"
 
 const kindOrder: Record<ChangeKind, number> = { deleted: 0, added: 1, modified: 2, base: 3 }
 

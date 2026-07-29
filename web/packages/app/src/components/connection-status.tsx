@@ -1,4 +1,4 @@
-import { useConnection } from "@/lib/connection"
+import { useConnection } from "../lib/connection"
 
 export function ConnectionStatus() {
   const up = useConnection() === "live"
