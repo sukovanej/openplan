@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-07-16T18:50:25Z
 ---
 # Daemon as single write/id authority: route CLI CRUD through the HTTP API
