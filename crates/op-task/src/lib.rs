@@ -66,16 +66,76 @@ impl std::str::FromStr for Status {
 pub struct Frontmatter {
     pub status: Status,
     pub created: Timestamp,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parent"
+    )]
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rank: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_deps"
+    )]
     pub deps: Vec<String>,
     // Fields the model does not name are preserved verbatim across a read-modify-write
     // so a `set` never silently drops them.
     #[serde(flatten)]
     pub extra: serde_yaml::Mapping,
+}
+
+// A task id is the whole number the daemon allocated (§3.1), in the one spelling that names a file:
+// decimal, no sign, no padding. `042`, `+7`, and a slug from before the scheme are not ids at all,
+// and no task can be reached by them.
+pub fn parse_id(id: &str) -> Option<u64> {
+    let number: u64 = id.parse().ok()?;
+    (number.to_string() == id).then_some(number)
+}
+
+// A dependency may aim at a section of its target (`42#Design`); the id is the part before the `#`.
+pub fn dep_target(dep: &str) -> &str {
+    dep.split_once('#').map_or(dep, |(target, _)| target)
+}
+
+// A task id is a number, so unquoted YAML hands it over as an integer while the writer always emits
+// the quoted string form. Both spellings name the same task.
+fn id_of(value: &serde_yaml::Value) -> Option<String> {
+    match value {
+        serde_yaml::Value::String(id) => parse_id(id).map(|_| id.clone()),
+        serde_yaml::Value::Number(number) => Some(number.as_u64()?.to_string()),
+        _ => None,
+    }
+}
+
+fn dep_of(value: &serde_yaml::Value) -> Option<String> {
+    match value {
+        serde_yaml::Value::String(dep) => parse_id(dep_target(dep)).map(|_| dep.clone()),
+        other => id_of(other),
+    }
+}
+
+fn deserialize_parent<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    match Option::<serde_yaml::Value>::deserialize(deserializer)? {
+        None | Some(serde_yaml::Value::Null) => Ok(None),
+        Some(value) => id_of(&value)
+            .map(Some)
+            .ok_or_else(|| serde::de::Error::custom("expected a task id")),
+    }
+}
+
+fn deserialize_deps<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<String>, D::Error> {
+    Vec::<serde_yaml::Value>::deserialize(deserializer)?
+        .iter()
+        .map(|value| {
+            dep_of(value).ok_or_else(|| serde::de::Error::custom("expected a list of task ids"))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -223,17 +283,16 @@ fn extract_fields(map: &serde_yaml::Mapping) -> PartialFrontmatter {
     PartialFrontmatter {
         status: required(map, "status"),
         created: required(map, "created"),
-        parent: optional_id(map, "parent"),
-        rank: optional_id(map, "rank"),
+        parent: optional_task_id(map, "parent"),
+        rank: optional_string(map, "rank"),
         deps: match map.get("deps") {
             None => Ok(Vec::new()),
             Some(serde_yaml::Value::Sequence(items)) => items
                 .iter()
-                .map(|item| match item {
-                    serde_yaml::Value::String(id) => Ok(id.clone()),
-                    _ => Err(FieldError::Invalid(
-                        "expected a list of task ids".to_owned(),
-                    )),
+                .map(|item| {
+                    dep_of(item).ok_or_else(|| {
+                        FieldError::Invalid("expected a list of task ids".to_owned())
+                    })
                 })
                 .collect(),
             Some(_) => Err(FieldError::Invalid(
@@ -254,7 +313,16 @@ fn required<T: serde::de::DeserializeOwned>(
     }
 }
 
-fn optional_id(map: &serde_yaml::Mapping, field: &str) -> FieldResult<Option<String>> {
+fn optional_task_id(map: &serde_yaml::Mapping, field: &str) -> FieldResult<Option<String>> {
+    match map.get(field) {
+        None | Some(serde_yaml::Value::Null) => Ok(None),
+        Some(value) => id_of(value)
+            .map(Some)
+            .ok_or_else(|| FieldError::Invalid("expected a task id".to_owned())),
+    }
+}
+
+fn optional_string(map: &serde_yaml::Mapping, field: &str) -> FieldResult<Option<String>> {
     match map.get(field) {
         None | Some(serde_yaml::Value::Null) => Ok(None),
         Some(serde_yaml::Value::String(id)) => Ok(Some(id.clone())),

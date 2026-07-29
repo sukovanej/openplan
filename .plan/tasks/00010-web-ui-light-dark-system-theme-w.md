@@ -13,7 +13,7 @@ without a flash of the wrong theme on first paint.
 The dark palette already exists: `src/index.css` defines a full `.dark` token
 set plus `@custom-variant dark (&:is(.dark *))`, but nothing ever adds the
 `.dark` class, so the app is permanently light. This task delivers the missing
-switching machinery and the control to drive it — from [[bootstrap-the-realtime-web-ui-re-3d0c]].
+switching machinery and the control to drive it — from [[5]].
 
 ## The three modes
 

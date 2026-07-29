@@ -108,8 +108,8 @@ export function listItem(id: string): TaskListItem | undefined {
 const MAX_TASK_QUERIES = 64
 const taskQueries = new Map<string, Query<TaskDetail>>()
 
-// A task id is a slug with no spaces, so a space cleanly separates it from an optional branch —
-// one query per (id, branch) so the detail view can hold several branch versions at once.
+// A task id is a number, so a space cleanly separates it from an optional branch — one query per
+// (id, branch) so the detail view can hold several branch versions at once.
 function taskKey(id: string, branch: string | undefined): string {
   return branch === undefined ? id : `${id} ${branch}`
 }

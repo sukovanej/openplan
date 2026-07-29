@@ -1,13 +1,15 @@
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt as _;
-use op_task::{Frontmatter, Task, rank};
+use op_task::{Frontmatter, Task, dep_target, parse_id, rank};
 
 pub const STORE_DIR: &str = ".plan";
 
 const SLUG_MAX: usize = 32;
+const ID_DIGITS: usize = 5;
 const ID_ATTEMPTS: usize = 16;
 const LOCK_ATTEMPTS: usize = 1024;
 const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -25,6 +27,8 @@ pub enum StoreError {
     NotFound { id: String },
     #[error("task id already taken: {id}")]
     IdTaken { id: String },
+    #[error("not a task id: {id:?}; a task id is a decimal number, like 42")]
+    InvalidId { id: String },
     #[error("{0}")]
     Invalid(String),
     #[error(
@@ -79,37 +83,59 @@ impl Store {
         self.plan_dir().join("tasks")
     }
 
-    pub fn task_path(&self, id: &str) -> PathBuf {
-        self.tasks_dir().join(format!("{id}.md"))
+    pub fn task_path(&self, id: &str) -> Result<PathBuf, StoreError> {
+        self.task_file(id)?
+            .ok_or_else(|| StoreError::NotFound { id: id.to_owned() })
     }
 
-    pub fn exists(&self, id: &str) -> bool {
-        self.task_path(id).is_file()
+    // The file names carry a title slug the id does not (§3.1), so a task is found by the number its
+    // name starts with rather than by a name built from its id. The lowest name wins, so a store
+    // hand-edited into two files of one number resolves to the same one every time.
+    fn task_file(&self, id: &str) -> Result<Option<PathBuf>, StoreError> {
+        let number = parse_id(id).ok_or_else(|| StoreError::InvalidId { id: id.to_owned() })?;
+        let mut found: Option<PathBuf> = None;
+        self.for_each_task_file(|path, candidate| {
+            if candidate == number && found.as_ref().is_none_or(|kept| &path < kept) {
+                found = Some(path);
+            }
+        })?;
+        Ok(found)
     }
 
-    pub fn task_ids(&self) -> Result<Vec<String>, StoreError> {
+    fn for_each_task_file(&self, mut visit: impl FnMut(PathBuf, u64)) -> Result<(), StoreError> {
         let dir = self.tasks_dir();
         if !dir.exists() {
-            return Ok(Vec::new());
+            return Ok(());
         }
-        let mut ids = Vec::new();
         for entry in std::fs::read_dir(&dir)? {
             let path = entry?.path();
             if path.extension().and_then(|e| e.to_str()) != Some("md") {
                 continue;
             }
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                ids.push(stem.to_owned());
+            if let Some(number) = path.file_stem().and_then(|s| s.to_str()).and_then(file_id) {
+                visit(path, number);
             }
         }
-        ids.sort();
-        Ok(ids)
+        Ok(())
+    }
+
+    pub fn exists(&self, id: &str) -> bool {
+        matches!(self.task_file(id), Ok(Some(_)))
+    }
+
+    pub fn task_ids(&self) -> Result<Vec<String>, StoreError> {
+        let mut numbers = BTreeSet::new();
+        self.for_each_task_file(|_, number| {
+            numbers.insert(number);
+        })?;
+        Ok(numbers.into_iter().map(|n| n.to_string()).collect())
     }
 
     pub fn read(&self, id: &str) -> Result<Task, StoreError> {
-        Task::from_file_string(&self.read_raw(id)?).map_err(|err| match err {
+        let path = self.task_path(id)?;
+        Task::from_file_string(&read_file(&path, id)?).map_err(|err| match err {
             op_task::TaskError::MissingCreated => StoreError::MissingCreated {
-                path: self.task_path(id),
+                path,
                 example: op_task::now().to_string(),
             },
             other => other.into(),
@@ -117,13 +143,7 @@ impl Store {
     }
 
     pub fn read_raw(&self, id: &str) -> Result<String, StoreError> {
-        match std::fs::read_to_string(self.task_path(id)) {
-            Ok(text) => Ok(text),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                Err(StoreError::NotFound { id: id.to_owned() })
-            }
-            Err(e) => Err(e.into()),
-        }
+        read_file(&self.task_path(id)?, id)
     }
 
     // `number` is the task's identity and must come from the daemon's allocator, the single writer
@@ -132,19 +152,28 @@ impl Store {
         let title = single_title(&task.body)?;
         self.validate(None, None, &task.frontmatter)?;
         std::fs::create_dir_all(self.tasks_dir())?;
+        // A file already carrying the number owns it whatever its slug says, so the check cannot be
+        // left to the non-clobbering link below: a different title would name a different file.
+        if self.task_file(&number.to_string())?.is_some() {
+            return Err(StoreError::IdTaken {
+                id: number.to_string(),
+            });
+        }
         let contents = task.to_file_string()?;
         let tmp = self.write_temp(contents.as_bytes())?;
-        let result = self.link_id(&tmp, task_id(&title, number));
+        let result = self.link_id(&tmp, number, &title);
         // Clean up the temp link on every exit (success, a taken id, or an early error such as a
         // randomness failure) so no orphan .tmp is left behind.
         let _ = std::fs::remove_file(&tmp);
         result
     }
 
-    // Publish the fully-written temp under its id with a non-clobbering hard link: the watcher only
+    // Publish the fully-written temp under its name with a non-clobbering hard link: the watcher only
     // ever sees a complete file, and a taken name is reported instead of overwriting another task.
-    fn link_id(&self, tmp: &Path, id: String) -> Result<String, StoreError> {
-        match std::fs::hard_link(tmp, self.task_path(&id)) {
+    fn link_id(&self, tmp: &Path, number: u64, title: &str) -> Result<String, StoreError> {
+        let path = self.tasks_dir().join(task_filename(number, title));
+        let id = number.to_string();
+        match std::fs::hard_link(tmp, &path) {
             Ok(()) => Ok(id),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(StoreError::IdTaken { id }),
             Err(e) => Err(e.into()),
@@ -152,9 +181,7 @@ impl Store {
     }
 
     pub fn write(&self, id: &str, task: &Task) -> Result<(), StoreError> {
-        if !self.exists(id) {
-            return Err(StoreError::NotFound { id: id.to_owned() });
-        }
+        self.task_path(id)?;
         let contents = task.to_file_string()?;
         self.with_lock(id, || {
             let old = self.read(id)?.frontmatter;
@@ -168,9 +195,7 @@ impl Store {
         id: &str,
         mutate: impl FnOnce(&mut Task) -> Result<(), StoreError>,
     ) -> Result<Task, StoreError> {
-        if !self.exists(id) {
-            return Err(StoreError::NotFound { id: id.to_owned() });
-        }
+        self.task_path(id)?;
         self.with_lock(id, || {
             let mut task = self.read(id)?;
             let old = task.frontmatter.clone();
@@ -183,7 +208,7 @@ impl Store {
     }
 
     pub fn delete(&self, id: &str) -> Result<(), StoreError> {
-        match std::fs::remove_file(self.task_path(id)) {
+        match std::fs::remove_file(self.task_path(id)?) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 Err(StoreError::NotFound { id: id.to_owned() })
@@ -197,10 +222,10 @@ impl Store {
         id: &str,
         f: impl FnOnce() -> Result<T, StoreError>,
     ) -> Result<T, StoreError> {
-        // Creation never conflicts (one file per task, random-slug ids), so a lock
+        // Creation never conflicts (one file per task, one number per task), so a lock
         // only guards mutation of an existing task — open without creating, so a
         // lock never materializes a phantom empty task file.
-        let path = self.task_path(id);
+        let path = self.task_path(id)?;
         for _ in 0..LOCK_ATTEMPTS {
             let file = match OpenOptions::new().read(true).open(&path) {
                 Ok(file) => file,
@@ -243,6 +268,7 @@ impl Store {
                         "task {parent} cannot be its own parent"
                     )));
                 }
+                reject_non_id(parent)?;
                 if !self.exists(parent) {
                     return Err(StoreError::Invalid(format!(
                         "parent {parent} does not exist"
@@ -265,12 +291,13 @@ impl Store {
             if old.is_some_and(|o| o.deps.contains(dep)) {
                 continue;
             }
-            let target = dep.split('#').next().unwrap_or(dep);
+            let target = dep_target(dep);
             if Some(target) == id {
                 return Err(StoreError::Invalid(format!(
                     "task cannot depend on itself: {dep}"
                 )));
             }
+            reject_non_id(target)?;
             if !self.exists(target) {
                 return Err(StoreError::Invalid(format!(
                     "dependency {dep} does not exist"
@@ -307,8 +334,9 @@ impl Store {
     // Atomic replace of an existing task: the rename swaps the fully-written temp into place
     // in one step, so a watcher never observes a torn file. Callers hold the per-file lock.
     fn atomic_replace(&self, id: &str, bytes: &[u8]) -> Result<(), StoreError> {
+        let path = self.task_path(id)?;
         let tmp = self.write_temp(bytes)?;
-        std::fs::rename(&tmp, self.task_path(id))?;
+        std::fs::rename(&tmp, path)?;
         Ok(())
     }
 
@@ -331,9 +359,8 @@ impl Store {
     }
 }
 
-// A task's identity is its single `# H1` title (§3.1). Reject bodies with zero, empty,
-// or multiple level-1 headings so a title carrying a newline (`"a\n# b"` → two H1s) or no
-// text can never be persisted.
+// A task's title is its single `# H1` (§3.1). Reject bodies with zero, empty, or multiple level-1
+// headings so a title carrying a newline (`"a\n# b"` → two H1s) or no text can never be persisted.
 fn single_title(body: &str) -> Result<String, StoreError> {
     let mut h1s = op_md::headings(body).into_iter().filter(|h| h.level == 1);
     match (h1s.next(), h1s.next()) {
@@ -344,19 +371,20 @@ fn single_title(body: &str) -> Result<String, StoreError> {
     }
 }
 
-pub fn task_id(title: &str, number: u64) -> String {
-    format!("{}-{number}", slug(title))
+// Zero-padded so a directory listing reads in task order, then the title so a human browsing the
+// files can tell them apart. Neither is part of the id (§3.1): the padding is a naming convention
+// and the slug is a snapshot of the title, free to be re-slugged by hand as long as the digits stay.
+pub fn task_filename(number: u64, title: &str) -> String {
+    format!("{number:0ID_DIGITS$}-{}.md", slug(title))
 }
 
-// The identity an allocated id carries, so a floor can be derived from the ids already on disk. An
-// id from outside the scheme (hand-written, or pre-dating it) has none.
-pub fn id_number(id: &str) -> Option<u64> {
-    let (_, number) = id.rsplit_once('-')?;
-    if number.bytes().all(|b| b.is_ascii_digit()) {
-        number.parse().ok()
-    } else {
-        None
+pub fn file_id(stem: &str) -> Option<u64> {
+    let digits = stem.bytes().take_while(u8::is_ascii_digit).count();
+    let tail = &stem[digits..];
+    if digits == 0 || !(tail.is_empty() || tail.starts_with('-')) {
+        return None;
     }
+    stem[..digits].parse().ok()
 }
 
 fn slug(title: &str) -> String {
@@ -380,6 +408,23 @@ fn slug(title: &str) -> String {
         out.push_str("task");
     }
     out
+}
+
+fn read_file(path: &Path, id: &str) -> Result<String, StoreError> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            Err(StoreError::NotFound { id: id.to_owned() })
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn reject_non_id(id: &str) -> Result<(), StoreError> {
+    match parse_id(id) {
+        Some(_) => Ok(()),
+        None => Err(StoreError::InvalidId { id: id.to_owned() }),
+    }
 }
 
 fn same_inode(file: &std::fs::File, path: &Path) -> Result<bool, StoreError> {

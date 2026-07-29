@@ -36,7 +36,7 @@ oplan show   <id>                                                        # metad
 oplan set    <id> <field> <value>                                        # validated: status | parent | deps
 oplan delete <id> [--yes]                                                # remove the file
 ```
-(Daemon reachability / `server ping` is out of scope here — see [[daemon-lifecycle-45b1]].)
+(Daemon reachability / `server ping` is out of scope here — see [[2]].)
 - `--json` on reads emits `op-api` types (agent-facing); default is the human table.
 - `set` validates: `status` against the enum, `parent`/`deps` are existing ids; rejects a
   `parent` that would point a task at itself.
@@ -70,7 +70,7 @@ DELETE /api/tasks/:id        # remove
 - **op-server**: `Store` in `AppState`; the five routes above; `StoreError` → HTTP mapping.
 - **op-cli**: `create` / `get` / `show` / `set` / `delete` subcommands; a thin `reqwest`
   client is optional for reads and unused for writes in v1. Daemon lifecycle (`server ping`
-  replacing the `ping` stub) lands in [[daemon-lifecycle-45b1]].
+  replacing the `ping` stub) lands in [[2]].
 
 ## Acceptance criteria
 - [ ] `oplan create "Wire the parser"` writes `.plan/tasks/<slug>-<rand>.md` with `status: todo`

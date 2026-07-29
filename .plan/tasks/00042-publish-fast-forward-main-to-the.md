@@ -1,14 +1,14 @@
 ---
 status: todo
 created: 2026-07-26T15:40:55Z
-parent: continuous-changes-accumulation-v-0cb0
+parent: '39'
 deps:
-- refresh-engine-rebase-rolling-up-faac
+- '44'
 ---
 # Publish: fast-forward main to the rolling-updates tip (API + CLI)
 
 **Phase 5** of the rolling-updates plan
-([[design-a-continuous-changes-accu-2380]] §7.11). Manual, explicit,
+([[23]] §7.11). Manual, explicit,
 **fast-forward-only** advance of `main` to the `rolling-updates` tip. Never a
 merge, never a force; publish cannot conflict (Phase 4 forces conflicts to
 surface at refresh).
@@ -21,13 +21,13 @@ A bare ref CAS on `main` would desync a worktree that has `main` checked out
 ## Design
 
 **Publish is a command on the ref-owner actor**
-([[daemon-ambient-writer-accumulate-e2f2]]). It advances `main` (not `rolling`)
+([[40]]). It advances `main` (not `rolling`)
 but reads the rolling tip and must not race the refresh loop
-([[refresh-engine-rebase-rolling-up-faac]]); serializing it through the actor
+([[44]]); serializing it through the actor
 that already owns ref ops avoids the interleave. Manual only, never timed.
 
 **Fast-forward, two cases** (uses Phase 1
-[[ref-plumbing-in-op-git-for-the-r-0489]] `is_fast_forward` / `update_ref`):
+[[43]] `is_fast_forward` / `update_ref`):
 - `main` **not checked out** -> worktree-less: verify `is_fast_forward(main,
   rolling)`, then CAS `main` old->rolling.
 - `main` **checked out in W** -> guarded `--ff-only` that also updates W's index +

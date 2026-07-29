@@ -92,7 +92,7 @@ fn crud_roundtrips_through_the_daemon() {
     let id = client
         .create_task(&base, "main", &new_task("Ship login"))
         .unwrap();
-    assert!(id.starts_with("ship-login-"), "slug id: {id}");
+    assert_eq!(id, "1", "the id the daemon allocates is the number alone");
 
     let patched = client
         .patch_task(

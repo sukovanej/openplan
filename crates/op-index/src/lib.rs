@@ -115,12 +115,8 @@ impl Index {
             let present = present_ids(&committed, live.as_ref())?;
             // Every id the branch holds, not just the cells it contributes: a task identical to its
             // merge base is skipped below, and its number would otherwise read as free.
-            max_id_number = max_id_number.max(
-                present
-                    .iter()
-                    .filter_map(|id| op_store::id_number(id))
-                    .max(),
-            );
+            max_id_number =
+                max_id_number.max(present.iter().filter_map(|id| op_task::parse_id(id)).max());
             if self.is_baseline(branch) {
                 self.baseline_cells(
                     repo,
@@ -732,7 +728,13 @@ fn present_ids(
     committed: &HashMap<String, String>,
     live: Option<&Store>,
 ) -> Result<BTreeSet<String>, IndexError> {
-    let mut ids: BTreeSet<String> = committed.keys().cloned().collect();
+    // The tree lists whatever `.plan/tasks/*.md` a commit holds; only files a task id names are
+    // tasks, so the matrix and the store agree on what exists.
+    let mut ids: BTreeSet<String> = committed
+        .keys()
+        .filter(|id| op_task::parse_id(id).is_some())
+        .cloned()
+        .collect();
     if let Some(worktree) = live {
         for id in worktree.task_ids()? {
             ids.insert(id);
@@ -753,7 +755,7 @@ fn on_disk_id_floor(worktrees: &[Worktree], store: &Store) -> Option<u64> {
         })
         .filter_map(|worktree| worktree.task_ids().ok())
         .flatten()
-        .filter_map(|id| op_store::id_number(&id))
+        .filter_map(|id| op_task::parse_id(&id))
         .max()
 }
 

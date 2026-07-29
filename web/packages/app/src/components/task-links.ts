@@ -2,10 +2,10 @@ type Text = { type: "text"; value: string }
 type Link = { type: "link"; url: string; title: null; children: Text[] }
 type Node = { type: string; value?: string; children?: Node[] }
 
-// oplan ids are `<slug>-<4 lowercase hex>` (op-store `slug()` + `rand_hex(2)`); requiring the hex
-// suffix keeps ordinary `[[...]]` bracket text from being mistaken for a task reference.
+// An oplan id is a decimal number with no padding (`op_task::parse_id`); matching only that keeps
+// ordinary `[[...]]` bracket text from being mistaken for a task reference.
 const TASK_REF = /\[\[([^[\]\n]+)\]\]/g
-const TASK_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{4}$/
+const TASK_ID = /^(?:0|[1-9][0-9]*)$/
 
 function text(value: string): Text {
   return { type: "text", value }

@@ -16,7 +16,7 @@ focused-row cursor state that the keyboard-shortcut work drives.
 - **Keyboard cursor**: a focused-row index in small state, clamped to the row
   count, reset when the task set changes. This task owns the cursor *state*;
   the movement bindings (`j` / `k` / `Enter`) are wired by
-  [web-ui-keyboard-shortcut-archite-4219].
+  [8].
 - **a11y**: roving `tabindex` (or `aria-activedescendant`), a visible focus ring,
   correct `role` semantics; clicking a row also sets the cursor.
 

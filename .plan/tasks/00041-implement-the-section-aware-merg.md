@@ -1,15 +1,15 @@
 ---
 status: todo
 created: 2026-07-26T15:40:55Z
-parent: continuous-changes-accumulation-v-0cb0
+parent: '39'
 deps:
-- design-a-continuous-changes-accu-2380
+- '23'
 ---
 # Implement the section-aware merge driver (replace stub)
 
 Replace the `oplan merge-driver` stub with the real 3-way merge (SPEC §7.7).
 This is **Phase 0** of the rolling-updates plan
-([[design-a-continuous-changes-accu-2380]]) and gates the rest of it: refresh
+([[23]]) and gates the rest of it: refresh
 reconcile (§7.11) relies on the driver auto-merging non-overlapping edits and
 conflicting only on genuine same-section overlaps.
 
@@ -38,4 +38,4 @@ Tests in `crates/op-cli/tests/`:
 - same-section divergence → non-zero exit;
 - confirmed worktree-less: `git merge-tree --write-tree` invokes the driver and
   returns the merged tree (clean) or the stage-1/2/3 conflict set (see the spike
-  in [[design-a-continuous-changes-accu-2380]]).
+  in [[23]]).

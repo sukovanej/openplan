@@ -519,10 +519,18 @@ pub struct TaskTree {
 // order is stable across rebuilds (§4).
 fn rank_cmp(ra: Option<&str>, ia: &str, rb: Option<&str>, ib: &str) -> std::cmp::Ordering {
     match (ra, rb) {
-        (Some(x), Some(y)) => x.cmp(y).then_with(|| ia.cmp(ib)),
+        (Some(x), Some(y)) => x.cmp(y).then_with(|| id_cmp(ia, ib)),
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => ia.cmp(ib),
+        (None, None) => id_cmp(ia, ib),
+    }
+}
+
+// An id is a number (§3.1), so it orders as one — text order would file 10 between 1 and 2.
+fn id_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    match (op_task::parse_id(a), op_task::parse_id(b)) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        _ => a.cmp(b),
     }
 }
 

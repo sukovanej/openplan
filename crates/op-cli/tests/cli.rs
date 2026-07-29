@@ -84,6 +84,22 @@ fn create(project: &Project, title: &str) -> String {
     stdout(&out).trim().to_owned()
 }
 
+// A task file's name carries a title slug its id does not (§3.1), so a test locates it by the
+// number the name starts with.
+fn task_file(root: &Path, id: &str) -> PathBuf {
+    let dir = root.join(".plan/tasks");
+    let prefix = format!("{:0>5}-", id);
+    std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(&prefix))
+        })
+        .unwrap_or_else(|| panic!("no file for task {id} in {}", dir.display()))
+}
+
 fn task_body(path: &PathBuf) -> String {
     std::fs::read_to_string(path)
         .unwrap()
@@ -99,7 +115,7 @@ fn list_reports_real_status_and_title() {
     let tasks = dir.path().join(".plan/tasks");
     std::fs::create_dir_all(&tasks).unwrap();
     write(
-        &tasks.join("shipit.md"),
+        &tasks.join("00001-ship-it.md"),
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
@@ -112,7 +128,7 @@ fn list_reports_real_status_and_title() {
 
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("shipit"), "{stdout}");
+    assert!(stdout.contains("1"), "the id is the number: {stdout}");
     assert!(
         stdout.contains("done"),
         "status must be read from the file: {stdout}"
@@ -188,13 +204,18 @@ fn merge_driver_clean_conflict_and_read_error() {
 }
 
 #[test]
-fn create_writes_slug_file_and_prints_id() {
+fn create_names_the_file_after_the_id_and_the_title() {
     let dir = Project::new();
     let before = op_task::now();
     let id = create(&dir, "Wire the parser");
-    assert_eq!(id, "wire-the-parser-1");
+    assert_eq!(id, "1", "the id printed is the number alone");
 
-    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(dir.path(), &id);
+    assert_eq!(
+        path.file_name().unwrap().to_str().unwrap(),
+        "00001-wire-the-parser.md",
+        "the file name pads the id for sorting and carries the title for reading"
+    );
     let contents = std::fs::read_to_string(&path).unwrap();
     let created = frontmatter_value(&contents, "created");
     assert_eq!(
@@ -211,7 +232,7 @@ fn create_writes_slug_file_and_prints_id() {
     );
 
     // The number is allocated, not derived from the title, so the same title yields the next id.
-    assert_eq!(create(&dir, "Wire the parser"), "wire-the-parser-2");
+    assert_eq!(create(&dir, "Wire the parser"), "2");
     assert!(
         dir.home.path().join("daemon.json").is_file(),
         "the first write brought the daemon up on its own"
@@ -253,10 +274,16 @@ fn a_write_from_a_linked_worktree_lands_on_that_worktrees_branch() {
     );
     let id = stdout(&out).trim().to_owned();
 
-    let path = format!(".plan/tasks/{id}.md");
-    assert!(feature.join(&path).is_file(), "written on feature: {id}");
     assert!(
-        !dir.path().join(&path).exists(),
+        task_file(&feature, &id).is_file(),
+        "written on feature: {id}"
+    );
+    assert!(
+        std::fs::read_dir(dir.path().join(".plan/tasks"))
+            .unwrap()
+            .all(
+                |entry| entry.unwrap().file_name() != task_file(&feature, &id).file_name().unwrap()
+            ),
         "main's worktree is untouched"
     );
     assert_ne!(id, anchor, "the allocator's floor spans both branches");
@@ -267,7 +294,7 @@ fn removing_the_worktree_that_started_the_daemon_leaves_writes_working() {
     let dir = Project::new();
     // Committed by hand: the daemon must be started by the worktree's write, not by this one.
     write(
-        &dir.path().join(".plan/tasks/anchor-1.md"),
+        &dir.path().join(".plan/tasks/00001-anchor.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Anchor\n",
     );
     git(dir.path(), &["add", "."]);
@@ -313,7 +340,7 @@ fn removing_the_worktree_that_started_the_daemon_leaves_writes_working() {
     );
     let id = stdout(&out).trim().to_owned();
     assert!(
-        dir.path().join(format!(".plan/tasks/{id}.md")).is_file(),
+        task_file(dir.path(), &id).is_file(),
         "written in the main checkout: {id}"
     );
 }
@@ -427,7 +454,7 @@ fn get_show_and_missing_id() {
 fn set_updates_only_frontmatter() {
     let dir = Project::new();
     let id = create(&dir, "Ship it");
-    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(dir.path(), &id);
     let body_before = task_body(&path);
 
     let set = run(&dir, &["set", &id, "status", "in_progress"]);
@@ -465,7 +492,7 @@ fn set_updates_only_frontmatter() {
 fn delete_removes_the_file() {
     let dir = Project::new();
     let id = create(&dir, "Temporary");
-    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(dir.path(), &id);
     assert!(path.exists());
 
     let del = run(&dir, &["delete", &id, "--yes"]);
@@ -543,7 +570,7 @@ fn set_status_survives_a_deleted_dependency() {
 fn set_preserves_unknown_frontmatter_keys() {
     let dir = Project::new();
     let id = create(&dir, "Task C");
-    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(dir.path(), &id);
     write(
         &path,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nestimate: 3.5\nassignee: milan\n---\n# Task C\n",
@@ -567,7 +594,7 @@ fn set_preserves_unknown_frontmatter_keys() {
 fn get_prints_the_file_verbatim() {
     let dir = Project::new();
     let id = create(&dir, "Task D");
-    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(dir.path(), &id);
     let raw =
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: 7\n---\n# Task D\n\nsome body\n";
     write(&path, raw);
@@ -600,7 +627,7 @@ fn create_with_body_places_content_below_title() {
     );
     let id = stdout(&out).trim().to_owned();
 
-    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(dir.path(), &id);
     let contents = std::fs::read_to_string(&path).unwrap();
     let created = frontmatter_value(&contents, "created");
     assert_eq!(
@@ -641,7 +668,7 @@ fn create_with_body_file_reads_the_file() {
     );
     let id = stdout(&out).trim().to_owned();
 
-    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(dir.path(), &id);
     assert_eq!(
         task_body(&path),
         "# Ship login\n\n## Goals\n- OAuth\n- Email + password\n"
@@ -675,7 +702,7 @@ fn create_with_body_file_dash_reads_stdin() {
     );
     let id = stdout(&out).trim().to_owned();
 
-    let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(dir.path(), &id);
     assert_eq!(
         task_body(&path),
         "# Ship login\n\n## Goals\n- OAuth\n- Email + password\n"
@@ -735,11 +762,11 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
     let dir = Project::new();
     let good = create(&dir, "Good one");
     write(
-        &dir.path().join(".plan/tasks/broken.md"),
+        &dir.path().join(".plan/tasks/00002-broken.md"),
         "this file has no frontmatter\n",
     );
     write(
-        &dir.path().join(".plan/tasks/legacy.md"),
+        &dir.path().join(".plan/tasks/00003-legacy.md"),
         "---\nstatus: in_progress\n---\n# Legacy\n",
     );
 
@@ -756,17 +783,17 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
 
     assert_eq!(by_id(&good)["metadata"]["status"], "todo");
     // A file with no readable frontmatter says so, instead of borrowing a status it never claimed.
-    assert_eq!(by_id("broken")["metadata"]["kind"], "error");
+    assert_eq!(by_id("2")["metadata"]["kind"], "error");
     // One unreadable field costs only itself: the status is still the file's own.
-    assert_eq!(by_id("legacy")["metadata"]["status"], "in_progress");
-    assert_eq!(by_id("legacy")["metadata"]["created"]["kind"], "missing");
+    assert_eq!(by_id("3")["metadata"]["status"], "in_progress");
+    assert_eq!(by_id("3")["metadata"]["created"]["kind"], "missing");
 }
 
 #[test]
 fn list_filters_by_status_across_an_unreadable_task() {
     let dir = Project::new();
     write(
-        &dir.path().join(".plan/tasks/broken.md"),
+        &dir.path().join(".plan/tasks/00001-broken.md"),
         "this file has no frontmatter\n",
     );
     let good = create(&dir, "Good one");
@@ -795,14 +822,14 @@ impl Project {
         let project = Project::new();
         let root = project.path();
         write(
-            &root.join(".plan/tasks/alpha.md"),
+            &root.join(".plan/tasks/00001-alpha.md"),
             "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
         );
         git(root, &["add", "."]);
         git(root, &["commit", "-qm", "init"]);
         git(root, &["checkout", "-q", "-b", "feature"]);
         write(
-            &root.join(".plan/tasks/alpha.md"),
+            &root.join(".plan/tasks/00001-alpha.md"),
             "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha done\n",
         );
         git(root, &["commit", "-qam", "edit alpha on feature"]);
@@ -854,13 +881,13 @@ fn list_branch_reads_other_branch_without_checking_it_out() {
     assert_eq!(tasks[0]["title"], "Alpha done");
 
     // The current worktree is untouched: still on main, alpha still `todo`.
-    let head = run(&dir, &["get", "alpha", "--json"]);
+    let head = run(&dir, &["get", "1", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&head.stdout).unwrap();
     assert_eq!(
         view["metadata"]["status"], "todo",
         "reading a branch must not mutate the worktree"
     );
-    let on_disk = std::fs::read_to_string(dir.path().join(".plan/tasks/alpha.md")).unwrap();
+    let on_disk = std::fs::read_to_string(dir.path().join(".plan/tasks/00001-alpha.md")).unwrap();
     assert!(
         on_disk.contains("status: todo"),
         "working file unchanged: {on_disk}"
@@ -882,7 +909,7 @@ fn list_branch_nonexistent_errors_nonzero() {
 #[test]
 fn get_branch_prints_that_branchs_version() {
     let dir = Project::diverged();
-    let out = run(&dir, &["get", "alpha", "--branch", "feature"]);
+    let out = run(&dir, &["get", "1", "--branch", "feature"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -902,7 +929,7 @@ fn get_branch_prints_that_branchs_version() {
 #[test]
 fn show_branches_groups_and_flags_divergence() {
     let dir = Project::diverged();
-    let out = run(&dir, &["show", "alpha", "--branches"]);
+    let out = run(&dir, &["show", "1", "--branches"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -921,17 +948,14 @@ fn show_branches_groups_and_flags_divergence() {
 fn set_rejects_a_cross_branch_write() {
     let dir = Project::diverged();
     // There is deliberately no cross-branch write flag; `--branch` is not a valid arg for `set`.
-    let out = run(
-        &dir,
-        &["set", "alpha", "--branch", "feature", "status", "done"],
-    );
+    let out = run(&dir, &["set", "1", "--branch", "feature", "status", "done"]);
     assert!(
         !out.status.success(),
         "writes must not accept a --branch target"
     );
 
     // feature's committed version is untouched by the failed attempt.
-    let feature = run(&dir, &["get", "alpha", "--branch", "feature", "--json"]);
+    let feature = run(&dir, &["get", "1", "--branch", "feature", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&feature.stdout).unwrap();
     assert_eq!(view["metadata"]["status"], "done");
 }
@@ -972,7 +996,7 @@ fn set_parent_empty_clears_to_top_level() {
 
     let show = run(&dir, &["show", &kid]);
     assert!(stdout(&show).contains("parent: -"), "{}", stdout(&show));
-    let path = dir.path().join(".plan/tasks").join(format!("{kid}.md"));
+    let path = task_file(dir.path(), &kid);
     assert!(
         !std::fs::read_to_string(&path).unwrap().contains("parent"),
         "cleared parent key must drop from the file"
@@ -1072,14 +1096,14 @@ fn move_unranked_siblings_then_reorder_lists_in_new_order() {
 }
 
 fn set_rank(project: &Project, id: &str, rank: &str) {
-    let path = project.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(project.path(), id);
     let raw = std::fs::read_to_string(&path).unwrap();
     let patched = raw.replacen("---\n", &format!("---\nrank: {rank}\n"), 1);
     write(&path, &patched);
 }
 
 fn rank_of(project: &Project, id: &str) -> Option<String> {
-    let path = project.path().join(".plan/tasks").join(format!("{id}.md"));
+    let path = task_file(project.path(), id);
     std::fs::read_to_string(&path)
         .unwrap()
         .lines()
@@ -1173,19 +1197,19 @@ fn get_json_dates_the_checked_out_branch_not_the_headline() {
     let root = dir.path();
     // `created` predates both commits, so the view's clamp cannot mask which one is reported.
     write(
-        &root.join(".plan/tasks/alpha.md"),
+        &root.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: todo\ncreated: 2000-01-01T00:00:00Z\n---\n# Alpha\n",
     );
     commit_at(root, 1_000_000_000, "add alpha");
     git(root, &["checkout", "-q", "-b", "feature"]);
     write(
-        &root.join(".plan/tasks/alpha.md"),
+        &root.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: done\ncreated: 2000-01-01T00:00:00Z\n---\n# Alpha done\n",
     );
     commit_at(root, 2_000_000_000, "edit alpha on feature");
     git(root, &["checkout", "-q", "main"]);
 
-    let out = run(&dir, &["get", "alpha", "--json"]);
+    let out = run(&dir, &["get", "1", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
 
     // `feature` headlines the task, but the file `get` read is main's — so is its date.
@@ -1197,11 +1221,11 @@ fn get_json_dates_the_checked_out_branch_not_the_headline() {
 fn set_on_a_task_without_created_explains_what_to_add() {
     let dir = Project::new();
     write(
-        &dir.path().join(".plan/tasks/legacy.md"),
+        &dir.path().join(".plan/tasks/00002-legacy.md"),
         "---\nstatus: todo\n---\n# Legacy\n",
     );
 
-    let out = run(&dir, &["set", "legacy", "status", "done"]);
+    let out = run(&dir, &["set", "2", "status", "done"]);
 
     assert!(!out.status.success());
     let err = String::from_utf8(out.stderr).unwrap();

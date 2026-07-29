@@ -334,8 +334,13 @@ fn task_blobs(tree: &gix::Tree) -> Result<Vec<(String, String)>, GitError> {
         if !entry.mode().is_blob() {
             continue;
         }
-        if let Some(id) = entry.filename().to_string().strip_suffix(".md") {
-            out.push((id.to_owned(), entry.oid().to_string()));
+        // Keyed by id, not by file name: a task renamed on one branch (the name carries a title
+        // slug, §3.1) is the same task, and the matrix must line its versions up rather than read
+        // them as two.
+        if let Some(stem) = entry.filename().to_string().strip_suffix(".md")
+            && let Some(number) = op_store::file_id(stem)
+        {
+            out.push((number.to_string(), entry.oid().to_string()));
         }
     }
     Ok(out)

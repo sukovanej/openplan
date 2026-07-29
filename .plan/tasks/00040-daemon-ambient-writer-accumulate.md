@@ -1,17 +1,17 @@
 ---
 status: todo
 created: 2026-07-26T15:40:55Z
-parent: continuous-changes-accumulation-v-0cb0
+parent: '39'
 deps:
-- ref-plumbing-in-op-git-for-the-r-0489
+- '43'
 ---
 # Daemon ambient writer: accumulate + serialize into rolling-updates
 
 **Phase 2** of the rolling-updates plan
-([[design-a-continuous-changes-accu-2380]] §7.11). The daemon becomes the
+([[23]] §7.11). The daemon becomes the
 **sole serialized writer** of `refs/open-plan/rolling-updates`, accumulating
 ambient edits worktree-less via the Phase 1 primitives
-([[ref-plumbing-in-op-git-for-the-r-0489]]).
+([[43]]).
 
 ## Why a new writer
 

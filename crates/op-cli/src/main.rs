@@ -376,7 +376,7 @@ fn list_all_branches(root: &Path, status: Option<Status>, json: bool) -> Result<
         for cell in &cells {
             let status = status_label(&cell.task.metadata);
             println!(
-                "{:<22} {:<28} {status:<11} {}{}",
+                "{:<22} {:<6} {status:<11} {}{}",
                 cell.branch,
                 cell.task.id,
                 cell.task.title,
@@ -555,7 +555,7 @@ fn status_label(metadata: &Metadata) -> String {
 fn print_summaries(summaries: &[TaskSummary]) {
     for summary in summaries {
         let status = status_label(&summary.metadata);
-        println!("{:<28} {status:<11} {}", summary.id, summary.title);
+        println!("{:<6} {status:<11} {}", summary.id, summary.title);
     }
 }
 
@@ -721,7 +721,7 @@ fn tree(root: &Path, id: &str, depth: Option<usize>, json: bool) -> Result<()> {
 
 fn print_tree(node: &TaskTree, depth: usize) {
     println!(
-        "{}{:<28} {:<11} {}",
+        "{}{:<6} {:<11} {}",
         "  ".repeat(depth),
         node.id,
         status_label(&node.metadata),

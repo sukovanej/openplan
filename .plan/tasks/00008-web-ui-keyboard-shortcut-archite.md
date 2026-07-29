@@ -2,7 +2,7 @@
 status: done
 created: 2026-07-14T10:31:45Z
 deps:
-- web-ui-task-list-as-a-table-id-t-fdad
+- '11'
 ---
 # Web UI: keyboard-shortcut architecture + navigation shortcuts (Linear-style)
 
@@ -44,7 +44,7 @@ A shortcut **registry** + a single global **dispatcher**, in a dedicated module
 ## List table (prerequisite)
 
 The task list is rendered as a table with a focused-row cursor by
-[web-ui-task-list-as-a-table-id-t-fdad] — a dependency of this task. The `j` /
+[11] — a dependency of this task. The `j` /
 `k` / `Enter` bindings below drive that cursor; this task does not build the
 table or its cursor state itself.
 
@@ -80,7 +80,7 @@ truth), grouped by `group`. Labeled, focus-trapped, closes on `Esc` / `?`.
 ## Done when
 
 - The `j` / `k` / `Enter` bindings drive the table row cursor from
-  [web-ui-task-list-as-a-table-id-t-fdad].
+  [11].
 - Every shortcut above works, chords included, with input-scope suppression.
 - `?` help overlay renders from the registry.
 - Registry/dispatcher are the documented extension point for palette + mutations.

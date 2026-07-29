@@ -311,6 +311,9 @@ impl IntoResponse for ApiError {
                 (StatusCode::NOT_FOUND, format!("no such task: {id}"))
             }
             ApiError::Store(StoreError::Invalid(message)) => (StatusCode::BAD_REQUEST, message),
+            ApiError::Store(err @ StoreError::InvalidId { .. }) => {
+                (StatusCode::BAD_REQUEST, err.to_string())
+            }
             // The request is fine and the daemon is fine; the stored file is the thing that has to
             // change, and only a human can change it.
             ApiError::Store(err @ StoreError::MissingCreated { .. }) => {
@@ -504,6 +507,9 @@ async fn get_task(
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
 ) -> Result<Json<TaskDetail>, ApiError> {
+    // A read resolves through the index, which knows nothing of the id grammar; without this a path
+    // segment no id could ever name would 404 here and 400 on every write route.
+    reject_non_id(&id)?;
     let repo = state.repo.clone();
     let store = state.store.clone();
     let index = state.index.clone();
@@ -520,6 +526,13 @@ async fn get_task(
     detail
         .map(Json)
         .ok_or(ApiError::Store(StoreError::NotFound { id: missing }))
+}
+
+fn reject_non_id(id: &str) -> Result<(), ApiError> {
+    match op_task::parse_id(id) {
+        Some(_) => Ok(()),
+        None => Err(ApiError::Store(StoreError::InvalidId { id: id.to_owned() })),
+    }
 }
 
 fn index_error(err: IndexError) -> ApiError {

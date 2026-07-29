@@ -1,18 +1,18 @@
 ---
 status: todo
 created: 2026-07-26T15:40:55Z
-parent: continuous-changes-accumulation-v-0cb0
+parent: '39'
 deps:
-- implement-the-section-aware-merg-381e
-- design-a-continuous-changes-accu-2380
+- '41'
+- '23'
 ---
 # Ref plumbing in op-git for the rolling-updates ref
 
 **Phase 1** of the rolling-updates plan
-([[design-a-continuous-changes-accu-2380]] §7.11). Gives `op-git` its first
+([[23]] §7.11). Gives `op-git` its first
 **write** path (today it is read-only: "Raw git reads"), scoped to the single
 `refs/open-plan/rolling-updates` ref. Depends on the section-merge **library**
-from [[implement-the-section-aware-merg-381e]].
+from [[41]].
 
 ## Precondition spike (do first)
 

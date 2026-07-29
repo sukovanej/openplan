@@ -45,11 +45,23 @@ a section-addressable markdown body.
 ## 3. Data model
 
 ### 3.1 Identity, title & frontmatter
-- **Identity = the filename** (`<id>.md`). `id` is never stored in the file. The id is
-  `<slug(title)>-<n>`, where `n` is a number the daemon allocates (§7.3) above the highest already in
-  use on *any* local branch **or in any worktree's files** — a number is taken from the moment a file
-  carries it, before any commit does — so a number is issued once per repository and no two tasks, on
-  any branch, can ever share an id. The slug is decoration; `n` carries the identity.
+- **Identity = a number**, never stored in the file. The daemon allocates it (§7.3) above the
+  highest already in use on *any* local branch **or in any worktree's files** — a number is taken
+  from the moment a file carries it, before any commit does — so a number is issued once per
+  repository and no two tasks, on any branch, can ever share an id.
+- **The number is the whole id.** No slug, no title fragment: nothing in the id can go stale when a
+  task is renamed, and `42` is the id in a URL, `parent`, `deps`, and `[[42]]` alike. The canonical
+  spelling is decimal with no sign and no padding, so exactly one string is the id: `42` is one,
+  `042` / `+42` / `forty-two` / any pre-numeric slug is not, and no task is reachable by them. A
+  write that names one is refused; a stored field holding one reads as invalid (below) rather than
+  resolving to something near it. Because YAML reads an unquoted `42` as an integer, a frontmatter
+  id is accepted as either an integer or a string and written back quoted.
+- **The file is named `<nnnnn>-<slug(title)>.md`** — `00042-ship-login-page.md`. Both halves of the
+  name serve a human reading the directory: the padding sorts a listing in task order, the slug says
+  which task each file is. Neither is part of the id, and a task is located by the number its name
+  starts with — so renaming a file keeps the task as long as the digits do, and a title change
+  leaves a slug that is merely out of date rather than a broken reference. A `.md` file whose name
+  starts with no number is not a task and is left alone.
 - **Title = the body's single `# H1`.** Every task **must** contain **exactly one level-1
   heading**, and that is the title. Never stored in frontmatter.
 
@@ -60,7 +72,7 @@ Frontmatter carries only what is *not* derivable from the file itself:
 | `status` | enum | `backlog` / `todo` / `in_progress` / `in_review` / `done` / `cancelled`. `blocked` is **computed** from unmet `deps` — not stored. |
 | `created` | RFC3339 | UTC, set once when the task is written. Required. Its counterpart `updated` is **derived** from git — the author time of the last commit to touch the file — never stored. |
 | `parent` | id? | adjacency-list hierarchy (see §3.2). Absent = top-level. |
-| `deps` | id[] | task→task blocking dependencies; a ref may target a section (`task-id#Section`). Omitted when empty. |
+| `deps` | id[] | task→task blocking dependencies; a ref may target a section (`42#Section`). Omitted when empty. |
 
 A task with no parent and no deps has frontmatter of just `status` and `created`.
 
@@ -82,7 +94,7 @@ read, is unaffected.
   with a `parent` pointer. (A project task with 200 subtasks stays 200 small files, not one
   giant file — preserves context-efficiency and per-file locking.)
 - Sibling **order** via fractional `rank`.
-- **Refs/deps** are by task id and may target a **section** (`task-id#Section`).
+- **Refs/deps** are by task id and may target a **section** (`42#Section`).
 
 ---
 
@@ -92,7 +104,7 @@ Files are the **source of truth**; the central index is a rebuildable cache.
 
 ```
 <repo>/.plan/                 # in-repo store, versioned with the code; the dir's presence marks a store
-  tasks/<id>.md
+  tasks/<nnnnn>-<slug>.md   # `00042-ship-login-page.md`; the number is the id (§3.1)
 
 ~/.plan/                      # central index (per machine)
   registry.toml               # list of tracked store paths
@@ -152,11 +164,12 @@ by design**. Multiple worktrees on multiple branches work them in parallel. Git 
 versioning substrate — we read it, we don't rebuild it. Single machine only.
 
 ### 7.1 Model — one logical task, many branch-versions
-- **Logical identity = id/filename**, immutable and stable across branches (`title` is just a
-  field; renaming never changes identity).
+- **Logical identity = the id**, immutable and stable across branches (`title` is just a field;
+  renaming never changes identity — the id carries no trace of the title to go stale, and a branch
+  that re-slugs a task's file still holds the same task).
 - Each branch holds its own **version** of a task. Because ids come from one allocator whose floor
   spans every local branch (§3.1), independent creations on different branches never collide *or*
-  falsely unify; a task shared across branches shares its filename through common ancestry. Two
+  falsely unify; a task shared across branches shares its number through common ancestry. Two
   branches can only ever hold two *versions* of one task `N`, never two different tasks — so a merge
   is a content merge, never a renumbering.
 - **Core invariant: reads are global, writes are local.** You can read any task on any branch
