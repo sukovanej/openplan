@@ -21,21 +21,30 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
-// Named the way the store names files (§3.1): the id is the number the name starts with, and the
-// slug after it is decoration the index must look past.
-fn task(root: &Path, id: &str, contents: &str) {
-    write(&task_path(root, id), contents);
+// Named the way the store names files (§3.1): the number the name starts with allocates the task,
+// and the slug after it is decoration the index must look past.
+fn task(root: &Path, number: u64, contents: &str) {
+    write(&task_path(root, number), contents);
 }
 
-fn task_path(root: &Path, id: &str) -> std::path::PathBuf {
-    let number: u64 = id.parse().unwrap();
+fn task_path(root: &Path, number: u64) -> std::path::PathBuf {
     root.join(format!(".plan/tasks/{number:05}-task-{number}.md"))
+}
+
+// The id everything above the store speaks (§3.1).
+fn key(number: u64) -> String {
+    format!("OPP-{number}")
 }
 
 fn init(root: &Path) {
     git(root, &["init", "-q", "-b", "main"]);
+    identify(root);
+}
+
+fn identify(root: &Path) {
     git(root, &["config", "user.email", "t@example.com"]);
     git(root, &["config", "user.name", "Test"]);
+    write(&root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n");
 }
 
 fn commit(root: &Path, message: &str) {
@@ -45,18 +54,18 @@ fn commit(root: &Path, message: &str) {
 
 fn built(root: &Path) -> Index {
     let repo = Repo::discover(root).unwrap();
-    let store = Store::open(root).unwrap();
-    let mut index = Index::new();
+    let store = Store::discover(root).unwrap();
+    let mut index = Index::new(store.abbreviation());
     index.rebuild(&repo, &store).unwrap();
     index
 }
 
-fn find<'a>(index: &'a Index, branch: &str, id: &str) -> Option<&'a op_api::MatrixCell> {
+fn find<'a>(index: &'a Index, branch: &str, number: u64) -> Option<&'a op_api::MatrixCell> {
     index
         .matrix()
         .cells
         .iter()
-        .find(|c| c.branch == branch && c.task.id == id)
+        .find(|c| c.branch == branch && c.task.id == key(number))
 }
 
 #[test]
@@ -67,14 +76,14 @@ fn a_branch_unchanged_against_main_is_not_listed() {
 
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Shared\n",
     );
     commit(root, "add shared");
     git(root, &["branch", "feature"]);
     task(
         root,
-        "2",
+        2,
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Only main\n",
     );
     commit(root, "add only-main");
@@ -99,14 +108,14 @@ fn a_committed_edit_on_a_branch_is_modified() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
     );
     commit(root, "add a");
     git(root, &["checkout", "-q", "-b", "feature"]);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# A done\n",
     );
     commit(root, "edit a");
@@ -114,11 +123,11 @@ fn a_committed_edit_on_a_branch_is_modified() {
 
     let index = built(root);
 
-    let main = find(&index, "main", "1").expect("main base row");
+    let main = find(&index, "main", 1).expect("main base row");
     assert_eq!(main.kind, ChangeKind::Base);
     assert_eq!(main.task.metadata.status(), Some(Status::Todo));
 
-    let feature = find(&index, "feature", "1").expect("feature row");
+    let feature = find(&index, "feature", 1).expect("feature row");
     assert_eq!(feature.kind, ChangeKind::Modified);
     assert_eq!(feature.task.metadata.status(), Some(Status::Done));
     assert_eq!(feature.task.title, "A done");
@@ -132,14 +141,14 @@ fn a_new_task_on_a_branch_is_added() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
     );
     commit(root, "add a");
     git(root, &["checkout", "-q", "-b", "feature"]);
     task(
         root,
-        "2",
+        2,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# New\n",
     );
     commit(root, "add new");
@@ -147,11 +156,11 @@ fn a_new_task_on_a_branch_is_added() {
 
     let index = built(root);
 
-    assert!(find(&index, "main", "2").is_none(), "new is not on main");
-    let feature = find(&index, "feature", "2").expect("feature added row");
+    assert!(find(&index, "main", 2).is_none(), "new is not on main");
+    let feature = find(&index, "feature", 2).expect("feature added row");
     assert_eq!(feature.kind, ChangeKind::Added);
     // `a` is unchanged on feature, so it is not repeated there.
-    assert!(find(&index, "feature", "1").is_none());
+    assert!(find(&index, "feature", 1).is_none());
 }
 
 #[test]
@@ -161,23 +170,23 @@ fn a_deletion_is_tagged_while_main_still_has_the_task() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
     );
     task(
         root,
-        "2",
+        2,
         "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# B\n",
     );
     commit(root, "add a and b");
     git(root, &["checkout", "-q", "-b", "feature"]);
-    std::fs::remove_file(task_path(root, "2")).unwrap();
+    std::fs::remove_file(task_path(root, 2)).unwrap();
     commit(root, "remove b");
     git(root, &["checkout", "-q", "main"]);
 
     let index = built(root);
 
-    let deleted = find(&index, "feature", "2").expect("feature deletion row");
+    let deleted = find(&index, "feature", 2).expect("feature deletion row");
     assert_eq!(deleted.kind, ChangeKind::Deleted);
     assert!(!deleted.dirty, "a committed removal is not dirty");
     // The row carries the pre-deletion version, so the UI can show what is being removed.
@@ -186,7 +195,7 @@ fn a_deletion_is_tagged_while_main_still_has_the_task() {
 
     // A deleted task is not "on" the branch for a plain per-branch listing.
     let summaries = index.branch_summaries("feature");
-    assert!(summaries.iter().all(|s| s.id != "2"), "{summaries:?}");
+    assert!(summaries.iter().all(|s| s.id != key(2)), "{summaries:?}");
 }
 
 #[test]
@@ -196,15 +205,15 @@ fn a_deletion_main_already_made_is_suppressed() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# X\n",
     );
     commit(root, "add x");
     git(root, &["checkout", "-q", "-b", "feature"]);
-    std::fs::remove_file(task_path(root, "1")).unwrap();
+    std::fs::remove_file(task_path(root, 1)).unwrap();
     commit(root, "feature removes x");
     git(root, &["checkout", "-q", "main"]);
-    std::fs::remove_file(task_path(root, "1")).unwrap();
+    std::fs::remove_file(task_path(root, 1)).unwrap();
     commit(root, "main removes x too");
 
     let index = built(root);
@@ -222,7 +231,7 @@ fn an_uncommitted_edit_on_a_feature_worktree_is_modified_and_dirty() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
     );
     commit(root, "add t");
@@ -245,17 +254,17 @@ fn an_uncommitted_edit_on_a_feature_worktree_is_modified_and_dirty() {
     // commit (the app's `oplan set` edits are uncommitted by nature).
     task(
         &wt_path,
-        "1",
+        1,
         "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# T edited\n",
     );
 
     let index = built(root);
-    let feature = find(&index, "feature", "1").expect("uncommitted WIP must surface");
+    let feature = find(&index, "feature", 1).expect("uncommitted WIP must surface");
     assert_eq!(feature.kind, ChangeKind::Modified);
     assert!(feature.dirty, "uncommitted edit is dirty");
     assert_eq!(feature.task.metadata.status(), Some(Status::InProgress));
     assert_eq!(feature.task.title, "T edited");
-    let main = find(&index, "main", "1").expect("main base row");
+    let main = find(&index, "main", 1).expect("main base row");
     assert_eq!(main.kind, ChangeKind::Base);
 }
 
@@ -266,7 +275,7 @@ fn an_uncommitted_deletion_on_a_feature_worktree_is_deleted_and_dirty() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
     );
     commit(root, "add t");
@@ -286,10 +295,10 @@ fn an_uncommitted_deletion_on_a_feature_worktree_is_deleted_and_dirty() {
     );
     // The commit still has `t`; only the working tree removed it. Effective state is absent, so it
     // surfaces as a dirty Deleted (pre-deletion version shown), consistent with uncommitted edits.
-    std::fs::remove_file(task_path(&wt_path, "1")).unwrap();
+    std::fs::remove_file(task_path(&wt_path, 1)).unwrap();
 
     let index = built(root);
-    let feature = find(&index, "feature", "1").expect("uncommitted deletion must surface");
+    let feature = find(&index, "feature", 1).expect("uncommitted deletion must surface");
     assert_eq!(feature.kind, ChangeKind::Deleted);
     assert!(
         feature.dirty,
@@ -300,7 +309,7 @@ fn an_uncommitted_deletion_on_a_feature_worktree_is_deleted_and_dirty() {
         Some(Status::InProgress),
         "pre-deletion version"
     );
-    assert!(find(&index, "main", "1").is_some(), "main still carries t");
+    assert!(find(&index, "main", 1).is_some(), "main still carries t");
 }
 
 #[test]
@@ -310,7 +319,7 @@ fn a_criss_cross_history_does_not_mislabel_an_unchanged_task() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
     );
     write(&root.join("other.txt"), "o0\n");
@@ -323,7 +332,7 @@ fn a_criss_cross_history_does_not_mislabel_an_unchanged_task() {
     git(root, &["checkout", "-q", "a"]);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# T done\n",
     );
     commit(root, "a1: edit task");
@@ -342,11 +351,11 @@ fn a_criss_cross_history_does_not_mislabel_an_unchanged_task() {
     // `a`'s task blob matches one of the two merge-bases, so it is unchanged — not `Modified`,
     // which a single-arbitrary-merge-base comparison would wrongly report.
     assert!(
-        find(&index, "a", "1").is_none(),
+        find(&index, "a", 1).is_none(),
         "unchanged across a criss-cross must not read as modified: {:?}",
         index.matrix().cells
     );
-    let main = find(&index, "main", "1").expect("main base row");
+    let main = find(&index, "main", 1).expect("main base row");
     assert_eq!(main.task.metadata.status(), Some(Status::Done));
 }
 
@@ -356,18 +365,17 @@ fn without_a_default_branch_headline_prefers_the_checked_out_branch() {
     let root = dir.path();
     // No main/master exists, so there is no default branch to anchor the headline.
     git(root, &["init", "-q", "-b", "alpha"]);
-    git(root, &["config", "user.email", "t@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
+    identify(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
     );
     commit(root, "add t on alpha");
     git(root, &["checkout", "-q", "-b", "zeta"]);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# T done\n",
     );
     commit(root, "edit t on zeta");
@@ -375,7 +383,7 @@ fn without_a_default_branch_headline_prefers_the_checked_out_branch() {
 
     let index = built(root);
     let items = index.aggregated_tasks();
-    let item = items.iter().find(|i| i.id == "1").expect("task t");
+    let item = items.iter().find(|i| i.id == key(1)).expect("task t");
     // The headline reflects the checked-out branch (zeta), not the alphabetically-first (alpha).
     assert_eq!(item.metadata.status(), Some(Status::Done));
     assert_eq!(item.title, "T done");
@@ -388,19 +396,19 @@ fn an_uncommitted_change_on_the_default_branch_is_dirty() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
     );
     commit(root, "add t");
     // Serve root is checked out on main, so its working copy overlays the base row.
     task(
         root,
-        "1",
+        1,
         "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# T edited\n",
     );
 
     let index = built(root);
-    let main = find(&index, "main", "1").expect("main base row");
+    let main = find(&index, "main", 1).expect("main base row");
     assert_eq!(main.kind, ChangeKind::Base);
     assert!(main.dirty, "uncommitted working-copy edit is dirty");
     assert_eq!(main.task.metadata.status(), Some(Status::InProgress));
@@ -414,19 +422,19 @@ fn a_new_uncommitted_task_on_the_default_branch_appears() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
     );
     commit(root, "add a");
     // A freshly created (still uncommitted) task must show up right away, not vanish until commit.
     task(
         root,
-        "2",
+        2,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Fresh\n",
     );
 
     let index = built(root);
-    let fresh = find(&index, "main", "2").expect("uncommitted new task row");
+    let fresh = find(&index, "main", 2).expect("uncommitted new task row");
     assert_eq!(fresh.kind, ChangeKind::Base);
     assert!(fresh.dirty);
 }
@@ -438,14 +446,14 @@ fn oplan_default_branch_config_overrides_autodetect() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
     );
     commit(root, "add a");
     git(root, &["checkout", "-q", "-b", "dev"]);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# A done\n",
     );
     commit(root, "edit a on dev");
@@ -455,10 +463,10 @@ fn oplan_default_branch_config_overrides_autodetect() {
     let index = built(root);
 
     // dev is now the baseline; main is unchanged since the fork, so it contributes nothing.
-    let dev = find(&index, "dev", "1").expect("dev base row");
+    let dev = find(&index, "dev", 1).expect("dev base row");
     assert_eq!(dev.kind, ChangeKind::Base);
     assert_eq!(dev.task.metadata.status(), Some(Status::Done));
-    assert!(find(&index, "main", "1").is_none(), "main unchanged vs dev");
+    assert!(find(&index, "main", 1).is_none(), "main unchanged vs dev");
 }
 
 #[test]
@@ -466,18 +474,17 @@ fn without_a_default_branch_every_branch_is_a_presence_row() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     git(root, &["init", "-q", "-b", "trunk"]);
-    git(root, &["config", "user.email", "t@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
+    identify(root);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
     );
     commit(root, "add a");
     git(root, &["checkout", "-q", "-b", "other"]);
     task(
         root,
-        "1",
+        1,
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# A done\n",
     );
     commit(root, "edit a on other");
@@ -486,8 +493,8 @@ fn without_a_default_branch_every_branch_is_a_presence_row() {
     let index = built(root);
 
     // No main/master and no config → nothing to diff against, so both branches list their tasks.
-    let trunk = find(&index, "trunk", "1").expect("trunk row");
-    let other = find(&index, "other", "1").expect("other row");
+    let trunk = find(&index, "trunk", 1).expect("trunk row");
+    let other = find(&index, "other", 1).expect("other row");
     assert_eq!(trunk.kind, ChangeKind::Base);
     assert_eq!(other.kind, ChangeKind::Base);
     assert_eq!(trunk.task.metadata.status(), Some(Status::Todo));
@@ -500,11 +507,11 @@ fn unparseable_frontmatter_does_not_abort_rebuild() {
     let root = dir.path();
     init(root);
     write(
-        &task_path(root, "1"),
+        &task_path(root, 1),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Body\n\n## Plan\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> other\n",
     );
     write(
-        &task_path(root, "2"),
+        &task_path(root, 2),
         "---\n<<<<<<< HEAD\nstatus: todo\n=======\nstatus: done\n>>>>>>> other\n---\n# Head\n",
     );
     commit(root, "broken frontmatter");
@@ -513,9 +520,9 @@ fn unparseable_frontmatter_does_not_abort_rebuild() {
     let cells = &index.matrix().cells;
     assert_eq!(cells.len(), 2, "rebuild kept both cells: {cells:?}");
 
-    let body = cells.iter().find(|c| c.task.id == "1").unwrap();
+    let body = cells.iter().find(|c| c.task.id == key(1)).unwrap();
     assert_eq!(body.task.title, "Body");
-    let head = cells.iter().find(|c| c.task.id == "2").unwrap();
+    let head = cells.iter().find(|c| c.task.id == key(2)).unwrap();
     assert_eq!(head.task.title, "Head", "best-effort title survives");
 }
 
@@ -564,19 +571,22 @@ fn updated_follows_the_last_commit_to_touch_the_task() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "1", &dated("todo"));
+    task(root, 1, &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
 
-    assert_eq!(built(root).task_updated("1", None), Ok(at(1_000_000_000)));
+    assert_eq!(
+        built(root).task_updated(&key(1), None),
+        Ok(at(1_000_000_000))
+    );
 
     // A status flip is a blob change like any other, so it counts as an update.
-    task(root, "1", &dated("done"));
+    task(root, 1, &dated("done"));
     commit_at(root, 1_000_000_500, "finish t");
 
     let index = built(root);
-    assert_eq!(index.task_updated("1", None), Ok(at(1_000_000_500)));
+    assert_eq!(index.task_updated(&key(1), None), Ok(at(1_000_000_500)));
     let view = index
-        .effective_view(&Repo::discover(root).unwrap(), "1", "main")
+        .effective_view(&Repo::discover(root).unwrap(), &key(1), "main")
         .unwrap()
         .unwrap();
     assert_eq!(view.updated, Field::Value(Rfc3339(at(1_000_000_500))));
@@ -588,12 +598,12 @@ fn an_uncommitted_edit_reads_as_updated_now() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "1", &dated("todo"));
+    task(root, 1, &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
     let before = Timestamp::now();
-    task(root, "1", &dated("done"));
+    task(root, 1, &dated("done"));
 
-    let updated = built(root).task_updated("1", None).unwrap();
+    let updated = built(root).task_updated(&key(1), None).unwrap();
 
     assert!(
         updated >= before,
@@ -606,21 +616,21 @@ fn the_aggregated_list_dates_a_task_like_its_detail_does() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "1", &dated("todo"));
+    task(root, 1, &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
 
     let index = built(root);
     let listed = index
         .aggregated_tasks()
         .into_iter()
-        .find(|item| item.id == "1")
+        .find(|item| item.id == key(1))
         .unwrap();
 
     // The board renders `updated` from here, so it must agree with the task's own page.
     assert_eq!(listed.updated, Field::Value(Rfc3339(at(1_000_000_000))));
     assert_eq!(
         listed.updated,
-        Field::from(index.task_updated("1", None).map(Rfc3339))
+        Field::from(index.task_updated(&key(1), None).map(Rfc3339))
     );
 }
 
@@ -633,7 +643,7 @@ fn the_aggregated_list_clamps_updated_up_to_created() {
     // task itself, the same backstop the detail view applies.
     task(
         root,
-        "1",
+        1,
         "---\nstatus: todo\ncreated: 2030-01-01T00:00:00Z\n---\n# T\n",
     );
     commit_at(root, 1_000_000_000, "add t");
@@ -641,7 +651,7 @@ fn the_aggregated_list_clamps_updated_up_to_created() {
     let listed = built(root)
         .aggregated_tasks()
         .into_iter()
-        .find(|item| item.id == "1")
+        .find(|item| item.id == key(1))
         .unwrap();
 
     assert_eq!(
@@ -657,19 +667,19 @@ fn a_field_the_strict_parser_rejects_costs_only_that_field() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "1", &dated("todo"));
+    task(root, 1, &dated("todo"));
     task(
         root,
-        "2",
+        2,
         "---\nstatus: in_progress\nparent: '1'\n---\n# Legacy\n",
     );
     commit_at(root, 1_000_000_000, "add tasks");
 
     let index = built(root);
-    let cell = find(&index, "main", "2").unwrap();
+    let cell = find(&index, "main", 2).unwrap();
 
     assert_eq!(cell.task.metadata.status(), Some(Status::InProgress));
-    assert_eq!(cell.task.metadata.parent(), Some("1"));
+    assert_eq!(cell.task.metadata.parent(), Some(key(1).as_str()));
     assert_eq!(cell.task.title, "Legacy");
     // Only `created` failed, and it says so rather than going missing silently.
     let fields = cell.task.metadata.fields().unwrap();
@@ -677,7 +687,7 @@ fn a_field_the_strict_parser_rejects_costs_only_that_field() {
         fields.created,
         op_api::Field::Error(op_api::FieldError::Missing)
     );
-    assert_eq!(index.task_updated("2", None), Ok(at(1_000_000_000)));
+    assert_eq!(index.task_updated(&key(2), None), Ok(at(1_000_000_000)));
 }
 
 #[test]
@@ -687,13 +697,13 @@ fn a_file_with_no_readable_metadata_reports_that_instead_of_a_status() {
     init(root);
     task(
         root,
-        "1",
+        1,
         "---\n<<<<<<< HEAD\nstatus: todo\n=======\nstatus: done\n>>>>>>> other\n---\n# Broken\n",
     );
     commit_at(root, 1_000_000_000, "add broken");
 
     let index = built(root);
-    let cell = find(&index, "main", "1").unwrap();
+    let cell = find(&index, "main", 1).unwrap();
 
     assert_eq!(cell.task.metadata.status(), None, "no status is claimed");
     assert!(matches!(cell.task.metadata, op_api::Metadata::Error { .. }));
@@ -702,7 +712,7 @@ fn a_file_with_no_readable_metadata_reports_that_instead_of_a_status() {
     // The board gives it its own group rather than filing it under a status it never had.
     let board = op_api::Board::build(&index.aggregated_tasks());
     assert_eq!(board.groups[0].status, None);
-    assert_eq!(board.groups[0].rows[0].task.id, "1");
+    assert_eq!(board.groups[0].rows[0].task.id, key(1));
 }
 
 #[test]
@@ -710,19 +720,19 @@ fn a_replayed_branch_does_not_outrank_newer_work_elsewhere() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "1", &dated("todo"));
+    task(root, 1, &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
 
     // `feat` does the newest real work on the task.
     git(root, &["checkout", "-qb", "feat"]);
-    task(root, "1", &dated("in_review"));
+    task(root, 1, &dated("in_review"));
     commit_at(root, 1_000_200_000, "feat moves t forward");
 
     // `chore` only touches t incidentally — a backfill, a reformat — and is then rebased, which
     // rewrites its commit date to now while leaving the author date it was written with.
     git(root, &["checkout", "-q", "main"]);
     git(root, &["checkout", "-qb", "chore"]);
-    task(root, "1", &dated("backlog"));
+    task(root, 1, &dated("backlog"));
     commit_replayed(
         root,
         1_000_100_000,
@@ -733,7 +743,7 @@ fn a_replayed_branch_does_not_outrank_newer_work_elsewhere() {
     let listed = built(root)
         .aggregated_tasks()
         .into_iter()
-        .find(|item| item.id == "1")
+        .find(|item| item.id == key(1))
         .unwrap();
 
     // Ranking by commit date would headline `chore` — and every other task it carries — purely
@@ -747,27 +757,27 @@ fn a_rebased_branch_headlines_over_the_branch_it_was_rebased_onto() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "1", &dated("todo"));
+    task(root, 1, &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
 
     // `feat` writes its version first, `main` writes a different one after it.
     git(root, &["checkout", "-qb", "feat"]);
-    task(root, "1", &dated("in_progress"));
+    task(root, 1, &dated("in_progress"));
     commit_at(root, 1_000_100_000, "feat moves t forward");
     git(root, &["checkout", "-q", "main"]);
-    task(root, "1", &dated("done"));
+    task(root, 1, &dated("done"));
     commit_at(root, 1_000_200_000, "main closes t");
 
     // Rebasing `feat` replays its edit over main's and the conflict is resolved by hand, so
     // `feat` now holds main's version *and* the resolution — while still carrying the author date
     // it was originally written with, older than the version it just superseded.
     git(root, &["checkout", "-q", "feat"]);
-    rebase_resolving(root, "main", "1", &dated("in_progress"), 1_000_900_000);
+    rebase_resolving(root, "main", 1, &dated("in_progress"), 1_000_900_000);
 
     let listed = built(root)
         .aggregated_tasks()
         .into_iter()
-        .find(|item| item.id == "1")
+        .find(|item| item.id == key(1))
         .unwrap();
 
     // Ranking by author date would headline `main`, showing the version the resolution superseded.
@@ -780,29 +790,29 @@ fn a_superseded_version_stays_beaten_when_a_third_branch_is_newer() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
-    task(root, "1", &dated("todo"));
+    task(root, 1, &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
 
     git(root, &["checkout", "-qb", "aa"]);
-    task(root, "1", &dated("in_progress"));
+    task(root, 1, &dated("in_progress"));
     commit_at(root, 1_000_100_000, "aa moves t forward");
 
     // `bb` knows nothing of the other two: no version supersedes it and none of it.
     git(root, &["checkout", "-q", "main"]);
     git(root, &["checkout", "-qb", "bb"]);
-    task(root, "1", &dated("in_review"));
+    task(root, 1, &dated("in_review"));
     commit_at(root, 1_000_150_000, "bb moves t elsewhere");
 
     git(root, &["checkout", "-q", "main"]);
-    task(root, "1", &dated("done"));
+    task(root, 1, &dated("done"));
     commit_at(root, 1_000_200_000, "main closes t");
     git(root, &["checkout", "-q", "aa"]);
-    rebase_resolving(root, "main", "1", &dated("in_progress"), 1_000_900_000);
+    rebase_resolving(root, "main", 1, &dated("in_progress"), 1_000_900_000);
 
     let listed = built(root)
         .aggregated_tasks()
         .into_iter()
-        .find(|item| item.id == "1")
+        .find(|item| item.id == key(1))
         .unwrap();
 
     // `aa` supersedes `main` and only loses to `bb` on date, so dropping the superseded versions
@@ -812,7 +822,7 @@ fn a_superseded_version_stays_beaten_when_a_third_branch_is_newer() {
     assert_eq!(listed.metadata.status(), Some(Status::InReview));
 }
 
-fn rebase_resolving(root: &Path, onto: &str, id: &str, resolved: &str, committed: i64) {
+fn rebase_resolving(root: &Path, onto: &str, number: u64, resolved: &str, committed: i64) {
     let conflicted = Command::new("git")
         .current_dir(root)
         .args(["rebase", onto])
@@ -824,7 +834,7 @@ fn rebase_resolving(root: &Path, onto: &str, id: &str, resolved: &str, committed
         !conflicted.success(),
         "the rebase must conflict for the resolution to be the branch's own version"
     );
-    write(&task_path(root, id), resolved);
+    write(&task_path(root, number), resolved);
     git(root, &["add", "-A"]);
     let status = Command::new("git")
         .current_dir(root)
@@ -843,7 +853,7 @@ fn the_id_floor_counts_a_task_no_commit_holds_yet() {
     init(root);
     task(
         root,
-        "7",
+        7,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     );
 
@@ -859,7 +869,7 @@ fn the_id_floor_counts_a_worktree_mid_merge() {
     init(root);
     task(
         root,
-        "7",
+        7,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     );
     commit(root, "add alpha");
@@ -879,7 +889,7 @@ fn the_id_floor_counts_a_worktree_mid_merge() {
     );
     task(
         &wt_path,
-        "9",
+        9,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Beta\n",
     );
     // A merge in flight keeps the worktree out of `live`, so its files reach the index nowhere
@@ -897,19 +907,19 @@ fn ids_are_ordered_as_numbers_not_as_text() {
     for number in [1, 2, 9, 10, 11, 100] {
         task(
             root,
-            &number.to_string(),
+            number,
             "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
         );
     }
     commit(root, "add tasks");
 
     let index = built(root);
-    let expected = ["1", "2", "9", "10", "11", "100"];
+    let expected: Vec<String> = [1, 2, 9, 10, 11, 100].map(key).to_vec();
     assert_eq!(
         index
             .aggregated_tasks()
             .iter()
-            .map(|item| item.id.as_str())
+            .map(|item| item.id.clone())
             .collect::<Vec<_>>(),
         expected
     );
@@ -942,10 +952,10 @@ fn two_files_of_one_number_resolve_to_the_lowest_name() {
 
     let items = built(root).aggregated_tasks();
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0].id, "7");
+    assert_eq!(items[0].id, key(7));
     assert_eq!(items[0].title, "Alpha");
     assert_eq!(
-        Store::open(root).unwrap().read("7").unwrap().title(),
+        Store::discover(root).unwrap().read(7).unwrap().title(),
         Some("Alpha".to_owned())
     );
 }

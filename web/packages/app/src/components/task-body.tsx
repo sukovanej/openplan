@@ -6,9 +6,10 @@ import remarkGfm from "remark-gfm"
 
 import type { TaskRef as TaskRefData } from "@open-planner/api-client"
 
+import { useAbbreviation } from "../lib/abbreviation"
 import { cn } from "../lib/utils"
 import { StatusChip } from "./status-badge"
-import { remarkTaskLinks } from "./task-links"
+import { taskLinkPlugins } from "./task-links"
 
 const RefsContext = createContext<ReadonlyMap<string, TaskRefData>>(new Map())
 
@@ -108,10 +109,12 @@ const components: Components = {
 
 export function TaskBody({ markdown, refs }: { markdown: string; refs?: ReadonlyArray<TaskRefData> }) {
   const refMap = useMemo(() => new Map((refs ?? []).map((ref) => [ref.id, ref])), [refs])
+  const abbreviation = useAbbreviation()
+  const plugins = useMemo(() => [remarkGfm, taskLinkPlugins(abbreviation)], [abbreviation])
   return (
     <RefsContext.Provider value={refMap}>
       <article data-keys-ignore className={proseClass}>
-        <Markdown remarkPlugins={[remarkGfm, remarkTaskLinks]} components={components}>
+        <Markdown remarkPlugins={plugins} components={components}>
           {markdown}
         </Markdown>
       </article>

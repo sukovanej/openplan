@@ -1,10 +1,14 @@
 use op_api::{
     Field, FieldUpdate, FrontmatterFields, Metadata, Status, TaskPatch, TaskSummary, TaskTree,
 };
-use op_task::{Task, Timestamp};
+use op_task::{Abbreviation, Task, Timestamp};
 
 fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().unwrap()
+}
+
+fn abbreviation() -> Abbreviation {
+    "OPP".parse().unwrap()
 }
 
 fn summary(id: &str, parent: Option<&str>, rank: Option<&str>) -> TaskSummary {
@@ -93,9 +97,9 @@ fn patch_parent_absent_leaves_it_unchanged() {
     let patch: TaskPatch = serde_json::from_value(serde_json::json!({ "status": "done" })).unwrap();
     assert_eq!(patch.parent, FieldUpdate::Keep);
     let mut task = Task::new("T", Status::Todo, stamp());
-    task.set_parent(Some("p".to_owned()));
-    patch.apply(&mut task);
-    assert_eq!(task.frontmatter.parent.as_deref(), Some("p"));
+    task.set_parent(Some("7".to_owned()));
+    patch.apply(&mut task, abbreviation()).unwrap();
+    assert_eq!(task.frontmatter.parent.as_deref(), Some("7"));
 }
 
 #[test]
@@ -103,17 +107,21 @@ fn patch_parent_null_clears_it() {
     let patch: TaskPatch = serde_json::from_value(serde_json::json!({ "parent": null })).unwrap();
     assert_eq!(patch.parent, FieldUpdate::Clear);
     let mut task = Task::new("T", Status::Todo, stamp());
-    task.set_parent(Some("p".to_owned()));
-    patch.apply(&mut task);
+    task.set_parent(Some("7".to_owned()));
+    patch.apply(&mut task, abbreviation()).unwrap();
     assert_eq!(task.frontmatter.parent, None);
 }
 
 #[test]
 fn patch_parent_id_sets_it() {
     let patch: TaskPatch =
-        serde_json::from_value(serde_json::json!({ "parent": "epic-1" })).unwrap();
-    assert_eq!(patch.parent, FieldUpdate::Set("epic-1".to_owned()));
+        serde_json::from_value(serde_json::json!({ "parent": "OPP-1" })).unwrap();
+    assert_eq!(patch.parent, FieldUpdate::Set("OPP-1".to_owned()));
     let mut task = Task::new("T", Status::Todo, stamp());
-    patch.apply(&mut task);
-    assert_eq!(task.frontmatter.parent.as_deref(), Some("epic-1"));
+    patch.apply(&mut task, abbreviation()).unwrap();
+    assert_eq!(
+        task.frontmatter.parent.as_deref(),
+        Some("1"),
+        "the wire spelling is the key; the file layer keeps the number"
+    );
 }

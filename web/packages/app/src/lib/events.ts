@@ -15,12 +15,16 @@ export const ChangeEvent = Schema.Union([
     task_id: Schema.String,
   }),
   Schema.Struct({
+    kind: Schema.Literal("config_changed"),
+  }),
+  Schema.Struct({
     kind: Schema.Literal("daemon_stopping"),
   }),
 ])
 export type ChangeEvent = typeof ChangeEvent.Type
 
 export interface Invalidator {
+  readonly refreshConfig: () => void
   readonly refreshList: () => void
   readonly refreshTask: (id: string) => void
   readonly refreshVisible: () => void
@@ -41,6 +45,13 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
     }
     case "presence_changed": {
       inv.refreshList()
+      return
+    }
+    // The store's key prefix changed, so every id on screen is spelled differently: re-read the
+    // config, then everything showing an id.
+    case "config_changed": {
+      inv.refreshConfig()
+      inv.refreshVisible()
       return
     }
     // A connection-lifecycle signal, not a data change: the realtime layer handles it.

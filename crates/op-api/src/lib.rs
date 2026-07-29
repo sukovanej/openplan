@@ -2,13 +2,76 @@ use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
 use op_task::Task;
-pub use op_task::{Status, Timestamp};
+pub use op_task::{Abbreviation, Status, Timestamp};
 
 pub const ADMIN_HEADER: &str = "x-oplan-admin";
+
+// A spelling of an id the store has no id for. One key spelling is accepted and nothing else is, so
+// a refusal names the form that would have worked rather than guessing at what was meant.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("not a task key: {got:?}; expected {expected}")]
+pub struct KeyError {
+    pub got: String,
+    pub expected: String,
+}
+
+impl KeyError {
+    pub fn new(abbreviation: Abbreviation, got: &str) -> Self {
+        Self {
+            got: got.to_owned(),
+            expected: abbreviation.format_key(42),
+        }
+    }
+}
+
+fn reference_of(abbreviation: Abbreviation, key: &str) -> Result<String, KeyError> {
+    abbreviation
+        .parse_ref(key)
+        .ok_or_else(|| KeyError::new(abbreviation, key))
+}
+
+// In-memory references are the numbers the file layer allocates — `op_task` normalizes every stored
+// spelling to one — and above the store each is rendered as this store's key.
+fn key_of(abbreviation: Abbreviation, reference: &str) -> String {
+    abbreviation
+        .format_ref(reference)
+        .unwrap_or_else(|| reference.to_owned())
+}
+
+// A body as the store carries it in memory: a `[[…]]` in the key spelling becomes the number the file
+// layer names. Any other spelling of a reference is refused rather than written as prose — a bare
+// number and another store's key both name no task here, and a file that already holds one shows it
+// as the plain text it is.
+pub fn body_from_keys(abbreviation: Abbreviation, body: &str) -> Result<String, KeyError> {
+    let mut out = String::new();
+    let mut last = 0;
+    for (span, inner) in op_task::body_ref_spans(body) {
+        let target = op_task::ref_target(inner);
+        if let Some(reference) = abbreviation.parse_ref(inner) {
+            out.push_str(&body[last..span.start]);
+            out.push_str(&format!("[[{reference}]]"));
+            last = span.end;
+        } else if op_task::parse_id(target).is_some() || op_task::is_key_shaped(target) {
+            return Err(KeyError::new(abbreviation, target));
+        }
+    }
+    if last == 0 {
+        return Ok(body.to_owned());
+    }
+    out.push_str(&body[last..]);
+    Ok(out)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ApiErrorBody {
     pub message: String,
+}
+
+// The store's settings a client needs to speak its id space: the abbreviation every key carries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct StoreConfig {
+    #[schema(pattern = "^[A-Z]{3}$")]
+    pub abbreviation: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -37,19 +100,23 @@ pub struct TaskSummary {
 }
 
 impl TaskSummary {
-    pub fn from_partial(id: String, partial: op_task::PartialTask) -> Self {
+    pub fn from_partial(
+        id: String,
+        partial: op_task::PartialTask,
+        abbreviation: Abbreviation,
+    ) -> Self {
         Self {
             id,
             title: partial.title.unwrap_or_default(),
-            metadata: partial.metadata.into(),
+            metadata: Metadata::from_partial(partial.metadata, abbreviation),
         }
     }
 
-    pub fn from_task(id: String, task: &Task) -> Self {
+    pub fn from_task(id: String, task: &Task, abbreviation: Abbreviation) -> Self {
         Self {
             id,
             title: task.title().unwrap_or_default(),
-            metadata: Metadata::from_frontmatter(&task.frontmatter),
+            metadata: Metadata::from_frontmatter(&task.frontmatter, abbreviation),
         }
     }
 }
@@ -69,8 +136,9 @@ impl TaskView {
         id: String,
         partial: op_task::PartialTask,
         updated: op_task::FieldResult<Timestamp>,
+        abbreviation: Abbreviation,
     ) -> Self {
-        let metadata: Metadata = partial.metadata.into();
+        let metadata = Metadata::from_partial(partial.metadata, abbreviation);
         let created = metadata.created();
         Self {
             id,
@@ -83,12 +151,17 @@ impl TaskView {
 
     // `updated` is git-derived, so only a caller holding the history can supply it; a store-only
     // read passes `None`.
-    pub fn from_task(id: String, task: &Task, updated: op_task::FieldResult<Timestamp>) -> Self {
+    pub fn from_task(
+        id: String,
+        task: &Task,
+        updated: op_task::FieldResult<Timestamp>,
+        abbreviation: Abbreviation,
+    ) -> Self {
         Self {
             id,
             title: task.title().unwrap_or_default(),
             updated: updated_field(Some(task.frontmatter.created), updated),
-            metadata: Metadata::from_frontmatter(&task.frontmatter),
+            metadata: Metadata::from_frontmatter(&task.frontmatter, abbreviation),
             body: task.body.clone(),
         }
     }
@@ -182,8 +255,8 @@ pub enum MetadataErrorTag {
     Error,
 }
 
-impl From<op_task::PartialMetadata> for Metadata {
-    fn from(partial: op_task::PartialMetadata) -> Self {
+impl Metadata {
+    pub fn from_partial(partial: op_task::PartialMetadata, abbreviation: Abbreviation) -> Self {
         match partial {
             op_task::PartialMetadata::Error(message) => Metadata::Error {
                 kind: MetadataErrorTag::Error,
@@ -192,9 +265,15 @@ impl From<op_task::PartialMetadata> for Metadata {
             op_task::PartialMetadata::Fields(fields) => Metadata::Fields(FrontmatterFields {
                 status: fields.status.into(),
                 created: Field::from(fields.created).map(Rfc3339),
-                parent: fields.parent.into(),
+                parent: Field::from(fields.parent)
+                    .map(|parent| parent.map(|p| key_of(abbreviation, &p))),
                 rank: fields.rank.into(),
-                dependencies: fields.dependencies.into(),
+                dependencies: Field::from(fields.dependencies).map(|dependencies| {
+                    dependencies
+                        .iter()
+                        .map(|d| key_of(abbreviation, d))
+                        .collect()
+                }),
             }),
         }
     }
@@ -234,13 +313,18 @@ impl<T> Field<T> {
 }
 
 impl Metadata {
-    pub fn from_frontmatter(fm: &op_task::Frontmatter) -> Self {
+    pub fn from_frontmatter(fm: &op_task::Frontmatter, abbreviation: Abbreviation) -> Self {
         Metadata::Fields(FrontmatterFields {
             status: Field::Value(fm.status),
             created: Field::Value(Rfc3339(fm.created)),
-            parent: Field::Value(fm.parent.clone()),
+            parent: Field::Value(fm.parent.as_deref().map(|p| key_of(abbreviation, p))),
             rank: Field::Value(fm.rank.clone()),
-            dependencies: Field::Value(fm.dependencies.clone()),
+            dependencies: Field::Value(
+                fm.dependencies
+                    .iter()
+                    .map(|d| key_of(abbreviation, d))
+                    .collect(),
+            ),
         })
     }
 
@@ -422,14 +506,28 @@ pub struct CreateTask {
 }
 
 impl CreateTask {
-    pub fn into_task(self, created: Timestamp) -> Task {
+    pub fn into_task(
+        self,
+        created: Timestamp,
+        abbreviation: Abbreviation,
+    ) -> Result<Task, KeyError> {
         let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Backlog), created);
-        task.set_parent(self.parent);
-        task.set_dependencies(self.dependencies);
+        task.set_parent(
+            self.parent
+                .as_deref()
+                .map(|parent| reference_of(abbreviation, parent))
+                .transpose()?,
+        );
+        task.set_dependencies(
+            self.dependencies
+                .iter()
+                .map(|dependency| reference_of(abbreviation, dependency))
+                .collect::<Result<_, _>>()?,
+        );
         if let Some(body) = &self.body {
-            task.append_body(body);
+            task.append_body(&body_from_keys(abbreviation, body)?);
         }
-        task
+        Ok(task)
     }
 }
 
@@ -487,21 +585,27 @@ pub struct TaskPatch {
 }
 
 impl TaskPatch {
-    pub fn apply(self, task: &mut Task) {
+    pub fn apply(self, task: &mut Task, abbreviation: Abbreviation) -> Result<(), KeyError> {
         if let Some(status) = self.status {
             task.set_status(status);
         }
         match self.parent {
             FieldUpdate::Keep => {}
             FieldUpdate::Clear => task.set_parent(None),
-            FieldUpdate::Set(id) => task.set_parent(Some(id)),
+            FieldUpdate::Set(key) => task.set_parent(Some(reference_of(abbreviation, &key)?)),
         }
         if let Some(rank) = self.rank {
             task.set_rank(Some(rank));
         }
         if let Some(dependencies) = self.dependencies {
-            task.set_dependencies(dependencies);
+            task.set_dependencies(
+                dependencies
+                    .iter()
+                    .map(|dependency| reference_of(abbreviation, dependency))
+                    .collect::<Result<_, _>>()?,
+            );
         }
+        Ok(())
     }
 }
 
@@ -526,12 +630,17 @@ fn rank_cmp(ra: Option<&str>, ia: &str, rb: Option<&str>, ib: &str) -> std::cmp:
     }
 }
 
-// An id is a number (§3.1), so it orders as one — text order would file 10 between 1 and 2.
+// A key is a number behind a prefix (§3.1), so it orders as one — text order would file `OPP-10`
+// between `OPP-1` and `OPP-2`. The prefix is constant within a store, so dropping it changes nothing.
 pub fn id_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    match (op_task::parse_id(a), op_task::parse_id(b)) {
+    match (key_number(a), key_number(b)) {
         (Some(x), Some(y)) => x.cmp(&y),
         _ => a.cmp(b),
     }
+}
+
+fn key_number(key: &str) -> Option<u64> {
+    op_task::parse_id(key.rsplit_once('-')?.1)
 }
 
 pub fn sibling_cmp(a: &TaskSummary, b: &TaskSummary) -> std::cmp::Ordering {
@@ -807,5 +916,8 @@ pub enum ChangeEvent {
     TaskChanged { id: String, branch: String },
     RefMoved { branch: String },
     PresenceChanged { task_id: String },
+    // The store's `config.toml` changed, so every key on screen may render differently; a client
+    // re-reads the config along with whatever it is showing.
+    ConfigChanged,
     DaemonStopping,
 }

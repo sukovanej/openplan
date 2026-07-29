@@ -5,7 +5,10 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt as _;
-use op_task::{Frontmatter, Task, parse_id, rank, ref_id, ref_target, task_filename};
+use op_task::{Abbreviation, Frontmatter, Task, rank, ref_id, ref_target, task_filename};
+
+mod config;
+pub use config::{CONFIG_FILE, Config, ConfigError};
 
 pub const STORE_DIR: &str = ".plan";
 
@@ -13,9 +16,14 @@ const ID_ATTEMPTS: usize = 16;
 const LOCK_ATTEMPTS: usize = 1024;
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
+// One store, one abbreviation (§7.10): a `Store` is always read under the abbreviation of the
+// worktree the daemon serves, so a sibling worktree whose `config.toml` says something else — or has
+// none — still renders one task as one key. The number names the file; the key is what the store's
+// own refusals are phrased in, since every caller reached it through one.
 #[derive(Debug, Clone)]
 pub struct Store {
     root: PathBuf,
+    abbreviation: Abbreviation,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -26,8 +34,8 @@ pub enum StoreError {
     NotFound { id: String },
     #[error("task id already taken: {id}")]
     IdTaken { id: String },
-    #[error("not a task id: {id:?}; a task id is a decimal number, like 42")]
-    InvalidId { id: String },
+    #[error("not a task reference: {reference:?}; {}", op_task::REFERENCE_EXPECTED)]
+    InvalidRef { reference: String },
     #[error("{0}")]
     Invalid(String),
     #[error(
@@ -38,40 +46,70 @@ pub enum StoreError {
     )]
     MissingCreated { path: PathBuf, example: String },
     #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Task(#[from] op_task::TaskError),
 }
 
 impl Store {
-    pub fn open(root: impl AsRef<Path>) -> Result<Self, StoreError> {
+    pub fn open(root: impl AsRef<Path>, abbreviation: Abbreviation) -> Result<Self, StoreError> {
         let root = root.as_ref().to_path_buf();
         if root.join(STORE_DIR).is_dir() {
-            Ok(Self { root })
+            Ok(Self { root, abbreviation })
         } else {
             Err(StoreError::StoreMissing)
         }
     }
 
+    // The store at or above `start`, read under the abbreviation its own `config.toml` names — the
+    // entry point every command and the daemon come in through, so a store with no abbreviation
+    // stops them all before they can print an id it has no spelling for.
     pub fn discover(start: impl AsRef<Path>) -> Result<Self, StoreError> {
+        let root = Self::discover_root(start)?;
+        let abbreviation = Config::read(&root)?.abbreviation;
+        Ok(Self { root, abbreviation })
+    }
+
+    fn discover_root(start: impl AsRef<Path>) -> Result<PathBuf, StoreError> {
         let start = start.as_ref();
         let base = if start.is_absolute() {
             start.to_path_buf()
         } else {
             std::env::current_dir()?.join(start)
         };
-        for dir in base.ancestors() {
-            if dir.join(STORE_DIR).is_dir() {
-                return Ok(Self {
-                    root: dir.to_path_buf(),
-                });
-            }
-        }
-        Err(StoreError::StoreMissing)
+        base.ancestors()
+            .find(|dir| dir.join(STORE_DIR).is_dir())
+            .map(Path::to_path_buf)
+            .ok_or(StoreError::StoreMissing)
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn abbreviation(&self) -> Abbreviation {
+        self.abbreviation
+    }
+
+    // The same store read under another abbreviation, for a caller that holds the store's current
+    // one — a live config change — rather than the one this handle was opened with.
+    pub fn with_abbreviation(&self, abbreviation: Abbreviation) -> Self {
+        Self {
+            root: self.root.clone(),
+            abbreviation,
+        }
+    }
+
+    fn key(&self, number: u64) -> String {
+        self.abbreviation.format_key(number)
+    }
+
+    fn not_found(&self, number: u64) -> StoreError {
+        StoreError::NotFound {
+            id: self.key(number),
+        }
     }
 
     pub fn plan_dir(&self) -> PathBuf {
@@ -82,14 +120,12 @@ impl Store {
         self.plan_dir().join("tasks")
     }
 
-    pub fn task_path(&self, id: &str) -> Result<PathBuf, StoreError> {
-        self.task_file(id)?
-            .ok_or_else(|| StoreError::NotFound { id: id.to_owned() })
+    pub fn task_path(&self, id: u64) -> Result<PathBuf, StoreError> {
+        self.task_file(id)?.ok_or_else(|| self.not_found(id))
     }
 
-    fn task_file(&self, id: &str) -> Result<Option<PathBuf>, StoreError> {
-        let number = parse_id(id).ok_or_else(|| StoreError::InvalidId { id: id.to_owned() })?;
-        Ok(self.task_files()?.remove(&number))
+    fn task_file(&self, id: u64) -> Result<Option<PathBuf>, StoreError> {
+        Ok(self.task_files()?.remove(&id))
     }
 
     // The file names carry a title slug the id does not (§3.1), so a task is found by the number its
@@ -130,34 +166,26 @@ impl Store {
         Ok(())
     }
 
-    pub fn exists(&self, id: &str) -> bool {
+    pub fn exists(&self, id: u64) -> bool {
         matches!(self.task_file(id), Ok(Some(_)))
     }
 
-    pub fn task_ids(&self) -> Result<Vec<String>, StoreError> {
-        Ok(self
-            .task_files()?
-            .into_keys()
-            .map(|number| number.to_string())
-            .collect())
+    pub fn task_ids(&self) -> Result<Vec<u64>, StoreError> {
+        Ok(self.task_files()?.into_keys().collect())
     }
 
     // One scan and one open per task, for a caller that wants them all: resolving each id on its own
     // rescans the directory, which turns a whole-store read into quadratic work.
-    pub fn read_all_raw(&self) -> Result<BTreeMap<String, String>, StoreError> {
+    pub fn read_all_raw(&self) -> Result<BTreeMap<u64, String>, StoreError> {
         self.task_files()?
             .into_iter()
-            .map(|(number, path)| {
-                let id = number.to_string();
-                let text = read_file(&path, &id)?;
-                Ok((id, text))
-            })
+            .map(|(number, path)| Ok((number, self.read_file(&path, number)?)))
             .collect()
     }
 
-    pub fn read(&self, id: &str) -> Result<Task, StoreError> {
+    pub fn read(&self, id: u64) -> Result<Task, StoreError> {
         let path = self.task_path(id)?;
-        Task::from_file_string(&read_file(&path, id)?).map_err(|err| match err {
+        Task::from_file_string(&self.read_file(&path, id)?).map_err(|err| match err {
             op_task::TaskError::MissingCreated => StoreError::MissingCreated {
                 path,
                 example: op_task::now().to_string(),
@@ -166,21 +194,29 @@ impl Store {
         })
     }
 
-    pub fn read_raw(&self, id: &str) -> Result<String, StoreError> {
-        read_file(&self.task_path(id)?, id)
+    pub fn read_raw(&self, id: u64) -> Result<String, StoreError> {
+        self.read_file(&self.task_path(id)?, id)
+    }
+
+    fn read_file(&self, path: &Path, id: u64) -> Result<String, StoreError> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => Ok(text),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Err(self.not_found(id)),
+            Err(e) => Err(e.into()),
+        }
     }
 
     // `number` is the task's identity and must come from the daemon's allocator, the single writer
     // that can see every local branch; the store itself has no repo-wide view to allocate from.
-    pub fn create(&self, task: &Task, number: u64) -> Result<String, StoreError> {
+    pub fn create(&self, task: &Task, number: u64) -> Result<u64, StoreError> {
         let title = single_title(&task.body)?;
         self.validate(None, None, &task.frontmatter)?;
         std::fs::create_dir_all(self.tasks_dir())?;
         // A file already carrying the number owns it whatever its slug says, so the check cannot be
         // left to the non-clobbering link below: a different title would name a different file.
-        if self.task_file(&number.to_string())?.is_some() {
+        if self.task_file(number)?.is_some() {
             return Err(StoreError::IdTaken {
-                id: number.to_string(),
+                id: self.key(number),
             });
         }
         let contents = self.in_file_form(task)?.to_file_string()?;
@@ -194,17 +230,18 @@ impl Store {
 
     // Publish the fully-written temp under its name with a non-clobbering hard link: the watcher only
     // ever sees a complete file, and a taken name is reported instead of overwriting another task.
-    fn link_id(&self, tmp: &Path, number: u64, title: &str) -> Result<String, StoreError> {
+    fn link_id(&self, tmp: &Path, number: u64, title: &str) -> Result<u64, StoreError> {
         let path = self.tasks_dir().join(task_filename(number, title));
-        let id = number.to_string();
         match std::fs::hard_link(tmp, &path) {
-            Ok(()) => Ok(id),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(StoreError::IdTaken { id }),
+            Ok(()) => Ok(number),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(StoreError::IdTaken {
+                id: self.key(number),
+            }),
             Err(e) => Err(e.into()),
         }
     }
 
-    pub fn write(&self, id: &str, task: &Task) -> Result<(), StoreError> {
+    pub fn write(&self, id: u64, task: &Task) -> Result<(), StoreError> {
         self.task_path(id)?;
         self.with_lock(id, || {
             let old = self.read(id)?.frontmatter;
@@ -216,7 +253,7 @@ impl Store {
 
     pub fn update(
         &self,
-        id: &str,
+        id: u64,
         mutate: impl FnOnce(&mut Task) -> Result<(), StoreError>,
     ) -> Result<Task, StoreError> {
         self.task_path(id)?;
@@ -231,19 +268,17 @@ impl Store {
         })
     }
 
-    pub fn delete(&self, id: &str) -> Result<(), StoreError> {
+    pub fn delete(&self, id: u64) -> Result<(), StoreError> {
         match std::fs::remove_file(self.task_path(id)?) {
             Ok(()) => Ok(()),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                Err(StoreError::NotFound { id: id.to_owned() })
-            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Err(self.not_found(id)),
             Err(e) => Err(e.into()),
         }
     }
 
     pub fn with_lock<T>(
         &self,
-        id: &str,
+        id: u64,
         f: impl FnOnce() -> Result<T, StoreError>,
     ) -> Result<T, StoreError> {
         // Creation never conflicts (one file per task, one number per task), so a lock
@@ -254,7 +289,7 @@ impl Store {
             let file = match OpenOptions::new().read(true).open(&path) {
                 Ok(file) => file,
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    return Err(StoreError::NotFound { id: id.to_owned() });
+                    return Err(self.not_found(id));
                 }
                 Err(e) => return Err(e.into()),
             };
@@ -279,31 +314,38 @@ impl Store {
     // already persisted (and may now dangle because its target was deleted) must not block
     // an unrelated edit like a status change — otherwise deleting one task bricks another.
     // A task's own words for another task, in the form the file carries them (§3.1): the target's
-    // file name, which only the store can spell. A reference whose task has since been deleted keeps
-    // the bare number — it names no file, and inventing one would be a lie a reader could follow.
+    // file name, which only the store can spell — in the frontmatter and in the body's `[[…]]` alike.
+    // A reference whose task has since been deleted keeps the bare number — it names no file, and
+    // inventing one would be a lie a reader could follow.
     fn in_file_form(&self, task: &Task) -> Result<Task, StoreError> {
         let files = self.task_files()?;
-        let named =
-            |reference: &String| match ref_id(reference).and_then(|number| files.get(&number)) {
-                None => reference.clone(),
-                Some(path) => {
-                    let name =
-                        op_task::task_ref(&path.file_name().unwrap_or_default().to_string_lossy());
-                    match reference.split_once('#') {
-                        Some((_, section)) => format!("{name}#{section}"),
-                        None => name,
-                    }
+        let named = |reference: &str| match ref_id(reference).and_then(|number| files.get(&number))
+        {
+            None => reference.to_owned(),
+            Some(path) => {
+                let name =
+                    op_task::task_ref(&path.file_name().unwrap_or_default().to_string_lossy());
+                match reference.split_once('#') {
+                    Some((_, section)) => format!("{name}#{section}"),
+                    None => name,
                 }
-            };
+            }
+        };
         let mut task = task.clone();
-        task.frontmatter.parent = task.frontmatter.parent.as_ref().map(&named);
-        task.frontmatter.dependencies = task.frontmatter.dependencies.iter().map(named).collect();
+        task.frontmatter.parent = task.frontmatter.parent.as_deref().map(named);
+        task.frontmatter.dependencies = task
+            .frontmatter
+            .dependencies
+            .iter()
+            .map(|reference| named(reference))
+            .collect();
+        task.body = body_in_file_form(&task.body, named);
         Ok(task)
     }
 
     fn validate(
         &self,
-        id: Option<&str>,
+        id: Option<u64>,
         old: Option<&Frontmatter>,
         new: &Frontmatter,
     ) -> Result<(), StoreError> {
@@ -311,18 +353,20 @@ impl Store {
             let unchanged = old.and_then(|o| o.parent.as_deref()) == Some(parent.as_str());
             if !unchanged {
                 let target = reject_dangling_ref(parent)?;
-                if Some(target.as_str()) == id {
+                if Some(target) == id {
                     return Err(StoreError::Invalid(format!(
-                        "task {parent} cannot be its own parent"
+                        "task {} cannot be its own parent",
+                        self.key(target)
                     )));
                 }
-                if !self.exists(&target) {
+                if !self.exists(target) {
                     return Err(StoreError::Invalid(format!(
-                        "parent {parent} does not exist"
+                        "parent {} does not exist",
+                        self.key(target)
                     )));
                 }
                 if let Some(id) = id {
-                    self.reject_parent_cycle(id, &target)?;
+                    self.reject_parent_cycle(id, target)?;
                 }
             }
         }
@@ -339,14 +383,16 @@ impl Store {
                 continue;
             }
             let target = reject_dangling_ref(dependency)?;
-            if Some(target.as_str()) == id {
+            if Some(target) == id {
                 return Err(StoreError::Invalid(format!(
-                    "task cannot depend on itself: {dependency}"
+                    "task cannot depend on itself: {}",
+                    self.key(target)
                 )));
             }
-            if !self.exists(&target) {
+            if !self.exists(target) {
                 return Err(StoreError::Invalid(format!(
-                    "dependency {dependency} does not exist"
+                    "dependency {} does not exist",
+                    self.key(target)
                 )));
             }
         }
@@ -356,20 +402,22 @@ impl Store {
     // Reparenting `id` under `parent` must not make `id` an ancestor of itself. Walk up from
     // `parent`: reaching `id` would close a cycle, so refuse. Bounded by a visited set so a
     // pre-existing cycle among other tasks is reported rather than looped on forever.
-    fn reject_parent_cycle(&self, id: &str, parent: &str) -> Result<(), StoreError> {
-        let mut cursor = Some(parent.to_owned());
+    fn reject_parent_cycle(&self, id: u64, parent: u64) -> Result<(), StoreError> {
+        let mut cursor = Some(parent);
         let mut seen = std::collections::HashSet::new();
         while let Some(current) = cursor {
             if current == id {
                 return Err(StoreError::Invalid(format!(
-                    "cannot reparent {id} under its own descendant {parent}"
+                    "cannot reparent {} under its own descendant {}",
+                    self.key(id),
+                    self.key(parent)
                 )));
             }
-            if !seen.insert(current.clone()) {
+            if !seen.insert(current) {
                 break;
             }
-            cursor = match self.read(&current) {
-                Ok(task) => task.frontmatter.parent,
+            cursor = match self.read(current) {
+                Ok(task) => task.frontmatter.parent.as_deref().and_then(ref_id),
                 Err(StoreError::NotFound { .. }) => None,
                 Err(err) => return Err(err),
             };
@@ -379,7 +427,7 @@ impl Store {
 
     // Atomic replace of an existing task: the rename swaps the fully-written temp into place
     // in one step, so a watcher never observes a torn file. Callers hold the per-file lock.
-    fn atomic_replace(&self, id: &str, bytes: &[u8]) -> Result<(), StoreError> {
+    fn atomic_replace(&self, id: u64, bytes: &[u8]) -> Result<(), StoreError> {
         let path = self.task_path(id)?;
         let tmp = self.write_temp(bytes)?;
         std::fs::rename(&tmp, path)?;
@@ -417,23 +465,33 @@ fn single_title(body: &str) -> Result<String, StoreError> {
     }
 }
 
-fn read_file(path: &Path, id: &str) -> Result<String, StoreError> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => Ok(text),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            Err(StoreError::NotFound { id: id.to_owned() })
-        }
-        Err(e) => Err(e.into()),
-    }
+fn reject_dangling_ref(reference: &str) -> Result<u64, StoreError> {
+    ref_id(reference).ok_or_else(|| StoreError::InvalidRef {
+        reference: ref_target(reference).to_owned(),
+    })
 }
 
-fn reject_dangling_ref(reference: &str) -> Result<String, StoreError> {
-    match ref_id(reference) {
-        Some(number) => Ok(number.to_string()),
-        None => Err(StoreError::InvalidId {
-            id: ref_target(reference).to_owned(),
-        }),
+// A body's `[[…]]` put in file form by the same naming as the frontmatter's refs. Text that names no
+// task file is left exactly as written — ordinary bracketed prose is not a reference.
+fn body_in_file_form(body: &str, named: impl Fn(&str) -> String) -> String {
+    let mut out = String::new();
+    let mut last = 0;
+    for (span, inner) in op_task::body_ref_spans(body) {
+        let renamed = named(inner);
+        if renamed == inner {
+            continue;
+        }
+        out.push_str(&body[last..span.start]);
+        out.push_str("[[");
+        out.push_str(&renamed);
+        out.push_str("]]");
+        last = span.end;
     }
+    if last == 0 {
+        return body.to_owned();
+    }
+    out.push_str(&body[last..]);
+    out
 }
 
 fn same_inode(file: &std::fs::File, path: &Path) -> Result<bool, StoreError> {

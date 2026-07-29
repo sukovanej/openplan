@@ -49,11 +49,25 @@ a section-addressable markdown body.
   highest already in use on *any* local branch **or in any worktree's files** — a number is taken
   from the moment a file carries it, before any commit does — so a number is issued once per
   repository and no two tasks, on any branch, can ever share an id.
-- **The number is the whole id.** No slug, no title fragment: nothing in the id can go stale when a
-  task is renamed, and `42` is the id in a URL, in the API, and on the CLI alike. The canonical
-  spelling is decimal with no sign and no padding, so exactly one string is the id: `42` is one,
-  `042` / `+42` / `forty-two` / any pre-numeric slug is not, and no task is reachable by them. A
-  write that names one is refused.
+- **Two layers, one identity.** The number allocates the task and names its file; the **key** —
+  `<ABBR>-<number>`, `OPP-42` — is the id everywhere above the store: the API, the CLI, the URLs, and
+  the UI. `id` in every payload is the key. Disk and wire diverge on purpose: a task file stays
+  numeric so an editor, a `grep`, and a plain markdown reader can follow a reference without oplan,
+  while the key is a boundary rendering of that same number. No slug, no title fragment enters
+  either, so nothing in an id can go stale when a task is renamed.
+- **One spelling of a key, and no leniency.** `OPP-42` names the task; `42`, `opp-42`, `OPP-042`, and
+  another store's `WEB-7` name nothing, and a write that uses one is refused rather than guessed at.
+  A silent numeric fallback would reintroduce the second spelling the key exists to remove. Inside a
+  key the number is decimal with no sign and no padding, the same one string that names the file.
+- **`ABBR` comes from `.plan/config.toml`** — `abbreviation = "OPP"`, exactly three uppercase ASCII
+  letters, hand-edited. It is **required**: a store with no valid abbreviation has no id space above
+  its files, so there is nothing to degrade into. The daemon refuses to start and every CLI command
+  exits non-zero (`.plan/config.toml: 'abbreviation' required`) — this is not the per-field "a read
+  never fails" rule below, which governs a *task's* fields. One store has one abbreviation, read from
+  the worktree the daemon serves (§7.10); another branch's copy of the file is ignored, so one task
+  renders as one key across the whole cross-branch matrix. The daemon watches the file and applies a
+  valid change live; one that leaves it missing or invalid stops the daemon exactly as it would have
+  refused to start.
 - **The file is named `<nnnnn>-<slug(title)>.md`** — `00042-ship-login-page.md`. Both halves of the
   name serve a human reading the directory: the padding sorts a listing in task order, the slug says
   which task each file is. Neither is part of the id, and a task is located by the number its name
@@ -62,10 +76,13 @@ a section-addressable markdown body.
   starts with no number is not a task and is left alone.
 - **A file names another task by its file** — `parent: ./00042-ship-login-page.md`, and `[[./00042-ship-login-page.md]]`
   in prose. The store, which alone can see the directory, writes that form; everything above it —
-  the API, the CLI, the UI — speaks the id. The point is that the directory stands on its own: a
+  the API, the CLI, the UI — speaks the key. The point is that the directory stands on its own: a
   reference is a path an editor, a `grep`, or a plain markdown reader can follow without oplan. Only
   the leading digits identify the target, so a reference to a retitled task still resolves, and a
   reference whose task is gone keeps its number, which names no file because there is none to name.
+  A human may write `[[OPP-42]]`; it resolves, and the next write through the daemon normalizes it to
+  the file form. `[[42]]` and a foreign `[[WEB-7]]` are refused on write, and a hand-edited file that
+  already holds one renders it as the plain text it is.
 - **Title = the body's single `# H1`.** Every task **must** contain **exactly one level-1
   heading**, and that is the title. Never stored in frontmatter.
 
@@ -108,7 +125,8 @@ Files are the **source of truth**; the central index is a rebuildable cache.
 
 ```
 <repo>/.plan/                 # in-repo store, versioned with the code; the dir's presence marks a store
-  tasks/<nnnnn>-<slug>.md   # `00042-ship-login-page.md`; the number is the id (§3.1)
+  config.toml                 # `abbreviation = "OPP"`; required, hand-edited (§3.1)
+  tasks/<nnnnn>-<slug>.md   # `00042-ship-login-page.md`; the number names the file, `OPP-42` is the id (§3.1)
 
 ~/.plan/                      # central index (per machine)
   registry.toml               # list of tracked store paths
@@ -373,21 +391,22 @@ Design rules: **JSON output for agents** (`--json`), pretty for humans; every re
 
 ```
 # entities
-op task create "<title>" [--parent <id>] [--status ..] ...
-op task list [--status ..] [--parent <id>] [--tag ..] [--json] [--fields id,title,status]
-op task tree <id> [--depth N]                 # hierarchy, bounded
-op task get <id> [-t 'Section.Sub'] [--json]  # whole file, or one target
-op task show <id>                             # metadata only
-op task set <id> <field> <value>             # validated metadata write (status/priority/…)
-op task move <id> --parent <id> [--before/--after <id>]   # reparent / reorder (rank)
-op task link <id> --doc <doc-id>[#Section] | --dep <task-id>
+# every <key> is `<ABBR>-<number>` — `OPP-42` (§3.1); a bare number is refused
+op task create "<title>" [--parent <key>] [--status ..] ...
+op task list [--status ..] [--parent <key>] [--tag ..] [--json] [--fields id,title,status]
+op task tree <key> [--depth N]                # hierarchy, bounded
+op task get <key> [-t 'Section.Sub'] [--json] # whole file, or one target
+op task show <key>                            # metadata only
+op task set <key> <field> <value>            # validated metadata write (status/priority/…)
+op task move <key> --parent <key> [--before/--after <key>]  # reparent / reorder (rank)
+op task link <key> --doc <doc-id>[#Section] | --dep <key>
 op task next                                  # actionable, unblocked tasks  [v1.x]
 
 # section/block ops (task bodies)
-op task sections <id>                          # list addressable targets (handles)
-op task get      <id> -t 'Section'             # read one target
-op task set      <id> -t 'Section' --file f    # overwrite one target (splice)
-op task append   <id> -t 'Section' ...         # append block(s) to a section
+op task sections <key>                         # list addressable targets (handles)
+op task get      <key> -t 'Section'            # read one target
+op task set      <key> -t 'Section' --file f   # overwrite one target (splice)
+op task append   <key> -t 'Section' ...        # append block(s) to a section
 
 # server
 op serve [--port N] [--open]                   # launches realtime web UI

@@ -4,7 +4,8 @@ import { useSyncExternalStore } from "react"
 
 import type { Board, TaskDetail, TaskListItem } from "@open-planner/api-client"
 
-import { getBoard, getTask, listTasks } from "./api"
+import { abbreviationStore } from "./abbreviation"
+import { getBoard, getConfig, getTask, listTasks } from "./api"
 import type { Invalidator } from "./events"
 import { runtime } from "./runtime"
 
@@ -88,6 +89,14 @@ export function useQuery<A>(query: Query<A>): QueryState<A> {
   return useSyncExternalStore(query.subscribe, query.getSnapshot)
 }
 
+// The store's abbreviation, which every id on screen is spelled with. Read on its own rather than
+// as a `Query` because nothing renders it directly: it decides how other data is read.
+export function loadAbbreviation(): void {
+  void runtime.runPromise(Effect.result(getConfig)).then((result) => {
+    if (Result.isSuccess(result)) abbreviationStore.set(result.success.abbreviation)
+  })
+}
+
 // The whole flat task set. Only the parent / add-subtask pickers need it, and only while open, so it
 // is fetched lazily on subscribe rather than on every detail view.
 export const tasksQuery = new Query(listTasks)
@@ -108,7 +117,7 @@ export function listItem(id: string): TaskListItem | undefined {
 const MAX_TASK_QUERIES = 64
 const taskQueries = new Map<string, Query<TaskDetail>>()
 
-// A task id is a number, so a space cleanly separates it from an optional branch — one query per
+// A key holds no whitespace, so a space cleanly separates it from an optional branch — one query per
 // (id, branch) so the detail view can hold several branch versions at once.
 function taskKey(id: string, branch: string | undefined): string {
   return branch === undefined ? id : `${id} ${branch}`
@@ -195,6 +204,7 @@ export function runMutation<A>(effect: Effect.Effect<A, unknown, HttpClient.Http
 }
 
 export const storeInvalidator: Invalidator = {
+  refreshConfig: loadAbbreviation,
   refreshList: () => {
     boardQuery.refresh()
     if (tasksQuery.hasListeners()) tasksQuery.refresh()

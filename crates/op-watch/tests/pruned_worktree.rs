@@ -3,9 +3,9 @@ use std::process::Command;
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
-use op_api::ChangeEvent;
 use op_git::Repo;
-use op_watch::{Watcher, watch_paths};
+use op_store::Store;
+use op_watch::{Change, Watcher, watch_paths};
 
 const WAIT: Duration = Duration::from_secs(5);
 const QUIET: Duration = Duration::from_millis(800);
@@ -19,10 +19,9 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
-fn write_task(dir: &Path, id: &str, body: &str) {
+fn write_task(dir: &Path, number: u64, body: &str) {
     let tasks = dir.join(".plan").join("tasks");
     std::fs::create_dir_all(&tasks).unwrap();
-    let number: u64 = id.parse().unwrap();
     std::fs::write(
         tasks.join(format!("{number:05}-task-{number}.md")),
         format!("---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n\n# {body}\n"),
@@ -34,16 +33,22 @@ fn init_repo(dir: &Path) {
     git(dir, &["init", "-q", "-b", "main"]);
     git(dir, &["config", "user.email", "t@example.com"]);
     git(dir, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(dir.join(".plan")).unwrap();
+    std::fs::write(
+        dir.join(".plan").join("config.toml"),
+        "abbreviation = \"OPP\"\n",
+    )
+    .unwrap();
 }
 
-fn saw_change(rx: &Receiver<ChangeEvent>, id: &str, branch: &str) -> bool {
+fn saw_change(rx: &Receiver<Change>, number: u64, branch: &str) -> bool {
     let deadline = Instant::now() + WAIT;
     while let Some(left) = deadline.checked_duration_since(Instant::now()) {
         match rx.recv_timeout(left) {
-            Ok(ChangeEvent::TaskChanged {
-                id: got_id,
+            Ok(Change::Task {
+                number: got,
                 branch: got_branch,
-            }) if got_id == id && got_branch == branch => return true,
+            }) if got == number && got_branch == branch => return true,
             Ok(_) => {}
             Err(_) => break,
         }
@@ -51,12 +56,12 @@ fn saw_change(rx: &Receiver<ChangeEvent>, id: &str, branch: &str) -> bool {
     false
 }
 
-fn collect(rx: &Receiver<ChangeEvent>, window: Duration) -> Vec<(String, String)> {
+fn collect(rx: &Receiver<Change>, window: Duration) -> Vec<(u64, String)> {
     let deadline = Instant::now() + window;
     let mut out = Vec::new();
     while let Some(left) = deadline.checked_duration_since(Instant::now()) {
         match rx.recv_timeout(left) {
-            Ok(ChangeEvent::TaskChanged { id, branch }) => out.push((id, branch)),
+            Ok(Change::Task { number, branch }) => out.push((number, branch)),
             Ok(_) => {}
             Err(_) => break,
         }
@@ -86,13 +91,14 @@ fn watch_paths_from_a_linked_worktree_are_absolute_and_dotdot_free() {
     let dir = tempfile::tempdir().unwrap();
     let main = dir.path();
     init_repo(main);
-    write_task(main, "1", "Alpha");
+    write_task(main, 1, "Alpha");
     git(main, &["add", "."]);
     git(main, &["commit", "-qm", "init"]);
     let linked = linked_worktree(main);
 
     let repo = Repo::discover(&linked).unwrap();
-    let paths = watch_paths(&repo, &repo.worktrees().unwrap());
+    let store = Store::discover(&linked).unwrap();
+    let paths = watch_paths(&repo, &store, &repo.worktrees().unwrap());
     assert!(!paths.is_empty(), "a live repo must yield watch paths");
 
     for (path, _) in &paths {
@@ -116,16 +122,17 @@ fn pruning_its_own_worktree_stops_the_watcher_without_a_deletion_flood() {
     let dir = tempfile::tempdir().unwrap();
     let main = dir.path();
     init_repo(main);
-    write_task(main, "1", "Alpha");
-    write_task(main, "2", "Beta");
+    write_task(main, 1, "Alpha");
+    write_task(main, 2, "Beta");
     git(main, &["add", "."]);
     git(main, &["commit", "-qm", "init"]);
     let linked = linked_worktree(main);
     init_tracing();
 
     let repo = Repo::discover(&linked).unwrap();
+    let store = Store::discover(&linked).unwrap();
     let (tx, rx) = mpsc::channel();
-    let watcher = Watcher::start(repo, tx).unwrap();
+    let watcher = Watcher::start(repo, store, tx).unwrap();
 
     git(main, &["worktree", "remove", "--force", "wt"]);
     assert!(!linked.exists(), "the linked worktree should be gone");
@@ -157,22 +164,23 @@ fn pruning_another_worktree_leaves_the_watcher_working() {
     let dir = tempfile::tempdir().unwrap();
     let main = dir.path();
     init_repo(main);
-    write_task(main, "1", "Alpha");
+    write_task(main, 1, "Alpha");
     git(main, &["add", "."]);
     git(main, &["commit", "-qm", "init"]);
     linked_worktree(main);
     init_tracing();
 
     let repo = Repo::discover(main).unwrap();
+    let store = Store::discover(main).unwrap();
     let (tx, rx) = mpsc::channel();
-    let watcher = Watcher::start(repo, tx).unwrap();
+    let watcher = Watcher::start(repo, store, tx).unwrap();
 
     git(main, &["worktree", "remove", "--force", "wt"]);
     let _ = collect(&rx, QUIET);
 
-    write_task(main, "1", "Alpha edited");
+    write_task(main, 1, "Alpha edited");
     assert!(
-        saw_change(&rx, "1", "main"),
+        saw_change(&rx, 1, "main"),
         "an edit after an unrelated worktree was pruned should still be reported"
     );
     watcher.stop();

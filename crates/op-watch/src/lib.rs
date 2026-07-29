@@ -5,9 +5,17 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
-use op_api::ChangeEvent;
 use op_git::{GitError, Repo, Worktree};
-use op_store::{Store, StoreError};
+use op_store::{CONFIG_FILE, Store, StoreError};
+
+// What a settled pass found. Tasks are named by the number their file carries — the watcher reads
+// file names and git trees, so it stays on the file side of the id (§3.1) and leaves rendering the
+// key to whoever publishes the change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Change {
+    Task { number: u64, branch: String },
+    Config,
+}
 
 // A quiet window that coalesces the burst of fs events a single git op (commit, merge, checkout)
 // produces into one diff pass.
@@ -37,13 +45,15 @@ enum Msg {
 }
 
 impl Watcher {
-    pub fn start(repo: Repo, sink: Sender<ChangeEvent>) -> Result<Self, WatchError> {
+    // `store` is the one the daemon serves: its `.plan/config.toml` is the store's single
+    // abbreviation, whatever another branch's copy of the file says (§7.10).
+    pub fn start(repo: Repo, store: Store, sink: Sender<Change>) -> Result<Self, WatchError> {
         let (tx, rx) = mpsc::channel();
         let fs_tx = tx.clone();
         let mut notifier =
             notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-                // Only ref/HEAD/worktree and .plan/tasks paths signal a re-diff; git's own index and
-                // log churn (which the .git watch also sees) would otherwise trigger pointless passes.
+                // Only ref/HEAD/worktree and .plan paths signal a re-diff; git's own index and log
+                // churn (which the .git watch also sees) would otherwise trigger pointless passes.
                 if let Ok(event) = res
                     && !matches!(event.kind, notify::EventKind::Access(_))
                     && is_relevant(&event)
@@ -58,10 +68,14 @@ impl Watcher {
         // daemon's initial index build, so this only fires on a genuinely broken repo.
         let worktrees = repo.worktrees()?;
         let mut watched = HashSet::new();
-        reconcile(&repo, &worktrees, &mut notifier, &mut watched);
-        let baseline = snapshot(&repo, &worktrees)?;
+        reconcile(&repo, &store, &worktrees, &mut notifier, &mut watched);
+        let baseline = State {
+            tasks: snapshot(&repo, &store, &worktrees)?,
+            config: config_text(&store),
+        };
 
-        let worker = std::thread::spawn(move || run(repo, notifier, rx, sink, watched, baseline));
+        let worker =
+            std::thread::spawn(move || run(repo, store, notifier, rx, sink, watched, baseline));
         Ok(Self {
             stop: tx,
             worker: Some(worker),
@@ -88,11 +102,12 @@ impl Drop for Watcher {
 
 fn run(
     repo: Repo,
+    store: Store,
     mut notifier: RecommendedWatcher,
     rx: Receiver<Msg>,
-    sink: Sender<ChangeEvent>,
+    sink: Sender<Change>,
     mut watched: HashSet<PathBuf>,
-    mut state: Snapshot,
+    mut state: State,
 ) {
     let mut deadline: Option<Instant> = None;
     loop {
@@ -110,14 +125,16 @@ fn run(
         match message {
             Some(Msg::Stop) => break,
             Some(Msg::FsEvent) => deadline = Some(Instant::now() + DEBOUNCE),
-            None => match attempt_pass(&repo, &mut notifier, &mut watched, &mut state, &sink) {
-                Pass::Settled => deadline = None,
-                Pass::Retry(at) => deadline = Some(at),
-                Pass::RepoGone => {
-                    tracing::warn!("git dir is gone; stopping the watcher");
-                    break;
+            None => {
+                match attempt_pass(&repo, &store, &mut notifier, &mut watched, &mut state, &sink) {
+                    Pass::Settled => deadline = None,
+                    Pass::Retry(at) => deadline = Some(at),
+                    Pass::RepoGone => {
+                        tracing::warn!("git dir is gone; stopping the watcher");
+                        break;
+                    }
                 }
-            },
+            }
         }
     }
 }
@@ -133,10 +150,11 @@ enum Pass {
 // partially-read tree.
 fn attempt_pass(
     repo: &Repo,
+    store: &Store,
     notifier: &mut RecommendedWatcher,
     watched: &mut HashSet<PathBuf>,
-    state: &mut Snapshot,
-    sink: &Sender<ChangeEvent>,
+    state: &mut State,
+    sink: &Sender<Change>,
 ) -> Pass {
     // `git worktree remove` can prune this repo's own git dir out from under it, and gix then
     // resolves nothing rather than failing: worktrees and branches read as empty, so a diff would
@@ -151,9 +169,13 @@ fn attempt_pass(
     if worktrees.iter().any(|worktree| worktree.op_in_progress) {
         return Pass::Retry(Instant::now() + SETTLE);
     }
-    reconcile(repo, &worktrees, notifier, watched);
-    match snapshot(repo, &worktrees) {
-        Ok(next) => {
+    reconcile(repo, store, &worktrees, notifier, watched);
+    match snapshot(repo, store, &worktrees) {
+        Ok(tasks) => {
+            let next = State {
+                tasks,
+                config: config_text(store),
+            };
             emit_diff(state, &next, sink);
             *state = next;
             Pass::Settled
@@ -164,7 +186,18 @@ fn attempt_pass(
     }
 }
 
-type Snapshot = HashMap<String, HashMap<String, Cell>>;
+struct State {
+    tasks: Snapshot,
+    // Compared verbatim rather than parsed: an edit that leaves the file invalid must register too,
+    // so the daemon can stop rather than keep serving keys the store no longer claims.
+    config: Option<String>,
+}
+
+fn config_text(store: &Store) -> Option<String> {
+    std::fs::read_to_string(store.plan_dir().join(CONFIG_FILE)).ok()
+}
+
+type Snapshot = HashMap<String, HashMap<u64, Cell>>;
 
 // A task's effective state on one branch: the working-tree blob when that branch is checked out in a
 // live worktree, else its committed blob. `dirty` marks a working copy diverging from the commit;
@@ -176,7 +209,7 @@ struct Cell {
     deleted: bool,
 }
 
-fn snapshot(repo: &Repo, worktrees: &[Worktree]) -> Result<Snapshot, WatchError> {
+fn snapshot(repo: &Repo, store: &Store, worktrees: &[Worktree]) -> Result<Snapshot, WatchError> {
     let mut live: HashMap<&str, &Path> = HashMap::new();
     for worktree in worktrees {
         if worktree.op_in_progress {
@@ -189,25 +222,32 @@ fn snapshot(repo: &Repo, worktrees: &[Worktree]) -> Result<Snapshot, WatchError>
 
     let mut out = Snapshot::new();
     for branch in repo.local_branches()? {
-        let committed: HashMap<String, String> =
-            repo.branch_task_blobs(&branch)?.into_iter().collect();
+        let committed = numbered(repo.branch_task_blobs(&branch)?.into_iter().collect());
         let cells = match live.get(branch.as_str()) {
-            Some(path) => working_cells(&working_task_oids(repo, path)?, &committed),
-            None => committed_cells(committed),
+            Some(path) => working_cells(&working_task_oids(repo, store, path)?, &committed),
+            None => committed_cells(&committed),
         };
         out.insert(branch, cells);
     }
     Ok(out)
 }
 
-fn committed_cells(committed: HashMap<String, String>) -> HashMap<String, Cell> {
+// A tree lists whatever `.plan/tasks/*.md` a commit holds; only a file a number names is a task.
+fn numbered(committed: HashMap<String, String>) -> HashMap<u64, String> {
     committed
         .into_iter()
-        .map(|(id, oid)| {
+        .filter_map(|(id, oid)| Some((op_task::parse_id(&id)?, oid)))
+        .collect()
+}
+
+fn committed_cells(committed: &HashMap<u64, String>) -> HashMap<u64, Cell> {
+    committed
+        .iter()
+        .map(|(number, oid)| {
             (
-                id,
+                *number,
                 Cell {
-                    oid,
+                    oid: oid.clone(),
                     dirty: false,
                     deleted: false,
                 },
@@ -217,26 +257,26 @@ fn committed_cells(committed: HashMap<String, String>) -> HashMap<String, Cell> 
 }
 
 fn working_cells(
-    working: &HashMap<String, String>,
-    committed: &HashMap<String, String>,
-) -> HashMap<String, Cell> {
+    working: &HashMap<u64, String>,
+    committed: &HashMap<u64, String>,
+) -> HashMap<u64, Cell> {
     let mut cells = HashMap::new();
-    for (id, oid) in working {
+    for (number, oid) in working {
         cells.insert(
-            id.clone(),
+            *number,
             Cell {
                 oid: oid.clone(),
-                dirty: committed.get(id) != Some(oid),
+                dirty: committed.get(number) != Some(oid),
                 deleted: false,
             },
         );
     }
     // A task the branch still commits but the working tree dropped is a live (dirty) deletion; keep
     // it so both the delete and any later restore surface as changes.
-    for (id, oid) in committed {
-        if !working.contains_key(id) {
+    for (number, oid) in committed {
+        if !working.contains_key(number) {
             cells.insert(
-                id.clone(),
+                *number,
                 Cell {
                     oid: oid.clone(),
                     dirty: true,
@@ -248,27 +288,34 @@ fn working_cells(
     cells
 }
 
-fn working_task_oids(repo: &Repo, worktree: &Path) -> Result<HashMap<String, String>, WatchError> {
-    let store = Store::open(worktree)?;
+fn working_task_oids(
+    repo: &Repo,
+    store: &Store,
+    worktree: &Path,
+) -> Result<HashMap<u64, String>, WatchError> {
+    let store = Store::open(worktree, store.abbreviation())?;
     let mut out = HashMap::new();
-    for id in store.task_ids()? {
-        let oid = repo.hash_blob(store.read_raw(&id)?.as_bytes())?;
-        out.insert(id, oid);
+    for number in store.task_ids()? {
+        let oid = repo.hash_blob(store.read_raw(number)?.as_bytes())?;
+        out.insert(number, oid);
     }
     Ok(out)
 }
 
-fn emit_diff(old: &Snapshot, new: &Snapshot, sink: &Sender<ChangeEvent>) {
+fn emit_diff(old: &State, new: &State, sink: &Sender<Change>) {
+    if old.config != new.config {
+        let _ = sink.send(Change::Config);
+    }
     let empty = HashMap::new();
-    let branches: HashSet<&String> = old.keys().chain(new.keys()).collect();
+    let branches: HashSet<&String> = old.tasks.keys().chain(new.tasks.keys()).collect();
     for branch in branches {
-        let before = old.get(branch).unwrap_or(&empty);
-        let after = new.get(branch).unwrap_or(&empty);
-        let ids: HashSet<&String> = before.keys().chain(after.keys()).collect();
-        for id in ids {
-            if before.get(id) != after.get(id) {
-                let _ = sink.send(ChangeEvent::TaskChanged {
-                    id: id.clone(),
+        let before = old.tasks.get(branch).unwrap_or(&empty);
+        let after = new.tasks.get(branch).unwrap_or(&empty);
+        let numbers: HashSet<&u64> = before.keys().chain(after.keys()).collect();
+        for number in numbers {
+            if before.get(number) != after.get(number) {
+                let _ = sink.send(Change::Task {
+                    number: *number,
                     branch: branch.clone(),
                 });
             }
@@ -278,11 +325,12 @@ fn emit_diff(old: &Snapshot, new: &Snapshot, sink: &Sender<ChangeEvent>) {
 
 fn reconcile(
     repo: &Repo,
+    store: &Store,
     worktrees: &[Worktree],
     notifier: &mut RecommendedWatcher,
     watched: &mut HashSet<PathBuf>,
 ) {
-    let desired = watch_paths(repo, worktrees);
+    let desired = watch_paths(repo, store, worktrees);
     let keep: HashSet<&PathBuf> = desired.iter().map(|(path, _)| path).collect();
     for stale in watched
         .iter()
@@ -312,15 +360,24 @@ fn reconcile(
     }
 }
 
-// The change sources of SPEC §7.5: every live worktree's `.plan/tasks` for working edits, and the
-// git-side refs/HEAD/worktrees under the shared `.git`. The common dir is watched non-recursively so
-// HEAD, `packed-refs`, and the first creation of `worktrees/` register without pulling in objects/;
+// The change sources of SPEC §7.5: every live worktree's `.plan/tasks` for working edits, the served
+// store's own `.plan` for its `config.toml`, and the git-side refs/HEAD/worktrees under the shared
+// `.git`. The common dir and `.plan` are watched non-recursively so HEAD, `packed-refs`, the first
+// creation of `worktrees/`, and the config file register without pulling in objects/ or every task;
 // the callback's `is_relevant` filter drops the index/log churn that watch still surfaces.
-pub fn watch_paths(repo: &Repo, worktrees: &[Worktree]) -> Vec<(PathBuf, RecursiveMode)> {
+pub fn watch_paths(
+    repo: &Repo,
+    store: &Store,
+    worktrees: &[Worktree],
+) -> Vec<(PathBuf, RecursiveMode)> {
     let common = repo.git_common_dir();
     let mut paths = vec![(common.clone(), RecursiveMode::NonRecursive)];
     for sub in ["refs", "worktrees"] {
         paths.push((common.join(sub), RecursiveMode::Recursive));
+    }
+    let plan = store.plan_dir();
+    if plan.is_dir() {
+        paths.push((plan, RecursiveMode::NonRecursive));
     }
     for worktree in worktrees {
         paths.push((
@@ -343,9 +400,10 @@ fn canonical_dir(path: &Path) -> Option<PathBuf> {
     canonical.is_dir().then_some(canonical)
 }
 
-// A watched path is worth a diff pass only when it touches a task file (`.plan/tasks/*`) or a git ref
-// source (`refs/*`, `HEAD`, `packed-refs`, `worktrees/*`). Everything else under `.git` — `index`,
-// `ORIG_HEAD`, `COMMIT_EDITMSG`, logs — churns on routine git commands without changing any task.
+// A watched path is worth a diff pass only when it touches a task file (`.plan/tasks/*`), the store's
+// `.plan/config.toml`, or a git ref source (`refs/*`, `HEAD`, `packed-refs`, `worktrees/*`).
+// Everything else under `.git` — `index`, `ORIG_HEAD`, `COMMIT_EDITMSG`, logs — churns on routine git
+// commands without changing any task.
 fn is_relevant(event: &notify::Event) -> bool {
     event.paths.iter().any(|path| {
         if matches!(
@@ -354,6 +412,7 @@ fn is_relevant(event: &notify::Event) -> bool {
         ) {
             return true;
         }
+        let config = path.file_name().and_then(|name| name.to_str()) == Some(CONFIG_FILE);
         let mut refs = false;
         let mut worktrees = false;
         let mut plan = false;
@@ -367,6 +426,6 @@ fn is_relevant(event: &notify::Event) -> bool {
                 _ => {}
             }
         }
-        refs || worktrees || (plan && tasks)
+        refs || worktrees || (plan && (tasks || config))
     })
 }

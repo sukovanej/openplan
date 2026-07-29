@@ -10,7 +10,7 @@ repository.workspace = true
 [dependencies]
 op-git.workspace = true
 op-store.workspace = true
-op-api.workspace = true
+op-task.workspace = true
 notify.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

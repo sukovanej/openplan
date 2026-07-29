@@ -7,7 +7,12 @@ fn at(text: &str) -> Timestamp {
 
 fn view(created: &str, updated: Result<&str, op_task::FieldError>) -> TaskView {
     let task = Task::new("T", Status::Todo, at(created));
-    TaskView::from_task("t".to_owned(), &task, updated.map(at))
+    TaskView::from_task(
+        "OPP-1".to_owned(),
+        &task,
+        updated.map(at),
+        "OPP".parse().unwrap(),
+    )
 }
 
 #[test]

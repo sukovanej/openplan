@@ -24,6 +24,7 @@ op-server = { path = "crates/op-server" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
 
 anyhow = "1"
 thiserror = "2"

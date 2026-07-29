@@ -150,6 +150,7 @@ function ComboTaskRow({ task, indices }: { task: TaskListItem; indices: Readonly
   return (
     <span className="flex min-w-0 items-center gap-2">
       <StatusField metadata={task.metadata} className="size-4 shrink-0" />
+      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{task.id}</span>
       <span className="truncate">
         <FuzzyText text={task.title} indices={indices} />
       </span>
@@ -157,7 +158,17 @@ function ComboTaskRow({ task, indices }: { task: TaskListItem; indices: Readonly
   )
 }
 
-// Ranked fuzzy matches over the task list, minus `excluded`. Capped so the popover stays scannable.
+// A query is a key search once it looks like the start of one, so pasting `OPP-42` finds that task
+// instead of fuzzy-matching its letters against every title. Case-insensitive: the prefix is the only
+// part a typist has to shout.
+const KEY_PREFIX = /^[A-Za-z]{1,3}-?[0-9]*$/
+
+function keyMatch(id: string, query: string): boolean {
+  return KEY_PREFIX.test(query) && id.toLowerCase().startsWith(query.toLowerCase())
+}
+
+// Ranked matches over the task list, minus `excluded`: a key the query prefixes comes first, then
+// fuzzy title matches. Capped so the popover stays scannable.
 function taskMatches(
   tasks: ReadonlyArray<TaskListItem>,
   query: string,
@@ -166,6 +177,10 @@ function taskMatches(
   const scored: Array<{ task: TaskListItem; score: number; indices: ReadonlyArray<number> }> = []
   for (const task of tasks) {
     if (excluded.has(task.id)) continue
+    if (query !== "" && keyMatch(task.id, query)) {
+      scored.push({ task, score: -1, indices: [] })
+      continue
+    }
     const match = fuzzyMatch(query, task.title)
     if (match !== null) scored.push({ task, score: match.score, indices: match.indices })
   }

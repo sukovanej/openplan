@@ -1,8 +1,12 @@
 use op_api::CreateTask;
-use op_task::{Status, Timestamp};
+use op_task::{Abbreviation, Status, Timestamp};
 
 fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().unwrap()
+}
+
+fn abbreviation() -> Abbreviation {
+    "OPP".parse().unwrap()
 }
 
 fn create(title: &str, body: Option<&str>) -> op_task::Task {
@@ -13,7 +17,8 @@ fn create(title: &str, body: Option<&str>) -> op_task::Task {
         dependencies: Vec::new(),
         body: body.map(str::to_owned),
     }
-    .into_task(stamp())
+    .into_task(stamp(), abbreviation())
+    .unwrap()
 }
 
 #[test]

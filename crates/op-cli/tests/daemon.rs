@@ -18,6 +18,11 @@ impl Daemon {
         git(root.path(), &["config", "user.email", "t@example.com"]);
         git(root.path(), &["config", "user.name", "Test"]);
         std::fs::create_dir_all(root.path().join(".plan/tasks")).unwrap();
+        std::fs::write(
+            root.path().join(".plan/config.toml"),
+            "abbreviation = \"OPP\"\n",
+        )
+        .unwrap();
         Self { home, root }
     }
 
@@ -700,7 +705,12 @@ fn task_repo(seconds: i64) -> TempDir {
     git(dir.path(), &["config", "user.email", "t@example.com"]);
     git(dir.path(), &["config", "user.name", "Test"]);
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
-    // The id is the filename stem, so both repos can hold the same id on purpose.
+    std::fs::write(
+        dir.path().join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\n",
+    )
+    .unwrap();
+    // The number names the file, so both repos can hold the same id on purpose.
     std::fs::write(
         dir.path().join(".plan/tasks/00001-shared.md"),
         "---\nstatus: todo\ncreated: 2001-01-01T00:00:00Z\n---\n# Shared\n",
@@ -733,7 +743,7 @@ fn a_daemon_indexing_another_repository_is_not_asked() {
     read.env("OPLAN_HOME", daemon.home_path())
         .arg("--root")
         .arg(ours.path());
-    let out = read.args(["get", "1", "--json"]).output().unwrap();
+    let out = read.args(["get", "OPP-1", "--json"]).output().unwrap();
     assert!(
         out.status.success(),
         "stderr: {}",
