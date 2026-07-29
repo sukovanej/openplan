@@ -423,7 +423,7 @@ pub struct CreateTask {
 
 impl CreateTask {
     pub fn into_task(self, created: Timestamp) -> Task {
-        let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Todo), created);
+        let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Backlog), created);
         task.set_parent(self.parent);
         task.set_dependencies(self.dependencies);
         if let Some(body) = &self.body {
