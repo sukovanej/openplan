@@ -110,38 +110,57 @@ fn run(
         match message {
             Some(Msg::Stop) => break,
             Some(Msg::FsEvent) => deadline = Some(Instant::now() + DEBOUNCE),
-            None => deadline = attempt_pass(&repo, &mut notifier, &mut watched, &mut state, &sink),
+            None => match attempt_pass(&repo, &mut notifier, &mut watched, &mut state, &sink) {
+                Pass::Settled => deadline = None,
+                Pass::Retry(at) => deadline = Some(at),
+                Pass::RepoGone => {
+                    tracing::warn!("git dir is gone; stopping the watcher");
+                    break;
+                }
+            },
         }
     }
 }
 
-// One settled diff pass. Returns the next deadline: `None` once a clean snapshot has been taken (wait
-// for the next fs event), or a `SETTLE` retry when a git op is mid-flight or a read failed — never
-// diffing a torn or partially-read tree.
+enum Pass {
+    Settled,
+    Retry(Instant),
+    RepoGone,
+}
+
+// One settled diff pass. `Settled` once a clean snapshot has been taken (wait for the next fs
+// event); a `SETTLE` retry when a git op is mid-flight or a read failed — never diffing a torn or
+// partially-read tree.
 fn attempt_pass(
     repo: &Repo,
     notifier: &mut RecommendedWatcher,
     watched: &mut HashSet<PathBuf>,
     state: &mut Snapshot,
     sink: &Sender<ChangeEvent>,
-) -> Option<Instant> {
+) -> Pass {
+    // `git worktree remove` can prune this repo's own git dir out from under it, and gix then
+    // resolves nothing rather than failing: worktrees and branches read as empty, so a diff would
+    // report every task on every branch as deleted. Nothing is watchable from here again either.
+    if canonical_dir(&repo.git_common_dir()).is_none() {
+        return Pass::RepoGone;
+    }
     let Ok(worktrees) = repo.worktrees() else {
-        return Some(Instant::now() + SETTLE);
+        return Pass::Retry(Instant::now() + SETTLE);
     };
     // A git rewrite leaves the tree torn and refs churning mid-op; defer until every worktree settles.
     if worktrees.iter().any(|worktree| worktree.op_in_progress) {
-        return Some(Instant::now() + SETTLE);
+        return Pass::Retry(Instant::now() + SETTLE);
     }
     reconcile(repo, &worktrees, notifier, watched);
     match snapshot(repo, &worktrees) {
         Ok(next) => {
             emit_diff(state, &next, sink);
             *state = next;
-            None
+            Pass::Settled
         }
         // A transient read error must not be read as "everything deleted"; keep the prior state and
         // retry, so the diff never emits a spurious deletion flood.
-        Err(_) => Some(Instant::now() + SETTLE),
+        Err(_) => Pass::Retry(Instant::now() + SETTLE),
     }
 }
 
@@ -286,7 +305,9 @@ fn reconcile(
             Ok(()) => {
                 watched.insert(path);
             }
-            Err(err) => tracing::warn!(path = %path.display(), %err, "watch failed"),
+            // Not a warning: a path that stays unwatchable is retried on every settled pass, so a
+            // persistent failure would log on every git operation for the daemon's lifetime.
+            Err(err) => tracing::debug!(path = %path.display(), %err, "watch failed"),
         }
     }
 }

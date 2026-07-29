@@ -34,6 +34,11 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
 }
 
 async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
+    // `--root` defaults to `.`, and a relative path keeps testing as present after the directory it
+    // names is deleted — `Path::new(".").is_dir()` stays true once the cwd is unlinked — which would
+    // hide the vanished root from `root_removed`.
+    let root = &root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+
     // Reads route through the branch-aware index, which needs a repo; there is no degraded no-repo
     // serving mode. Fail before binding or taking the lifetime lock so a bad root leaves nothing
     // half-started.
