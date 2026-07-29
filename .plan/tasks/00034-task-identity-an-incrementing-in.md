@@ -1,8 +1,8 @@
 ---
 status: in_review
 created: 2026-07-16T18:50:25Z
-deps:
-- '33'
+dependencies:
+- ./00033-daemon-as-single-write-id-author.md
 ---
 # Task identity: an incrementing integer
 
@@ -15,11 +15,11 @@ the id: the task is found by the number its file name starts with.
 ## Motivation
 
 Sequential ids (`42`) are shorter, memorable, orderable, and pleasant to type and
-reference (`[[42]]`) versus opaque random hex.
+reference (`[[./00042-publish-fast-forward-main-to-the.md]]`) versus opaque random hex.
 
 ## Allocation model (settled — single-machine)
 
-open-plan is single-machine, so [[33]] makes
+open-plan is single-machine, so [[./00033-daemon-as-single-write-id-author.md]] makes
 the machine daemon the sole writer. Allocation follows from that:
 
 - `next = max(numeric id over all local branches) + 1`, computed from the set the

@@ -41,7 +41,7 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
       {
         id: "a-1",
         title: "First",
-        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
         updated: "2026-01-02T00:00:00Z",
         headline: "main",
         branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" }],
@@ -49,7 +49,13 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
       {
         id: "b-2",
         title: "Second",
-        metadata: { status: "in_progress", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+        metadata: {
+          status: "in_progress",
+          created: "2026-01-01T00:00:00Z",
+          parent: null,
+          rank: null,
+          dependencies: [],
+        },
         parent: "a-1",
         updated: "2026-01-02T00:00:00Z",
         headline: "feature",
@@ -78,7 +84,7 @@ it.effect("decodes a task detail with its branch set and hierarchy from GET /api
       title: "First",
       parent: "epic-1",
       body: "# First\n",
-      metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+      metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
       updated: "2026-01-02T00:00:00Z",
       headline: "feature",
       branches: [
@@ -109,7 +115,7 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
     json({
       id: "solo-1",
       title: "Solo",
-      metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+      metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
       body: "# Solo\n",
       updated: "2026-01-02T00:00:00Z",
       headline: "main",
@@ -129,7 +135,7 @@ const detailResponse = () =>
   json({
     id: "a-1",
     title: "First",
-    metadata: { status: "done", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+    metadata: { status: "done", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
     body: "# First\n",
     updated: "2026-01-02T00:00:00Z",
     headline: "feature",
@@ -202,7 +208,7 @@ it.effect("rejects a malformed status with a decode failure", () =>
       {
         id: "a-1",
         title: "First",
-        metadata: { status: "bogus", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+        metadata: { status: "bogus", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
         updated: "2026-01-02T00:00:00Z",
         headline: "main",
         branches: [],
@@ -222,7 +228,7 @@ it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
       json({
         id: "child",
         title: "Child",
-        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
         body: "# Child\n",
         updated: "2026-01-02T00:00:00Z",
         headline: "main",
@@ -243,7 +249,7 @@ it.effect("PATCH sends a parent id to reparent", () =>
       json({
         id: "child",
         title: "Child",
-        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
         body: "# Child\n",
         updated: "2026-01-02T00:00:00Z",
         headline: "main",

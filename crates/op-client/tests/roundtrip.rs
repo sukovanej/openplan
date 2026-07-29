@@ -78,7 +78,7 @@ fn new_task(title: &str) -> CreateTask {
         title: title.to_owned(),
         status: None,
         parent: None,
-        deps: Vec::new(),
+        dependencies: Vec::new(),
         body: None,
     }
 }

@@ -832,12 +832,12 @@ fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
         if inner.contains(['[', ']', '\n']) {
             continue;
         }
-        let id = inner.split('#').next().unwrap_or(inner).trim();
-        if id.is_empty() {
+        let Some(number) = op_task::ref_id(inner.trim()) else {
             continue;
-        }
-        if let Some(item) = by_id.get(id) {
-            if seen.insert(id.to_owned()) {
+        };
+        let id = number.to_string();
+        if let Some(item) = by_id.get(id.as_str()) {
+            if seen.insert(id.clone()) {
                 refs.push(TaskRef {
                     id: item.id.clone(),
                     title: item.title.clone(),

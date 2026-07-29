@@ -5,6 +5,9 @@ pub use jiff::Timestamp;
 
 pub mod rank;
 
+const SLUG_MAX: usize = 32;
+const ID_DIGITS: usize = 5;
+
 // Task files are hand-written and diffed, so a stored timestamp carries whole seconds — the clock's
 // sub-second tail is noise no reader of a task file wants.
 pub fn now() -> Timestamp {
@@ -77,9 +80,9 @@ pub struct Frontmatter {
     #[serde(
         default,
         skip_serializing_if = "Vec::is_empty",
-        deserialize_with = "deserialize_deps"
+        deserialize_with = "deserialize_dependencies"
     )]
-    pub deps: Vec<String>,
+    pub dependencies: Vec<String>,
     // Fields the model does not name are preserved verbatim across a read-modify-write
     // so a `set` never silently drops them.
     #[serde(flatten)]
@@ -94,46 +97,123 @@ pub fn parse_id(id: &str) -> Option<u64> {
     (number.to_string() == id).then_some(number)
 }
 
-// A dependency may aim at a section of its target (`42#Design`); the id is the part before the `#`.
-pub fn dep_target(dep: &str) -> &str {
-    dep.split_once('#').map_or(dep, |(target, _)| target)
+// Zero-padded so a directory listing reads in task order, then the title so a human browsing the
+// files can tell them apart. Neither is part of the id (§3.1): the padding is a naming convention
+// and the slug is a snapshot of the title, free to be re-slugged by hand as long as the digits stay.
+pub fn task_filename(number: u64, title: &str) -> String {
+    format!("{number:0ID_DIGITS$}-{}.md", slug(title))
 }
 
-// A task id is a number, so unquoted YAML hands it over as an integer while the writer always emits
-// the quoted string form. Both spellings name the same task.
-fn id_of(value: &serde_yaml::Value) -> Option<String> {
-    match value {
-        serde_yaml::Value::String(id) => parse_id(id).map(|_| id.clone()),
-        serde_yaml::Value::Number(number) => Some(number.as_u64()?.to_string()),
-        _ => None,
+pub fn file_id(stem: &str) -> Option<u64> {
+    let digits = stem.bytes().take_while(u8::is_ascii_digit).count();
+    let tail = &stem[digits..];
+    if digits == 0 || !(tail.is_empty() || tail.starts_with('-')) {
+        return None;
+    }
+    stem[..digits].parse().ok()
+}
+
+fn slug(title: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for ch in title.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_dash && !out.is_empty() {
+                out.push('-');
+            }
+            pending_dash = false;
+            out.push(ch.to_ascii_lowercase());
+            if out.len() >= SLUG_MAX {
+                break;
+            }
+        } else {
+            pending_dash = true;
+        }
+    }
+    if out.is_empty() {
+        out.push_str("task");
+    }
+    out
+}
+
+// How one task file names another: the path to its file, so the reference is one a plain markdown
+// reader can follow and a `grep` can see (§3.1). Written next to the target, which is where every
+// task file lives.
+pub fn task_ref(filename: &str) -> String {
+    format!("./{filename}")
+}
+
+// A reference may aim at a section of its target (`./00042-design.md#Design`); the file is the part
+// before the `#`.
+pub fn ref_target(reference: &str) -> &str {
+    reference
+        .split_once('#')
+        .map_or(reference, |(target, _)| target)
+}
+
+// The task a reference names, by the digits its file name starts with — the slug in between is a
+// snapshot of the title and carries no identity, so a retitled target still resolves. A bare number
+// is a spelling a human may reach for; it resolves too, and the next write puts it in file form.
+pub fn ref_id(reference: &str) -> Option<u64> {
+    let target = ref_target(reference);
+    match target
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".md"))
+    {
+        Some(stem) => file_id(stem),
+        None => parse_id(target),
     }
 }
 
-fn dep_of(value: &serde_yaml::Value) -> Option<String> {
+fn section_of(reference: &str) -> Option<&str> {
+    reference.split_once('#').map(|(_, section)| section)
+}
+
+// The in-memory spelling of a reference is the id (§3.1), so nothing above the store has to know
+// what a task's file is called; only the store, which can see the directory, writes the file form.
+fn ref_of(value: &serde_yaml::Value) -> Option<String> {
+    let reference = match value {
+        serde_yaml::Value::String(reference) => reference.clone(),
+        serde_yaml::Value::Number(number) => number.as_u64()?.to_string(),
+        _ => return None,
+    };
+    let number = ref_id(&reference)?;
+    Some(match section_of(&reference) {
+        Some(section) => format!("{number}#{section}"),
+        None => number.to_string(),
+    })
+}
+
+fn parent_of(value: &serde_yaml::Value) -> Option<String> {
     match value {
-        serde_yaml::Value::String(dep) => parse_id(dep_target(dep)).map(|_| dep.clone()),
-        other => id_of(other),
+        serde_yaml::Value::String(reference) if section_of(reference).is_some() => None,
+        other => ref_of(other),
     }
 }
+
+const REFERENCE_EXPECTED: &str = "expected a task file, like ./00042-write-the-parser.md";
 
 fn deserialize_parent<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error> {
     match Option::<serde_yaml::Value>::deserialize(deserializer)? {
         None | Some(serde_yaml::Value::Null) => Ok(None),
-        Some(value) => id_of(&value)
+        Some(value) => parent_of(&value)
             .map(Some)
-            .ok_or_else(|| serde::de::Error::custom("expected a task id")),
+            .ok_or_else(|| serde::de::Error::custom(REFERENCE_EXPECTED)),
     }
 }
 
-fn deserialize_deps<'de, D: serde::Deserializer<'de>>(
+fn deserialize_dependencies<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<String>, D::Error> {
     Vec::<serde_yaml::Value>::deserialize(deserializer)?
         .iter()
         .map(|value| {
-            dep_of(value).ok_or_else(|| serde::de::Error::custom("expected a list of task ids"))
+            ref_of(value).ok_or_else(|| {
+                serde::de::Error::custom(format!("{REFERENCE_EXPECTED}, one per entry"))
+            })
         })
         .collect()
 }
@@ -164,7 +244,7 @@ impl Task {
                 created,
                 parent: None,
                 rank: None,
-                deps: Vec::new(),
+                dependencies: Vec::new(),
                 extra: serde_yaml::Mapping::new(),
             },
             body: format!("# {title}\n"),
@@ -192,8 +272,8 @@ impl Task {
         self.frontmatter.rank = rank;
     }
 
-    pub fn set_deps(&mut self, deps: Vec<String>) {
-        self.frontmatter.deps = deps;
+    pub fn set_dependencies(&mut self, dependencies: Vec<String>) {
+        self.frontmatter.dependencies = dependencies;
     }
 
     pub fn title(&self) -> Option<String> {
@@ -236,7 +316,7 @@ pub struct PartialFrontmatter {
     pub created: FieldResult<Timestamp>,
     pub parent: FieldResult<Option<String>>,
     pub rank: FieldResult<Option<String>>,
-    pub deps: FieldResult<Vec<String>>,
+    pub dependencies: FieldResult<Vec<String>>,
 }
 
 // The frontmatter parsed as far as it can be: `Fields` when the YAML is a mapping (each field then
@@ -283,21 +363,21 @@ fn extract_fields(map: &serde_yaml::Mapping) -> PartialFrontmatter {
     PartialFrontmatter {
         status: required(map, "status"),
         created: required(map, "created"),
-        parent: optional_task_id(map, "parent"),
+        parent: optional_parent(map),
         rank: optional_string(map, "rank"),
-        deps: match map.get("deps") {
+        dependencies: match map.get("dependencies") {
             None => Ok(Vec::new()),
             Some(serde_yaml::Value::Sequence(items)) => items
                 .iter()
                 .map(|item| {
-                    dep_of(item).ok_or_else(|| {
-                        FieldError::Invalid("expected a list of task ids".to_owned())
+                    ref_of(item).ok_or_else(|| {
+                        FieldError::Invalid(format!("{REFERENCE_EXPECTED}, one per entry"))
                     })
                 })
                 .collect(),
-            Some(_) => Err(FieldError::Invalid(
-                "expected a list of task ids".to_owned(),
-            )),
+            Some(_) => Err(FieldError::Invalid(format!(
+                "{REFERENCE_EXPECTED}, one per entry"
+            ))),
         },
     }
 }
@@ -313,12 +393,12 @@ fn required<T: serde::de::DeserializeOwned>(
     }
 }
 
-fn optional_task_id(map: &serde_yaml::Mapping, field: &str) -> FieldResult<Option<String>> {
-    match map.get(field) {
+fn optional_parent(map: &serde_yaml::Mapping) -> FieldResult<Option<String>> {
+    match map.get("parent") {
         None | Some(serde_yaml::Value::Null) => Ok(None),
-        Some(value) => id_of(value)
+        Some(value) => parent_of(value)
             .map(Some)
-            .ok_or_else(|| FieldError::Invalid("expected a task id".to_owned())),
+            .ok_or_else(|| FieldError::Invalid(REFERENCE_EXPECTED.to_owned())),
     }
 }
 

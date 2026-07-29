@@ -2176,7 +2176,7 @@ version = "0.1.0"
 dependencies = [
  "gix",
  "jiff",
- "op-store",
+ "op-task",
  "tempfile",
  "thiserror",
 ]

@@ -124,7 +124,7 @@ oplan get   <id> --branch <name> [--json]  # read one task's version on another 
 - The web UI consuming the matrix (branch badges, version grouping, swimlanes) — §9 UI tasks.
 
 ## Notes
-- Depends on [[3]] (store + `op-api` DTOs) and [[2]] (serve root,
+- Depends on [[./00003-task-crud-across-the-store-daemo.md]] (store + `op-api` DTOs) and [[./00002-run-the-server-as-a-managed-daem.md]] (serve root,
   `AppState.index`); both are done.
 - "Reads global, writes local" (§7.1) is the invariant that keeps branch data branch-scoped — the
   test asserting no cross-branch write path is guarding the whole design, not a formality.

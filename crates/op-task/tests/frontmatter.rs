@@ -19,7 +19,7 @@ fn frontmatter_roundtrips() {
             created: stamp(),
             parent: Some("42".to_owned()),
             rank: Some("m".to_owned()),
-            deps: vec!["1".to_owned(), "2#Design".to_owned()],
+            dependencies: vec!["1".to_owned(), "2#Design".to_owned()],
             extra: Default::default(),
         },
         "# Title\n\nbody\n",
@@ -38,7 +38,7 @@ fn minimal_frontmatter_is_just_status() {
             created: stamp(),
             parent: None,
             rank: None,
-            deps: vec![],
+            dependencies: vec![],
             extra: Default::default(),
         },
         "# Title\n",
@@ -94,7 +94,7 @@ fn task_file_roundtrips_with_title() {
             created: stamp(),
             parent: None,
             rank: None,
-            deps: vec![],
+            dependencies: vec![],
             extra: Default::default(),
         },
         "# Ship it\n\nbody text\n",
@@ -107,45 +107,60 @@ fn task_file_roundtrips_with_title() {
 }
 
 #[test]
-fn ids_are_written_quoted_and_read_back_from_either_spelling() {
-    let text = task(
-        Frontmatter {
-            status: Status::Todo,
-            created: stamp(),
-            parent: Some("42".to_owned()),
-            rank: None,
-            deps: vec!["7".to_owned(), "8#Design".to_owned()],
-            extra: Default::default(),
-        },
-        "# Title\n",
-    )
-    .to_file_string()
-    .unwrap();
-    assert!(text.contains("parent: '42'"), "{text}");
-    assert!(text.contains("- '7'"), "{text}");
+fn a_reference_names_the_target_file_and_reads_back_as_its_id() {
+    let text = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00042-ship-login.md\ndependencies:\n- ./00007-write-the-parser.md\n- ./00008-store-dtos.md#Design\n---\n# Title\n";
+    let parsed = Task::from_file_string(text).unwrap();
+    assert_eq!(parsed.frontmatter.parent.as_deref(), Some("42"));
+    assert_eq!(parsed.frontmatter.dependencies, vec!["7", "8#Design"]);
 
-    // Hand-written frontmatter spells an id the way YAML does, as a bare integer.
+    // The slug is a snapshot of the target's title, so a stale one still resolves.
+    let stale = Task::from_file_string(
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00042-the-old-title.md\n---\n# Title\n",
+    )
+    .unwrap();
+    assert_eq!(stale.frontmatter.parent.as_deref(), Some("42"));
+
+    // A hand-written reference may still be the bare id, in either YAML spelling.
     let bare = Task::from_file_string(
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: 42\ndeps:\n- 7\n- 8#Design\n---\n# Title\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: 42\ndependencies:\n- '7'\n- 8#Design\n---\n# Title\n",
     )
     .unwrap();
     assert_eq!(bare.frontmatter.parent.as_deref(), Some("42"));
-    assert_eq!(bare.frontmatter.deps, vec!["7", "8#Design"]);
+    assert_eq!(bare.frontmatter.dependencies, vec!["7", "8#Design"]);
 }
 
 #[test]
-fn a_reference_that_is_not_an_id_is_rejected() {
+fn a_reference_that_names_no_task_is_rejected() {
     for frontmatter in [
         "parent: ship-login-3d0c",
         "parent: 042",
-        "deps:\n- ship-login-3d0c",
-        "deps:\n- 042#Design",
+        "parent: ./ship-login.md",
+        "parent: ./00042-ship-login.md#Design",
+        "dependencies:\n- ship-login-3d0c",
+        "dependencies:\n- 042#Design",
+        "dependencies:\n- ./notes.txt",
     ] {
         let text =
             format!("---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n{frontmatter}\n---\n# T\n");
         assert!(
             Task::from_file_string(&text).is_err(),
             "{frontmatter:?} must not parse as a reference"
+        );
+    }
+}
+
+#[test]
+fn ref_id_reads_the_target_out_of_a_file_name() {
+    assert_eq!(op_task::ref_id("./00042-ship-login.md"), Some(42));
+    assert_eq!(op_task::ref_id("./00042-ship-login.md#Design"), Some(42));
+    assert_eq!(op_task::ref_id("00042-ship-login.md"), Some(42));
+    assert_eq!(op_task::ref_id("./00042.md"), Some(42));
+    assert_eq!(op_task::ref_id("42"), Some(42));
+    for not_a_reference in ["./ship-login.md", "./00042-ship-login.txt", "042", ""] {
+        assert_eq!(
+            op_task::ref_id(not_a_reference),
+            None,
+            "{not_a_reference:?}"
         );
     }
 }
@@ -170,8 +185,8 @@ fn parse_id_accepts_only_the_canonical_spelling() {
 }
 
 #[test]
-fn dep_target_splits_off_the_section() {
-    assert_eq!(op_task::dep_target("42"), "42");
-    assert_eq!(op_task::dep_target("42#Design"), "42");
-    assert_eq!(op_task::dep_target("42#A#B"), "42");
+fn ref_target_splits_off_the_section() {
+    assert_eq!(op_task::ref_target("./00042-a.md"), "./00042-a.md");
+    assert_eq!(op_task::ref_target("./00042-a.md#Design"), "./00042-a.md");
+    assert_eq!(op_task::ref_target("42#A#B"), "42");
 }

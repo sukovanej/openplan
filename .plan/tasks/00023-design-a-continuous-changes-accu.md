@@ -1,7 +1,7 @@
 ---
 status: in_review
 created: 2026-07-14T22:20:31Z
-parent: '39'
+parent: ./00039-continuous-changes-accumulation-v.md
 ---
 # Design a continuous-changes accumulation branch
 

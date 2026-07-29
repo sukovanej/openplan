@@ -1,8 +1,8 @@
 ---
 status: done
 created: 2026-07-14T10:31:45Z
-deps:
-- '11'
+dependencies:
+- ./00011-web-ui-task-list-as-a-table-id-t.md
 ---
 # Web UI: keyboard-shortcut architecture + navigation shortcuts (Linear-style)
 

@@ -34,8 +34,8 @@ export const createdOf = (metadata: Metadata): string | undefined => {
   return field === undefined ? undefined : fieldValue(field)
 }
 
-export const depsOf = (metadata: Metadata): ReadonlyArray<string> => {
-  const field = fields(metadata)?.deps
+export const dependenciesOf = (metadata: Metadata): ReadonlyArray<string> => {
+  const field = fields(metadata)?.dependencies
   return field === undefined ? [] : (fieldValue(field) ?? [])
 }
 
@@ -53,7 +53,7 @@ export function problems(metadata: Metadata): ReadonlyArray<FieldProblem> {
   if (whole !== undefined) return [{ field: "frontmatter", message: whole }]
   const found = fields(metadata)
   if (found === undefined) return []
-  return (["status", "created", "parent", "rank", "deps"] as const).flatMap((field) => {
+  return (["status", "created", "parent", "rank", "dependencies"] as const).flatMap((field) => {
     const failure = fieldFailure(found[field])
     return failure === undefined ? [] : [{ field, message: describe(failure) }]
   })

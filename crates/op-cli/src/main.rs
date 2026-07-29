@@ -42,8 +42,8 @@ enum Command {
         parent: Option<String>,
         #[arg(long)]
         status: Option<Status>,
-        #[arg(long = "dep")]
-        deps: Vec<String>,
+        #[arg(long = "dependency")]
+        dependencies: Vec<String>,
         /// Markdown content placed below the title heading
         #[arg(long, conflicts_with = "body_file")]
         body: Option<String>,
@@ -75,7 +75,7 @@ enum Command {
         #[arg(long)]
         branch: Option<String>,
     },
-    /// Print a task's metadata (status, parent, deps)
+    /// Print a task's metadata (status, parent, dependencies)
     Show {
         id: String,
         /// Show the per-branch status matrix for this task instead
@@ -104,7 +104,7 @@ enum Command {
         #[arg(long)]
         after: Option<String>,
     },
-    /// Set a validated field: status | parent | deps
+    /// Set a validated field: status | parent | dependencies
     Set {
         id: String,
         field: String,
@@ -172,13 +172,21 @@ fn run(cli: Cli) -> Result<ExitCode> {
             title,
             parent,
             status,
-            deps,
+            dependencies,
             body,
             body_file,
         } => {
             let body = resolve_body(body, body_file)?;
-            create(&cli.root, daemon_url, title, parent, status, deps, body)
-                .map(|()| ExitCode::SUCCESS)
+            create(
+                &cli.root,
+                daemon_url,
+                title,
+                parent,
+                status,
+                dependencies,
+                body,
+            )
+            .map(|()| ExitCode::SUCCESS)
         }
         Command::List {
             status,
@@ -298,14 +306,14 @@ fn create(
     title: String,
     parent: Option<String>,
     status: Option<Status>,
-    deps: Vec<String>,
+    dependencies: Vec<String>,
     body: Option<String>,
 ) -> Result<()> {
     let id = Writer::resolve(root, daemon_url)?.create(&CreateTask {
         title,
         status,
         parent,
-        deps,
+        dependencies,
         body,
     })?;
     println!("{id}");
@@ -458,13 +466,13 @@ fn show(root: &Path, id: &str, branches: bool) -> Result<()> {
     println!("title:  {}", summary.title);
     println!("status: {}", status_label(metadata));
     println!("parent: {}", metadata.parent().unwrap_or("-"));
-    let deps = metadata.deps();
+    let dependencies = metadata.dependencies();
     println!(
-        "deps:   {}",
-        if deps.is_empty() {
+        "dependencies: {}",
+        if dependencies.is_empty() {
             "-".to_owned()
         } else {
-            deps.join(", ")
+            dependencies.join(", ")
         }
     );
     for problem in metadata.problems() {
@@ -615,13 +623,13 @@ fn parse_field(field: &str, value: &str) -> Result<TaskPatch> {
             status: Some(value.parse()?),
             ..TaskPatch::default()
         },
-        // "" or "-" clears the parent (top level), mirroring how `deps ""` clears deps.
+        // "" or "-" clears the parent (top level), mirroring how `dependencies ""` clears them.
         "parent" => TaskPatch {
             parent: parent_update(parse_parent(value)),
             ..TaskPatch::default()
         },
-        "deps" => TaskPatch {
-            deps: Some(
+        "dependencies" => TaskPatch {
+            dependencies: Some(
                 value
                     .split(',')
                     .map(str::trim)
@@ -631,7 +639,7 @@ fn parse_field(field: &str, value: &str) -> Result<TaskPatch> {
             ),
             ..TaskPatch::default()
         },
-        other => bail!("unknown field {other:?}; expected status | parent | deps"),
+        other => bail!("unknown field {other:?}; expected status | parent | dependencies"),
     })
 }
 

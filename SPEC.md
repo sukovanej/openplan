@@ -50,18 +50,22 @@ a section-addressable markdown body.
   from the moment a file carries it, before any commit does — so a number is issued once per
   repository and no two tasks, on any branch, can ever share an id.
 - **The number is the whole id.** No slug, no title fragment: nothing in the id can go stale when a
-  task is renamed, and `42` is the id in a URL, `parent`, `deps`, and `[[42]]` alike. The canonical
+  task is renamed, and `42` is the id in a URL, in the API, and on the CLI alike. The canonical
   spelling is decimal with no sign and no padding, so exactly one string is the id: `42` is one,
   `042` / `+42` / `forty-two` / any pre-numeric slug is not, and no task is reachable by them. A
-  write that names one is refused; a stored field holding one reads as invalid (below) rather than
-  resolving to something near it. Because YAML reads an unquoted `42` as an integer, a frontmatter
-  id is accepted as either an integer or a string and written back quoted.
+  write that names one is refused.
 - **The file is named `<nnnnn>-<slug(title)>.md`** — `00042-ship-login-page.md`. Both halves of the
   name serve a human reading the directory: the padding sorts a listing in task order, the slug says
   which task each file is. Neither is part of the id, and a task is located by the number its name
   starts with — so renaming a file keeps the task as long as the digits do, and a title change
   leaves a slug that is merely out of date rather than a broken reference. A `.md` file whose name
   starts with no number is not a task and is left alone.
+- **A file names another task by its file** — `parent: ./00042-ship-login-page.md`, and `[[./00042-ship-login-page.md]]`
+  in prose. The store, which alone can see the directory, writes that form; everything above it —
+  the API, the CLI, the UI — speaks the id. The point is that the directory stands on its own: a
+  reference is a path an editor, a `grep`, or a plain markdown reader can follow without oplan. Only
+  the leading digits identify the target, so a reference to a retitled task still resolves, and a
+  reference whose task is gone keeps its number, which names no file because there is none to name.
 - **Title = the body's single `# H1`.** Every task **must** contain **exactly one level-1
   heading**, and that is the title. Never stored in frontmatter.
 
@@ -69,12 +73,12 @@ Frontmatter carries only what is *not* derivable from the file itself:
 
 | field | type | notes |
 |---|---|---|
-| `status` | enum | `backlog` / `todo` / `in_progress` / `in_review` / `done` / `cancelled`. `blocked` is **computed** from unmet `deps` — not stored. |
+| `status` | enum | `backlog` / `todo` / `in_progress` / `in_review` / `done` / `cancelled`. `blocked` is **computed** from unmet `dependencies` — not stored. |
 | `created` | RFC3339 | UTC, set once when the task is written. Required. Its counterpart `updated` is **derived** from git — the author time of the last commit to touch the file — never stored. |
-| `parent` | id? | adjacency-list hierarchy (see §3.2). Absent = top-level. |
-| `deps` | id[] | task→task blocking dependencies; a ref may target a section (`42#Section`). Omitted when empty. |
+| `parent` | ref? | adjacency-list hierarchy (see §3.2). Absent = top-level. |
+| `dependencies` | ref[] | task→task blocking; a reference may target a section (`./00042-ship-login-page.md#Section`). Omitted when empty. |
 
-A task with no parent and no deps has frontmatter of just `status` and `created`.
+A task with no parent and no dependencies has frontmatter of just `status` and `created`.
 
 **Writes are strict, reads are per-field.** A write parses the whole frontmatter or refuses, so a
 file is never rewritten from a version we could not fully understand. A read never fails: each field
@@ -94,7 +98,7 @@ read, is unaffected.
   with a `parent` pointer. (A project task with 200 subtasks stays 200 small files, not one
   giant file — preserves context-efficiency and per-file locking.)
 - Sibling **order** via fractional `rank`.
-- **Refs/deps** are by task id and may target a **section** (`42#Section`).
+- **References** name the target's file and may target a **section** (`./00042-ship-login-page.md#Section`).
 
 ---
 
@@ -179,7 +183,7 @@ versioning substrate — we read it, we don't rebuild it. Single machine only.
 ### 7.2 Two kinds of state
 | | Persistent state | Coordination / presence |
 |---|---|---|
-| **What** | title, sections, `status`, `deps`, `rank`, doc refs | who is *actively* working task X *right now*, in which worktree |
+| **What** | title, sections, `status`, `dependencies`, `rank`, doc refs | who is *actively* working task X *right now*, in which worktree |
 | **Scope** | **branch-scoped** (diverges per branch — intended) | **global** across all worktrees |
 | **Home** | in git (`.plan/*.md`) | machine-local daemon registry, **not** in git |
 | **Answers** | "where does this task stand *on branch feat/auth*" | "is anyone else on this task, so I don't collide" |

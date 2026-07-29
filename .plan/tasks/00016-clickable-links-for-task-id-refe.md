@@ -9,7 +9,7 @@ Render `[[task-id]]` references in task-body markdown as clickable links to the
 referenced task's detail page. Today they show as literal `[[task-id]]` text.
 
 Example: in `9`, the body reads
-"Depends on [[3]] (store + op-api DTOs) and [[2]]
+"Depends on [[./00003-task-crud-across-the-store-daemo.md]] (store + op-api DTOs) and [[./00002-run-the-server-as-a-managed-daem.md]]
 (serve root, AppState.index)" — both refs should become links to `/task/<id>`.
 
 ## Where

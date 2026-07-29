@@ -25,7 +25,7 @@ fn create(store: &Store, task: &Task) -> Result<String, StoreError> {
 fn plant(store: &Store, id: &str, contents: &str) -> std::path::PathBuf {
     let path = store
         .tasks_dir()
-        .join(op_store::task_filename(id.parse().unwrap(), "Planted"));
+        .join(op_task::task_filename(id.parse().unwrap(), "Planted"));
     std::fs::write(&path, contents).unwrap();
     path
 }
@@ -323,7 +323,7 @@ fn dangling_reference_does_not_block_unrelated_edit() {
     let a = create(&store, &Task::new("A", Status::Todo, stamp())).unwrap();
 
     let mut b = Task::new("B", Status::Todo, stamp());
-    b.set_deps(vec![a.clone()]);
+    b.set_dependencies(vec![a.clone()]);
     let b = create(&store, &b).unwrap();
 
     store.delete(&a).unwrap();
@@ -336,7 +336,7 @@ fn dangling_reference_does_not_block_unrelated_edit() {
         })
         .unwrap();
     assert_eq!(updated.frontmatter.status, Status::Done);
-    assert_eq!(updated.frontmatter.deps, vec![a]);
+    assert_eq!(updated.frontmatter.dependencies, vec![a]);
 }
 
 #[test]
@@ -532,5 +532,86 @@ fn a_file_without_created_refuses_to_be_written_and_says_how_to_fix_it() {
         std::fs::read_to_string(&path).unwrap(),
         "---\nstatus: in_progress\n---\n# Legacy\n",
         "a refused write leaves the file alone"
+    );
+}
+
+#[test]
+fn references_are_written_as_the_target_file() {
+    let (_dir, store) = make_store();
+    let target = create(
+        &store,
+        &Task::new("Write the parser", Status::Todo, stamp()),
+    )
+    .unwrap();
+    let target_name = format!("{:0>5}-write-the-parser.md", target);
+
+    let mut child = Task::new("Child", Status::Todo, stamp());
+    child.set_parent(Some(target.clone()));
+    child.set_dependencies(vec![target.clone(), format!("{target}#Design")]);
+    let child = create(&store, &child).unwrap();
+
+    let raw = store.read_raw(&child).unwrap();
+    assert!(raw.contains(&format!("parent: ./{target_name}")), "{raw}");
+    assert!(raw.contains(&format!("- ./{target_name}")), "{raw}");
+    assert!(raw.contains(&format!("- ./{target_name}#Design")), "{raw}");
+
+    // The reference reads back as the id, so nothing above the store sees a file name.
+    let read = store.read(&child).unwrap();
+    assert_eq!(read.frontmatter.parent.as_deref(), Some(target.as_str()));
+    assert_eq!(
+        read.frontmatter.dependencies,
+        vec![target.clone(), format!("{target}#Design")]
+    );
+}
+
+#[test]
+fn a_reference_to_a_deleted_task_keeps_its_number() {
+    let (_dir, store) = make_store();
+    let gone = create(&store, &Task::new("Gone", Status::Todo, stamp())).unwrap();
+    let mut task = Task::new("Holder", Status::Todo, stamp());
+    task.set_dependencies(vec![gone.clone()]);
+    let holder = create(&store, &task).unwrap();
+
+    store.delete(&gone).unwrap();
+    store
+        .update(&holder, |task| {
+            task.set_status(Status::Done);
+            Ok(())
+        })
+        .unwrap();
+
+    // No file carries the number any more, so there is no name to point at — the number is what
+    // survives, and it still reads back as the reference it was.
+    let raw = store.read_raw(&holder).unwrap();
+    assert!(raw.contains(&format!("- '{gone}'")), "{raw}");
+    assert_eq!(
+        store.read(&holder).unwrap().frontmatter.dependencies,
+        vec![gone]
+    );
+}
+
+#[test]
+fn a_retitled_target_is_pointed_at_by_its_new_name() {
+    let (_dir, store) = make_store();
+    let target = create(&store, &Task::new("First title", Status::Todo, stamp())).unwrap();
+    let mut child = Task::new("Child", Status::Todo, stamp());
+    child.set_parent(Some(target.clone()));
+    let child = create(&store, &child).unwrap();
+
+    // Renaming a task's file is how a retitle lands; the digits are what identify it.
+    let old = store.task_path(&target).unwrap();
+    let new = old.with_file_name(format!("{:0>5}-a-better-title.md", target));
+    std::fs::rename(&old, &new).unwrap();
+
+    store
+        .update(&child, |task| {
+            task.set_status(Status::Done);
+            Ok(())
+        })
+        .unwrap();
+    let raw = store.read_raw(&child).unwrap();
+    assert!(
+        raw.contains(&format!("parent: ./{:0>5}-a-better-title.md", target)),
+        "{raw}"
     );
 }

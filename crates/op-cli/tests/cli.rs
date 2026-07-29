@@ -550,7 +550,7 @@ fn list_json_filters_by_status() {
 fn set_status_survives_a_deleted_dependency() {
     let dir = Project::new();
     let a = create(&dir, "Task A");
-    let b_out = run(&dir, &["create", "Task B", "--dep", &a]);
+    let b_out = run(&dir, &["create", "Task B", "--dependency", &a]);
     assert!(b_out.status.success());
     let b = stdout(&b_out).trim().to_owned();
 

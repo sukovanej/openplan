@@ -2,10 +2,18 @@ type Text = { type: "text"; value: string }
 type Link = { type: "link"; url: string; title: null; children: Text[] }
 type Node = { type: string; value?: string; children?: Node[] }
 
-// An oplan id is a decimal number with no padding (`op_task::parse_id`); matching only that keeps
-// ordinary `[[...]]` bracket text from being mistaken for a task reference.
+// A task file names another by its path, and the leading digits of that file name are the id
+// (`op_task::ref_id`). A bare id is accepted the same way the Rust side accepts it, and nothing else
+// is, so ordinary `[[...]]` bracket text is not mistaken for a task reference.
 const TASK_REF = /\[\[([^[\]\n]+)\]\]/g
+const TASK_FILE = /^(?:.*\/)?([0-9]+)(?:-[^/]*)?\.md$/
 const TASK_ID = /^(?:0|[1-9][0-9]*)$/
+
+function refId(target: string): string | null {
+  const file = TASK_FILE.exec(target)
+  if (file !== null) return String(Number(file[1]))
+  return TASK_ID.test(target) ? target : null
+}
 
 function text(value: string): Text {
   return { type: "text", value }
@@ -21,9 +29,9 @@ export function splitTaskRefs(value: string): Array<Text | Link> | null {
   for (const match of value.matchAll(TASK_REF)) {
     const inner = match[1].trim()
     const hash = inner.indexOf("#")
-    const id = hash === -1 ? inner : inner.slice(0, hash)
     const section = hash === -1 ? "" : inner.slice(hash + 1)
-    if (!TASK_ID.test(id)) continue
+    const id = refId(hash === -1 ? inner : inner.slice(0, hash))
+    if (id === null) continue
     const start = match.index
     if (start > last) nodes.push(text(value.slice(last, start)))
     const url = section ? `/task/${id}#${encodeURIComponent(section)}` : `/task/${id}`

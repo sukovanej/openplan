@@ -1,14 +1,14 @@
 ---
 status: todo
 created: 2026-07-26T15:40:55Z
-parent: '39'
-deps:
-- '40'
+parent: ./00039-continuous-changes-accumulation-v.md
+dependencies:
+- ./00040-daemon-ambient-writer-accumulate.md
 ---
 # Backup: force-push rolling-updates to a mirror remote (durability)
 
 **Phase 6** of the rolling-updates plan
-([[23]] §7.11). Durability only: un-published
+([[./00023-design-a-continuous-changes-accu.md]] §7.11). Durability only: un-published
 ambient edits survive disk/machine loss. Sole-writer, no distributed concurrency;
 multi-machine / collaborative sync stays out of scope.
 
@@ -25,7 +25,7 @@ like `default_branch` reads `oplan.defaultBranch` (`config_snapshot().string`).
 Unset -> backup disabled, clean no-op. No new config format.
 
 **`BackupPusher` — separate, non-blocking, coalescing.** NOT on the ref-owner
-actor's critical path ([[40]]); it must never
+actor's critical path ([[./00040-daemon-ambient-writer-accumulate.md]]); it must never
 delay an ambient ack or a refresh. Notified "tip moved" whenever the actor
 advances `rolling-updates` (accumulate flush / refresh / publish),
 debounces/coalesces a burst into one push of the latest tip:

@@ -5,12 +5,10 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt as _;
-use op_task::{Frontmatter, Task, dep_target, parse_id, rank};
+use op_task::{Frontmatter, Task, parse_id, rank, ref_id, ref_target, task_filename};
 
 pub const STORE_DIR: &str = ".plan";
 
-const SLUG_MAX: usize = 32;
-const ID_DIGITS: usize = 5;
 const ID_ATTEMPTS: usize = 16;
 const LOCK_ATTEMPTS: usize = 1024;
 const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -121,7 +119,11 @@ impl Store {
             if path.extension().and_then(|e| e.to_str()) != Some("md") {
                 continue;
             }
-            if let Some(number) = path.file_stem().and_then(|s| s.to_str()).and_then(file_id) {
+            if let Some(number) = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(op_task::file_id)
+            {
                 visit(path, number);
             }
         }
@@ -181,7 +183,7 @@ impl Store {
                 id: number.to_string(),
             });
         }
-        let contents = task.to_file_string()?;
+        let contents = self.in_file_form(task)?.to_file_string()?;
         let tmp = self.write_temp(contents.as_bytes())?;
         let result = self.link_id(&tmp, number, &title);
         // Clean up the temp link on every exit (success, a taken id, or an early error such as a
@@ -204,10 +206,10 @@ impl Store {
 
     pub fn write(&self, id: &str, task: &Task) -> Result<(), StoreError> {
         self.task_path(id)?;
-        let contents = task.to_file_string()?;
         self.with_lock(id, || {
             let old = self.read(id)?.frontmatter;
             self.validate(Some(id), Some(&old), &task.frontmatter)?;
+            let contents = self.in_file_form(task)?.to_file_string()?;
             self.atomic_replace(id, contents.as_bytes())
         })
     }
@@ -223,7 +225,7 @@ impl Store {
             let old = task.frontmatter.clone();
             mutate(&mut task)?;
             self.validate(Some(id), Some(&old), &task.frontmatter)?;
-            let contents = task.to_file_string()?;
+            let contents = self.in_file_form(&task)?.to_file_string()?;
             self.atomic_replace(id, contents.as_bytes())?;
             Ok(task)
         })
@@ -276,6 +278,29 @@ impl Store {
     // Only references this write newly introduces are validated. A parent/dep that was
     // already persisted (and may now dangle because its target was deleted) must not block
     // an unrelated edit like a status change — otherwise deleting one task bricks another.
+    // A task's own words for another task, in the form the file carries them (§3.1): the target's
+    // file name, which only the store can spell. A reference whose task has since been deleted keeps
+    // the bare number — it names no file, and inventing one would be a lie a reader could follow.
+    fn in_file_form(&self, task: &Task) -> Result<Task, StoreError> {
+        let files = self.task_files()?;
+        let named =
+            |reference: &String| match ref_id(reference).and_then(|number| files.get(&number)) {
+                None => reference.clone(),
+                Some(path) => {
+                    let name =
+                        op_task::task_ref(&path.file_name().unwrap_or_default().to_string_lossy());
+                    match reference.split_once('#') {
+                        Some((_, section)) => format!("{name}#{section}"),
+                        None => name,
+                    }
+                }
+            };
+        let mut task = task.clone();
+        task.frontmatter.parent = task.frontmatter.parent.as_ref().map(&named);
+        task.frontmatter.dependencies = task.frontmatter.dependencies.iter().map(named).collect();
+        Ok(task)
+    }
+
     fn validate(
         &self,
         id: Option<&str>,
@@ -285,19 +310,19 @@ impl Store {
         if let Some(parent) = &new.parent {
             let unchanged = old.and_then(|o| o.parent.as_deref()) == Some(parent.as_str());
             if !unchanged {
-                if Some(parent.as_str()) == id {
+                let target = reject_dangling_ref(parent)?;
+                if Some(target.as_str()) == id {
                     return Err(StoreError::Invalid(format!(
                         "task {parent} cannot be its own parent"
                     )));
                 }
-                reject_non_id(parent)?;
-                if !self.exists(parent) {
+                if !self.exists(&target) {
                     return Err(StoreError::Invalid(format!(
                         "parent {parent} does not exist"
                     )));
                 }
                 if let Some(id) = id {
-                    self.reject_parent_cycle(id, parent)?;
+                    self.reject_parent_cycle(id, &target)?;
                 }
             }
         }
@@ -309,20 +334,19 @@ impl Store {
                 )));
             }
         }
-        for dep in &new.deps {
-            if old.is_some_and(|o| o.deps.contains(dep)) {
+        for dependency in &new.dependencies {
+            if old.is_some_and(|o| o.dependencies.contains(dependency)) {
                 continue;
             }
-            let target = dep_target(dep);
-            if Some(target) == id {
+            let target = reject_dangling_ref(dependency)?;
+            if Some(target.as_str()) == id {
                 return Err(StoreError::Invalid(format!(
-                    "task cannot depend on itself: {dep}"
+                    "task cannot depend on itself: {dependency}"
                 )));
             }
-            reject_non_id(target)?;
-            if !self.exists(target) {
+            if !self.exists(&target) {
                 return Err(StoreError::Invalid(format!(
-                    "dependency {dep} does not exist"
+                    "dependency {dependency} does not exist"
                 )));
             }
         }
@@ -393,45 +417,6 @@ fn single_title(body: &str) -> Result<String, StoreError> {
     }
 }
 
-// Zero-padded so a directory listing reads in task order, then the title so a human browsing the
-// files can tell them apart. Neither is part of the id (§3.1): the padding is a naming convention
-// and the slug is a snapshot of the title, free to be re-slugged by hand as long as the digits stay.
-pub fn task_filename(number: u64, title: &str) -> String {
-    format!("{number:0ID_DIGITS$}-{}.md", slug(title))
-}
-
-pub fn file_id(stem: &str) -> Option<u64> {
-    let digits = stem.bytes().take_while(u8::is_ascii_digit).count();
-    let tail = &stem[digits..];
-    if digits == 0 || !(tail.is_empty() || tail.starts_with('-')) {
-        return None;
-    }
-    stem[..digits].parse().ok()
-}
-
-fn slug(title: &str) -> String {
-    let mut out = String::new();
-    let mut pending_dash = false;
-    for ch in title.chars() {
-        if ch.is_ascii_alphanumeric() {
-            if pending_dash && !out.is_empty() {
-                out.push('-');
-            }
-            pending_dash = false;
-            out.push(ch.to_ascii_lowercase());
-            if out.len() >= SLUG_MAX {
-                break;
-            }
-        } else {
-            pending_dash = true;
-        }
-    }
-    if out.is_empty() {
-        out.push_str("task");
-    }
-    out
-}
-
 fn read_file(path: &Path, id: &str) -> Result<String, StoreError> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(text),
@@ -442,10 +427,12 @@ fn read_file(path: &Path, id: &str) -> Result<String, StoreError> {
     }
 }
 
-fn reject_non_id(id: &str) -> Result<(), StoreError> {
-    match parse_id(id) {
-        Some(_) => Ok(()),
-        None => Err(StoreError::InvalidId { id: id.to_owned() }),
+fn reject_dangling_ref(reference: &str) -> Result<String, StoreError> {
+    match ref_id(reference) {
+        Some(number) => Ok(number.to_string()),
+        None => Err(StoreError::InvalidId {
+            id: ref_target(reference).to_owned(),
+        }),
     }
 }
 

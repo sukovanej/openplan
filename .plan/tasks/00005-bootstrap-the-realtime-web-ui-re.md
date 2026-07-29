@@ -6,7 +6,7 @@ created: 2026-07-14T00:24:07Z
 
 ## Goal
 Stand up the real web frontend that `op-server` embeds (replacing the `web/index.html`
-placeholder from [[1]]): a minimal, realtime SPA a human watches while
+placeholder from [[./00001-initialize-the-rust-multi-crate-w.md]]): a minimal, realtime SPA a human watches while
 agents change tasks live (§9). This init delivers two read views end-to-end — a task **list**
 and a single-task **detail with a markdown viewer** — inside a **TypeScript monorepo** set up
 the way Effect projects are, so later packages (a generated API client, shared UI, shared
@@ -81,7 +81,7 @@ Rust-native bias:
 
 ## Data layer (Effect)
 - `TasksApi` service wraps `@effect/platform` `HttpClient`, decoding with `Schema` that mirror
-  the `op-api` DTOs from [[3]] (these Schemas are what later moves to
+  the `op-api` DTOs from [[./00003-task-crud-across-the-store-daemo.md]] (these Schemas are what later moves to
   `packages/domain`):
   - `list: Effect<TaskSummary[]>`  ← `GET /api/tasks`
   - `get(id): Effect<TaskView>`    ← `GET /api/tasks/:id`
@@ -91,7 +91,7 @@ Rust-native bias:
   atom states, so views are pure functions of the atom result.
 
 ## Realtime (the clean channel)
-The daemon has no server→client push today: [[1]]'s watcher feeds an
+The daemon has no server→client push today: [[./00001-initialize-the-rust-multi-crate-w.md]]'s watcher feeds an
 in-process `mpsc<ChangeEvent>` in `serve.rs` that goes nowhere. This task adds the minimal,
 complete path so realtime is real, not mocked:
 - **Server**: add `GET /api/events` to `op-server` — SSE (`text/event-stream`) streaming
@@ -134,7 +134,7 @@ complete path so realtime is real, not mocked:
 - The future packages themselves: `packages/domain`, the generated `packages/api-client`, shared
   `ui`/`config` — this task only lays the workspace so they slot in.
 - All write UI: create/edit, inline section edit, status change, drag-to-reorder, claim/release
-  (§9). REST + `oplan` write paths already exist ([[3]]).
+  (§9). REST + `oplan` write paths already exist ([[./00003-task-crud-across-the-store-daemo.md]]).
 - Branch-aware matrix view, worktree swimlanes, presence dots (§9) — need `/api/matrix`,
   presence, and richer events.
 - **Event fidelity**: real debounced `TaskChanged`/ref/presence events from `op-watch` (still a
@@ -152,5 +152,5 @@ complete path so realtime is real, not mocked:
 - Reuse the `op-api` DTO shapes as the `Schema` source of truth — the wire contract is
   Rust-owned; the TS `Schema` mirrors it and fails loudly on drift. Those Schemas are the seed of
   `packages/domain`.
-- The frontend framework, left TBD by [[1]], is resolved here; the embed root
+- The frontend framework, left TBD by [[./00001-initialize-the-rust-multi-crate-w.md]], is resolved here; the embed root
   moves from `web/` to `web/packages/app/dist`.

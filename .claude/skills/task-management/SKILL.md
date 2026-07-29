@@ -1,6 +1,6 @@
 ---
 name: task-management
-description: Work items in this repo are called "tasks" (.plan/tasks/*.md, managed by the `oplan` CLI) — NOT the TODO list or subagent tools. Invoke this skill before any task work, and whenever a task is mentioned. Triggers on: create/add/new task, list/show/get task(s), set status/parent/deps, add/clear dependency, block, reparent, delete/cancel task, "the plan".
+description: Work items in this repo are called "tasks" (.plan/tasks/*.md, managed by the `oplan` CLI) — NOT the TODO list or subagent tools. Invoke this skill before any task work, and whenever a task is mentioned. Triggers on: create/add/new task, list/show/get task(s), set status/parent/dependencies, add/clear dependency, block, reparent, delete/cancel task, "the plan".
 ---
 
 # Task management
@@ -8,6 +8,11 @@ description: Work items in this repo are called "tasks" (.plan/tasks/*.md, manag
 Tasks in this repo are markdown files in `.plan/tasks/`, managed with the `oplan`
 binary. A task's id is a number (`42`); its file is named `00042-<title-slug>.md`,
 where only the leading digits identify it.
+
+Inside a task file, one task names another by its file — `parent:
+./00042-ship-login-page.md`, and `[[./00042-ship-login-page.md]]` in prose — so
+the directory reads on its own. The CLI takes and prints the id; the store writes
+the path.
 
 Statuses: `backlog` `todo` `in_progress` `in_review` `done` `cancelled`.
 
@@ -18,9 +23,9 @@ oplan list                       # id / status / title
 oplan list --status in_progress  # filter by status
 oplan list --parent <id>         # children of a task
 oplan list --json                # [{id,title,status,parent?}]
-oplan show <id>                   # metadata: id, title, status, parent, deps
+oplan show <id>                   # metadata: id, title, status, parent, dependencies
 oplan get  <id>                   # the raw task file
-oplan get  <id> --json           # {id,title,status,parent,deps,body}
+oplan get  <id> --json           # {id,title,status,parent,dependencies,body}
 ```
 
 ## Create
@@ -30,12 +35,12 @@ Prints the new id. Default status is `todo`.
 ```sh
 oplan create "Ship login page"
 oplan create "Add validation" --parent <id>
-oplan create "Deploy" --status backlog --dep <id> --dep <id2>
+oplan create "Deploy" --status backlog --dependency <id> --dependency <id2>
 oplan create "Ship login" --body "Support OAuth and email login."
 oplan create "Ship login" --body-file notes.md   # or --body-file - for stdin
 ```
 
-`--dep` is repeatable; each is a task id (or `task-id#Section`).
+`--dependency` is repeatable; each is a task id (or `<id>#Section`).
 
 `--body` / `--body-file` set the markdown content below the title heading; they
 are mutually exclusive.
@@ -46,13 +51,13 @@ review the new task first; commit (and merge) only after they approve.
 
 ## Update
 
-`set <id> <field> <value>` — field is `status`, `parent`, or `deps`.
-`deps` is a comma-separated list (empty string clears it).
+`set <id> <field> <value>` — field is `status`, `parent`, or `dependencies`.
+`dependencies` is a comma-separated list (empty string clears it).
 
 ```sh
 oplan set <id> status in_progress
 oplan set <id> parent <parent-id>
-oplan set <id> deps "<id1>, <id2>"
+oplan set <id> dependencies "<id1>, <id2>"
 ```
 
 ## Working on a task

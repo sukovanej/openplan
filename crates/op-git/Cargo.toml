@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-op-store.workspace = true
+op-task.workspace = true
 gix.workspace = true
 jiff.workspace = true
 thiserror.workspace = true

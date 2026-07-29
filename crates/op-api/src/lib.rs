@@ -160,7 +160,7 @@ pub struct FrontmatterFields {
     pub created: Field<Rfc3339>,
     pub parent: Field<Option<String>>,
     pub rank: Field<Option<String>>,
-    pub deps: Field<Vec<String>>,
+    pub dependencies: Field<Vec<String>>,
 }
 
 // The task's metadata as parsed: `Fields` when the YAML is a mapping (each field carries its own
@@ -194,7 +194,7 @@ impl From<op_task::PartialMetadata> for Metadata {
                 created: Field::from(fields.created).map(Rfc3339),
                 parent: fields.parent.into(),
                 rank: fields.rank.into(),
-                deps: fields.deps.into(),
+                dependencies: fields.dependencies.into(),
             }),
         }
     }
@@ -240,7 +240,7 @@ impl Metadata {
             created: Field::Value(Rfc3339(fm.created)),
             parent: Field::Value(fm.parent.clone()),
             rank: Field::Value(fm.rank.clone()),
-            deps: Field::Value(fm.deps.clone()),
+            dependencies: Field::Value(fm.dependencies.clone()),
         })
     }
 
@@ -303,13 +303,13 @@ impl Metadata {
         push("created", fields.created.as_error());
         push("parent", fields.parent.as_error());
         push("rank", fields.rank.as_error());
-        push("deps", fields.deps.as_error());
+        push("dependencies", fields.dependencies.as_error());
         out
     }
 
-    pub fn deps(&self) -> &[String] {
-        match self.fields().map(|fields| &fields.deps) {
-            Some(Field::Value(deps)) => deps,
+    pub fn dependencies(&self) -> &[String] {
+        match self.fields().map(|fields| &fields.dependencies) {
+            Some(Field::Value(dependencies)) => dependencies,
             _ => &[],
         }
     }
@@ -416,7 +416,7 @@ pub struct CreateTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub deps: Vec<String>,
+    pub dependencies: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 }
@@ -425,7 +425,7 @@ impl CreateTask {
     pub fn into_task(self, created: Timestamp) -> Task {
         let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Todo), created);
         task.set_parent(self.parent);
-        task.set_deps(self.deps);
+        task.set_dependencies(self.dependencies);
         if let Some(body) = &self.body {
             task.append_body(body);
         }
@@ -483,7 +483,7 @@ pub struct TaskPatch {
     pub rank: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
-    pub deps: Option<Vec<String>>,
+    pub dependencies: Option<Vec<String>>,
 }
 
 impl TaskPatch {
@@ -499,8 +499,8 @@ impl TaskPatch {
         if let Some(rank) = self.rank {
             task.set_rank(Some(rank));
         }
-        if let Some(deps) = self.deps {
-            task.set_deps(deps);
+        if let Some(dependencies) = self.dependencies {
+            task.set_dependencies(dependencies);
         }
     }
 }

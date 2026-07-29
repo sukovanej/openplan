@@ -340,7 +340,7 @@ fn task_blobs(tree: &gix::Tree) -> Result<Vec<(String, String)>, GitError> {
             continue;
         }
         let name = entry.filename().to_string();
-        let Some(number) = name.strip_suffix(".md").and_then(op_store::file_id) else {
+        let Some(number) = name.strip_suffix(".md").and_then(op_task::file_id) else {
             continue;
         };
         let blob = (name, entry.oid().to_string());

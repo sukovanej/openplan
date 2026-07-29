@@ -23,7 +23,7 @@ it.effect("decodes GET /api/tasks through the generated client", () =>
           {
             id: "a-1",
             title: "First",
-            metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+            metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
             updated: "2026-01-02T00:00:00Z",
             headline: "main",
             branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" }],
@@ -50,7 +50,13 @@ it.effect("decodes the grouped, flattened board from GET /api/board", () =>
                   task: {
                     id: "epic-1",
                     title: "Epic",
-                    metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+                    metadata: {
+                      status: "todo",
+                      created: "2026-01-01T00:00:00Z",
+                      parent: null,
+                      rank: null,
+                      dependencies: [],
+                    },
                     updated: "2026-01-02T00:00:00Z",
                     headline: "main",
                     branches: [],
@@ -67,7 +73,7 @@ it.effect("decodes the grouped, flattened board from GET /api/board", () =>
                       created: "2026-01-01T00:00:00Z",
                       parent: "epic-1",
                       rank: "m",
-                      deps: [],
+                      dependencies: [],
                     },
                     updated: "2026-01-02T00:00:00Z",
                     headline: "main",
@@ -96,7 +102,13 @@ it.effect("decodes a branch-aware TaskDetail from GET /api/tasks/:id", () =>
         json({
           id: "a-1",
           title: "First",
-          metadata: { status: "in_progress", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: ["b-2"] },
+          metadata: {
+            status: "in_progress",
+            created: "2026-01-01T00:00:00Z",
+            parent: null,
+            rank: null,
+            dependencies: ["2"],
+          },
           body: "# First",
           updated: "2026-01-02T00:00:00Z",
           headline: "feature",
@@ -109,7 +121,7 @@ it.effect("decodes a branch-aware TaskDetail from GET /api/tasks/:id", () =>
     )
     const detail = yield* tasks.getTask("a-1", { params: { branch: "feature" } })
     expect(detail.headline).toBe("feature")
-    expect(detail.metadata).toMatchObject({ deps: ["b-2"] })
+    expect(detail.metadata).toMatchObject({ dependencies: ["2"] })
     expect(detail.branches.map((b) => b.branch)).toEqual(["main", "feature"])
   }),
 )

@@ -10,8 +10,8 @@ splice **engine** (§5), its **CLI** surface, an **op-server** mutation **endpoi
 **raw-markdown + live-preview inline editor** in the web UI (§9). A human edits sections in the
 browser while agents edit the same store; edits **splice source byte ranges** (§5.3) so files
 stay pristine and diffs stay minimal. Builds directly on the read-only viewer from
-[[5]] and the whole-file/metadata writes from
-[[3]] and [[4]].
+[[./00005-bootstrap-the-realtime-web-ui-re.md]] and the whole-file/metadata writes from
+[[./00003-task-crud-across-the-store-daemo.md]] and [[./00004-support-setting-task-content-on-c.md]].
 
 Scope is **body content only** — frontmatter (`status`/`parent`/`deps`) already has `oplan set`
 and stays out.

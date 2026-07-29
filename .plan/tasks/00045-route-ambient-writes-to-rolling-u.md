@@ -1,16 +1,16 @@
 ---
 status: todo
 created: 2026-07-26T15:40:55Z
-parent: '39'
-deps:
-- '40'
+parent: ./00039-continuous-changes-accumulation-v.md
+dependencies:
+- ./00040-daemon-ambient-writer-accumulate.md
 ---
 # Route ambient writes to rolling-updates (server + CLI)
 
 **Phase 3** of the rolling-updates plan
-([[23]] §7.11). Apply the routing table at
+([[./00023-design-a-continuous-changes-accu.md]] §7.11). Apply the routing table at
 the write boundary so ambient/triage edits reach the daemon's AmbientWriter
-([[40]]) instead of a feature branch.
+([[./00040-daemon-ambient-writer-accumulate.md]]) instead of a feature branch.
 
 ## Two write paths to touch
 

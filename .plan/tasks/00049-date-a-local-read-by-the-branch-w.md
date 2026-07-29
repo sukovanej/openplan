@@ -57,7 +57,7 @@ report Feb 2025, which is exactly right.
 Today the walk is only ever asked about branches' *cells*, so a task with no cell
 on a branch is never asked about for that branch at all. The fix is to ask.
 
-Note the tension with [[48]]: asking for more
+Note the tension with [[./00048-restore-the-last-change-walk-s-e.md]]: asking for more
 ids widens the walk, which is the thing that task is trying to narrow. Settle the
 walk's shape first, then make this read ask it the right question.
 

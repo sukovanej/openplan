@@ -10,7 +10,7 @@ fn fields(status: Field<Status>, parent: Option<&str>, rank: Option<&str>) -> Me
         created: Field::Value(op_api::Rfc3339("2026-01-01T00:00:00Z".parse().unwrap())),
         parent: Field::Value(parent.map(str::to_owned)),
         rank: Field::Value(rank.map(str::to_owned)),
-        deps: Field::Value(Vec::new()),
+        dependencies: Field::Value(Vec::new()),
     })
 }
 
