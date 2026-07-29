@@ -106,7 +106,7 @@ export const getTask = (id: string, branch?: string): Effect.Effect<Api.TaskDeta
   )
 
 // `parent` is three-state to match the server: omit the key to leave it unchanged, JSON `null` to
-// clear it (top level), or an id to set it. `rank`, `status`, and `deps` are set-only.
+// clear it (top level), or an id to set it. `rank`, `status`, and `dependencies` are set-only.
 export const patchTask = (
   id: string,
   patch: Api.TaskPatch,

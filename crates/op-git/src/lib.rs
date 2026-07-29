@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use jiff::Timestamp;
@@ -328,17 +329,35 @@ fn task_blobs(tree: &gix::Tree) -> Result<Vec<(String, String)>, GitError> {
         .object()
         .map_err(|e| GitError::Object(e.to_string()))?
         .into_tree();
-    let mut out = Vec::new();
+    // Keyed by id, not by file name: a task renamed on one branch (the name carries a title slug,
+    // §3.1) is the same task, and the matrix must line its versions up rather than read them as two.
+    // Two names of one number is a hand-made state; the lowest wins, as it does in the store, so a
+    // read and a write cannot land on different files.
+    let mut found: BTreeMap<u64, (String, String)> = BTreeMap::new();
     for entry in subtree.iter() {
         let entry = entry.map_err(|e| GitError::Object(e.to_string()))?;
         if !entry.mode().is_blob() {
             continue;
         }
-        if let Some(id) = entry.filename().to_string().strip_suffix(".md") {
-            out.push((id.to_owned(), entry.oid().to_string()));
+        let name = entry.filename().to_string();
+        let Some(number) = name.strip_suffix(".md").and_then(op_task::file_id) else {
+            continue;
+        };
+        let blob = (name, entry.oid().to_string());
+        match found.entry(number) {
+            Entry::Vacant(slot) => {
+                slot.insert(blob);
+            }
+            Entry::Occupied(mut slot) if blob.0 < slot.get().0 => {
+                slot.insert(blob);
+            }
+            Entry::Occupied(_) => {}
         }
     }
-    Ok(out)
+    Ok(found
+        .into_iter()
+        .map(|(number, (_, oid))| (number.to_string(), oid))
+        .collect())
 }
 
 fn worktree_of(repo: &gix::Repository) -> Option<Worktree> {

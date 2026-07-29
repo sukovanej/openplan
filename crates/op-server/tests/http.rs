@@ -139,7 +139,7 @@ async fn tasks_crud_roundtrip() {
     .await;
     assert_eq!(created.status(), StatusCode::CREATED);
     let id = body_json(created).await["id"].as_str().unwrap().to_owned();
-    assert!(id.starts_with("wire-the-parser-"), "slug id: {id}");
+    assert_eq!(id, "1", "the id is the allocated number alone");
 
     let list = send(&state, "GET", "/api/tasks", None).await;
     assert_eq!(list.status(), StatusCode::OK);
@@ -172,6 +172,25 @@ async fn tasks_crud_roundtrip() {
     assert_eq!(gone.status(), StatusCode::NOT_FOUND);
 }
 
+// A path segment no id could ever name is a bad request, not a missing task — and it must read the
+// same whichever method asks, though only the write routes reach the store.
+#[tokio::test]
+async fn routes_naming_something_that_is_not_an_id_are_400() {
+    let (_dir, state) = store_state();
+    for (method, body) in [
+        ("GET", None),
+        ("PATCH", Some(json!({ "status": "done" }))),
+        ("DELETE", None),
+    ] {
+        let response = send(&state, method, "/api/tasks/ship-login-3d0c", body).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "{method} on a non-id must be a bad request"
+        );
+    }
+}
+
 #[tokio::test]
 async fn missing_task_routes_are_404() {
     let (_dir, state) = store_state();
@@ -180,7 +199,7 @@ async fn missing_task_routes_are_404() {
         ("PATCH", Some(json!({ "status": "done" }))),
         ("DELETE", None),
     ] {
-        let response = send(&state, method, "/api/tasks/ghost", body).await;
+        let response = send(&state, method, "/api/tasks/99", body).await;
         assert_eq!(
             response.status(),
             StatusCode::NOT_FOUND,
@@ -193,13 +212,13 @@ async fn missing_task_routes_are_404() {
 async fn patch_parent_null_clears_absent_leaves_id_sets() {
     let (dir, state) = store_state();
     std::fs::write(
-        dir.path().join(".plan/tasks/epic.md"),
+        dir.path().join(".plan/tasks/00001-epic.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
     )
     .unwrap();
     std::fs::write(
-        dir.path().join(".plan/tasks/child.md"),
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: epic\n---\n# Child\n",
+        dir.path().join(".plan/tasks/00002-child.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: '1'\n---\n# Child\n",
     )
     .unwrap();
 
@@ -207,36 +226,36 @@ async fn patch_parent_null_clears_absent_leaves_id_sets() {
     let untouched = send(
         &state,
         "PATCH",
-        "/api/tasks/child",
+        "/api/tasks/2",
         Some(json!({ "status": "in_progress" })),
     )
     .await;
     assert_eq!(untouched.status(), StatusCode::OK);
-    assert_eq!(body_json(untouched).await["metadata"]["parent"], "epic");
+    assert_eq!(body_json(untouched).await["metadata"]["parent"], "1");
 
     // Explicit null: parent cleared to top level, and the key drops from the file.
     let cleared = send(
         &state,
         "PATCH",
-        "/api/tasks/child",
+        "/api/tasks/2",
         Some(json!({ "parent": null })),
     )
     .await;
     assert_eq!(cleared.status(), StatusCode::OK);
     assert!(body_json(cleared).await.get("parent").is_none());
-    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/child.md")).unwrap();
+    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/00002-child.md")).unwrap();
     assert!(!raw.contains("parent"), "cleared key must drop: {raw}");
 
     // Explicit id: parent set again.
     let set = send(
         &state,
         "PATCH",
-        "/api/tasks/child",
-        Some(json!({ "parent": "epic" })),
+        "/api/tasks/2",
+        Some(json!({ "parent": "1" })),
     )
     .await;
     assert_eq!(set.status(), StatusCode::OK);
-    assert_eq!(body_json(set).await["metadata"]["parent"], "epic");
+    assert_eq!(body_json(set).await["metadata"]["parent"], "1");
 }
 
 #[tokio::test]
@@ -244,18 +263,18 @@ async fn board_groups_by_status_and_nests_same_status_children() {
     let (dir, state) = store_state();
     let tasks = dir.path().join(".plan/tasks");
     std::fs::write(
-        tasks.join("epic.md"),
+        tasks.join("00001-epic.md"),
         "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
     )
     .unwrap();
     std::fs::write(
-        tasks.join("sub-open.md"),
-        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: epic\nrank: m\n---\n# Sub open\n",
+        tasks.join("00002-sub-open.md"),
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: '1'\nrank: m\n---\n# Sub open\n",
     )
     .unwrap();
     std::fs::write(
-        tasks.join("sub-todo.md"),
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: epic\n---\n# Sub todo\n",
+        tasks.join("00003-sub-todo.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: '1'\n---\n# Sub todo\n",
     )
     .unwrap();
 
@@ -270,14 +289,14 @@ async fn board_groups_by_status_and_nests_same_status_children() {
     // Same-status child nests under the epic (depth 1); the todo child surfaces in its own group as
     // a root carrying the parent hint.
     let in_progress = &groups[0]["rows"];
-    assert_eq!(in_progress[0]["task"]["id"], "epic");
+    assert_eq!(in_progress[0]["task"]["id"], "1");
     assert_eq!(in_progress[0]["depth"], 0);
     assert_eq!(in_progress[0]["has_children"], true);
-    assert_eq!(in_progress[1]["task"]["id"], "sub-open");
+    assert_eq!(in_progress[1]["task"]["id"], "2");
     assert_eq!(in_progress[1]["depth"], 1);
 
     let todo = &groups[1]["rows"];
-    assert_eq!(todo[0]["task"]["id"], "sub-todo");
+    assert_eq!(todo[0]["task"]["id"], "3");
     assert_eq!(todo[0]["depth"], 0);
     assert_eq!(todo[0]["parent_title"], "Epic");
 }
@@ -287,27 +306,27 @@ async fn task_detail_carries_parent_title_children_and_resolved_refs() {
     let (dir, state) = store_state();
     let tasks = dir.path().join(".plan/tasks");
     std::fs::write(
-        tasks.join("epic.md"),
+        tasks.join("00001-epic.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
     )
     .unwrap();
     std::fs::write(
-        tasks.join("child.md"),
-        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: epic\nrank: m\n---\n# Child\n\nblocks [[epic]], not [[ghost-0000]] or `[[epic]]`.\n",
+        tasks.join("00002-child.md"),
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: '1'\nrank: m\n---\n# Child\n\nblocks [[1]], not [[99]] or `[[1]]`.\n",
     )
     .unwrap();
     std::fs::write(
-        tasks.join("b.md"),
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: child\nrank: t\n---\n# B\n",
+        tasks.join("00004-b.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: '2'\nrank: t\n---\n# B\n",
     )
     .unwrap();
     std::fs::write(
-        tasks.join("a.md"),
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: child\nrank: m\n---\n# A\n",
+        tasks.join("00003-a.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: '2'\nrank: m\n---\n# A\n",
     )
     .unwrap();
 
-    let detail = body_json(send(&state, "GET", "/api/tasks/child", None).await).await;
+    let detail = body_json(send(&state, "GET", "/api/tasks/2", None).await).await;
     assert_eq!(detail["parent_title"], "Epic");
 
     // Direct children arrive in rank order (a before b), each with title + status.
@@ -317,27 +336,27 @@ async fn task_detail_carries_parent_title_children_and_resolved_refs() {
             .iter()
             .map(|c| c["id"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        vec!["a", "b"]
+        vec!["3", "4"]
     );
     assert_eq!(children[0]["title"], "A");
 
     // Only resolvable `[[id]]`s become refs, deduped; a dangling id is dropped.
     let refs = detail["refs"].as_array().unwrap();
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0]["id"], "epic");
+    assert_eq!(refs[0]["id"], "1");
     assert_eq!(refs[0]["title"], "Epic");
 
     // A top-level task reports no parent and no children.
-    let epic = body_json(send(&state, "GET", "/api/tasks/epic", None).await).await;
+    let epic = body_json(send(&state, "GET", "/api/tasks/1", None).await).await;
     assert!(epic.get("parent_title").is_none());
-    assert_eq!(epic["children"][0]["id"], "child");
+    assert_eq!(epic["children"][0]["id"], "2");
 }
 
 #[tokio::test]
 async fn patch_preserves_unknown_frontmatter_keys() {
     let (dir, state) = store_state();
     std::fs::write(
-        dir.path().join(".plan/tasks/keep.md"),
+        dir.path().join(".plan/tasks/00001-keep.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nestimate: 9\n---\n# Keep\n",
     )
     .unwrap();
@@ -345,13 +364,13 @@ async fn patch_preserves_unknown_frontmatter_keys() {
     let response = send(
         &state,
         "PATCH",
-        "/api/tasks/keep",
+        "/api/tasks/1",
         Some(json!({ "status": "done" })),
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
 
-    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/keep.md")).unwrap();
+    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/00001-keep.md")).unwrap();
     assert!(
         raw.contains("estimate: 9"),
         "estimate must survive PATCH: {raw}"
@@ -616,7 +635,7 @@ async fn list_tasks_is_branch_aware() {
     // One row per logical task, even though `alpha` lives on two branches.
     assert_eq!(items.len(), 1, "one entry per logical task: {items:?}");
     let alpha = &items[0];
-    assert_eq!(alpha["id"], "alpha");
+    assert_eq!(alpha["id"], "1");
     // Headline follows the most recently changed branch: `feature` edited alpha after main's init.
     assert_eq!(alpha["metadata"]["status"], "done");
     assert_eq!(alpha["title"], "Alpha done");
@@ -639,30 +658,30 @@ async fn list_tasks_is_branch_aware() {
 #[tokio::test]
 async fn cross_branch_task_read_reflects_the_other_branch() {
     let (_dir, state) = git_state();
-    let response = send(&state, "GET", "/api/tasks/alpha?branch=feature", None).await;
+    let response = send(&state, "GET", "/api/tasks/1?branch=feature", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
     assert_eq!(view["metadata"]["status"], "done");
     assert_eq!(view["title"], "Alpha done");
 
     // Omitting the branch headlines the most recently changed version, which here is feature's.
-    let local = send(&state, "GET", "/api/tasks/alpha", None).await;
+    let local = send(&state, "GET", "/api/tasks/1", None).await;
     assert_eq!(body_json(local).await["metadata"]["status"], "done");
 }
 
 #[tokio::test]
 async fn cross_branch_read_missing_id_or_branch_is_404() {
     let (_dir, state) = git_state();
-    let missing_branch = send(&state, "GET", "/api/tasks/alpha?branch=ghost", None).await;
+    let missing_branch = send(&state, "GET", "/api/tasks/1?branch=ghost", None).await;
     assert_eq!(missing_branch.status(), StatusCode::NOT_FOUND);
-    let missing_id = send(&state, "GET", "/api/tasks/ghost?branch=feature", None).await;
+    let missing_id = send(&state, "GET", "/api/tasks/99?branch=feature", None).await;
     assert_eq!(missing_id.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
 async fn branchless_get_carries_the_branch_set() {
     let (_dir, state) = git_state();
-    let response = send(&state, "GET", "/api/tasks/alpha", None).await;
+    let response = send(&state, "GET", "/api/tasks/1", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
     // Headline is the most recently changed version (feature), flattened alongside the branch set.
@@ -689,13 +708,13 @@ async fn write_to_a_branch_without_a_live_worktree_is_refused() {
     let patch = send(
         &state,
         "PATCH",
-        "/api/tasks/alpha?branch=feature",
+        "/api/tasks/1?branch=feature",
         Some(json!({ "status": "done" })),
     )
     .await;
     assert_eq!(patch.status(), StatusCode::CONFLICT);
 
-    let delete = send(&state, "DELETE", "/api/tasks/alpha?branch=feature", None).await;
+    let delete = send(&state, "DELETE", "/api/tasks/1?branch=feature", None).await;
     assert_eq!(delete.status(), StatusCode::CONFLICT);
 }
 
@@ -704,7 +723,7 @@ async fn delete_is_local_to_the_in_view_branch() {
     let (_dir, state) = git_state();
     // Delete on the current (main) worktree removes only main's copy; `feature` still carries it,
     // so the task survives in the list.
-    let deleted = send(&state, "DELETE", "/api/tasks/alpha", None).await;
+    let deleted = send(&state, "DELETE", "/api/tasks/1", None).await;
     assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
 
     let list = send(&state, "GET", "/api/tasks", None).await;
@@ -713,7 +732,7 @@ async fn delete_is_local_to_the_in_view_branch() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|item| item["id"] == "alpha")
+        .find(|item| item["id"] == "1")
         .expect("alpha survives on feature");
     let names: Vec<&str> = alpha["branches"]
         .as_array()
@@ -734,7 +753,7 @@ fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
     git(root, &["config", "user.name", "Test"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     std::fs::write(
-        root.join(".plan/tasks/alpha.md"),
+        root.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();
@@ -754,7 +773,7 @@ fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
         ],
     );
     std::fs::write(
-        wt.join(".plan/tasks/alpha.md"),
+        wt.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();
@@ -778,13 +797,14 @@ async fn create_lands_in_the_requested_branch_s_own_worktree() {
     assert_eq!(created.status(), StatusCode::CREATED);
     let id = body_json(created).await["id"].as_str().unwrap().to_owned();
 
-    let path = format!(".plan/tasks/{id}.md");
     assert!(
-        dir.path().join(".worktrees/feature").join(&path).is_file(),
+        op_store::Store::open(dir.path().join(".worktrees/feature"))
+            .unwrap()
+            .exists(&id),
         "the new task belongs to feature's worktree"
     );
     assert!(
-        !dir.path().join(&path).exists(),
+        !op_store::Store::open(dir.path()).unwrap().exists(&id),
         "creation is branch-local: main's worktree is untouched"
     );
 }
@@ -820,7 +840,7 @@ async fn create_numbers_ids_above_every_local_branch() {
     git(root, &["config", "user.name", "Test"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     std::fs::write(
-        root.join(".plan/tasks/alpha-2.md"),
+        root.join(".plan/tasks/00002-alpha-2.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();
@@ -830,7 +850,7 @@ async fn create_numbers_ids_above_every_local_branch() {
     // only looked at the working tree would hand out 3 and collide with it on the next merge.
     git(root, &["checkout", "-q", "-b", "feature"]);
     std::fs::write(
-        root.join(".plan/tasks/beta-9.md"),
+        root.join(".plan/tasks/00009-beta-9.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Beta\n",
     )
     .unwrap();
@@ -842,7 +862,7 @@ async fn create_numbers_ids_above_every_local_branch() {
     let repo = op_git::Repo::discover(root).unwrap();
     let state = AppState::new(repo, store);
 
-    for expected in ["ship-login-10", "ship-login-11"] {
+    for expected in ["10", "11"] {
         let created = send(
             &state,
             "POST",
@@ -864,7 +884,7 @@ async fn create_never_reuses_a_number_a_branch_still_holds() {
     git(root, &["config", "user.name", "Test"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     std::fs::write(
-        root.join(".plan/tasks/alpha-5.md"),
+        root.join(".plan/tasks/00005-alpha-5.md"),
         "---\nstatus: todo\n---\n# Alpha\n",
     )
     .unwrap();
@@ -873,7 +893,7 @@ async fn create_never_reuses_a_number_a_branch_still_holds() {
     // `feature` keeps alpha-5 exactly as the merge base has it, so it never shows up as divergence;
     // main then drops the task. The number is still in use — on a branch the matrix has no cell for.
     git(root, &["branch", "feature"]);
-    std::fs::remove_file(root.join(".plan/tasks/alpha-5.md")).unwrap();
+    std::fs::remove_file(root.join(".plan/tasks/00005-alpha-5.md")).unwrap();
     git(root, &["commit", "-qam", "drop alpha"]);
 
     let store = op_store::Store::open(root).unwrap();
@@ -890,7 +910,7 @@ async fn create_never_reuses_a_number_a_branch_still_holds() {
     assert_eq!(created.status(), StatusCode::CREATED);
     assert_eq!(
         body_json(created).await["id"],
-        "beta-6",
+        "6",
         "reissuing 5 would put two unrelated tasks under one id once feature merges"
     );
 }
@@ -937,7 +957,7 @@ async fn create_takes_the_next_number_when_one_is_already_on_disk() {
     // A file written outside the daemon can hold the number the floor just cleared; the create takes
     // the next one instead of failing.
     std::fs::write(
-        dir.path().join(".plan/tasks/contended-1.md"),
+        dir.path().join(".plan/tasks/00001-contended-1.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Contended\n",
     )
     .unwrap();
@@ -950,7 +970,7 @@ async fn create_takes_the_next_number_when_one_is_already_on_disk() {
     )
     .await;
     assert_eq!(created.status(), StatusCode::CREATED);
-    assert_eq!(body_json(created).await["id"], "contended-2");
+    assert_eq!(body_json(created).await["id"], "2");
 }
 
 #[tokio::test]
@@ -962,13 +982,13 @@ async fn patch_reverting_a_branch_to_its_base_echoes_the_written_task() {
     let patch = send(
         &state,
         "PATCH",
-        "/api/tasks/alpha?branch=feature",
+        "/api/tasks/1?branch=feature",
         Some(json!({ "status": "todo" })),
     )
     .await;
     assert_eq!(patch.status(), StatusCode::OK);
     let view = body_json(patch).await;
-    assert_eq!(view["id"], "alpha");
+    assert_eq!(view["id"], "1");
     assert_eq!(view["metadata"]["status"], "todo");
     assert_eq!(view["title"], "Alpha");
 }
@@ -982,19 +1002,19 @@ async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
     git(root, &["config", "user.name", "Test"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     std::fs::write(
-        root.join(".plan/tasks/alpha.md"),
+        root.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-qm", "init"]);
     git(root, &["checkout", "-q", "-b", "feature"]);
-    std::fs::remove_file(root.join(".plan/tasks/alpha.md")).unwrap();
+    std::fs::remove_file(root.join(".plan/tasks/00001-alpha.md")).unwrap();
     git(root, &["commit", "-qam", "feature: drop alpha"]);
     git(root, &["checkout", "-q", "main"]);
     // main's working tree also drops it (uncommitted), so no live branch carries alpha — its only
     // matrix cell is feature's committed deletion.
-    std::fs::remove_file(root.join(".plan/tasks/alpha.md")).unwrap();
+    std::fs::remove_file(root.join(".plan/tasks/00001-alpha.md")).unwrap();
 
     let store = op_store::Store::open(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
@@ -1003,13 +1023,13 @@ async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
     let list = send(&state, "GET", "/api/tasks", None).await;
     let items = body_json(list).await;
     assert!(
-        items.as_array().unwrap().iter().any(|i| i["id"] == "alpha"),
+        items.as_array().unwrap().iter().any(|i| i["id"] == "1"),
         "the pending deletion still lists: {items}"
     );
 
     // A task the list still shows must open, not 404: the branchless headline falls back to the
     // deletion's last-known blob.
-    let response = send(&state, "GET", "/api/tasks/alpha", None).await;
+    let response = send(&state, "GET", "/api/tasks/1", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
     assert_eq!(view["title"], "Alpha");
@@ -1017,7 +1037,7 @@ async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
 
 fn write_alpha(root: &std::path::Path, status: &str, title: &str) {
     std::fs::write(
-        root.join(".plan/tasks/alpha.md"),
+        root.join(".plan/tasks/00001-alpha.md"),
         format!("---\nstatus: {status}\ncreated: 2026-01-01T00:00:00Z\n---\n# {title}\n"),
     )
     .unwrap();
@@ -1070,7 +1090,7 @@ async fn headline_follows_the_most_recent_change_even_on_the_default_branch() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|i| i["id"] == "alpha")
+        .find(|i| i["id"] == "1")
         .unwrap()
         .clone();
     assert_eq!(
@@ -1079,7 +1099,7 @@ async fn headline_follows_the_most_recent_change_even_on_the_default_branch() {
     );
     assert_eq!(alpha["title"], "Alpha done");
 
-    let detail = send(&state, "GET", "/api/tasks/alpha", None).await;
+    let detail = send(&state, "GET", "/api/tasks/1", None).await;
     assert_eq!(body_json(detail).await["metadata"]["status"], "done");
 }
 
@@ -1114,7 +1134,7 @@ async fn swagger_ui_page_is_served() {
 async fn patch_rejects_a_malformed_rank_with_its_reason() {
     let (dir, state) = store_state();
     std::fs::write(
-        dir.path().join(".plan/tasks/solo.md"),
+        dir.path().join(".plan/tasks/00001-solo.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Solo\n",
     )
     .unwrap();
@@ -1122,7 +1142,7 @@ async fn patch_rejects_a_malformed_rank_with_its_reason() {
     let refused = send(
         &state,
         "PATCH",
-        "/api/tasks/solo",
+        "/api/tasks/1",
         Some(json!({ "rank": "NOT-BASE36" })),
     )
     .await;
@@ -1132,13 +1152,13 @@ async fn patch_rejects_a_malformed_rank_with_its_reason() {
         .unwrap()
         .to_owned();
     assert!(message.contains("rank"), "message: {message}");
-    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/solo.md")).unwrap();
+    let raw = std::fs::read_to_string(dir.path().join(".plan/tasks/00001-solo.md")).unwrap();
     assert!(!raw.contains("rank"), "a refused rank must not land: {raw}");
 
     let accepted = send(
         &state,
         "PATCH",
-        "/api/tasks/solo",
+        "/api/tasks/1",
         Some(json!({ "rank": "a5" })),
     )
     .await;
@@ -1152,21 +1172,21 @@ async fn patching_a_parent_that_would_cycle_is_refused_with_its_reason() {
     // the write lands, so this rejection is reachable through the UI and must carry a usable reason.
     let (dir, state) = store_state();
     std::fs::write(
-        dir.path().join(".plan/tasks/epic.md"),
+        dir.path().join(".plan/tasks/00001-epic.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
     )
     .unwrap();
     std::fs::write(
-        dir.path().join(".plan/tasks/child.md"),
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: epic\n---\n# Child\n",
+        dir.path().join(".plan/tasks/00002-child.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: '1'\n---\n# Child\n",
     )
     .unwrap();
 
     let refused = send(
         &state,
         "PATCH",
-        "/api/tasks/epic",
-        Some(json!({ "parent": "child" })),
+        "/api/tasks/1",
+        Some(json!({ "parent": "2" })),
     )
     .await;
     assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
@@ -1278,21 +1298,21 @@ async fn a_restart_never_reissues_a_number_only_a_file_holds() {
     )
     .await;
     assert_eq!(created.status(), StatusCode::CREATED);
-    assert_eq!(body_json(created).await["id"], "gamma-3");
+    assert_eq!(body_json(created).await["id"], "3");
 }
 
 #[tokio::test]
 async fn create_refuses_once_the_highest_number_is_taken() {
     let (dir, state) = store_state();
-    let taken = format!(".plan/tasks/alpha-{}.md", u64::MAX);
+    let taken = format!(".plan/tasks/{}-alpha.md", u64::MAX);
     std::fs::write(
         dir.path().join(taken),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();
 
-    // Reissuing the top number would put two unrelated tasks under one, since only the slug would
-    // tell them apart. Refusing is the only answer that keeps a number naming one task.
+    // Reissuing the top number would put two unrelated tasks under one. Refusing is the only answer
+    // that keeps a number naming one task.
     let created = send(
         &state,
         "POST",
@@ -1318,7 +1338,7 @@ async fn a_write_names_the_vanished_root_rather_than_the_branch() {
     git(root, &["config", "user.name", "Test"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     std::fs::write(
-        root.join(".plan/tasks/alpha-1.md"),
+        root.join(".plan/tasks/00001-alpha-1.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     )
     .unwrap();

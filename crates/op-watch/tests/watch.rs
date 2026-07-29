@@ -19,11 +19,13 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
+// Named the way the store names files (§3.1): the id is the number the name starts with.
 fn write_task(dir: &Path, id: &str, body: &str) {
     let tasks = dir.join(".plan").join("tasks");
     std::fs::create_dir_all(&tasks).unwrap();
+    let number: u64 = id.parse().unwrap();
     std::fs::write(
-        tasks.join(format!("{id}.md")),
+        tasks.join(format!("{number:05}-task-{number}.md")),
         format!("---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n\n# {body}\n"),
     )
     .unwrap();
@@ -70,7 +72,7 @@ fn working_edit_emits_task_changed_for_its_branch() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path();
     init_repo(path);
-    write_task(path, "alpha", "Alpha");
+    write_task(path, "1", "Alpha");
     git(path, &["add", "."]);
     git(path, &["commit", "-qm", "init"]);
 
@@ -78,10 +80,10 @@ fn working_edit_emits_task_changed_for_its_branch() {
     let (tx, rx) = mpsc::channel();
     let watcher = Watcher::start(repo, tx).unwrap();
 
-    write_task(path, "alpha", "Alpha edited");
+    write_task(path, "1", "Alpha edited");
 
     assert!(
-        saw_change(&rx, "alpha", "main"),
+        saw_change(&rx, "1", "main"),
         "editing a task file should push TaskChanged for the checked-out branch"
     );
     watcher.stop();
@@ -92,7 +94,7 @@ fn unrelated_git_activity_emits_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path();
     init_repo(path);
-    write_task(path, "alpha", "Alpha");
+    write_task(path, "1", "Alpha");
     std::fs::write(path.join("code.txt"), "one").unwrap();
     git(path, &["add", "."]);
     git(path, &["commit", "-qm", "init"]);
@@ -121,8 +123,8 @@ fn commit_on_a_worktree_branch_emits_only_the_changed_task() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path();
     init_repo(path);
-    write_task(path, "alpha", "Alpha");
-    write_task(path, "beta", "Beta");
+    write_task(path, "1", "Alpha");
+    write_task(path, "2", "Beta");
     git(path, &["add", "."]);
     git(path, &["commit", "-qm", "init"]);
 
@@ -144,17 +146,17 @@ fn commit_on_a_worktree_branch_emits_only_the_changed_task() {
     let (tx, rx) = mpsc::channel();
     let watcher = Watcher::start(repo, tx).unwrap();
 
-    write_task(&feat, "alpha", "Alpha on feat");
+    write_task(&feat, "1", "Alpha on feat");
     git(&feat, &["add", "."]);
     git(&feat, &["commit", "-qm", "edit alpha"]);
 
     assert!(
-        saw_change(&rx, "alpha", "feat"),
+        saw_change(&rx, "1", "feat"),
         "a commit on feat should push TaskChanged for alpha on feat"
     );
     let changes = collect(&rx, QUIET);
     assert!(
-        !changes.iter().any(|(id, _)| id == "beta"),
+        !changes.iter().any(|(id, _)| id == "2"),
         "beta was untouched and must not be reported: {changes:?}"
     );
     watcher.stop();
@@ -165,7 +167,7 @@ fn adding_a_worktree_starts_watching_its_plan() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path();
     init_repo(path);
-    write_task(path, "alpha", "Alpha");
+    write_task(path, "1", "Alpha");
     git(path, &["add", "."]);
     git(path, &["commit", "-qm", "init"]);
 
@@ -189,10 +191,10 @@ fn adding_a_worktree_starts_watching_its_plan() {
     // Drain the events the worktree creation itself produces before testing the live edit.
     let _ = collect(&rx, QUIET);
 
-    write_task(&feat, "alpha", "Alpha on the new worktree");
+    write_task(&feat, "1", "Alpha on the new worktree");
 
     assert!(
-        saw_change(&rx, "alpha", "feat"),
+        saw_change(&rx, "1", "feat"),
         "an edit in a worktree added after start should be watched and reported"
     );
     watcher.stop();
@@ -203,7 +205,7 @@ fn switching_branches_reattributes_the_dirty_task() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path();
     init_repo(path);
-    write_task(path, "alpha", "Alpha");
+    write_task(path, "1", "Alpha");
     git(path, &["add", "."]);
     git(path, &["commit", "-qm", "init"]);
     // `src` and `other` sit on the same commit, so their .plan trees are identical and the switch
@@ -223,17 +225,14 @@ fn switching_branches_reattributes_the_dirty_task() {
     let watcher = Watcher::start(repo, tx).unwrap();
 
     // Uncommitted edit on `src` in this worktree, then carry it onto `other`.
-    write_task(&work, "alpha", "Alpha uncommitted");
-    assert!(
-        saw_change(&rx, "alpha", "src"),
-        "the dirty edit lands on src"
-    );
+    write_task(&work, "1", "Alpha uncommitted");
+    assert!(saw_change(&rx, "1", "src"), "the dirty edit lands on src");
     let _ = collect(&rx, QUIET);
 
     git(&work, &["switch", "-q", "other"]);
 
     assert!(
-        saw_change(&rx, "alpha", "other"),
+        saw_change(&rx, "1", "other"),
         "after switching, the dirty overlay must move to `other`"
     );
     watcher.stop();

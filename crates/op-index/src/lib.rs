@@ -3,7 +3,7 @@ use std::path::Path;
 
 use op_api::{
     BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Metadata, TaskBranches, TaskChild,
-    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, list_item_cmp,
+    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, id_cmp, list_item_cmp,
     updated_field,
 };
 use op_git::{ChangeTime, Repo, Worktree};
@@ -27,7 +27,7 @@ pub struct Index {
     // branch -> a walk result reusable across the per-request rebuilds, instead of re-walking
     // history every time.
     change_cache: HashMap<String, ChangeTimes>,
-    max_id_number: Option<u64>,
+    max_id: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +51,7 @@ struct DiffCtx<'a> {
     committed: &'a HashMap<String, String>,
     base: &'a HashMap<String, HashSet<String>>,
     default_blobs: &'a HashMap<String, String>,
-    live: Option<&'a Store>,
+    live: Option<&'a BTreeMap<String, String>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -107,20 +107,15 @@ impl Index {
         // Every worktree's files, not just those of the branches walked below: a task can hold a
         // number while no branch commits it — an unborn HEAD has no branch at all, and a worktree
         // mid-merge is excluded from `live`. The number is taken the moment the file exists.
-        let mut max_id_number = on_disk_id_floor(&worktrees, store);
+        let mut max_id = on_disk_id_floor(&worktrees, store);
         for branch in &branches {
             let committed: HashMap<String, String> =
                 repo.branch_task_blobs(branch)?.into_iter().collect();
-            let live = self.live.get(branch).cloned();
+            let live = self.live.get(branch).map(Store::read_all_raw).transpose()?;
             let present = present_ids(&committed, live.as_ref())?;
             // Every id the branch holds, not just the cells it contributes: a task identical to its
             // merge base is skipped below, and its number would otherwise read as free.
-            max_id_number = max_id_number.max(
-                present
-                    .iter()
-                    .filter_map(|id| op_store::id_number(id))
-                    .max(),
-            );
+            max_id = max_id.max(present.iter().filter_map(|id| op_task::parse_id(id)).max());
             if self.is_baseline(branch) {
                 self.baseline_cells(
                     repo,
@@ -142,8 +137,8 @@ impl Index {
                 self.diff_cells(repo, &ctx, &mut cells)?;
             }
         }
-        self.max_id_number = max_id_number;
-        cells.sort_by(|a, b| (&a.task.id, &a.branch).cmp(&(&b.task.id, &b.branch)));
+        self.max_id = max_id;
+        cells.sort_by(|a, b| id_cmp(&a.task.id, &b.task.id).then_with(|| a.branch.cmp(&b.branch)));
         self.change_times = self.compute_change_times(repo, &cells)?;
         self.matrix = Matrix { cells };
         Ok(())
@@ -250,7 +245,7 @@ impl Index {
         branch: &str,
         present: &BTreeSet<String>,
         committed: &HashMap<String, String>,
-        live: Option<&Store>,
+        live: Option<&BTreeMap<String, String>>,
         cells: &mut Vec<MatrixCell>,
     ) -> Result<(), IndexError> {
         for id in present {
@@ -328,19 +323,18 @@ impl Index {
         id: &str,
         committed_oid: Option<&String>,
         kind: ChangeKind,
-        live: Option<&Store>,
+        live: Option<&BTreeMap<String, String>>,
     ) -> Result<Option<MatrixCell>, IndexError> {
         if let Some(worktree) = live {
-            return match worktree.read_raw(id) {
-                Ok(text) => {
-                    let bytes = text.into_bytes();
-                    let working_oid = repo.hash_blob(&bytes)?;
+            return match worktree.get(id) {
+                Some(text) => {
+                    let bytes = text.as_bytes();
+                    let working_oid = repo.hash_blob(bytes)?;
                     let dirty = committed_oid != Some(&working_oid);
-                    let version = self.cache_bytes(&working_oid, &bytes);
+                    let version = self.cache_bytes(&working_oid, bytes);
                     Ok(Some(cell(branch, id, &working_oid, kind, dirty, &version)))
                 }
-                Err(StoreError::NotFound { .. }) => Ok(None),
-                Err(err) => Err(err.into()),
+                None => Ok(None),
             };
         }
         match committed_oid {
@@ -381,16 +375,16 @@ impl Index {
     // One row per logical task across all branches, headlined by the branch that changed it most
     // recently (see `select_headline`).
     pub fn aggregated_tasks(&self) -> Vec<TaskListItem> {
-        let mut groups: BTreeMap<&str, Vec<&MatrixCell>> = BTreeMap::new();
-        for cell in &self.matrix.cells {
-            groups.entry(cell.task.id.as_str()).or_default().push(cell);
-        }
-        groups
-            .into_iter()
-            .map(|(id, cells)| {
+        // The cells are ordered by id already, so grouping the runs keeps that order — collecting
+        // into a map keyed by the id would re-sort it as text, filing 10 between 1 and 2.
+        self.matrix
+            .cells
+            .chunk_by(|a, b| a.task.id == b.task.id)
+            .map(|group| {
+                let cells: Vec<&MatrixCell> = group.iter().collect();
                 let headline = self.select_headline(&cells);
                 TaskListItem {
-                    id: id.to_owned(),
+                    id: headline.task.id.clone(),
                     title: headline.task.title.clone(),
                     metadata: headline.task.metadata.clone(),
                     updated: updated_field(self.created_of(headline), self.cell_updated(headline)),
@@ -408,8 +402,8 @@ impl Index {
     // The highest id number any local branch or worktree holds — the floor an allocator must clear
     // for a number to be unissued repo-wide. Read from the branches and the files themselves rather
     // than from the matrix, whose cells only cover divergence.
-    pub fn max_id_number(&self) -> Option<u64> {
-        self.max_id_number
+    pub fn max_id(&self) -> Option<u64> {
+        self.max_id
     }
 
     // The already-opened store of the worktree that has `branch` checked out and is writable — not
@@ -730,13 +724,17 @@ fn branch_states(cells: &[&MatrixCell]) -> Vec<BranchState> {
 
 fn present_ids(
     committed: &HashMap<String, String>,
-    live: Option<&Store>,
+    live: Option<&BTreeMap<String, String>>,
 ) -> Result<BTreeSet<String>, IndexError> {
-    let mut ids: BTreeSet<String> = committed.keys().cloned().collect();
+    // The tree lists whatever `.plan/tasks/*.md` a commit holds; only files a task id names are
+    // tasks, so the matrix and the store agree on what exists.
+    let mut ids: BTreeSet<String> = committed
+        .keys()
+        .filter(|id| op_task::parse_id(id).is_some())
+        .cloned()
+        .collect();
     if let Some(worktree) = live {
-        for id in worktree.task_ids()? {
-            ids.insert(id);
-        }
+        ids.extend(worktree.keys().cloned());
     }
     Ok(ids)
 }
@@ -753,7 +751,7 @@ fn on_disk_id_floor(worktrees: &[Worktree], store: &Store) -> Option<u64> {
         })
         .filter_map(|worktree| worktree.task_ids().ok())
         .flatten()
-        .filter_map(|id| op_store::id_number(&id))
+        .filter_map(|id| op_task::parse_id(&id))
         .max()
 }
 
@@ -834,12 +832,12 @@ fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
         if inner.contains(['[', ']', '\n']) {
             continue;
         }
-        let id = inner.split('#').next().unwrap_or(inner).trim();
-        if id.is_empty() {
+        let Some(number) = op_task::ref_id(inner.trim()) else {
             continue;
-        }
-        if let Some(item) = by_id.get(id) {
-            if seen.insert(id.to_owned()) {
+        };
+        let id = number.to_string();
+        if let Some(item) = by_id.get(id.as_str()) {
+            if seen.insert(id.clone()) {
                 refs.push(TaskRef {
                     id: item.id.clone(),
                     title: item.title.clone(),

@@ -10,7 +10,7 @@ fn create(title: &str, body: Option<&str>) -> op_task::Task {
         title: title.to_owned(),
         status: None,
         parent: None,
-        deps: Vec::new(),
+        dependencies: Vec::new(),
         body: body.map(str::to_owned),
     }
     .into_task(stamp())

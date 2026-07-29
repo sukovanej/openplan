@@ -702,7 +702,7 @@ fn task_repo(seconds: i64) -> TempDir {
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
     // The id is the filename stem, so both repos can hold the same id on purpose.
     std::fs::write(
-        dir.path().join(".plan/tasks/shared-0001.md"),
+        dir.path().join(".plan/tasks/00001-shared.md"),
         "---\nstatus: todo\ncreated: 2001-01-01T00:00:00Z\n---\n# Shared\n",
     )
     .unwrap();
@@ -733,10 +733,7 @@ fn a_daemon_indexing_another_repository_is_not_asked() {
     read.env("OPLAN_HOME", daemon.home_path())
         .arg("--root")
         .arg(ours.path());
-    let out = read
-        .args(["get", "shared-0001", "--json"])
-        .output()
-        .unwrap();
+    let out = read.args(["get", "1", "--json"]).output().unwrap();
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -744,7 +741,7 @@ fn a_daemon_indexing_another_repository_is_not_asked() {
     );
     let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
 
-    // Both repositories hold `shared-0001`, dated differently. The running daemon indexes only
+    // Both repositories hold task `1`, dated differently. The running daemon indexes only
     // one of them, and answering from it would date this read by a file it never read.
     assert_eq!(view["updated"], "2017-07-14T02:40:00Z");
 }

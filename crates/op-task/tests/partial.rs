@@ -10,7 +10,7 @@ fn fields(input: &str) -> op_task::PartialFrontmatter {
 #[test]
 fn a_well_formed_task_parses_every_field() {
     let parsed = parse_partial(
-        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: epic\nrank: m\ndeps:\n  - a\n---\n# Title\n\nbody\n",
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: ./00012-ship-login.md\nrank: m\ndependencies:\n  - ./00007-write-the-parser.md\n---\n# Title\n\nbody\n",
     );
     assert_eq!(parsed.title.as_deref(), Some("Title"));
     assert_eq!(parsed.body, "# Title\n\nbody\n");
@@ -23,20 +23,20 @@ fn a_well_formed_task_parses_every_field() {
         fields.created,
         Ok("2026-01-01T00:00:00Z".parse::<Timestamp>().unwrap())
     );
-    assert_eq!(fields.parent, Ok(Some("epic".to_owned())));
+    assert_eq!(fields.parent, Ok(Some("12".to_owned())));
     assert_eq!(fields.rank, Ok(Some("m".to_owned())));
-    assert_eq!(fields.deps, Ok(vec!["a".to_owned()]));
+    assert_eq!(fields.dependencies, Ok(vec!["7".to_owned()]));
 }
 
 // The case the strict parser turns into a total failure: one absent field must not cost the reader
 // the status, parent, or title that are sitting right there.
 #[test]
 fn a_missing_field_costs_only_itself() {
-    let fields = fields("---\nstatus: in_progress\nparent: epic\n---\n# Legacy\n");
+    let fields = fields("---\nstatus: in_progress\nparent: 12\n---\n# Legacy\n");
     assert_eq!(fields.created, Err(FieldError::Missing));
     assert_eq!(fields.status, Ok(Status::InProgress));
-    assert_eq!(fields.parent, Ok(Some("epic".to_owned())));
-    assert_eq!(fields.deps, Ok(Vec::new()));
+    assert_eq!(fields.parent, Ok(Some("12".to_owned())));
+    assert_eq!(fields.dependencies, Ok(Vec::new()));
 }
 
 #[test]
@@ -50,10 +50,19 @@ fn an_invalid_field_reports_why_and_spares_the_others() {
 #[test]
 fn a_wrongly_typed_field_is_invalid_rather_than_ignored() {
     let fields = fields(
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: 7\ndeps: nope\n---\n# T\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: true\ndependencies: nope\n---\n# T\n",
     );
     assert!(matches!(fields.parent, Err(FieldError::Invalid(_))));
-    assert!(matches!(fields.deps, Err(FieldError::Invalid(_))));
+    assert!(matches!(fields.dependencies, Err(FieldError::Invalid(_))));
+}
+
+#[test]
+fn a_reference_that_names_no_task_reads_as_invalid() {
+    let fields = fields(
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ship-login-3d0c\ndependencies:\n  - ./notes.txt\n---\n# T\n",
+    );
+    assert!(matches!(fields.parent, Err(FieldError::Invalid(_))));
+    assert!(matches!(fields.dependencies, Err(FieldError::Invalid(_))));
 }
 
 #[test]

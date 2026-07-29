@@ -57,26 +57,26 @@ export type Field_Vec_String = ReadonlyArray<string> | FieldError
 export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError], { mode: "oneOf" })
 export type CreateTask = {
   readonly body?: string | null
-  readonly deps?: ReadonlyArray<string>
+  readonly dependencies?: ReadonlyArray<string>
   readonly parent?: string | null
   readonly status?: null | Status
   readonly title: string
 }
 export const CreateTask = Schema.Struct({
   body: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  deps: Schema.optionalKey(Schema.Array(Schema.String)),
+  dependencies: Schema.optionalKey(Schema.Array(Schema.String)),
   parent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   status: Schema.optionalKey(Schema.Union([Schema.Null, Status], { mode: "oneOf" })),
   title: Schema.String,
 })
 export type TaskPatch = {
-  readonly deps?: ReadonlyArray<string>
+  readonly dependencies?: ReadonlyArray<string>
   readonly parent?: string | null
   readonly rank?: string
   readonly status?: Status
 }
 export const TaskPatch = Schema.Struct({
-  deps: Schema.optionalKey(Schema.Array(Schema.String)),
+  dependencies: Schema.optionalKey(Schema.Array(Schema.String)),
   parent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   rank: Schema.optionalKey(Schema.String),
   status: Schema.optionalKey(Status),
@@ -111,14 +111,14 @@ export type TaskRef = { readonly id: string; readonly status: Field_Status; read
 export const TaskRef = Schema.Struct({ id: Schema.String, status: Field_Status, title: Schema.String })
 export type FrontmatterFields = {
   readonly created: Field_Rfc3339
-  readonly deps: Field_Vec_String
+  readonly dependencies: Field_Vec_String
   readonly parent: Field_Option_String
   readonly rank: Field_Option_String
   readonly status: Field_Status
 }
 export const FrontmatterFields = Schema.Struct({
   created: Field_Rfc3339,
-  deps: Field_Vec_String,
+  dependencies: Field_Vec_String,
   parent: Field_Option_String,
   rank: Field_Option_String,
   status: Field_Status,

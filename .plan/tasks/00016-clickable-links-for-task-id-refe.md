@@ -8,8 +8,8 @@ created: 2026-07-14T16:10:14Z
 Render `[[task-id]]` references in task-body markdown as clickable links to the
 referenced task's detail page. Today they show as literal `[[task-id]]` text.
 
-Example: in `aggregate-tasks-across-all-branc-2a9a`, the body reads
-"Depends on [[task-crud-6e8b]] (store + op-api DTOs) and [[daemon-lifecycle-45b1]]
+Example: in `9`, the body reads
+"Depends on [[./00003-task-crud-across-the-store-daemo.md]] (store + op-api DTOs) and [[./00002-run-the-server-as-a-managed-daem.md]]
 (serve root, AppState.index)" — both refs should become links to `/task/<id>`.
 
 ## Where

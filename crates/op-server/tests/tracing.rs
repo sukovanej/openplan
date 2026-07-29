@@ -58,7 +58,7 @@ fn state(broken: bool) -> (tempfile::TempDir, AppState) {
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
     if broken {
-        std::fs::create_dir_all(root.join(".plan/tasks/broken.md")).unwrap();
+        std::fs::create_dir_all(root.join(".plan/tasks/00001-broken.md")).unwrap();
     }
     let store = op_store::Store::open(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
