@@ -43,7 +43,7 @@ fn ids(id: &str) -> HashSet<String> {
 }
 
 #[test]
-fn a_change_is_dated_by_author_time_not_commit_time() {
+fn a_change_carries_both_clocks_of_the_commit_that_made_it() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     git(root, &["init", "-q", "-b", "main"]);
@@ -51,8 +51,9 @@ fn a_change_is_dated_by_author_time_not_commit_time() {
     git(root, &["config", "user.name", "Test"]);
     task(root, "a", "todo");
     git(root, &["add", "-A"]);
-    // A rebase or amend rewrites the commit date and leaves the author date alone, so only author
-    // time keeps an untouched task from reading as freshly edited.
+    // A rebase or amend rewrites the commit date and leaves the author date alone. Reporting wants
+    // the author date, so an untouched task does not read as freshly edited; ranking wants the
+    // commit date, so a replayed branch does not read as older than what it was replayed onto.
     commit_at(root, 1_000_000_000, 2_000_000_000, "add a");
 
     let times = Repo::discover(root)
@@ -60,7 +61,9 @@ fn a_change_is_dated_by_author_time_not_commit_time() {
         .task_change_times("main", &ids("a"))
         .unwrap();
 
-    assert_eq!(times.get("a"), Some(&Ok(at(1_000_000_000))));
+    let when = times.get("a").unwrap();
+    assert_eq!(when.authored, Ok(at(1_000_000_000)));
+    assert_eq!(when.committed, 2_000_000_000);
 }
 
 #[test]
@@ -82,8 +85,14 @@ fn the_newest_change_wins_and_untouched_tasks_keep_their_own_date() {
         .task_change_times("main", &HashSet::from(["a".to_owned(), "b".to_owned()]))
         .unwrap();
 
-    assert_eq!(times.get("a"), Some(&Ok(at(1_000_000_500))));
-    assert_eq!(times.get("b"), Some(&Ok(at(1_000_000_000))));
+    assert_eq!(
+        times.get("a").map(|when| &when.authored),
+        Some(&Ok(at(1_000_000_500)))
+    );
+    assert_eq!(
+        times.get("b").map(|when| &when.authored),
+        Some(&Ok(at(1_000_000_000)))
+    );
 }
 
 #[test]
@@ -108,7 +117,10 @@ fn a_merge_does_not_restamp_what_the_merged_branch_changed() {
         .unwrap();
 
     // The merge introduced no version of its own, so the task is still dated by the edit itself.
-    assert_eq!(times.get("a"), Some(&Ok(at(1_700_000_000))));
+    assert_eq!(
+        times.get("a").map(|when| &when.authored),
+        Some(&Ok(at(1_700_000_000)))
+    );
 }
 
 fn merge_at(dir: &Path, seconds: i64, branch: &str) {
@@ -147,8 +159,11 @@ fn a_commit_with_an_unusable_author_date_costs_only_the_tasks_it_changed() {
         .task_change_times("main", &HashSet::from(["a".to_owned(), "b".to_owned()]))
         .expect("one undatable commit must not sink the whole walk");
 
-    assert_eq!(times.get("a"), Some(&Ok(at(1_000_000_000))));
-    let why = times.get("b").unwrap().as_ref().unwrap_err();
+    assert_eq!(
+        times.get("a").map(|when| &when.authored),
+        Some(&Ok(at(1_000_000_000)))
+    );
+    let why = times.get("b").unwrap().authored.as_ref().unwrap_err();
     assert!(why.contains("unusable author date"), "{why}");
 }
 
@@ -171,5 +186,8 @@ fn an_unusable_author_date_on_a_commit_touching_no_task_costs_nothing() {
         .task_change_times("main", &ids("a"))
         .expect("a commit that changes no task must not be dated at all");
 
-    assert_eq!(times.get("a"), Some(&Ok(at(1_000_000_000))));
+    assert_eq!(
+        times.get("a").map(|when| &when.authored),
+        Some(&Ok(at(1_000_000_000)))
+    );
 }

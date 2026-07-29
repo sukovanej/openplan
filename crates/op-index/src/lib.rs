@@ -21,8 +21,8 @@ pub struct Index {
     // The branch checked out in the serve-root worktree; the headline of an aggregated task.
     current_branch: Option<String>,
     default_branch: Option<String>,
-    // (branch, id) -> author time of that branch's last commit to touch the task. Absent for a task
-    // whose change lies deeper than the walk budget, and for one no commit holds yet.
+    // (branch, id) -> when that branch's last commit to touch the task was written and made. Absent
+    // for a task whose change lies deeper than the walk budget, and for one no commit holds yet.
     change_times: HashMap<(String, String), ChangeTime>,
     // branch -> a walk result reusable across the per-request rebuilds, instead of re-walking
     // history every time.
@@ -125,8 +125,8 @@ impl Index {
         Ok(())
     }
 
-    // Every cell's last commit time, feeding both the task's `updated` and — through `recency_of` —
-    // the headline choice when a task lives on several branches. A dirty cell is left undated: its
+    // Every cell's last change, feeding the task's `updated` by author time and — through
+    // `recency_of` — the headline choice by commit time. A dirty cell is left undated: its
     // working-tree edit belongs to no commit, so both readings substitute their own answer.
     fn compute_change_times(
         &mut self,
@@ -517,14 +517,16 @@ impl Index {
             .unwrap_or(cells[0])
     }
 
-    // A live uncommitted edit outranks any commit; a cell no walk could date reads as oldest.
+    // Commit time, not the author time the same cell reports as `updated`: a rebased branch keeps
+    // the author times it was written with, so ranking by those would headline the very version the
+    // rebase superseded. A live uncommitted edit outranks any commit; a cell no walk could date
+    // reads as oldest.
     fn recency_of(&self, cell: &MatrixCell) -> i64 {
         if cell.dirty {
             return i64::MAX;
         }
-        self.committed_time(cell)
-            .and_then(|at| at.as_ref().ok())
-            .map_or(i64::MIN, |at| at.as_second())
+        self.change_time(cell)
+            .map_or(i64::MIN, |when| when.committed)
     }
 
     // `created` is a property of the blob, so it comes from the same parse the cell's title and
@@ -538,7 +540,7 @@ impl Index {
             .ok()
     }
 
-    fn committed_time(&self, cell: &MatrixCell) -> Option<&ChangeTime> {
+    fn change_time(&self, cell: &MatrixCell) -> Option<&ChangeTime> {
         self.change_times
             .get(&(cell.branch.clone(), cell.task.id.clone()))
     }
@@ -549,7 +551,7 @@ impl Index {
         if cell.dirty {
             return Ok(Timestamp::now());
         }
-        match self.committed_time(cell) {
+        match self.change_time(cell).map(|when| &when.authored) {
             None => Err(FieldError::Missing),
             Some(Ok(at)) => Ok(*at),
             Some(Err(why)) => Err(FieldError::Invalid(why.clone())),

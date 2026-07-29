@@ -525,6 +525,18 @@ fn commit_at(root: &Path, seconds: i64, message: &str) {
     assert!(status.success(), "git commit failed");
 }
 
+fn commit_replayed(root: &Path, authored: i64, committed: i64, message: &str) {
+    git(root, &["add", "-A"]);
+    let status = Command::new("git")
+        .current_dir(root)
+        .args(["commit", "-qm", message])
+        .env("GIT_AUTHOR_DATE", format!("@{authored} +0000"))
+        .env("GIT_COMMITTER_DATE", format!("@{committed} +0000"))
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git commit failed");
+}
+
 fn at(seconds: i64) -> Timestamp {
     Timestamp::from_second(seconds).unwrap()
 }
@@ -687,4 +699,51 @@ fn a_file_with_no_readable_metadata_reports_that_instead_of_a_status() {
     let board = op_api::Board::build(&index.aggregated_tasks());
     assert_eq!(board.groups[0].status, None);
     assert_eq!(board.groups[0].rows[0].task.id, "broken");
+}
+
+#[test]
+fn a_rebased_branch_headlines_over_the_branch_it_was_rebased_onto() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "t", &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+
+    // Monday: feat edits t.
+    git(root, &["checkout", "-qb", "feat"]);
+    task(root, "t", &dated("in_progress"));
+    commit_at(root, 1_000_100_000, "feat edits t");
+
+    // Wednesday: main edits t too.
+    git(root, &["checkout", "-q", "main"]);
+    task(root, "t", &dated("in_review"));
+    commit_at(root, 1_000_200_000, "main edits t");
+
+    // Thursday: feat is rebased onto main and the conflict resolved by hand. The replayed commit
+    // keeps its Monday author date, so only its commit date says this is the newest work.
+    git(root, &["checkout", "-q", "feat"]);
+    git(root, &["reset", "-q", "--hard", "main"]);
+    task(root, "t", &dated("done"));
+    commit_replayed(
+        root,
+        1_000_100_000,
+        1_000_300_000,
+        "feat edits t (replayed)",
+    );
+
+    let index = built(root);
+    let listed = index
+        .aggregated_tasks()
+        .into_iter()
+        .find(|item| item.id == "t")
+        .unwrap();
+
+    assert_eq!(listed.headline, "feat");
+    assert_eq!(listed.metadata.status(), Some(Status::Done));
+    // Still reported by author time: the rebase moved no work, so it must not restamp the task.
+    assert_eq!(
+        listed.updated,
+        Field::Value(at(1_000_100_000).to_string()),
+        "the rebase must not restamp the task as freshly edited"
+    );
 }

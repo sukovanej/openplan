@@ -8,8 +8,16 @@ const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
 // which reports as no `updated` and, for ranking, as older than any dated branch.
 const HISTORY_WALK_BUDGET: usize = 4096;
 
-// When a task's last change happened, or why the commit that made it cannot say.
-pub type ChangeTime = Result<Timestamp, String>;
+// When a task last changed, read two ways from the same commit. `authored` is what to report: a
+// rebase, squash, or amend preserves it, so an untouched task does not read as freshly edited — and
+// it may be a reason instead of a time, since git accepts any i64 there. `committed` is what to rank
+// by, in bare seconds: a rebased branch carries older author times than the branch it was rebased
+// onto, so ranking by those would headline the version the rebase superseded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeTime {
+    pub authored: Result<Timestamp, String>,
+    pub committed: i64,
+}
 
 #[derive(Debug, Clone)]
 pub struct Repo {
@@ -112,11 +120,10 @@ impl Repo {
         task_blobs(&tree)
     }
 
-    // The author time of the newest commit on `branch` that changed each of `ids`, found by walking
-    // history newest-first and stopping once every id is dated. Bounded to the requested ids — which
-    // the caller draws from the branch's cells — so a walk for a short branch tip need not descend
-    // the whole default-branch history. Author time, not commit time, so a rebase, squash, or amend
-    // does not restamp a task as freshly edited — matching `git log -1 --format=%aI -- <path>`.
+    // The newest commit on `branch` that changed each of `ids`, found by walking history newest-first
+    // and stopping once every id is dated. Bounded to the requested ids — which the caller draws from
+    // the branch's cells — so a walk for a short branch tip need not descend the whole default-branch
+    // history.
     pub fn task_change_times(
         &self,
         branch: &str,
@@ -153,14 +160,17 @@ impl Repo {
                 .collect::<Result<_, _>>()?;
             // Read once per commit, and only for a commit that changes something asked for: a
             // commit touching no task must not be able to fail the walk with its own header.
-            let mut authored = None;
+            let mut when = None;
             needed.retain(|id| match this.get(*id) {
                 // Every parent, not just the first: a merge carrying a task version unchanged from
                 // either side did not edit it, and crediting the merge would restamp every task the
                 // merged branch touched. Only a version matching no parent — a conflict resolved by
                 // hand — is the merge's own change.
                 Some(blob) if parents.iter().all(|parent| parent.get(*id) != Some(blob)) => {
-                    let at = authored.get_or_insert_with(|| author_time(&repo, info.id));
+                    let at = when.get_or_insert_with(|| ChangeTime {
+                        authored: author_time(&repo, info.id),
+                        committed: info.commit_time(),
+                    });
                     times.insert((*id).to_owned(), at.clone());
                     false
                 }
@@ -265,7 +275,7 @@ impl Repo {
 // Git stores an author date as a bare i64 and validates nothing, so a clock-skewed machine or an
 // importer can leave one no calendar can express. Such a commit dates nothing — reported, not
 // raised: it must cost the tasks it changed their `updated`, and nothing else its own.
-fn author_time(repo: &gix::Repository, commit: gix::ObjectId) -> ChangeTime {
+fn author_time(repo: &gix::Repository, commit: gix::ObjectId) -> Result<Timestamp, String> {
     let object = repo
         .find_object(commit)
         .map_err(|e| format!("commit {commit} is unreadable: {e}"))?
