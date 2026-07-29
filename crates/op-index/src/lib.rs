@@ -104,7 +104,10 @@ impl Index {
         let no_base = HashMap::new();
 
         let mut cells = Vec::new();
-        let mut max_id_number = None;
+        // Every worktree's files, not just those of the branches walked below: a task can hold a
+        // number while no branch commits it — an unborn HEAD has no branch at all, and a worktree
+        // mid-merge is excluded from `live`. The number is taken the moment the file exists.
+        let mut max_id_number = on_disk_id_floor(&worktrees, store);
         for branch in &branches {
             let committed: HashMap<String, String> =
                 repo.branch_task_blobs(branch)?.into_iter().collect();
@@ -402,9 +405,9 @@ impl Index {
         self.current_branch.as_deref()
     }
 
-    // The highest id number any local branch holds — the floor an allocator must clear for a number
-    // to be unissued repo-wide. Read from the branches themselves rather than from the matrix, whose
-    // cells only cover divergence.
+    // The highest id number any local branch or worktree holds — the floor an allocator must clear
+    // for a number to be unissued repo-wide. Read from the branches and the files themselves rather
+    // than from the matrix, whose cells only cover divergence.
     pub fn max_id_number(&self) -> Option<u64> {
         self.max_id_number
     }
@@ -736,6 +739,22 @@ fn present_ids(
         }
     }
     Ok(ids)
+}
+
+fn on_disk_id_floor(worktrees: &[Worktree], store: &Store) -> Option<u64> {
+    worktrees
+        .iter()
+        .filter_map(|worktree| {
+            if same_path(&worktree.path, store.root()) {
+                Some(store.clone())
+            } else {
+                Store::open(&worktree.path).ok()
+            }
+        })
+        .filter_map(|worktree| worktree.task_ids().ok())
+        .flatten()
+        .filter_map(|id| op_store::id_number(&id))
+        .max()
 }
 
 fn live_worktrees(worktrees: &[Worktree], store: &Store) -> HashMap<String, Store> {

@@ -263,6 +263,62 @@ fn a_write_from_a_linked_worktree_lands_on_that_worktrees_branch() {
 }
 
 #[test]
+fn removing_the_worktree_that_started_the_daemon_leaves_writes_working() {
+    let dir = Project::new();
+    // Committed by hand: the daemon must be started by the worktree's write, not by this one.
+    write(
+        &dir.path().join(".plan/tasks/anchor-1.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Anchor\n",
+    );
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "anchor"]);
+    let feature = dir.path().join(".worktrees/feature");
+    git(
+        dir.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            feature.to_str().unwrap(),
+        ],
+    );
+
+    // This write starts the daemon. A worktree per task is this repository's normal workflow, so
+    // anchoring the daemon's root here would make every later write depend on a directory that
+    // exists only until the task is merged.
+    let out = dir
+        .cmd()
+        .arg("--root")
+        .arg(&feature)
+        .args(["create", "From the worktree"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    git(
+        dir.path(),
+        &["worktree", "remove", "--force", feature.to_str().unwrap()],
+    );
+    let out = run(&dir, &["create", "From main"]);
+    assert!(
+        out.status.success(),
+        "the daemon outlives the worktree that started it; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = stdout(&out).trim().to_owned();
+    assert!(
+        dir.path().join(format!(".plan/tasks/{id}.md")).is_file(),
+        "written in the main checkout: {id}"
+    );
+}
+
+#[test]
 fn a_write_with_no_reachable_daemon_fails_explicitly() {
     let dir = Project::new();
     let out = dir

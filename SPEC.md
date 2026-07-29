@@ -47,8 +47,9 @@ a section-addressable markdown body.
 ### 3.1 Identity, title & frontmatter
 - **Identity = the filename** (`<id>.md`). `id` is never stored in the file. The id is
   `<slug(title)>-<n>`, where `n` is a number the daemon allocates (§7.3) above the highest already in
-  use on *any* local branch — so a number is issued once per repository and no two tasks, on any
-  branch, can ever share an id. The slug is decoration; `n` carries the identity.
+  use on *any* local branch **or in any worktree's files** — a number is taken from the moment a file
+  carries it, before any commit does — so a number is issued once per repository and no two tasks, on
+  any branch, can ever share an id. The slug is decoration; `n` carries the identity.
 - **Title = the body's single `# H1`.** Every task **must** contain **exactly one level-1
   heading**, and that is the title. Never stored in frontmatter.
 
@@ -185,15 +186,17 @@ Per project it:
 - holds the **presence registry** (§7.6);
 - pushes to the UI and answers CLI coordination queries;
 - **is the sole in-band writer**: it serves every create/update/delete, allocating ids from one
-  in-memory counter seeded from the matrix (§3.1). A write names its target **branch**, which the
-  daemon resolves to that branch's live worktree at write time — or refuses (§7.9). Nothing durable
-  holds the counter: a committed file would conflict on every parallel-branch merge, so a restart
-  re-seeds from the matrix instead.
+  in-memory counter (§3.1). A write names its target **branch**, which the daemon resolves to that
+  branch's live worktree at write time — or refuses (§7.9). Nothing durable holds the counter: a
+  committed file would conflict on every parallel-branch merge, so a restart re-seeds from the
+  branches and worktree files instead — the ids on disk are the durable floor.
 
 **Degraded fallback:** if the daemon is down, the CLI reads files / the object DB directly and
 uses the on-disk claims file (file-locked), so headless agents still function. **Reads** degrade;
 **writes** do not — a CLI write starts the daemon (auto-start, one per machine) and fails loudly if
-it cannot, rather than writing behind the allocator's back.
+it cannot, rather than writing behind the allocator's back. Auto-start roots the daemon at the
+repository's **main checkout**, never at the caller's worktree: worktrees come and go per task, and a
+daemon rooted in a removed one can no longer resolve any branch.
 
 **Logging tiers** (`RUST_LOG`, default `info`): `info` covers lifecycle only — startup,
 lifecycle failures, and change publications. `debug` adds one line per HTTP request (method,

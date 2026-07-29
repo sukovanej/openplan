@@ -46,18 +46,23 @@ struct Assets;
 // The one place task ids are handed out. Handlers release the index mutex before their flock write,
 // so two concurrent creates would each compute the same `max + 1` from the matrix; this counter is
 // bumped atomically instead, and re-seeded from the floor on every call so a merge bringing in
-// higher ids — or a restart — advances it. Nothing is persisted: the matrix is the durable floor.
+// higher ids — or a restart — advances it. Nothing is persisted: the ids on disk are the floor.
 #[derive(Debug, Default)]
 struct IdCounter(Mutex<u64>);
 
 impl IdCounter {
-    fn issue_above(&self, floor: u64) -> u64 {
+    // `u64::MAX` is never issued, only used as the exhausted marker: any id already carrying it
+    // (hand-written, or merged in) would otherwise pin the counter there and hand the same number
+    // to every later create. Losing one number of 2^64 keeps "issued at most once" unconditional.
+    fn issue_above(&self, floor: u64) -> Option<u64> {
         let mut next = self.0.lock().expect("id counter mutex poisoned");
         let issued = (*next).max(floor.saturating_add(1));
-        // Saturating rather than wrapping: a hand-written id near u64::MAX must degrade into "this
-        // number is taken" refusals, not silently restart the counter below the floor.
-        *next = issued.saturating_add(1);
-        issued
+        if issued == u64::MAX {
+            *next = u64::MAX;
+            return None;
+        }
+        *next = issued + 1;
+        Some(issued)
     }
 }
 
@@ -287,6 +292,10 @@ enum ApiError {
     // A write aimed at a branch no live worktree has checked out. The server never fabricates a
     // commit, so it refuses rather than retargeting silently.
     NotWritable(String),
+    // The daemon's own root is gone, so no branch resolves and every write would read as
+    // `NotWritable` — a diagnosis that sends the user looking at their checkout instead.
+    RootGone(std::path::PathBuf),
+    NoIdAvailable(String),
 }
 
 impl From<StoreError> for ApiError {
@@ -315,6 +324,15 @@ impl IntoResponse for ApiError {
                      or an operation is in progress); refusing to write"
                 ),
             ),
+            ApiError::RootGone(root) => (
+                StatusCode::CONFLICT,
+                format!(
+                    "the daemon's root {} no longer exists, so it can no longer resolve any \
+                     branch; restart it with `oplan server restart`",
+                    root.display()
+                ),
+            ),
+            ApiError::NoIdAvailable(message) => (StatusCode::CONFLICT, message),
         };
         // TraceLayer's failure line only sees the status code; record the cause onto the request
         // span so its single ERROR line carries route + request id + why, without a second event.
@@ -397,7 +415,7 @@ async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiErro
     responses(
         (status = 201, description = "Created", body = CreatedTask),
         (status = 400, description = "The task is invalid (unknown parent or dependency)", body = ApiErrorBody),
-        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody),
+        (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
@@ -413,27 +431,34 @@ async fn create_task(
     let created = op_task::now();
     let (branch, id) =
         tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
-            // Resolve the write target under the lock, then release it so the store's flock wait below
-            // does not block concurrent reads sharing the same index mutex.
             let (branch, store, floor) = {
                 let mut index = index.lock().expect("index mutex poisoned");
-                index.rebuild(&repo, &serve_store).map_err(index_error)?;
-                let branch = write_branch(&index, query.branch)?;
-                let store = index
-                    .live_store(&branch)
-                    .ok_or_else(|| ApiError::NotWritable(branch.clone()))?;
+                let (branch, store) = write_target(&mut index, &repo, &serve_store, query.branch)?;
                 (branch, store, index.max_id_number().unwrap_or(0))
             };
             let task = body.into_task(created);
             let mut taken = 0;
             let id = loop {
-                match store.create(&task, ids.issue_above(floor)) {
+                let number = ids.issue_above(floor).ok_or_else(|| {
+                    ApiError::NoIdAvailable(
+                        "the repository holds the highest task number there is; no number is left \
+                         to issue"
+                            .to_owned(),
+                    )
+                })?;
+                match store.create(&task, number) {
                     Ok(id) => break id,
                     // The floor only covers ids the rebuild could see; a file written out of band since
                     // then can still hold the number, and the next one is free.
                     Err(StoreError::IdTaken { id }) if taken + 1 < ID_ATTEMPTS => {
                         taken += 1;
                         tracing::warn!(%id, "id already on disk; taking the next one");
+                    }
+                    Err(StoreError::IdTaken { id }) => {
+                        return Err(ApiError::NoIdAvailable(format!(
+                            "{ID_ATTEMPTS} numbers in a row are already taken on disk, up to {id}; \
+                             something outside the daemon is writing task files"
+                        )));
                     }
                     Err(err) => return Err(ApiError::Store(err)),
                 }
@@ -518,6 +543,26 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
     }
 }
 
+// Callers hold the index mutex across this and release it before writing, so the store's flock wait
+// never blocks the reads that share the mutex.
+fn write_target(
+    index: &mut Index,
+    repo: &Repo,
+    serve_store: &Store,
+    requested: Option<String>,
+) -> Result<(String, Store), ApiError> {
+    index.rebuild(repo, serve_store).map_err(index_error)?;
+    let branch = write_branch(index, requested)?;
+    let store = index.live_store(&branch).ok_or_else(|| {
+        if serve_store.root().is_dir() {
+            ApiError::NotWritable(branch.clone())
+        } else {
+            ApiError::RootGone(serve_store.root().to_path_buf())
+        }
+    })?;
+    Ok((branch, store))
+}
+
 #[utoipa::path(
     patch,
     path = "/api/tasks/{id}",
@@ -530,7 +575,7 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
         (status = 200, description = "The updated task", body = TaskDetail),
         (status = 400, description = "The patch is invalid (unknown parent, or a parent cycle)", body = ApiErrorBody),
         (status = 404, description = "No such task", body = ApiErrorBody),
-        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody),
+        (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
@@ -545,16 +590,9 @@ async fn patch_task(
     let index = state.index.clone();
     let (branch, detail) =
         tokio::task::spawn_blocking(move || -> Result<(String, TaskDetail), ApiError> {
-            // Resolve the write target under the lock, then release it so the store's flock wait
-            // below does not block concurrent reads sharing the same index mutex.
             let (branch, store) = {
                 let mut index = index.lock().expect("index mutex poisoned");
-                index.rebuild(&repo, &serve_store).map_err(index_error)?;
-                let branch = write_branch(&index, query.branch)?;
-                let store = index
-                    .live_store(&branch)
-                    .ok_or_else(|| ApiError::NotWritable(branch.clone()))?;
-                (branch, store)
+                write_target(&mut index, &repo, &serve_store, query.branch)?
             };
             let task = store.update(&id, |task| {
                 patch.apply(task);
@@ -616,7 +654,7 @@ async fn patch_task(
         (status = 204, description = "Deleted"),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
         (status = 404, description = "No such task", body = ApiErrorBody),
-        (status = 409, description = "Branch is not checked out in a writable worktree", body = ApiErrorBody),
+        (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
@@ -630,16 +668,9 @@ async fn delete_task(
     let index = state.index.clone();
     let changed = id.clone();
     let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
-        // Resolve the write target under the lock, then release it so the store's flock wait below
-        // does not block concurrent reads sharing the same index mutex.
         let (branch, store) = {
             let mut index = index.lock().expect("index mutex poisoned");
-            index.rebuild(&repo, &serve_store).map_err(index_error)?;
-            let branch = write_branch(&index, query.branch)?;
-            let store = index
-                .live_store(&branch)
-                .ok_or_else(|| ApiError::NotWritable(branch.clone()))?;
-            (branch, store)
+            write_target(&mut index, &repo, &serve_store, query.branch)?
         };
         store.delete(&id)?;
         Ok(branch)

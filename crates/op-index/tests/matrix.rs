@@ -734,3 +734,56 @@ fn a_replayed_branch_does_not_outrank_newer_work_elsewhere() {
     assert_eq!(listed.headline, "feat");
     assert_eq!(listed.metadata.status(), Some(Status::InReview));
 }
+
+#[test]
+fn the_id_floor_counts_a_task_no_commit_holds_yet() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(
+        root,
+        "alpha-7",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
+    );
+
+    // Nothing is committed, so HEAD is unborn and there are no branches to walk. Reading the floor
+    // from branch tips alone would call 7 free and mint a second alpha-7 on the next create.
+    assert_eq!(built(root).max_id_number(), Some(7));
+}
+
+#[test]
+fn the_id_floor_counts_a_worktree_mid_merge() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(
+        root,
+        "alpha-1",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
+    );
+    commit(root, "add alpha");
+    git(root, &["branch", "feature"]);
+
+    let wt = tempfile::tempdir().unwrap();
+    let wt_path = wt.path().join("feature");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            wt_path.to_str().unwrap(),
+            "feature",
+        ],
+    );
+    task(
+        &wt_path,
+        "beta-9",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Beta\n",
+    );
+    // A merge in flight keeps the worktree out of `live`, so its files reach the index nowhere
+    // else; the number is taken all the same, and the merge will commit it.
+    write(&root.join(".git/worktrees/feature/MERGE_HEAD"), "");
+
+    assert_eq!(built(root).max_id_number(), Some(9));
+}

@@ -1,9 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, bail};
 use op_api::{CreateTask, DaemonInfo, TaskDetail, TaskPatch};
 use op_client::Client;
 use op_git::Repo;
+use op_store::Store;
 
 use crate::daemon::{Control, base_url, default_port, same_path};
 
@@ -40,7 +41,7 @@ impl Writer {
             }
             None => {
                 let info = Control::resolve()?
-                    .ensure_daemon(default_port(), root)?
+                    .ensure_daemon(default_port(), &serve_root(&repo, root))?
                     .into_info();
                 (base_url(info.port), info)
             }
@@ -69,6 +70,17 @@ impl Writer {
     pub fn delete(&self, id: &str) -> Result<()> {
         Ok(self.client.delete_task(&self.base_url, &self.branch, id)?)
     }
+}
+
+// The daemon outlives whichever worktree happens to issue the first write, and this repository's
+// workflow creates and removes a worktree per task; a root pointing into a deleted one leaves the
+// daemon unable to resolve any branch, breaking writes repo-wide. Anchor it at the main checkout,
+// falling back to the caller only when that checkout cannot serve — a bare repository, or a task
+// store the main checkout's branch does not carry.
+fn serve_root(repo: &Repo, root: &Path) -> PathBuf {
+    repo.main_worktree()
+        .filter(|main| Store::discover(main).is_ok())
+        .unwrap_or_else(|| root.to_path_buf())
 }
 
 // A branch name identifies a worktree only within one repository, so a daemon serving a different

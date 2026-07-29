@@ -82,6 +82,12 @@ impl Repo {
         self.repo().common_dir().to_path_buf()
     }
 
+    // The main checkout's working copy — the one worktree a repository cannot lose, unlike the
+    // linked worktrees that come and go. `None` for a bare repository.
+    pub fn main_worktree(&self) -> Option<PathBuf> {
+        worktree_of(&self.repo().main_repo().ok()?).map(|worktree| worktree.path)
+    }
+
     // Every worktree (main + linked) with a working copy on disk, paired with its checked-out
     // branch. A branch appears at most once — git allows it checked out in one worktree only.
     pub fn worktrees(&self) -> Result<Vec<Worktree>, GitError> {
