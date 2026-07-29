@@ -8,17 +8,11 @@ const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
 // which reports as no `updated` and, for ranking, as older than any dated branch.
 const HISTORY_WALK_BUDGET: usize = 4096;
 
-// When a task last changed, read two ways from the same commit. `authored` is what to report: a
-// rebase, squash, or amend preserves it, so an untouched task does not read as freshly edited — and
-// it may be a reason instead of a time, since git accepts any i64 there. `committed_seconds` is what
-// to rank by: a rebased branch carries older author times than the branch it was rebased onto, so
-// ranking by those would headline the version the rebase superseded. It stays raw seconds because an
-// ordering needs no calendar value — which is also what leaves it, unlike `authored`, unable to fail.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChangeTime {
-    pub authored: Result<Timestamp, String>,
-    pub committed_seconds: i64,
-}
+// When a task's last change was authored, or why the commit that made it cannot say. Author time,
+// not commit time: a rebase, squash, or amend rewrites the commit date of everything it replays, so
+// ranking or dating by that makes the most recently rebased branch look like the newest work on
+// every task it carries — including the ones it never touched.
+pub type ChangeTime = Result<Timestamp, String>;
 
 #[derive(Debug, Clone)]
 pub struct Repo {
@@ -176,10 +170,7 @@ impl Repo {
                 // merged branch touched. Only a version matching no parent — a conflict resolved by
                 // hand — is the merge's own change.
                 Some(blob) if parents.iter().all(|parent| parent.get(*id) != Some(blob)) => {
-                    let at = when.get_or_insert_with(|| ChangeTime {
-                        authored: author_time(&repo, info.id),
-                        committed_seconds: info.commit_time(),
-                    });
+                    let at = when.get_or_insert_with(|| author_time(&repo, info.id));
                     times.insert((*id).to_owned(), at.clone());
                     false
                 }

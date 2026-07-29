@@ -517,16 +517,14 @@ impl Index {
             .unwrap_or(cells[0])
     }
 
-    // Commit time, not the author time the same cell reports as `updated`: a rebased branch keeps
-    // the author times it was written with, so ranking by those would headline the very version the
-    // rebase superseded. A live uncommitted edit outranks any commit; a cell no walk could date
-    // reads as oldest.
+    // A live uncommitted edit outranks any commit; a cell no walk could date reads as oldest.
     fn recency_of(&self, cell: &MatrixCell) -> i64 {
         if cell.dirty {
             return i64::MAX;
         }
         self.change_time(cell)
-            .map_or(i64::MIN, |when| when.committed_seconds)
+            .and_then(|at| at.as_ref().ok())
+            .map_or(i64::MIN, |at| at.as_second())
     }
 
     // `created` is a property of the blob, so it comes from the same parse the cell's title and
@@ -546,7 +544,7 @@ impl Index {
         if cell.dirty {
             return Ok(Timestamp::now());
         }
-        match self.change_time(cell).map(|when| &when.authored) {
+        match self.change_time(cell) {
             None => Err(FieldError::Missing),
             Some(Ok(at)) => Ok(*at),
             Some(Err(why)) => Err(FieldError::Invalid(why.clone())),

@@ -699,48 +699,38 @@ fn a_file_with_no_readable_metadata_reports_that_instead_of_a_status() {
 }
 
 #[test]
-fn a_rebased_branch_headlines_over_the_branch_it_was_rebased_onto() {
+fn a_replayed_branch_does_not_outrank_newer_work_elsewhere() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
     task(root, "t", &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
 
-    // Monday: feat edits t.
+    // `feat` does the newest real work on the task.
     git(root, &["checkout", "-qb", "feat"]);
-    task(root, "t", &dated("in_progress"));
-    commit_at(root, 1_000_100_000, "feat edits t");
-
-    // Wednesday: main edits t too.
-    git(root, &["checkout", "-q", "main"]);
     task(root, "t", &dated("in_review"));
-    commit_at(root, 1_000_200_000, "main edits t");
+    commit_at(root, 1_000_200_000, "feat moves t forward");
 
-    // Thursday: feat is rebased onto main and the conflict resolved by hand. The replayed commit
-    // keeps its Monday author date, so only its commit date says this is the newest work.
-    git(root, &["checkout", "-q", "feat"]);
-    git(root, &["reset", "-q", "--hard", "main"]);
-    task(root, "t", &dated("done"));
+    // `chore` only touches t incidentally — a backfill, a reformat — and is then rebased, which
+    // rewrites its commit date to now while leaving the author date it was written with.
+    git(root, &["checkout", "-q", "main"]);
+    git(root, &["checkout", "-qb", "chore"]);
+    task(root, "t", &dated("backlog"));
     commit_replayed(
         root,
         1_000_100_000,
-        1_000_300_000,
-        "feat edits t (replayed)",
+        1_000_900_000,
+        "chore rewrites t (replayed)",
     );
 
-    let index = built(root);
-    let listed = index
+    let listed = built(root)
         .aggregated_tasks()
         .into_iter()
         .find(|item| item.id == "t")
         .unwrap();
 
+    // Ranking by commit date would headline `chore` — and every other task it carries — purely
+    // because it was the last branch replayed.
     assert_eq!(listed.headline, "feat");
-    assert_eq!(listed.metadata.status(), Some(Status::Done));
-    // Still reported by author time: the rebase moved no work, so it must not restamp the task.
-    assert_eq!(
-        listed.updated,
-        Field::Value(Rfc3339(at(1_000_100_000))),
-        "the rebase must not restamp the task as freshly edited"
-    );
+    assert_eq!(listed.metadata.status(), Some(Status::InReview));
 }
