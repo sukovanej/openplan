@@ -608,8 +608,8 @@ fn build_node(
 
 // The order status groups appear in on the board — active work first, terminal states last (§9).
 const BOARD_ORDER: [Status; 6] = [
-    Status::InProgress,
     Status::InReview,
+    Status::InProgress,
     Status::Todo,
     Status::Backlog,
     Status::Done,

@@ -44,7 +44,7 @@ const styles: Record<Status, { label: string; icon: LucideIcon; palette: Palette
   cancelled: { label: "Cancelled", icon: CircleX, palette: gray },
 }
 
-export const statusOrder: ReadonlyArray<Status> = ["in_progress", "in_review", "todo", "backlog", "done", "cancelled"]
+export const statusOrder: ReadonlyArray<Status> = ["in_review", "in_progress", "todo", "backlog", "done", "cancelled"]
 
 export const statusLabel = (status: Status): string => styles[status].label
 
