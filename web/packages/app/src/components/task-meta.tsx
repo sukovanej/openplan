@@ -1,10 +1,11 @@
-import type { Field_Rfc3339 } from "@open-planner/api-client"
 import { CalendarPlus, CircleAlert, CornerLeftUp, History, type LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
-import { TimeAgo } from "@/components/time-ago"
-import { type FieldProblem, fieldFailure, fieldValue } from "@/lib/metadata"
-import { cn } from "@/lib/utils"
+import type { Field_Rfc3339 } from "@open-planner/api-client"
+
+import { type FieldProblem, fieldFailure, fieldValue } from "../lib/metadata"
+import { cn } from "../lib/utils"
+import { TimeAgo } from "./time-ago"
 
 export const PARENT_ICON = CornerLeftUp
 
