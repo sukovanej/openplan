@@ -1,13 +1,12 @@
+import type { Board, BoardRow, Status } from "@open-planner/api-client"
 import { CalendarPlus, CircleAlert, CornerLeftUp, History } from "lucide-react"
 import { useMemo } from "react"
 import { Link } from "react-router-dom"
 
-import type { Board, BoardRow, Status } from "@open-planner/api-client"
-
 import { BranchBadges } from "../components/branch-badges"
 import { ListSkeleton, Message } from "../components/states"
 import { statusHeaderClass, StatusField, statusLabel } from "../components/status-badge"
-import { TimeAgo } from "../components/time-ago"
+import { MetaItem, MetaLine, PARENT_ICON, TaskTimes } from "../components/task-meta"
 import { errorText } from "../lib/format"
 import { createdOf, parentOf, problems } from "../lib/metadata"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
@@ -31,10 +30,6 @@ export function ListRoute() {
 }
 
 const rowDomId = (id: string) => `task-row-${id}`
-
-// Margin rather than a flex `gap`, so the separator pseudo-element between meta items keeps equal
-// space on both sides instead of picking up the gap on one of them.
-const META_ICON = "mr-1 size-3.5 shrink-0 opacity-70"
 
 function TaskGrid({ board }: { board: Board }) {
   // The board arrives already grouped, ordered, and flattened; the cursor walks the concatenation of
@@ -158,39 +153,19 @@ function TaskRow({
         >
           {task.title}
         </Link>
-        {/* Separators come from the siblings themselves, so any subset of these can be absent
-            without leaving a stray dot behind. */}
-        <div className="text-muted-foreground flex min-w-0 items-center text-xs [&>*+*]:before:mx-1.5 [&>*+*]:before:text-muted-foreground/50 [&>*+*]:before:content-['·']">
+        <MetaLine>
           {parent_title !== undefined && parent !== undefined && (
-            <span className="flex min-w-0 items-center" title={`Subtask of ${parent_title}`}>
-              <CornerLeftUp className={META_ICON} />
+            <MetaItem icon={PARENT_ICON} title={`Subtask of ${parent_title}`}>
               <Link
                 to={`/task/${parent}`}
                 className="text-foreground/90 relative z-10 max-w-[15rem] truncate hover:underline"
               >
                 {parent_title}
               </Link>
-            </span>
+            </MetaItem>
           )}
-          {created !== undefined && (
-            <span className="flex items-center whitespace-nowrap">
-              <CalendarPlus className={META_ICON} />
-              <TimeAgo iso={created} label="Created" />
-            </span>
-          )}
-          {task.updated !== undefined && (
-            <span className="flex items-center whitespace-nowrap">
-              <History className={META_ICON} />
-              <TimeAgo iso={task.updated} label="Updated" />
-            </span>
-          )}
-          {broken.length > 0 && (
-            <span className="flex min-w-0 items-center text-red-600/90 dark:text-red-400/90">
-              <CircleAlert className={META_ICON} />
-              <span className="truncate">{broken.map(({ field, message }) => `${field}: ${message}`).join(", ")}</span>
-            </span>
-          )}
-        </div>
+          <TaskTimes created={created} updated={task.updated} problems={broken} />
+        </MetaLine>
       </div>
       <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">
         <BranchBadges branches={task.branches} headline={task.headline} />

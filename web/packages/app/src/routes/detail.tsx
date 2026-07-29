@@ -9,12 +9,12 @@ import { type ComboOption, FuzzyText, SearchCombobox } from "../components/searc
 import { BodySkeleton, DetailSkeleton, Message } from "../components/states"
 import { StatusChip, StatusField } from "../components/status-badge"
 import { TaskBody } from "../components/task-body"
-import { TimeAgo } from "../components/time-ago"
+import { MetaItem, MetaLine, PARENT_ICON, TaskTimes } from "../components/task-meta"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
 import { errorText } from "../lib/format"
 import { fuzzyMatch } from "../lib/fuzzy"
-import { createdOf, type FieldProblem, parentOf, problems } from "../lib/metadata"
+import { createdOf, parentOf, problems } from "../lib/metadata"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
 import { cn } from "../lib/utils"
@@ -84,48 +84,20 @@ function TaskDetailView({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <h1 className="mb-1.5 text-2xl font-semibold tracking-tight">{task.title}</h1>
-        <TaskTimes
-          created={detail === null ? undefined : createdOf(detail.metadata)}
-          updated={task.updated}
-          problems={detail === null ? [] : problems(detail.metadata)}
-        />
+        {/* `created` arrives with the full detail while `updated` is already on the seeded list item,
+            so the line renders as soon as the header does and fills in rather than shifting the body
+            twice. */}
+        <MetaLine className="mb-4 h-4">
+          <TaskTimes
+            created={detail === null ? undefined : createdOf(detail.metadata)}
+            updated={task.updated}
+            problems={detail === null ? [] : problems(detail.metadata)}
+          />
+        </MetaLine>
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? <BodySkeleton /> : <TaskBody markdown={stripTitle(body)} refs={detail?.refs} />}
         <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
       </div>
-    </div>
-  )
-}
-
-// `created` arrives with the full detail while `updated` is already on the seeded list item, so the
-// line renders as soon as the header does and fills in rather than shifting the body twice.
-function TaskTimes({
-  created,
-  updated,
-  problems,
-}: {
-  created: string | undefined
-  updated: string | undefined
-  problems: ReadonlyArray<FieldProblem>
-}) {
-  return (
-    <div className="text-muted-foreground mb-4 flex h-4 items-center gap-1.5 text-xs">
-      {created !== undefined && (
-        <span>
-          Created <TimeAgo iso={created} label="Created" />
-        </span>
-      )}
-      {created !== undefined && updated !== undefined && <span aria-hidden>·</span>}
-      {updated !== undefined && (
-        <span>
-          Updated <TimeAgo iso={updated} label="Updated" />
-        </span>
-      )}
-      {problems.length > 0 && (
-        <span className="truncate text-red-600/90 dark:text-red-400/90">
-          {problems.map(({ field, message }) => `${field}: ${message}`).join(" · ")}
-        </span>
-      )}
     </div>
   )
 }
@@ -233,12 +205,13 @@ function HeaderParent({
   return (
     <div className="flex items-center gap-1 font-normal tracking-normal normal-case">
       {parentTitle !== undefined ? (
-        <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground/70">Subtask of</span>
-          <Link to={`/task/${parent}`} className="text-foreground/90 max-w-[15rem] truncate hover:underline">
-            {parentTitle}
-          </Link>
-        </span>
+        <MetaLine>
+          <MetaItem icon={PARENT_ICON} title={`Subtask of ${parentTitle}`}>
+            <Link to={`/task/${parent}`} className="text-foreground/90 max-w-[15rem] truncate hover:underline">
+              {parentTitle}
+            </Link>
+          </MetaItem>
+        </MetaLine>
       ) : hasParent ? (
         <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
       ) : null}
