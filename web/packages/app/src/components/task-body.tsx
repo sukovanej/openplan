@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm"
 
 import type { TaskRef as TaskRefData } from "@open-planner/api-client"
 
-import { cn } from "@/lib/utils"
+import { cn } from "../lib/utils"
 import { StatusIcon } from "./status-badge"
 import { remarkTaskLinks } from "./task-links"
 

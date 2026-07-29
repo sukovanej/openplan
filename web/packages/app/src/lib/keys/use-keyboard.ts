@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { detailActions, escapeOutcome } from "@/lib/detail-actions"
-import { focusedId, rowCursor, subtaskCursor } from "@/lib/row-cursor"
-
+import { detailActions, escapeOutcome } from "../detail-actions"
+import { focusedId, rowCursor, subtaskCursor } from "../row-cursor"
 import { bindings } from "./bindings"
 import { Dispatcher } from "./dispatcher"
 import { historyIndex } from "./history"

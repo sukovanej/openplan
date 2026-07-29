@@ -2,8 +2,8 @@ import { X } from "lucide-react"
 import type * as React from "react"
 import { useEffect, useRef } from "react"
 
-import { bindings, type HelpEntry, helpGroups } from "@/lib/keys"
-import { cn } from "@/lib/utils"
+import { bindings, type HelpEntry, helpGroups } from "../lib/keys"
+import { cn } from "../lib/utils"
 
 const KEY_LABELS: Record<string, string> = {
   Escape: "Esc",
