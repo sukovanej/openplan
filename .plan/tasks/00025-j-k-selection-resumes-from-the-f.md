@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_review
 created: 2026-07-15T14:39:35Z
 ---
 # j/k selection resumes from the focused row

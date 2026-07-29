@@ -28,8 +28,9 @@ export function withRows(state: CursorState, ids: ReadonlyArray<string>): Cursor
   return { ids, index: -1 }
 }
 
-export function moved(state: CursorState, delta: number): CursorState {
-  const index = clampIndex(state.index + delta, state.ids.length)
+export function moved(state: CursorState, delta: number, from?: string): CursorState {
+  const origin = state.index === -1 && from !== undefined ? state.ids.indexOf(from) : state.index
+  const index = clampIndex(origin + delta, state.ids.length)
   return index === state.index ? state : { ids: state.ids, index }
 }
 
@@ -60,7 +61,7 @@ class RowCursorStore {
   readonly getSnapshot = (): CursorState => this.state
 
   readonly setRows = (ids: ReadonlyArray<string>): void => this.commit(withRows(this.state, ids))
-  readonly moveBy = (delta: number): void => this.commit(moved(this.state, delta))
+  readonly moveBy = (delta: number, from?: string): void => this.commit(moved(this.state, delta, from))
   readonly focus = (index: number): void => this.commit(focused(this.state, index))
   readonly clear = (): void => this.commit(cleared(this.state))
 
@@ -105,7 +106,7 @@ class KeyedRowCursor {
     this.commit({ ids, index })
   }
 
-  readonly moveBy = (delta: number): void => this.commit(moved(this.state, delta))
+  readonly moveBy = (delta: number, from?: string): void => this.commit(moved(this.state, delta, from))
   readonly focus = (index: number): void => this.commit(focused(this.state, index))
   readonly clear = (): void => this.commit(cleared(this.state))
 
