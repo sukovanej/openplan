@@ -1,6 +1,7 @@
 import { Link, Outlet } from "react-router-dom"
 
 import { ConnectionStatus } from "./components/connection-status"
+import { Flash } from "./components/flash"
 import { HelpOverlay } from "./components/help-overlay"
 import { MutationError } from "./components/mutation-error"
 import { ThemeToggle } from "./components/theme-toggle"
@@ -24,6 +25,7 @@ export function App() {
       </main>
       <HelpOverlay open={overlayOpen} onClose={closeOverlay} />
       <MutationError />
+      <Flash />
     </div>
   )
 }

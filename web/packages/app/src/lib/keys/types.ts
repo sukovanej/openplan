@@ -14,6 +14,10 @@ export interface CursorControls {
   readonly focusedId: () => string | undefined
 }
 
+export interface CopyControls {
+  readonly taskId: () => void
+}
+
 export interface DetailControls {
   readonly editParent: () => void
   readonly addSubtask: () => void
@@ -25,6 +29,7 @@ export interface RunContext {
   readonly navigate: (to: string) => void
   readonly overlay: OverlayControls
   readonly cursor: CursorControls
+  readonly copy: CopyControls
   readonly detail: DetailControls
 }
 

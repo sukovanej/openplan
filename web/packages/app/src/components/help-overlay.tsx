@@ -13,8 +13,17 @@ const KEY_LABELS: Record<string, string> = {
   " ": "Space",
 }
 
+const APPLE = /Mac|iPhone|iPad/.test(navigator.userAgent)
+
+const MODIFIER_LABELS: Record<string, string> = APPLE
+  ? { mod: "⌘", alt: "⌥", shift: "⇧" }
+  : { mod: "Ctrl", alt: "Alt", shift: "Shift" }
+
 function keyLabel(token: string): string {
-  return KEY_LABELS[token] ?? (token.length === 1 ? token.toUpperCase() : token)
+  const parts = token.split("+")
+  const base = parts.pop() ?? token
+  const named = KEY_LABELS[base] ?? (base.length === 1 ? base.toUpperCase() : base)
+  return [...parts.map((part) => MODIFIER_LABELS[part] ?? part), named].join(APPLE ? "" : "+")
 }
 
 const FOCUSABLE = 'button, [href], [tabindex]:not([tabindex="-1"])'
