@@ -102,7 +102,8 @@ impl AppState {
     }
 
     // The index is the one holder of the store's abbreviation, so a live config change lands here and
-    // every later read renders the new keys.
+    // every later read renders the new keys. Blocking, like every other index access: the mutex is
+    // held across rebuilds, which read the object DB and wait on flocks.
     pub fn abbreviation(&self) -> Abbreviation {
         self.index
             .lock()
@@ -243,10 +244,13 @@ async fn health(State(state): State<AppState>) -> Response {
     path = "/api/config",
     responses((status = 200, description = "The served store's configuration", body = StoreConfig))
 )]
-async fn get_config(State(state): State<AppState>) -> Json<StoreConfig> {
-    Json(StoreConfig {
-        abbreviation: state.abbreviation().to_string(),
-    })
+async fn get_config(State(state): State<AppState>) -> Result<Json<StoreConfig>, ApiError> {
+    let abbreviation = tokio::task::spawn_blocking(move || state.abbreviation())
+        .await
+        .map_err(join_error)?;
+    Ok(Json(StoreConfig {
+        abbreviation: abbreviation.to_string(),
+    }))
 }
 
 async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -573,15 +577,15 @@ async fn get_task(
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    // A read resolves through the index by matching cell ids, which would 404 a path segment no key
-    // could ever be — where every write route answers 400. Refuse it here, once, for both.
-    reject_non_key(state.abbreviation(), &id)?;
     let repo = state.repo.clone();
     let store = state.store.clone();
     let index = state.index.clone();
     let missing = id.clone();
     let detail = tokio::task::spawn_blocking(move || -> Result<Option<TaskDetail>, ApiError> {
         let mut index = index.lock().expect("index mutex poisoned");
+        // A read resolves through the index by matching cell ids, which would 404 a path segment no
+        // key could ever be — where every write route answers 400. Refuse it here, once, for both.
+        reject_non_key(index.abbreviation(), &id)?;
         index.rebuild(&repo, &store).map_err(index_error)?;
         index
             .task_detail(&repo, &id, query.branch.as_deref())
@@ -671,14 +675,14 @@ async fn patch_task(
                 (branch, store, index.abbreviation())
             };
             let number = reject_non_key(abbreviation, &id)?;
-            let mut refused = None;
+            // The refusal has to leave the closure, not be carried out of it: `update` writes
+            // whenever the mutation reports success, and a patch that fails on its third field has
+            // already changed the first two.
             let task = store.update(number, |task| {
-                refused = patch.apply(task, abbreviation).err();
-                Ok(())
+                patch
+                    .apply(task, abbreviation)
+                    .map_err(|err| StoreError::Invalid(err.to_string()))
             })?;
-            if let Some(err) = refused {
-                return Err(err.into());
-            }
             // Echo the freshly written task rather than re-reading it from the matrix: a write that
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
             // would 404 a write that in fact succeeded — and its `updated` falls back to the
@@ -686,8 +690,15 @@ async fn patch_task(
             let (headline, branches, parent_title, children, refs, updated) = {
                 let mut index = index.lock().expect("index mutex poisoned");
                 index.rebuild(&repo, &serve_store).map_err(index_error)?;
+                // The index resolves a parent by key; the frontmatter holds the number the file
+                // layer names it by.
+                let parent = task
+                    .frontmatter
+                    .parent
+                    .as_deref()
+                    .and_then(|parent| abbreviation.format_ref(parent));
                 let (parent_title, children, refs) =
-                    index.hierarchy_context(&id, task.frontmatter.parent.as_deref(), &task.body);
+                    index.hierarchy_context(&id, parent.as_deref(), &task.body);
                 (
                     index.headline_branch(&id).unwrap_or_default(),
                     index.task_branch_states(&id),

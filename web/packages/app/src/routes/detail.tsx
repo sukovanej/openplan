@@ -14,10 +14,10 @@ import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
 import { errorText } from "../lib/format"
-import { fuzzyMatch } from "../lib/fuzzy"
 import { createdOf, parentOf, problems } from "../lib/metadata"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
+import { taskMatches } from "../lib/task-search"
 import { cn } from "../lib/utils"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
@@ -156,36 +156,6 @@ function ComboTaskRow({ task, indices }: { task: TaskListItem; indices: Readonly
       </span>
     </span>
   )
-}
-
-// A query is a key search once it looks like the start of one, so pasting `OPP-42` finds that task
-// instead of fuzzy-matching its letters against every title. Case-insensitive: the prefix is the only
-// part a typist has to shout.
-const KEY_PREFIX = /^[A-Za-z]{1,3}-?[0-9]*$/
-
-function keyMatch(id: string, query: string): boolean {
-  return KEY_PREFIX.test(query) && id.toLowerCase().startsWith(query.toLowerCase())
-}
-
-// Ranked matches over the task list, minus `excluded`: a key the query prefixes comes first, then
-// fuzzy title matches. Capped so the popover stays scannable.
-function taskMatches(
-  tasks: ReadonlyArray<TaskListItem>,
-  query: string,
-  excluded: Set<string>,
-): Array<{ task: TaskListItem; indices: ReadonlyArray<number> }> {
-  const scored: Array<{ task: TaskListItem; score: number; indices: ReadonlyArray<number> }> = []
-  for (const task of tasks) {
-    if (excluded.has(task.id)) continue
-    if (query !== "" && keyMatch(task.id, query)) {
-      scored.push({ task, score: -1, indices: [] })
-      continue
-    }
-    const match = fuzzyMatch(query, task.title)
-    if (match !== null) scored.push({ task, score: match.score, indices: match.indices })
-  }
-  scored.sort((a, b) => a.score - b.score || a.task.title.localeCompare(b.task.title))
-  return scored.slice(0, 8)
 }
 
 // The parent as a header-right "Subtask of <link>", retargetable in place. Clicking the pencil (or

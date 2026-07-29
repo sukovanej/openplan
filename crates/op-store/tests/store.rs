@@ -683,7 +683,7 @@ fn a_body_reference_is_written_as_the_target_file() {
 
     let mut holder = Task::new("Holder", Status::Todo, stamp());
     holder.append_body(&format!(
-        "see [[{target}]] and [[{target}#Design]], but not [[Some Page Title]] or [[999]]"
+        "see [[{target}]] and [[{target}#Design]], but not [[Some Page Title]] or `[[{target}]]`"
     ));
     let holder = create(&store, &holder).unwrap();
 
@@ -698,7 +698,49 @@ fn a_body_reference_is_written_as_the_target_file() {
         "bracketed prose is not a reference: {raw}"
     );
     assert!(
-        raw.contains("[[999]]"),
-        "a reference whose task is gone names no file, so it keeps its number: {raw}"
+        raw.contains(&format!("`[[{target}]]`")),
+        "a quoted reference is prose about the spelling, not a reference: {raw}"
+    );
+}
+
+#[test]
+fn a_body_reference_that_names_no_file_is_written_as_the_key() {
+    let (_dir, store) = make_store();
+    let mut holder = Task::new("Holder", Status::Todo, stamp());
+    holder.append_body("blocked on [[999]] and [[999#Design]]");
+
+    let holder = create(&store, &holder).unwrap();
+
+    // A markdown renderer knows no bare number, so writing one back would leave a reference nothing
+    // can resolve even once task 999 arrives.
+    let raw = store.read_raw(holder).unwrap();
+    assert!(
+        raw.contains("blocked on [[OPP-999]] and [[OPP-999#Design]]"),
+        "{raw}"
+    );
+}
+
+#[test]
+fn a_write_leaves_a_quoted_reference_alone() {
+    let (_dir, store) = make_store();
+    let target = create(&store, &Task::new("Target", Status::Todo, stamp())).unwrap();
+    let body = format!(
+        "# Holder\n\nthe old spelling was `[[{target}]]`, and a fence:\n\n```\nparent: [[{target}]]\n```\n"
+    );
+    let mut holder = Task::new("Holder", Status::Todo, stamp());
+    holder.body = body.clone();
+    let holder = create(&store, &holder).unwrap();
+
+    store
+        .update(holder, |task| {
+            task.set_status(Status::Done);
+            Ok(())
+        })
+        .unwrap();
+
+    let raw = store.read_raw(holder).unwrap();
+    assert!(
+        raw.ends_with(&body),
+        "an unrelated edit must not rewrite prose about the spelling: {raw}"
     );
 }

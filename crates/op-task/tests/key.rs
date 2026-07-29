@@ -115,3 +115,23 @@ fn body_spans_cover_every_reference_and_skip_bracketed_prose() {
     let (span, _) = &spans[0];
     assert_eq!(&body[span.clone()], "[[OPP-1]]");
 }
+
+// A reference is what a markdown renderer would linkify, so a body explaining the spelling is prose
+// — the store rewrites references on every write, and a code span holding one must survive it.
+#[test]
+fn a_quoted_reference_is_not_a_reference() {
+    let body = "`[[OPP-1]]` and ```[[OPP-2]]``` and [a link](x) hold none.\n\n\
+                ```\n[[OPP-3]]\n```\n\nbut [[OPP-4]] does.\n";
+    assert_eq!(
+        op_task::body_ref_spans(body)
+            .iter()
+            .map(|(_, inner)| *inner)
+            .collect::<Vec<_>>(),
+        vec!["OPP-4"]
+    );
+}
+
+#[test]
+fn an_indented_code_block_is_quoted_too() {
+    assert!(op_task::body_ref_spans("text\n\n    [[OPP-1]]\n").is_empty());
+}

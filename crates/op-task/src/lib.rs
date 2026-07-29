@@ -258,9 +258,17 @@ pub fn body_ref_id(abbreviation: Abbreviation, reference: &str) -> Option<u64> {
     }
 }
 
-// Every `[[…]]` in a body, as the range it occupies and its trimmed inner text. Inner text carrying
-// a bracket or a newline is bracketed prose rather than a reference, and is skipped.
+// Every `[[…]]` in a body that a renderer would treat as a reference, as the range it occupies and
+// its trimmed inner text. Inner text carrying a bracket or a newline is bracketed prose, and a span
+// inside code or an existing link is quoted source — a body documenting `[[42]]` in a code span says
+// what the spelling looks like rather than naming task 42, so a rewrite must leave it alone.
 pub fn body_ref_spans(body: &str) -> Vec<(std::ops::Range<usize>, &str)> {
+    let opaque = op_md::opaque_ranges(body);
+    let quoted = |span: &std::ops::Range<usize>| {
+        opaque
+            .iter()
+            .any(|r| r.start < span.end && span.start < r.end)
+    };
     let mut spans = Vec::new();
     let mut pos = 0;
     while let Some(open) = body[pos..].find("[[") {
@@ -271,8 +279,9 @@ pub fn body_ref_spans(body: &str) -> Vec<(std::ops::Range<usize>, &str)> {
         };
         let inner = &body[inner_at..inner_at + close];
         pos = inner_at + close + 2;
-        if !inner.contains(['[', ']', '\n']) {
-            spans.push((start..pos, inner.trim()));
+        let span = start..pos;
+        if !inner.contains(['[', ']', '\n']) && !quoted(&span) {
+            spans.push((span, inner.trim()));
         }
     }
     spans

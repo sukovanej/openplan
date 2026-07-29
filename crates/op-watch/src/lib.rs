@@ -126,7 +126,14 @@ fn run(
             Some(Msg::Stop) => break,
             Some(Msg::FsEvent) => deadline = Some(Instant::now() + DEBOUNCE),
             None => {
-                match attempt_pass(&repo, &store, &mut notifier, &mut watched, &mut state, &sink) {
+                match attempt_pass(
+                    &repo,
+                    &store,
+                    &mut notifier,
+                    &mut watched,
+                    &mut state,
+                    &sink,
+                ) {
                     Pass::Settled => deadline = None,
                     Pass::Retry(at) => deadline = Some(at),
                     Pass::RepoGone => {

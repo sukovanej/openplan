@@ -83,10 +83,10 @@ numerically — the prefix is constant within a store, so ordering is unchanged.
 ## References inside task bodies
 
 - The store keeps writing the file form: `parent: ./00042-ship-login-page.md`,
-  `[[./00042-publish-fast-forward-main-to-the.md]]`.
+  `[[./00042-ship-login-page.md]]`.
 - A human may type `[[OPP-42]]`; it resolves, and the next write through the
   daemon normalizes it to the file form.
-- `[[./00042-publish-fast-forward-main-to-the.md]]` and a foreign `[[WEB-7]]` are **refused on write**. A hand-edited
+- `[[42]]` and a foreign `[[WEB-7]]` are **refused on write**. A hand-edited
   file that already contains one renders it as plain text — it resolves to no
   task, so it gets no chip.
 
@@ -95,7 +95,7 @@ numerically — the prefix is constant within a store, so ordering is unchanged.
 - Add `.plan/config.toml` with `abbreviation = "OPP"` **in this change** — the
   repo's own daemon will not start without it.
 - No task file rewrites: every one of the 19 ref-carrying bodies uses the file
-  form today; no bare `[[./00042-publish-fast-forward-main-to-the.md]]` exists on disk.
+  form today; no bare `[[42]]` exists on disk.
 - Knowingly breaking: bookmarked `/task/42` URLs stop resolving, and any script
   or agent passing a bare number to `oplan` fails loudly. Acceptable pre-1.0 on
   a single-machine tool — a silent numeric fallback would reintroduce the second

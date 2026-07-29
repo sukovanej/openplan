@@ -5,7 +5,7 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt as _;
-use op_task::{Abbreviation, Frontmatter, Task, rank, ref_id, ref_target, task_filename};
+use op_task::{Abbreviation, Frontmatter, Task, parse_id, rank, ref_id, ref_target, task_filename};
 
 mod config;
 pub use config::{CONFIG_FILE, Config, ConfigError};
@@ -339,7 +339,18 @@ impl Store {
             .iter()
             .map(|reference| named(reference))
             .collect();
-        task.body = body_in_file_form(&task.body, named);
+        // A body's reference is read by a markdown renderer, which knows no bare number (§3.1): one
+        // that names no file is written as the key, so it still resolves once that task exists.
+        task.body = body_in_file_form(&task.body, |reference| {
+            let named = named(reference);
+            if named != reference {
+                return named;
+            }
+            match parse_id(ref_target(reference)) {
+                Some(number) => with_section(&self.key(number), reference),
+                None => named,
+            }
+        });
         Ok(task)
     }
 
@@ -465,6 +476,13 @@ fn single_title(body: &str) -> Result<String, StoreError> {
     }
 }
 
+fn with_section(target: &str, reference: &str) -> String {
+    match reference.split_once('#') {
+        Some((_, section)) => format!("{target}#{section}"),
+        None => target.to_owned(),
+    }
+}
+
 fn reject_dangling_ref(reference: &str) -> Result<u64, StoreError> {
     ref_id(reference).ok_or_else(|| StoreError::InvalidRef {
         reference: ref_target(reference).to_owned(),
@@ -472,7 +490,7 @@ fn reject_dangling_ref(reference: &str) -> Result<u64, StoreError> {
 }
 
 // A body's `[[…]]` put in file form by the same naming as the frontmatter's refs. Text that names no
-// task file is left exactly as written — ordinary bracketed prose is not a reference.
+// task at all is left exactly as written — ordinary bracketed prose is not a reference.
 fn body_in_file_form(body: &str, named: impl Fn(&str) -> String) -> String {
     let mut out = String::new();
     let mut last = 0;

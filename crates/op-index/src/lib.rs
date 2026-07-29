@@ -1000,9 +1000,7 @@ fn parse_version(bytes: &[u8], abbreviation: Abbreviation) -> Version {
 
 // Every `[[…]]` in `body` that resolves to a known task, deduplicated in first-seen order.
 // Unresolvable references are skipped — the client renders those as a dangling chip anyway, so they
-// need no metadata. Deliberately looser than the web's matcher, which parses markdown and so also
-// skips `[[…]]` quoted inside code spans and fences: a superset here only costs a few unused entries,
-// where a subset would drop a chip's title and status.
+// need no metadata.
 fn body_refs(
     abbreviation: Abbreviation,
     body: &str,

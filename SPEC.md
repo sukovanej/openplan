@@ -81,8 +81,11 @@ a section-addressable markdown body.
   the leading digits identify the target, so a reference to a retitled task still resolves, and a
   reference whose task is gone keeps its number, which names no file because there is none to name.
   A human may write `[[OPP-42]]`; it resolves, and the next write through the daemon normalizes it to
-  the file form. `[[42]]` and a foreign `[[WEB-7]]` are refused on write, and a hand-edited file that
-  already holds one renders it as the plain text it is.
+  the file form — a reference naming no file yet is written as the key, since a markdown renderer
+  knows no bare number. `[[42]]` and a foreign `[[WEB-7]]` are refused on write, and a hand-edited
+  file that already holds one renders it as the plain text it is. What counts as a reference is what a
+  renderer would linkify, so a `[[…]]` quoted inside code or an existing link is prose about the
+  spelling and is neither rewritten nor refused.
 - **Title = the body's single `# H1`.** Every task **must** contain **exactly one level-1
   heading**, and that is the title. Never stored in frontmatter.
 

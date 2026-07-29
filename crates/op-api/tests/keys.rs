@@ -113,15 +113,22 @@ fn a_body_that_carries_no_key_is_left_exactly_as_written() {
     }
 }
 
+// A body documenting the spelling is not naming a task, so quoted text is neither refused nor
+// rewritten — this task's own file explains `[[42]]` in exactly that way.
 #[test]
-fn the_scanner_does_not_read_markdown_so_a_quoted_reference_counts_too() {
-    // Deliberately looser than a markdown parse: refusing a spelling inside a code span costs a
-    // writer one edit, where accepting one would let a bare number reach a file that cannot resolve
-    // it. `[[42]]` in prose about ids has to be written some other way.
-    assert!(
-        op_api::body_from_keys(abbreviation(), "the old spelling was `[[42]]`").is_err(),
-        "a reference-shaped span is refused wherever it appears"
-    );
+fn a_quoted_reference_is_prose_and_is_left_alone() {
+    for body in [
+        "the old spelling was `[[42]]`",
+        "a foreign `[[WEB-7]]` names nothing here",
+        "```\nsee [[42]]\n```\n",
+        "and `[[OPP-42]]` is the one that works",
+    ] {
+        assert_eq!(
+            op_api::body_from_keys(abbreviation(), body).unwrap(),
+            body,
+            "{body:?} is quoted source, not a reference"
+        );
+    }
 }
 
 #[test]

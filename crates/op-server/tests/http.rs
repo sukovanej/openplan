@@ -1415,3 +1415,59 @@ async fn a_write_names_the_vanished_root_rather_than_the_branch() {
     assert!(message.contains("no longer exists"), "{message}");
     assert!(message.contains("oplan server restart"), "{message}");
 }
+
+// A patch applies field by field and stops at the first bad key, so a write that reports 400 must
+// have changed nothing — the file would otherwise hold a status the client was told did not land.
+#[tokio::test]
+async fn a_patch_refused_for_a_bad_key_writes_nothing() {
+    let (dir, state) = store_state();
+    let path = dir.path().join(".plan/tasks/00001-alpha.md");
+    let before = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n";
+    std::fs::write(&path, before).unwrap();
+
+    let refused = send(
+        &state,
+        "PATCH",
+        "/api/tasks/OPP-1",
+        Some(json!({ "status": "done", "parent": "42" })),
+    )
+    .await;
+
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        before,
+        "a refused patch must leave the file alone"
+    );
+}
+
+// The echo a write returns has to read like the read path: the index resolves a parent by key, so
+// handing it the number the frontmatter carries would report every task as parentless.
+#[tokio::test]
+async fn a_patch_echoes_the_parent_title() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(
+        tasks.join("00001-epic.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("00002-child.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: './00001-epic.md'\n---\n# Child\n",
+    )
+    .unwrap();
+
+    let patched = send(
+        &state,
+        "PATCH",
+        "/api/tasks/OPP-2",
+        Some(json!({ "status": "done" })),
+    )
+    .await;
+
+    assert_eq!(patched.status(), StatusCode::OK);
+    let detail = body_json(patched).await;
+    assert_eq!(detail["metadata"]["parent"], "OPP-1");
+    assert_eq!(detail["parent_title"], "Epic");
+}
