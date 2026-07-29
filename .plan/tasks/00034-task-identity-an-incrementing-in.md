@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-07-16T18:50:25Z
 dependencies:
 - ./00033-daemon-as-single-write-id-author.md
