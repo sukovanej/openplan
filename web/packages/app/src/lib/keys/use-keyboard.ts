@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
+import { copyTaskId } from "../clipboard"
+import { copyTargetId, hoveredRow, routeTaskId } from "../copy-target"
 import { detailActions, escapeOutcome } from "../detail-actions"
 import { focusedId, rowCursor, subtaskCursor } from "../row-cursor"
 import { bindings } from "./bindings"
@@ -22,9 +24,16 @@ export function useKeyboard(): Keyboard {
   const location = useLocation()
   const [overlayOpen, setOverlayOpen] = useState(false)
 
-  const scope = routeScope(location.pathname)
-  const live = useRef({ navigate, scope, overlayOpen })
-  live.current = { navigate, scope, overlayOpen }
+  const pathname = location.pathname
+  const scope = routeScope(pathname)
+  const live = useRef({ navigate, pathname, scope, overlayOpen })
+  live.current = { navigate, pathname, scope, overlayOpen }
+
+  // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
+  // route would stay the copy target on the next one.
+  useEffect(() => {
+    hoveredRow.clear()
+  }, [pathname])
 
   // How many entries Esc can pop before leaving the stack we arrived on. Read from the router's own
   // history index rather than counted from navigation types, which report Back and Forward
@@ -41,8 +50,20 @@ export function useKeyboard(): Keyboard {
         toggle: () => setOverlayOpen((open) => !open),
       },
       cursor: {
-        moveBy: (delta) => activeCursor().moveBy(delta),
+        // The mouse clears the keyboard cursor (the row lists do that on mousemove); moving the
+        // cursor hands the selection back, so it drops the hover the same way.
+        moveBy: (delta) => {
+          hoveredRow.clear()
+          activeCursor().moveBy(delta)
+        },
         focusedId: () => focusedId(activeCursor().getSnapshot()),
+      },
+      copy: {
+        taskId: () => {
+          const cursor = activeCursor().getSnapshot()
+          const id = copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), routeTaskId(live.current.pathname))
+          if (id !== undefined) copyTaskId(id)
+        },
       },
       detail: {
         editParent: () => detailActions.emit("edit-parent"),

@@ -11,6 +11,7 @@ import { StatusChip, StatusField } from "../components/status-badge"
 import { TaskBody } from "../components/task-body"
 import { MetaItem, MetaLine, PARENT_ICON, TaskTimes } from "../components/task-meta"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
+import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
 import { errorText } from "../lib/format"
 import { fuzzyMatch } from "../lib/fuzzy"
@@ -330,9 +331,16 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
           onMouseMove={() => {
             if (index !== -1) subtaskCursor.clear()
           }}
+          onMouseLeave={hoveredRow.clear}
         >
           {items.map((child, i) => (
-            <li key={child.id} ref={i === index ? activeRow : undefined} aria-selected={i === index}>
+            <li
+              key={child.id}
+              ref={i === index ? activeRow : undefined}
+              aria-selected={i === index}
+              onMouseMove={() => hoveredRow.enter(child.id)}
+              onMouseLeave={() => hoveredRow.leave(child.id)}
+            >
               <Link
                 to={`/task/${child.id}`}
                 onClick={() => subtaskCursor.focus(i)}

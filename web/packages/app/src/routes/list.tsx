@@ -7,6 +7,7 @@ import { BranchBadges } from "../components/branch-badges"
 import { ListSkeleton, Message } from "../components/states"
 import { statusHeaderClass, StatusField, statusLabel } from "../components/status-badge"
 import { MetaItem, MetaLine, PARENT_ICON, TaskTimes } from "../components/task-meta"
+import { hoveredRow } from "../lib/copy-target"
 import { errorText } from "../lib/format"
 import { createdOf, parentOf, problems } from "../lib/metadata"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
@@ -56,7 +57,7 @@ function TaskGrid({ board }: { board: Board }) {
       <div className="bg-muted/30 flex h-11 shrink-0 items-center border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground">
         Tasks
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto" onMouseLeave={hoveredRow.clear}>
         {board.groups.map((group, groupIndex) => {
           const lastGroup = groupIndex === board.groups.length - 1
           return (
@@ -125,6 +126,8 @@ function TaskRow({
       role="row"
       aria-selected={active}
       onClick={onFocus}
+      onMouseMove={() => hoveredRow.enter(task.id)}
+      onMouseLeave={() => hoveredRow.leave(task.id)}
       className={cn(
         // Every row keeps a bottom border so its height never changes; it just goes transparent
         // for the selected row (the outline draws its edges) and the last row (no trailing divider).

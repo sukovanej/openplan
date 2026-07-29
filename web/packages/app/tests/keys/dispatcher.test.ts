@@ -1,24 +1,30 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { copyTargetId, hoveredRow, routeTaskId } from "../../src/lib/copy-target"
 import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
+import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
 import type { Binding, RouteScope, RunContext } from "../../src/lib/keys/types"
 import { focusedId, rowCursor } from "../../src/lib/row-cursor"
 
 interface Harness {
   readonly navigations: Array<string>
+  readonly copied: Array<string | undefined>
   readonly overlay: { open: number; close: number; toggle: number }
   readonly detail: { editParent: number; addSubtask: number; goToParent: number; escape: number }
   setScope: (scope: RouteScope) => void
+  setPath: (pathname: string) => void
   setOverlayOpen: (open: boolean) => void
   detach: () => void
 }
 
 function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   let scope: RouteScope = "list"
+  let pathname = "/"
   let overlayOpen = false
   const navigations: Array<string> = []
+  const copied: Array<string | undefined> = []
   const overlay = { open: 0, close: 0, toggle: 0 }
   const detail = { editParent: 0, addSubtask: 0, goToParent: 0, escape: 0 }
   const context = (): RunContext => ({
@@ -29,8 +35,17 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
       toggle: () => void overlay.toggle++,
     },
     cursor: {
-      moveBy: rowCursor.moveBy,
+      moveBy: (delta) => {
+        hoveredRow.clear()
+        rowCursor.moveBy(delta)
+      },
       focusedId: () => focusedId(rowCursor.getSnapshot()),
+    },
+    copy: {
+      taskId: () => {
+        const cursor = rowCursor.getSnapshot()
+        copied.push(copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), routeTaskId(pathname)))
+      },
     },
     detail: {
       editParent: () => void detail.editParent++,
@@ -49,9 +64,11 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const detach = dispatcher.attach(window)
   return {
     navigations,
+    copied,
     overlay,
     detail,
     setScope: (next) => void (scope = next),
+    setPath: (next) => void (pathname = next),
     setOverlayOpen: (next) => void (overlayOpen = next),
     detach,
   }
@@ -63,6 +80,7 @@ function press(key: string, target: EventTarget = window, init: KeyboardEventIni
 
 beforeEach(() => {
   rowCursor.setRows([])
+  hoveredRow.clear()
   document.body.innerHTML = ""
 })
 
@@ -243,6 +261,74 @@ describe("scope resolution", () => {
     press("?")
     expect(h.overlay.close).toBe(2)
     h.detach()
+  })
+
+  it("copies an id from either route, and not while the overlay is open", () => {
+    const h = mount()
+    rowCursor.setRows(["12", "13"])
+    rowCursor.moveBy(1)
+    press(".", window, { metaKey: true })
+    expect(h.copied).toEqual(["12"])
+
+    h.setScope("detail")
+    h.setPath("/task/28")
+    rowCursor.setRows([])
+    press(".", window, { metaKey: true })
+    expect(h.copied).toEqual(["12", "28"])
+
+    h.setOverlayOpen(true)
+    press(".", window, { metaKey: true })
+    expect(h.copied).toEqual(["12", "28"])
+    h.detach()
+  })
+
+  it("copies the hovered row ahead of the keyboard selection, from Ctrl as well as Cmd", () => {
+    const h = mount()
+    rowCursor.setRows(["12", "13"])
+    rowCursor.moveBy(1)
+    hoveredRow.enter("13")
+
+    press(".", window, { metaKey: true })
+    press(".", window, { ctrlKey: true })
+    expect(h.copied).toEqual(["13", "13"])
+    h.detach()
+  })
+
+  it("copies the row j moved to, not the one the pointer was left resting on", () => {
+    const h = mount()
+    rowCursor.setRows(["12", "13"])
+    hoveredRow.enter("13")
+
+    press("j")
+    press(".", window, { metaKey: true })
+    expect(h.copied).toEqual(["12"])
+    h.detach()
+  })
+
+  it("copies while a picker input has focus, where bare keys are left to the field", () => {
+    const h = mount()
+    rowCursor.setRows(["12"])
+    rowCursor.moveBy(1)
+    const input = document.createElement("input")
+    document.body.append(input)
+    input.focus()
+
+    press(".", input, { metaKey: true })
+    expect(h.copied).toEqual(["12"])
+    h.detach()
+  })
+
+  it("resolves to no target when nothing is hovered, selected, or open", () => {
+    const h = mount()
+    press(".", window, { metaKey: true })
+    expect(h.copied).toEqual([undefined])
+    h.detach()
+  })
+
+  it("matches a Cmd+. event against the authored mod+. token", () => {
+    const event = new KeyboardEvent("keydown", { key: ".", metaKey: true })
+    expect(fromEvent(event)).toBe(normalizeToken("mod+."))
+    expect(fromEvent(new KeyboardEvent("keydown", { key: ".", ctrlKey: true }))).toBe("mod+.")
   })
 
   it("? toggles the overlay from a normal route", () => {

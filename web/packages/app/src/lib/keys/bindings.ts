@@ -69,6 +69,14 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.detail.addSubtask(),
   },
   {
+    id: "task.copy-id",
+    keys: "mod+.",
+    scope: "global",
+    label: "Copy task id",
+    group: "Task",
+    run: (ctx) => ctx.copy.taskId(),
+  },
+  {
     id: "help.toggle",
     keys: "?",
     scope: "global",
