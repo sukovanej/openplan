@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
 
 pub use op_api::DaemonInfo;
+use op_task::{FieldResult, Timestamp};
 
 pub const DEFAULT_PORT: u16 = 7373;
 
@@ -295,6 +296,38 @@ impl Control {
 
     // A live daemon answers /health with its own identity; requiring the pid to match
     // daemon.json rejects a stale record whose port was recycled by an unrelated service.
+    // The `updated` a running daemon already holds, for a task in the repository it indexes. Asked
+    // for the branch whose file the caller read, so the answer describes the bytes it will print.
+    // `None` means no daemon could answer — not that the task has no `updated`.
+    pub fn task_updated(
+        &self,
+        repo_dir: &Path,
+        id: &str,
+        branch: Option<&str>,
+    ) -> Option<FieldResult<Timestamp>> {
+        let info = self.home.read_info()?;
+        // No recorded repository means a daemon older than the field: it may be indexing anything,
+        // so its answers cannot be trusted for this store.
+        if !same_path(Path::new(info.repo.as_deref()?), repo_dir) || !self.serves_identity(&info) {
+            return None;
+        }
+        let base = base(info.port);
+        let detail = self.client.task(&base, id, branch)?;
+        let updated = detail.updated.into_result().map(|at| at.0);
+        // A branch matching its merge-base has no cell there, so the daemon reports nothing for it;
+        // the headline is what the local path falls back to as well.
+        match (updated, branch) {
+            (Err(op_task::FieldError::Missing), Some(_)) => Some(
+                self.client
+                    .task(&base, id, None)?
+                    .updated
+                    .into_result()
+                    .map(|at| at.0),
+            ),
+            (updated, _) => Some(updated),
+        }
+    }
+
     fn serves_identity(&self, info: &DaemonInfo) -> bool {
         self.client
             .health(&base(info.port))
@@ -384,6 +417,13 @@ fn signal_term(pid: u32) -> Result<()> {
     match kill(Pid::from_raw(pid), Signal::SIGTERM) {
         Ok(()) | Err(Errno::ESRCH) => Ok(()),
         Err(e) => Err(e).with_context(|| format!("sending SIGTERM to pid {pid}")),
+    }
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
 

@@ -66,6 +66,13 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
         port: bound,
         version: env!("CARGO_PKG_VERSION").to_owned(),
         started_at: now_unix(),
+        repo: Some(
+            repo.git_common_dir()
+                .canonicalize()
+                .unwrap_or_else(|_| repo.git_common_dir())
+                .display()
+                .to_string(),
+        ),
     };
     home.write_info(&info)?;
 

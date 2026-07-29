@@ -16,12 +16,14 @@ export const CreatedTask = Schema.Struct({ id: Schema.String })
 export type DaemonInfo = {
   readonly pid: number
   readonly port: number
+  readonly repo?: string | null
   readonly started_at: number
   readonly version: string
 }
 export const DaemonInfo = Schema.Struct({
   pid: Schema.Number.annotate({ format: "int32" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
   port: Schema.Number.annotate({ format: "int32" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+  repo: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   started_at: Schema.Number.annotate({ format: "int64" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
   version: Schema.String,
 })

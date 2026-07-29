@@ -98,6 +98,14 @@ impl Repo {
         Ok(out)
     }
 
+    pub fn worktree_branch(&self, path: &Path) -> Result<Option<String>, GitError> {
+        Ok(self
+            .worktrees()?
+            .into_iter()
+            .find(|worktree| same_path(&worktree.path, path))
+            .and_then(|worktree| worktree.branch))
+    }
+
     pub fn branch_task_blobs(&self, branch: &str) -> Result<Vec<(String, String)>, GitError> {
         let repo = self.repo();
         let tree = repo
@@ -342,6 +350,13 @@ fn worktree_of(repo: &gix::Repository) -> Option<Worktree> {
         branch,
         op_in_progress: op_markers_present(repo.git_dir()),
     })
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
 }
 
 fn op_markers_present(git_dir: &Path) -> bool {

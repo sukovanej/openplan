@@ -17,6 +17,12 @@ pub struct DaemonInfo {
     pub port: u16,
     pub version: String,
     pub started_at: u64,
+    // The git common directory of the repository it indexes — the same for every worktree of that
+    // repository, so a client can tell whether this daemon's answers are about its own store.
+    // Optional because this file outlives the binary that wrote it: a newer CLI must still be able
+    // to read, and stop, a daemon started before the field existed.
+    #[serde(default)]
+    pub repo: Option<String>,
 }
 
 // Every read surface carries the same `metadata`: the frontmatter parsed field by field, so a file
@@ -198,6 +204,16 @@ impl<T> Field<T> {
         match self {
             Field::Value(value) => Field::Value(f(value)),
             Field::Error(err) => Field::Error(err),
+        }
+    }
+
+    pub fn into_result(self) -> op_task::FieldResult<T> {
+        match self {
+            Field::Value(value) => Ok(value),
+            Field::Error(FieldError::Missing) => Err(op_task::FieldError::Missing),
+            Field::Error(FieldError::Invalid { message }) => {
+                Err(op_task::FieldError::Invalid(message))
+            }
         }
     }
 

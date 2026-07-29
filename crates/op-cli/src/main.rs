@@ -503,7 +503,23 @@ fn show_branches(root: &Path, id: &str) -> Result<()> {
 // simply has none to report. It dates the checked-out branch, the one whose file was just read; a
 // task matching its merge-base has no cell of its own there, and falls back to the branch that did
 // last change it.
+//
+// A running daemon already holds this, kept warm across requests. Asking it spares a one-shot
+// process the whole cross-branch index — every branch's blobs parsed and its history walked — built
+// to fill this one field and then dropped.
 fn local_updated(root: &Path, id: &str) -> FieldResult<Timestamp> {
+    let (Ok(repo), Ok(store)) = (Repo::discover(root), Store::discover(root)) else {
+        return Err(FieldError::Missing);
+    };
+    // The worktree's own root, not the `--root` the caller passed, which may be any directory
+    // beneath it.
+    let branch = repo.worktree_branch(store.root()).ok().flatten();
+    if let Some(updated) = Control::resolve()
+        .ok()
+        .and_then(|control| control.task_updated(&repo.git_common_dir(), id, branch.as_deref()))
+    {
+        return updated;
+    }
     let Ok((_repo, index)) = build_index(root) else {
         return Err(FieldError::Missing);
     };

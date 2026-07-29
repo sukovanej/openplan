@@ -75,6 +75,7 @@ async fn health_reports_identity_when_set() {
         port: 9,
         version: "9.9.9".to_owned(),
         started_at: 5,
+        repo: None,
     };
     let (_dir, state) = store_state();
     let response = app(state.with_health(info.clone()))
