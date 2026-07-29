@@ -35,6 +35,32 @@ it("the cursor cannot move past the last row or before the first", () => {
   expect(focused(first, -99).index).toBe(0)
 })
 
+it("an unselected cursor starts from the row it is given", () => {
+  const rowed = withRows(emptyCursor, rows(5))
+  expect(moved(rowed, 1, "t-2").index).toBe(3)
+  expect(moved(rowed, -1, "t-2").index).toBe(1)
+  expect(moved(rowed, -1, "t-0").index).toBe(0)
+  expect(moved(rowed, 1, "t-4").index).toBe(4)
+})
+
+it("an unselected cursor falls back to the first row", () => {
+  const rowed = withRows(emptyCursor, rows(5))
+  expect(moved(rowed, 1).index).toBe(0)
+  expect(moved(rowed, -1).index).toBe(0)
+  expect(moved(rowed, 1, "gone").index).toBe(0)
+})
+
+it("a selected cursor ignores the row it is given", () => {
+  const at2 = focused(withRows(emptyCursor, rows(5)), 2)
+  expect(moved(at2, 1, "t-4").index).toBe(3)
+})
+
+it("the store resumes from the hovered row", () => {
+  rowCursor.setRows(["hovered-a", "hovered-b", "hovered-c"])
+  rowCursor.moveBy(1, "hovered-b")
+  expect(rowCursor.getSnapshot().index).toBe(2)
+})
+
 it("the cursor clears when the task set changes", () => {
   const at2 = focused(withRows(emptyCursor, rows(5)), 2)
   expect(at2.index).toBe(2)

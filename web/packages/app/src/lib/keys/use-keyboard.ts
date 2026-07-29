@@ -51,12 +51,19 @@ export function useKeyboard(): Keyboard {
       },
       cursor: {
         // The mouse clears the keyboard cursor (the row lists do that on mousemove); moving the
-        // cursor hands the selection back, so it drops the hover the same way.
+        // cursor hands the selection back, so it resumes from the hovered row and drops the hover.
         moveBy: (delta) => {
+          const cursor = activeCursor()
+          const hovered = hoveredRow.among(cursor.getSnapshot().ids)
           hoveredRow.clear()
-          activeCursor().moveBy(delta)
+          cursor.moveBy(delta, hovered)
         },
-        focusedId: () => focusedId(activeCursor().getSnapshot()),
+        // The hovered row renders as the current one, so it answers for the cursor when there is
+        // no selection.
+        focusedId: () => {
+          const cursor = activeCursor().getSnapshot()
+          return focusedId(cursor) ?? hoveredRow.among(cursor.ids)
+        },
       },
       copy: {
         taskId: () => {

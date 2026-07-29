@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useEffect, useMemo, useRef, type Ref } from "react"
 import { Link } from "react-router-dom"
 
 import type { Board, BoardRow, Status } from "@open-planner/api-client"
@@ -40,6 +40,11 @@ function TaskGrid({ board }: { board: Board }) {
   const { index } = useRowCursor(ids)
   const activeId = index >= 0 && index < rows.length ? rowDomId(rows[index].task.id) : undefined
 
+  const activeRow = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    activeRow.current?.scrollIntoView({ block: "nearest" })
+  }, [index])
+
   let base = 0
   return (
     <div
@@ -47,9 +52,6 @@ function TaskGrid({ board }: { board: Board }) {
       aria-label="Tasks"
       aria-activedescendant={activeId}
       tabIndex={0}
-      onMouseMove={() => {
-        if (index !== -1) rowCursor.clear()
-      }}
       // Box outline is an inset ring, not `border`, so the selected row's own inset ring lands on
       // the same pixels and reads as one line instead of doubling up against a container border.
       className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border text-sm focus:outline-none"
@@ -68,8 +70,12 @@ function TaskGrid({ board }: { board: Board }) {
                 return (
                   <TaskRow
                     key={row.task.id}
+                    ref={i === index ? activeRow : undefined}
                     row={row}
                     active={i === index}
+                    // The pointer only marks the current row while the keyboard cursor is idle, so
+                    // the two never claim it at once.
+                    hoverable={index === -1}
                     tableLast={lastGroup && j === group.rows.length - 1}
                     onFocus={() => rowCursor.focus(i)}
                   />
@@ -105,14 +111,29 @@ function HeaderRow({ status }: { status: Status | undefined }) {
   )
 }
 
+// The current row loses its own bottom border — the outline draws that edge — and gets the outline
+// as an absolutely-positioned overlay, offset up 1px to sit on the separator above, so neither
+// participates in flow and the row keeps its height whether or not it is current.
+const CURRENT_ROW =
+  "border-transparent bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:bottom-px after:border after:border-blue-600/40 after:content-['']"
+
+// The same treatment under the pointer, spelled out because Tailwind only emits classes it can read
+// literally in the source.
+const HOVERED_ROW =
+  "hover:border-transparent hover:bg-muted/30 hover:after:pointer-events-none hover:after:absolute hover:after:inset-x-0 hover:after:-top-px hover:after:bottom-px hover:after:border hover:after:border-blue-600/40 hover:after:content-['']"
+
 function TaskRow({
+  ref,
   row,
   active,
+  hoverable,
   tableLast,
   onFocus,
 }: {
+  ref?: Ref<HTMLDivElement>
   row: BoardRow
   active: boolean
+  hoverable: boolean
   tableLast: boolean
   onFocus: () => void
 }) {
@@ -122,22 +143,31 @@ function TaskRow({
   const broken = problems(task.metadata)
   return (
     <div
+      ref={ref}
       id={rowDomId(task.id)}
       role="row"
       aria-selected={active}
       onClick={onFocus}
-      onMouseMove={() => hoveredRow.enter(task.id)}
+      // Scrolling a list under a still pointer moves `:hover` to another row without a mousemove,
+      // so the row the pointer marks is only in step with the store if entering counts too. It must
+      // not count while the keyboard drives, or walking with `j` would hand rows it scrolls past
+      // back to the pointer.
+      onMouseEnter={() => {
+        if (hoverable) hoveredRow.enter(task.id)
+      }}
+      // Moving the pointer is what hands the current row back to it — and only over a row, so a
+      // nudge across a group header or the scrollbar leaves the keyboard's row where it was.
+      onMouseMove={() => {
+        hoveredRow.enter(task.id)
+        rowCursor.clear()
+      }}
       onMouseLeave={() => hoveredRow.leave(task.id)}
       className={cn(
-        // Every row keeps a bottom border so its height never changes; it just goes transparent
-        // for the selected row (the outline draws its edges) and the last row (no trailing divider).
         "relative flex cursor-pointer items-center border-b transition-colors",
-        (active || tableLast) && "border-transparent",
-        // The selection outline is an absolutely-positioned overlay, offset up 1px to sit on the
-        // separator above, so it never participates in flow and can't shift any row's height.
-        active
-          ? "bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:bottom-px after:border after:border-blue-600/40 after:content-['']"
-          : "hover:bg-muted/30",
+        // The last row drops its divider; it has no row below to separate it from.
+        tableLast && "border-transparent",
+        active && CURRENT_ROW,
+        hoverable && HOVERED_ROW,
       )}
     >
       <div
