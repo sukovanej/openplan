@@ -192,7 +192,10 @@ fn create_names_the_file_after_the_allocated_number() {
     let task = Task::new("Wire the parser", Status::Todo, stamp());
 
     let id = store.create(&task, 7).unwrap();
-    assert_eq!(id, "7", "the number is the whole id — no title, no slug");
+    assert_eq!(
+        id, "7",
+        "the id is the number; the title only shapes the file name"
+    );
 
     // The allocator must not hand the same number out twice; if it does, the store refuses rather
     // than let one task's file be overwritten by another's.

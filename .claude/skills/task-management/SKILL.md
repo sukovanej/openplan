@@ -5,8 +5,9 @@ description: Work items in this repo are called "tasks" (.plan/tasks/*.md, manag
 
 # Task management
 
-Tasks in this repo are markdown files in `.plan/tasks/<id>.md`, managed with the
-`oplan` binary.
+Tasks in this repo are markdown files in `.plan/tasks/`, managed with the `oplan`
+binary. A task's id is a number (`42`); its file is named `00042-<title-slug>.md`,
+where only the leading digits identify it.
 
 Statuses: `backlog` `todo` `in_progress` `in_review` `done` `cancelled`.
 

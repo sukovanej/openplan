@@ -27,7 +27,7 @@ pub struct Index {
     // branch -> a walk result reusable across the per-request rebuilds, instead of re-walking
     // history every time.
     change_cache: HashMap<String, ChangeTimes>,
-    max_id_number: Option<u64>,
+    max_id: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -107,7 +107,7 @@ impl Index {
         // Every worktree's files, not just those of the branches walked below: a task can hold a
         // number while no branch commits it — an unborn HEAD has no branch at all, and a worktree
         // mid-merge is excluded from `live`. The number is taken the moment the file exists.
-        let mut max_id_number = on_disk_id_floor(&worktrees, store);
+        let mut max_id = on_disk_id_floor(&worktrees, store);
         for branch in &branches {
             let committed: HashMap<String, String> =
                 repo.branch_task_blobs(branch)?.into_iter().collect();
@@ -115,8 +115,7 @@ impl Index {
             let present = present_ids(&committed, live.as_ref())?;
             // Every id the branch holds, not just the cells it contributes: a task identical to its
             // merge base is skipped below, and its number would otherwise read as free.
-            max_id_number =
-                max_id_number.max(present.iter().filter_map(|id| op_task::parse_id(id)).max());
+            max_id = max_id.max(present.iter().filter_map(|id| op_task::parse_id(id)).max());
             if self.is_baseline(branch) {
                 self.baseline_cells(
                     repo,
@@ -138,7 +137,7 @@ impl Index {
                 self.diff_cells(repo, &ctx, &mut cells)?;
             }
         }
-        self.max_id_number = max_id_number;
+        self.max_id = max_id;
         cells.sort_by(|a, b| (&a.task.id, &a.branch).cmp(&(&b.task.id, &b.branch)));
         self.change_times = self.compute_change_times(repo, &cells)?;
         self.matrix = Matrix { cells };
@@ -404,8 +403,8 @@ impl Index {
     // The highest id number any local branch or worktree holds — the floor an allocator must clear
     // for a number to be unissued repo-wide. Read from the branches and the files themselves rather
     // than from the matrix, whose cells only cover divergence.
-    pub fn max_id_number(&self) -> Option<u64> {
-        self.max_id_number
+    pub fn max_id(&self) -> Option<u64> {
+        self.max_id
     }
 
     // The already-opened store of the worktree that has `branch` checked out and is writable — not

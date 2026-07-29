@@ -407,9 +407,9 @@ async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiErro
 }
 
 // Creation is branch-local like every other write: it lands in the live worktree of the target
-// branch or is refused. The id number comes from the machine-wide counter above a floor taken across
-// every local branch, so a number is issued once repo-wide and two branches can never mint different
-// tasks under one id.
+// branch or is refused. The id comes from the machine-wide counter above a floor taken across every
+// local branch, so a number is issued once repo-wide and two branches can never mint different tasks
+// under one id.
 #[utoipa::path(
     post,
     path = "/api/tasks",
@@ -437,7 +437,7 @@ async fn create_task(
             let (branch, store, floor) = {
                 let mut index = index.lock().expect("index mutex poisoned");
                 let (branch, store) = write_target(&mut index, &repo, &serve_store, query.branch)?;
-                (branch, store, index.max_id_number().unwrap_or(0))
+                (branch, store, index.max_id().unwrap_or(0))
             };
             let task = body.into_task(created);
             let mut taken = 0;

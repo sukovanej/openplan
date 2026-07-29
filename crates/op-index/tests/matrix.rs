@@ -755,7 +755,7 @@ fn the_id_floor_counts_a_task_no_commit_holds_yet() {
 
     // Nothing is committed, so HEAD is unborn and there are no branches to walk. Reading the floor
     // from branch tips alone would call 7 free and mint a second task 7 on the next create.
-    assert_eq!(built(root).max_id_number(), Some(7));
+    assert_eq!(built(root).max_id(), Some(7));
 }
 
 #[test]
@@ -792,5 +792,5 @@ fn the_id_floor_counts_a_worktree_mid_merge() {
     // else; the number is taken all the same, and the merge will commit it.
     write(&root.join(".git/worktrees/feature/MERGE_HEAD"), "");
 
-    assert_eq!(built(root).max_id_number(), Some(9));
+    assert_eq!(built(root).max_id(), Some(9));
 }
