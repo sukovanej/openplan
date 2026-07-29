@@ -1,8 +1,9 @@
+import type { Field_String } from "@open-planner/api-client"
 import { CalendarPlus, CircleAlert, CornerLeftUp, History, type LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { TimeAgo } from "@/components/time-ago"
-import type { FieldProblem } from "@/lib/metadata"
+import { type FieldProblem, fieldFailure, fieldValue } from "@/lib/metadata"
 import { cn } from "@/lib/utils"
 
 export const PARENT_ICON = CornerLeftUp
@@ -50,9 +51,13 @@ export function TaskTimes({
   problems,
 }: {
   created: string | undefined
-  updated: string | undefined
+  updated: Field_String | undefined
   problems: ReadonlyArray<FieldProblem>
 }) {
+  const updatedAt = updated === undefined ? undefined : fieldValue(updated)
+  // A commit git cannot date leaves the field carrying why instead of when, and that reads where the
+  // time would have — not folded in with the frontmatter's own problems, which it is not one of.
+  const undatable = updated === undefined ? undefined : fieldFailure(updated)
   return (
     <>
       {created !== undefined && (
@@ -60,9 +65,14 @@ export function TaskTimes({
           <TimeAgo iso={created} label="Created" />
         </MetaItem>
       )}
-      {updated !== undefined && (
+      {updatedAt !== undefined && (
         <MetaItem icon={History} className="whitespace-nowrap">
-          <TimeAgo iso={updated} label="Updated" />
+          <TimeAgo iso={updatedAt} label="Updated" />
+        </MetaItem>
+      )}
+      {undatable !== undefined && undatable.kind === "invalid" && (
+        <MetaItem icon={History} title={undatable.message} className="min-w-0 text-red-600/90 dark:text-red-400/90">
+          <span className="truncate">{undatable.message}</span>
         </MetaItem>
       )}
       {problems.length > 0 && (

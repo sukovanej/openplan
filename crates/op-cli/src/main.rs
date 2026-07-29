@@ -15,7 +15,7 @@ use op_api::{
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
-use op_task::{Status, Timestamp, rank};
+use op_task::{FieldError, FieldResult, Status, Timestamp, rank};
 
 use daemon::{Control, DEFAULT_PORT, Home};
 
@@ -503,11 +503,11 @@ fn show_branches(root: &Path, id: &str) -> Result<()> {
 // simply has none to report. It dates the checked-out branch, the one whose file was just read; a
 // task matching its merge-base has no cell of its own there, and falls back to the branch that did
 // last change it.
-fn local_updated(root: &Path, id: &str) -> Option<Timestamp> {
-    let (_repo, index) = build_index(root).ok()?;
-    index
-        .task_updated(id, index.current_branch())
-        .or_else(|| index.task_updated(id, None))
+fn local_updated(root: &Path, id: &str) -> FieldResult<Timestamp> {
+    let Ok((_repo, index)) = build_index(root) else {
+        return Err(FieldError::Missing);
+    };
+    index.task_updated_or_headline(id, index.current_branch())
 }
 
 fn build_index(root: &Path) -> Result<(Repo, Index)> {

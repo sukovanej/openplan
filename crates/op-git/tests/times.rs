@@ -60,7 +60,7 @@ fn a_change_is_dated_by_author_time_not_commit_time() {
         .task_change_times("main", &ids("a"))
         .unwrap();
 
-    assert_eq!(times.get("a"), Some(&at(1_000_000_000)));
+    assert_eq!(times.get("a"), Some(&Ok(at(1_000_000_000))));
 }
 
 #[test]
@@ -82,8 +82,8 @@ fn the_newest_change_wins_and_untouched_tasks_keep_their_own_date() {
         .task_change_times("main", &HashSet::from(["a".to_owned(), "b".to_owned()]))
         .unwrap();
 
-    assert_eq!(times.get("a"), Some(&at(1_000_000_500)));
-    assert_eq!(times.get("b"), Some(&at(1_000_000_000)));
+    assert_eq!(times.get("a"), Some(&Ok(at(1_000_000_500))));
+    assert_eq!(times.get("b"), Some(&Ok(at(1_000_000_000))));
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn a_merge_does_not_restamp_what_the_merged_branch_changed() {
         .unwrap();
 
     // The merge introduced no version of its own, so the task is still dated by the edit itself.
-    assert_eq!(times.get("a"), Some(&at(1_700_000_000)));
+    assert_eq!(times.get("a"), Some(&Ok(at(1_700_000_000))));
 }
 
 fn merge_at(dir: &Path, seconds: i64, branch: &str) {
@@ -121,4 +121,55 @@ fn merge_at(dir: &Path, seconds: i64, branch: &str) {
         .status()
         .expect("git must be installed for this test");
     assert!(status.success(), "git merge failed");
+}
+
+// Git stores an author date as a bare i64 and validates nothing, so a broken clock or an importer
+// can leave one no calendar can express.
+const UNUSABLE_AUTHOR_SECONDS: i64 = 253_402_300_800;
+
+#[test]
+fn a_commit_with_an_unusable_author_date_costs_only_the_tasks_it_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    task(root, "a", "todo");
+    task(root, "b", "todo");
+    git(root, &["add", "-A"]);
+    commit_at(root, 1_000_000_000, 1_000_000_000, "add a and b");
+    task(root, "b", "done");
+    git(root, &["add", "-A"]);
+    commit_at(root, UNUSABLE_AUTHOR_SECONDS, 2_000_000_000, "edit b");
+
+    let times = Repo::discover(root)
+        .unwrap()
+        .task_change_times("main", &HashSet::from(["a".to_owned(), "b".to_owned()]))
+        .expect("one undatable commit must not sink the whole walk");
+
+    assert_eq!(times.get("a"), Some(&Ok(at(1_000_000_000))));
+    let why = times.get("b").unwrap().as_ref().unwrap_err();
+    assert!(why.contains("unusable author date"), "{why}");
+}
+
+#[test]
+fn an_unusable_author_date_on_a_commit_touching_no_task_costs_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    task(root, "a", "todo");
+    git(root, &["add", "-A"]);
+    commit_at(root, 1_000_000_000, 1_000_000_000, "add a");
+    std::fs::write(root.join("README.md"), "hello\n").unwrap();
+    git(root, &["add", "-A"]);
+    commit_at(root, UNUSABLE_AUTHOR_SECONDS, 2_000_000_000, "unrelated");
+
+    let times = Repo::discover(root)
+        .unwrap()
+        .task_change_times("main", &ids("a"))
+        .expect("a commit that changes no task must not be dated at all");
+
+    assert_eq!(times.get("a"), Some(&Ok(at(1_000_000_000))));
 }

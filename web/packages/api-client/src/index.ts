@@ -134,7 +134,7 @@ export type TaskDetail = {
   readonly parent_title?: string
   readonly refs?: ReadonlyArray<TaskRef>
   readonly title: string
-  readonly updated?: string
+  readonly updated: Field_String
 }
 export const TaskDetail = Schema.Struct({
   body: Schema.String,
@@ -146,7 +146,7 @@ export const TaskDetail = Schema.Struct({
   parent_title: Schema.optionalKey(Schema.String),
   refs: Schema.optionalKey(Schema.Array(TaskRef)),
   title: Schema.String,
-  updated: Schema.optionalKey(Schema.Union([Schema.String.annotate({ format: "date-time" })])),
+  updated: Field_String,
 })
 export type TaskListItem = {
   readonly branches: ReadonlyArray<BranchState>
@@ -154,7 +154,7 @@ export type TaskListItem = {
   readonly id: string
   readonly metadata: Metadata
   readonly title: string
-  readonly updated?: string
+  readonly updated: Field_String
 }
 export const TaskListItem = Schema.Struct({
   branches: Schema.Array(BranchState),
@@ -162,7 +162,7 @@ export const TaskListItem = Schema.Struct({
   id: Schema.String,
   metadata: Metadata,
   title: Schema.String,
-  updated: Schema.optionalKey(Schema.Union([Schema.String.annotate({ format: "date-time" })])),
+  updated: Field_String,
 })
 export type BoardRow = {
   readonly depth: number

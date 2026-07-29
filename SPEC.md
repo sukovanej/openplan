@@ -69,6 +69,11 @@ substitutes a plausible value for one it could not read — a task with an unrea
 status, is grouped apart on the board rather than filed under one it never claimed, and matches no
 status filter.
 
+`updated` reports the same way, though it is derived rather than read: git accepts any int64 as a
+commit's author date, so a commit may hold one no calendar can express. Such a commit dates nothing
+— the tasks it changed carry the reason in place of a time, and every other task, and every other
+read, is unaffected.
+
 ### 3.2 Hierarchy & links
 - **Hierarchy is a reference graph, not physical nesting.** Subtasks are their own files
   with a `parent` pointer. (A project task with 200 subtasks stays 200 small files, not one

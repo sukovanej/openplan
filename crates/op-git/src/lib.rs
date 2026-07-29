@@ -4,9 +4,12 @@ use std::path::{Path, PathBuf};
 use jiff::Timestamp;
 
 const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
-// A safety valve on the last-change walk: an id whose change lies deeper than this stays undated
-// (read as "old"), which only ever lets a more recent branch outrank it — never the reverse.
+// A safety valve on the last-change walk: an id whose change lies deeper than this stays undated,
+// which reports as no `updated` and, for ranking, as older than any dated branch.
 const HISTORY_WALK_BUDGET: usize = 4096;
+
+// When a task's last change happened, or why the commit that made it cannot say.
+pub type ChangeTime = Result<Timestamp, String>;
 
 #[derive(Debug, Clone)]
 pub struct Repo {
@@ -118,7 +121,7 @@ impl Repo {
         &self,
         branch: &str,
         ids: &HashSet<String>,
-    ) -> Result<HashMap<String, Timestamp>, GitError> {
+    ) -> Result<HashMap<String, ChangeTime>, GitError> {
         if ids.is_empty() {
             return Ok(HashMap::new());
         }
@@ -142,20 +145,23 @@ impl Repo {
                 break;
             }
             let info = info.map_err(|e| GitError::Object(e.to_string()))?;
-            let authored = author_time(&repo, info.id)?;
             let this = commit_task_map(&repo, info.id)?;
             let parents: Vec<HashMap<String, String>> = info
                 .parent_ids
                 .iter()
                 .map(|parent| commit_task_map(&repo, *parent))
                 .collect::<Result<_, _>>()?;
+            // Read once per commit, and only for a commit that changes something asked for: a
+            // commit touching no task must not be able to fail the walk with its own header.
+            let mut authored = None;
             needed.retain(|id| match this.get(*id) {
                 // Every parent, not just the first: a merge carrying a task version unchanged from
                 // either side did not edit it, and crediting the merge would restamp every task the
                 // merged branch touched. Only a version matching no parent — a conflict resolved by
                 // hand — is the merge's own change.
                 Some(blob) if parents.iter().all(|parent| parent.get(*id) != Some(blob)) => {
-                    times.insert((*id).to_owned(), authored);
+                    let at = authored.get_or_insert_with(|| author_time(&repo, info.id));
+                    times.insert((*id).to_owned(), at.clone());
                     false
                 }
                 _ => true,
@@ -256,16 +262,19 @@ impl Repo {
     }
 }
 
-fn author_time(repo: &gix::Repository, commit: gix::ObjectId) -> Result<Timestamp, GitError> {
+// Git stores an author date as a bare i64 and validates nothing, so a clock-skewed machine or an
+// importer can leave one no calendar can express. Such a commit dates nothing — reported, not
+// raised: it must cost the tasks it changed their `updated`, and nothing else its own.
+fn author_time(repo: &gix::Repository, commit: gix::ObjectId) -> ChangeTime {
     let object = repo
         .find_object(commit)
-        .map_err(|e| GitError::Object(e.to_string()))?
+        .map_err(|e| format!("commit {commit} is unreadable: {e}"))?
         .into_commit();
     let author = object
         .author()
-        .map_err(|e| GitError::Object(e.to_string()))?;
+        .map_err(|e| format!("commit {commit} has an unreadable author: {e}"))?;
     Timestamp::from_second(author.seconds())
-        .map_err(|e| GitError::Object(format!("commit {commit} has an unusable author date: {e}")))
+        .map_err(|e| format!("commit {commit} has an unusable author date: {e}"))
 }
 
 fn commit_task_map(

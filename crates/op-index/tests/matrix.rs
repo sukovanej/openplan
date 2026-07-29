@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use op_api::{ChangeKind, Status};
+use op_api::{ChangeKind, Field, Status};
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
@@ -548,19 +548,19 @@ fn updated_follows_the_last_commit_to_touch_the_task() {
     task(root, "t", &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
 
-    assert_eq!(built(root).task_updated("t", None), Some(at(1_000_000_000)));
+    assert_eq!(built(root).task_updated("t", None), Ok(at(1_000_000_000)));
 
     // A status flip is a blob change like any other, so it counts as an update.
     task(root, "t", &dated("done"));
     commit_at(root, 1_000_000_500, "finish t");
 
     let index = built(root);
-    assert_eq!(index.task_updated("t", None), Some(at(1_000_000_500)));
+    assert_eq!(index.task_updated("t", None), Ok(at(1_000_000_500)));
     let view = index
         .effective_view(&Repo::discover(root).unwrap(), "t", "main")
         .unwrap()
         .unwrap();
-    assert_eq!(view.updated, Some(at(1_000_000_500)));
+    assert_eq!(view.updated, Field::Value(at(1_000_000_500).to_string()));
     assert_eq!(
         view.metadata.created(),
         Some(at(CREATED_SECONDS).to_string().as_str())
@@ -601,8 +601,11 @@ fn the_aggregated_list_dates_a_task_like_its_detail_does() {
         .unwrap();
 
     // The board renders `updated` from here, so it must agree with the task's own page.
-    assert_eq!(listed.updated, Some(at(1_000_000_000)));
-    assert_eq!(listed.updated, index.task_updated("t", None));
+    assert_eq!(listed.updated, Field::Value(at(1_000_000_000).to_string()));
+    assert_eq!(
+        listed.updated,
+        Field::from(index.task_updated("t", None).map(|at| at.to_string()))
+    );
 }
 
 #[test]
@@ -627,7 +630,7 @@ fn the_aggregated_list_clamps_updated_up_to_created() {
 
     assert_eq!(
         listed.updated,
-        Some("2030-01-01T00:00:00Z".parse().unwrap())
+        Field::Value("2030-01-01T00:00:00Z".to_owned())
     );
 }
 
@@ -658,7 +661,7 @@ fn a_field_the_strict_parser_rejects_costs_only_that_field() {
         fields.created,
         op_api::Field::Error(op_api::FieldError::Missing)
     );
-    assert_eq!(index.task_updated("legacy", None), Some(at(1_000_000_000)));
+    assert_eq!(index.task_updated("legacy", None), Ok(at(1_000_000_000)));
 }
 
 #[test]

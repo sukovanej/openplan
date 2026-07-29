@@ -3,12 +3,12 @@ use std::path::Path;
 
 use op_api::{
     BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Metadata, TaskBranches, TaskChild,
-    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, clamp_updated,
-    list_item_cmp,
+    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, list_item_cmp,
+    updated_field,
 };
-use op_git::{Repo, Worktree};
+use op_git::{ChangeTime, Repo, Worktree};
 use op_store::{Store, StoreError};
-use op_task::Timestamp;
+use op_task::{FieldError, FieldResult, Timestamp};
 
 #[derive(Debug, Default)]
 pub struct Index {
@@ -23,7 +23,7 @@ pub struct Index {
     default_branch: Option<String>,
     // (branch, id) -> author time of that branch's last commit to touch the task. Absent for a task
     // whose change lies deeper than the walk budget, and for one no commit holds yet.
-    change_times: HashMap<(String, String), Timestamp>,
+    change_times: HashMap<(String, String), ChangeTime>,
     // branch -> a walk result reusable across the per-request rebuilds, instead of re-walking
     // history every time.
     change_cache: HashMap<String, ChangeTimes>,
@@ -35,7 +35,7 @@ struct ChangeTimes {
     // The ids the walk asked for: an id it found no commit for is absent from `times`, so only the
     // request tells a cache hit from a task still to be dated.
     requested: HashSet<String>,
-    times: HashMap<String, Timestamp>,
+    times: HashMap<String, ChangeTime>,
 }
 
 #[derive(Debug, Clone)]
@@ -132,7 +132,7 @@ impl Index {
         &mut self,
         repo: &Repo,
         cells: &[MatrixCell],
-    ) -> Result<HashMap<(String, String), Timestamp>, IndexError> {
+    ) -> Result<HashMap<(String, String), ChangeTime>, IndexError> {
         let mut request: HashMap<String, HashSet<String>> = HashMap::new();
         for cell in cells {
             if cell.kind != ChangeKind::Deleted && !cell.dirty {
@@ -165,7 +165,7 @@ impl Index {
             };
             for id in ids {
                 if let Some(time) = times.get(&id) {
-                    change_times.insert((branch.clone(), id), *time);
+                    change_times.insert((branch.clone(), id), time.clone());
                 }
             }
         }
@@ -376,7 +376,7 @@ impl Index {
                     id: id.to_owned(),
                     title: headline.task.title.clone(),
                     metadata: headline.task.metadata.clone(),
-                    updated: clamp_updated(self.created_of(headline), self.cell_updated(headline)),
+                    updated: updated_field(self.created_of(headline), self.cell_updated(headline)),
                     headline: headline.branch.clone(),
                     branches: branch_states(&cells),
                 }
@@ -523,7 +523,8 @@ impl Index {
             return i64::MAX;
         }
         self.committed_time(cell)
-            .map_or(i64::MIN, Timestamp::as_second)
+            .and_then(|at| at.as_ref().ok())
+            .map_or(i64::MIN, |at| at.as_second())
     }
 
     // `created` is a property of the blob, so it comes from the same parse the cell's title and
@@ -537,31 +538,52 @@ impl Index {
             .ok()
     }
 
-    fn committed_time(&self, cell: &MatrixCell) -> Option<Timestamp> {
+    fn committed_time(&self, cell: &MatrixCell) -> Option<&ChangeTime> {
         self.change_times
             .get(&(cell.branch.clone(), cell.task.id.clone()))
-            .copied()
     }
 
-    // A working-tree edit has no commit to date it by, so it reads as happening now.
-    fn cell_updated(&self, cell: &MatrixCell) -> Option<Timestamp> {
+    // A working-tree edit has no commit to date it by, so it reads as happening now. Otherwise the
+    // cell reports what its commit could say: a time, or why that commit could not give one.
+    fn cell_updated(&self, cell: &MatrixCell) -> FieldResult<Timestamp> {
         if cell.dirty {
-            return Some(Timestamp::now());
+            return Ok(Timestamp::now());
         }
-        self.committed_time(cell)
+        match self.committed_time(cell) {
+            None => Err(FieldError::Missing),
+            Some(Ok(at)) => Ok(*at),
+            Some(Err(why)) => Err(FieldError::Invalid(why.clone())),
+        }
     }
 
     // The task's last-change time on one branch, or on its headline branch when `branch` is `None`.
-    pub fn task_updated(&self, id: &str, branch: Option<&str>) -> Option<Timestamp> {
+    pub fn task_updated(&self, id: &str, branch: Option<&str>) -> FieldResult<Timestamp> {
         match branch {
-            Some(branch) => self.cell_updated(self.cell(id, branch)?),
+            Some(branch) => match self.cell(id, branch) {
+                Some(cell) => self.cell_updated(cell),
+                None => Err(FieldError::Missing),
+            },
             None => {
                 let cells = self.cells_of(id);
                 if cells.is_empty() {
-                    return None;
+                    return Err(FieldError::Missing);
                 }
                 self.cell_updated(self.select_headline(&cells))
             }
+        }
+    }
+
+    // A branch matching its merge-base has no cell of its own, so it borrows the date of the branch
+    // that did last change the task. A cell that exists but could not be dated keeps its own reason
+    // rather than borrowing a time from elsewhere.
+    pub fn task_updated_or_headline(
+        &self,
+        id: &str,
+        branch: Option<&str>,
+    ) -> FieldResult<Timestamp> {
+        match self.task_updated(id, branch) {
+            Err(FieldError::Missing) => self.task_updated(id, None),
+            found => found,
         }
     }
 
@@ -794,14 +816,14 @@ fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
     refs
 }
 
-fn view_from_raw(id: &str, raw: &str, updated: Option<Timestamp>) -> TaskView {
+fn view_from_raw(id: &str, raw: &str, updated: FieldResult<Timestamp>) -> TaskView {
     let partial = op_task::parse_partial(raw);
     let metadata: Metadata = partial.metadata.into();
     let created = metadata.created().and_then(|at| at.parse().ok());
     TaskView {
         id: id.to_owned(),
         title: partial.title.unwrap_or_default(),
-        updated: clamp_updated(created, updated),
+        updated: updated_field(created, updated),
         metadata,
         body: partial.body,
     }

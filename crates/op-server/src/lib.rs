@@ -527,9 +527,7 @@ async fn patch_task(
                     parent_title,
                     children,
                     refs,
-                    index
-                        .task_updated(&id, Some(&branch))
-                        .or_else(|| index.task_updated(&id, None)),
+                    index.task_updated_or_headline(&id, Some(&branch)),
                 )
             };
             let view = TaskView::from_task(id, &task, updated);

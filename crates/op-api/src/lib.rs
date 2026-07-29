@@ -54,23 +54,21 @@ pub struct TaskView {
     pub metadata: Metadata,
     pub body: String,
     // Derived from git rather than read from the file, so it sits outside `metadata`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Option<String>, format = DateTime)]
-    pub updated: Option<Timestamp>,
+    pub updated: Field<String>,
 }
 
 impl TaskView {
     pub fn from_partial(
         id: String,
         partial: op_task::PartialTask,
-        updated: Option<Timestamp>,
+        updated: op_task::FieldResult<Timestamp>,
     ) -> Self {
         let metadata: Metadata = partial.metadata.into();
         let created = metadata.created().and_then(|at| at.parse().ok());
         Self {
             id,
             title: partial.title.unwrap_or_default(),
-            updated: clamp_updated(created, updated),
+            updated: updated_field(created, updated),
             metadata,
             body: partial.body,
         }
@@ -78,11 +76,11 @@ impl TaskView {
 
     // `updated` is git-derived, so only a caller holding the history can supply it; a store-only
     // read passes `None`.
-    pub fn from_task(id: String, task: &Task, updated: Option<Timestamp>) -> Self {
+    pub fn from_task(id: String, task: &Task, updated: op_task::FieldResult<Timestamp>) -> Self {
         Self {
             id,
             title: task.title().unwrap_or_default(),
-            updated: clamp_updated(Some(task.frontmatter.created), updated),
+            updated: updated_field(Some(task.frontmatter.created), updated),
             metadata: Metadata::from_frontmatter(&task.frontmatter),
             body: task.body.clone(),
         }
@@ -283,11 +281,16 @@ impl Metadata {
 // A hand-set `created` later than the last edit would otherwise show a task updated before it
 // existed. Every surface reporting `updated` clamps the same way, so a task cannot read one age in
 // the list and another on its own page.
-pub fn clamp_updated(created: Option<Timestamp>, updated: Option<Timestamp>) -> Option<Timestamp> {
-    match (created, updated) {
-        (Some(created), Some(updated)) => Some(updated.max(created)),
-        _ => updated,
-    }
+pub fn updated_field(
+    created: Option<Timestamp>,
+    updated: op_task::FieldResult<Timestamp>,
+) -> Field<String> {
+    updated
+        .map(|at| match created {
+            Some(created) => at.max(created).to_string(),
+            None => at.to_string(),
+        })
+        .into()
 }
 
 // A direct child of a task, in sibling (`rank`) order — enough to render the subtasks list without
@@ -323,9 +326,7 @@ pub struct TaskDetail {
     pub title: String,
     pub metadata: Metadata,
     pub body: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Option<String>, format = DateTime)]
-    pub updated: Option<Timestamp>,
+    pub updated: Field<String>,
     pub headline: String,
     pub branches: Vec<BranchState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -345,9 +346,7 @@ pub struct TaskListItem {
     pub id: String,
     pub title: String,
     pub metadata: Metadata,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Option<String>, format = DateTime)]
-    pub updated: Option<Timestamp>,
+    pub updated: Field<String>,
     pub headline: String,
     pub branches: Vec<BranchState>,
 }
