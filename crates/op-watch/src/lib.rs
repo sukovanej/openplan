@@ -271,12 +271,22 @@ fn reconcile(
         .cloned()
         .collect::<Vec<_>>()
     {
-        let _ = notifier.unwatch(&stale);
+        tracing::debug!(path = %stale.display(), "unwatching");
+        if let Err(err) = notifier.unwatch(&stale) {
+            tracing::debug!(path = %stale.display(), %err, "unwatch failed");
+        }
         watched.remove(&stale);
     }
     for (path, mode) in desired {
-        if !watched.contains(&path) && notifier.watch(&path, mode).is_ok() {
-            watched.insert(path);
+        if watched.contains(&path) {
+            continue;
+        }
+        tracing::debug!(path = %path.display(), ?mode, "watching");
+        match notifier.watch(&path, mode) {
+            Ok(()) => {
+                watched.insert(path);
+            }
+            Err(err) => tracing::warn!(path = %path.display(), %err, "watch failed"),
         }
     }
 }
@@ -285,22 +295,31 @@ fn reconcile(
 // git-side refs/HEAD/worktrees under the shared `.git`. The common dir is watched non-recursively so
 // HEAD, `packed-refs`, and the first creation of `worktrees/` register without pulling in objects/;
 // the callback's `is_relevant` filter drops the index/log churn that watch still surfaces.
-fn watch_paths(repo: &Repo, worktrees: &[Worktree]) -> Vec<(PathBuf, RecursiveMode)> {
+pub fn watch_paths(repo: &Repo, worktrees: &[Worktree]) -> Vec<(PathBuf, RecursiveMode)> {
     let common = repo.git_common_dir();
     let mut paths = vec![(common.clone(), RecursiveMode::NonRecursive)];
     for sub in ["refs", "worktrees"] {
-        let dir = common.join(sub);
-        if dir.is_dir() {
-            paths.push((dir, RecursiveMode::Recursive));
-        }
+        paths.push((common.join(sub), RecursiveMode::Recursive));
     }
     for worktree in worktrees {
-        let tasks = worktree.path.join(".plan").join("tasks");
-        if tasks.is_dir() {
-            paths.push((tasks, RecursiveMode::Recursive));
-        }
+        paths.push((
+            worktree.path.join(".plan").join("tasks"),
+            RecursiveMode::Recursive,
+        ));
     }
     paths
+        .into_iter()
+        .filter_map(|(path, mode)| Some((canonical_dir(&path)?, mode)))
+        .collect()
+}
+
+// Only ever hand notify a canonical path. gix reports a linked worktree's common dir unnormalized,
+// as `<git-dir>/../..`, and the fsevent backend resolves a path that has gone missing by deleting
+// its last component until what remains exists — which on a trailing `..` appends another `../`
+// instead, spinning forever on a path that can never resolve.
+fn canonical_dir(path: &Path) -> Option<PathBuf> {
+    let canonical = path.canonicalize().ok()?;
+    canonical.is_dir().then_some(canonical)
 }
 
 // A watched path is worth a diff pass only when it touches a task file (`.plan/tasks/*`) or a git ref

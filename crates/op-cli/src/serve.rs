@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
@@ -110,7 +111,7 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     ignore_sighup();
     tracing::info!(%addr, pid = info.pid, "oplan daemon serving");
 
-    let result = op_server::serve(listener, state, terminate_signal()).await;
+    let result = op_server::serve(listener, state, shutdown_signal(root.to_path_buf())).await;
 
     home.clear_info();
     fs2::FileExt::unlock(&lock).ok();
@@ -120,6 +121,29 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
 fn ignore_sighup() {
     if let Ok(mut hup) = signal(SignalKind::hangup()) {
         tokio::spawn(async move { while hup.recv().await.is_some() {} });
+    }
+}
+
+async fn shutdown_signal(root: PathBuf) {
+    tokio::select! {
+        _ = terminate_signal() => {}
+        _ = root_removed(root) => {}
+    }
+}
+
+// A worktree deleted under a running daemon leaves it serving a tree that no longer exists — no
+// writes can land and its watch set is gone. Two consecutive misses, so a root that momentarily
+// looks absent does not take the daemon down.
+async fn root_removed(root: PathBuf) {
+    const POLL: Duration = Duration::from_secs(5);
+    let mut misses = 0;
+    loop {
+        tokio::time::sleep(POLL).await;
+        misses = if root.is_dir() { 0 } else { misses + 1 };
+        if misses == 2 {
+            tracing::warn!(root = %root.display(), "serving root is gone; shutting down");
+            return;
+        }
     }
 }
 
