@@ -1,5 +1,6 @@
-import type { Status } from "@open-planner/api-client"
 import { CircleCheck, CircleDot, CircleEllipsis, CircleX, Clock, Eye, type LucideIcon } from "lucide-react"
+
+import type { Status } from "@open-planner/api-client"
 
 import { cn } from "../lib/utils"
 

@@ -1,9 +1,10 @@
-import type { TaskRef as TaskRefData } from "@open-planner/api-client"
 import { CircleDashed, Square, SquareCheckBig } from "lucide-react"
 import { createContext, type ReactNode, useContext, useMemo } from "react"
 import Markdown, { type Components } from "react-markdown"
 import { Link } from "react-router-dom"
 import remarkGfm from "remark-gfm"
+
+import type { TaskRef as TaskRefData } from "@open-planner/api-client"
 
 import { cn } from "../lib/utils"
 import { StatusIcon } from "./status-badge"

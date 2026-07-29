@@ -1,7 +1,8 @@
-import * as Api from "@open-planner/api-client"
 import { Context, Data, Effect } from "effect"
 import type { Schema } from "effect"
 import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+
+import * as Api from "@open-planner/api-client"
 
 export class TaskNotFound extends Data.TaggedError("TaskNotFound")<{
   readonly id: string

@@ -1,7 +1,8 @@
-import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
 import { Pencil, Plus, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
+
+import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
 
 import { BranchSwitcher } from "../components/branch-switcher"
 import { type ComboOption, FuzzyText, SearchCombobox } from "../components/search-combobox"

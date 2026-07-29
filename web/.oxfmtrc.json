@@ -2,6 +2,6 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "semi": false,
   "printWidth": 120,
-  "sortImports": true,
+  "sortImports": { "internalPattern": ["@open-planner/"] },
   "ignorePatterns": ["**/dist/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/openapi.json", "pnpm-lock.yaml"]
 }

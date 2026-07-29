@@ -1,6 +1,7 @@
-import type { Board, BoardRow, Status } from "@open-planner/api-client"
 import { useMemo } from "react"
 import { Link } from "react-router-dom"
+
+import type { Board, BoardRow, Status } from "@open-planner/api-client"
 
 import { BranchBadges } from "../components/branch-badges"
 import { ListSkeleton, Message } from "../components/states"
