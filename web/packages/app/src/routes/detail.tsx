@@ -7,12 +7,14 @@ import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-clie
 import { BranchSwitcher } from "../components/branch-switcher"
 import { type ComboOption, FuzzyText, SearchCombobox } from "../components/search-combobox"
 import { BodySkeleton, DetailSkeleton, Message } from "../components/states"
-import { StatusIcon } from "../components/status-badge"
+import { StatusChip, StatusField } from "../components/status-badge"
 import { TaskBody } from "../components/task-body"
+import { MetaItem, MetaLine, PARENT_ICON, TaskTimes } from "../components/task-meta"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
 import { errorText } from "../lib/format"
 import { fuzzyMatch } from "../lib/fuzzy"
+import { createdOf, parentOf, problems } from "../lib/metadata"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
 import { cn } from "../lib/utils"
@@ -69,19 +71,29 @@ function TaskDetailView({
   return (
     <div className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border">
       <div className="bg-muted/30 flex h-11 shrink-0 items-center gap-2 border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground">
-        <StatusIcon status={task.status} />
+        <StatusField metadata={task.metadata} />
         <span className="truncate">{task.title}</span>
         <div className="ml-auto shrink-0">
           <HeaderParent
             id={task.id}
-            parent={detail?.parent}
+            parent={detail === null ? undefined : parentOf(detail.metadata)}
             parentTitle={detail?.parent_title}
             ready={detail !== null}
           />
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        <h1 className="mb-4 text-2xl font-semibold tracking-tight">{task.title}</h1>
+        <h1 className="mb-1.5 text-2xl font-semibold tracking-tight">{task.title}</h1>
+        {/* `created` arrives with the full detail while `updated` is already on the seeded list item,
+            so the line renders as soon as the header does and fills in rather than shifting the body
+            twice. */}
+        <MetaLine className="mb-4 h-4">
+          <TaskTimes
+            created={detail === null ? undefined : createdOf(detail.metadata)}
+            updated={task.updated}
+            problems={detail === null ? [] : problems(detail.metadata)}
+          />
+        </MetaLine>
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? <BodySkeleton /> : <TaskBody markdown={stripTitle(body)} refs={detail?.refs} />}
         <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
@@ -95,10 +107,14 @@ function TaskDetailView({
 function ancestorIds(tasks: ReadonlyArray<TaskListItem>, start: string): Set<string> {
   const byId = new Map(tasks.map((task) => [task.id, task]))
   const out = new Set<string>()
-  let cursor = byId.get(start)?.parent
+  const parentOfId = (id: string) => {
+    const found = byId.get(id)
+    return found === undefined ? undefined : parentOf(found.metadata)
+  }
+  let cursor = parentOfId(start)
   while (cursor !== undefined && byId.has(cursor) && !out.has(cursor)) {
     out.add(cursor)
-    cursor = byId.get(cursor)!.parent
+    cursor = parentOfId(cursor)
   }
   return out
 }
@@ -108,9 +124,10 @@ function ancestorIds(tasks: ReadonlyArray<TaskListItem>, start: string): Set<str
 function descendantIds(tasks: ReadonlyArray<TaskListItem>, root: string): Set<string> {
   const children = new Map<string, string[]>()
   for (const task of tasks) {
-    if (task.parent !== undefined) {
-      const bucket = children.get(task.parent)
-      if (bucket === undefined) children.set(task.parent, [task.id])
+    const parent = parentOf(task.metadata)
+    if (parent !== undefined) {
+      const bucket = children.get(parent)
+      if (bucket === undefined) children.set(parent, [task.id])
       else bucket.push(task.id)
     }
   }
@@ -131,7 +148,7 @@ function descendantIds(tasks: ReadonlyArray<TaskListItem>, root: string): Set<st
 function ComboTaskRow({ task, indices }: { task: TaskListItem; indices: ReadonlyArray<number> }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <StatusIcon status={task.status} className="size-4 shrink-0" />
+      <StatusField metadata={task.metadata} className="size-4 shrink-0" />
       <span className="truncate">
         <FuzzyText text={task.title} indices={indices} />
       </span>
@@ -188,12 +205,13 @@ function HeaderParent({
   return (
     <div className="flex items-center gap-1 font-normal tracking-normal normal-case">
       {parentTitle !== undefined ? (
-        <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground/70">Subtask of</span>
-          <Link to={`/task/${parent}`} className="text-foreground/90 max-w-[15rem] truncate hover:underline">
-            {parentTitle}
-          </Link>
-        </span>
+        <MetaLine>
+          <MetaItem icon={PARENT_ICON} title={`Subtask of ${parentTitle}`}>
+            <Link to={`/task/${parent}`} className="text-foreground/90 max-w-[15rem] truncate hover:underline">
+              {parentTitle}
+            </Link>
+          </MetaItem>
+        </MetaLine>
       ) : hasParent ? (
         <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
       ) : null}
@@ -231,7 +249,7 @@ function ParentPicker({ id, onClose }: { id: string; onClose: () => void }) {
       const excluded = descendantIds(all, id)
       excluded.add(id)
       const options: ComboOption[] = []
-      if (self?.parent !== undefined) {
+      if (self !== undefined && parentOf(self.metadata) !== undefined) {
         options.push({
           key: " clear",
           content: (
@@ -323,7 +341,7 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
                   i === index ? "bg-accent" : "hover:bg-muted/50",
                 )}
               >
-                <StatusIcon status={child.status} className="size-4 shrink-0" />
+                <StatusChip status={child.status} className="size-4 shrink-0" />
                 <span className="truncate">{child.title}</span>
               </Link>
             </li>
@@ -364,7 +382,7 @@ function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
-        if (task.parent === id) continue
+        if (parentOf(task.metadata) === id) continue
         options.push({
           key: task.id,
           content: <ComboTaskRow task={task} indices={indices} />,

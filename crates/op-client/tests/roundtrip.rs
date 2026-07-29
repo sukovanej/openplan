@@ -46,6 +46,7 @@ fn health_reads_identity_then_shutdown_stops_the_server() {
         port: 7,
         version: "1.2.3".to_owned(),
         started_at: 99,
+        repo: None,
     };
     let (addr, handle) = spawn_server(info.clone());
     let base = format!("http://{addr}");

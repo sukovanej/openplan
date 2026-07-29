@@ -1,5 +1,9 @@
 use op_api::CreateTask;
-use op_task::Status;
+use op_task::{Status, Timestamp};
+
+fn stamp() -> Timestamp {
+    "2026-01-01T00:00:00Z".parse().unwrap()
+}
 
 fn create(title: &str, body: Option<&str>) -> op_task::Task {
     CreateTask {
@@ -9,7 +13,7 @@ fn create(title: &str, body: Option<&str>) -> op_task::Task {
         deps: Vec::new(),
         body: body.map(str::to_owned),
     }
-    .into_task()
+    .into_task(stamp())
 }
 
 #[test]
@@ -18,6 +22,11 @@ fn into_task_without_body_is_title_only() {
     assert_eq!(task.body, "# Ship login\n");
     assert_eq!(task.title().as_deref(), Some("Ship login"));
     assert_eq!(task.frontmatter.status, Status::Todo);
+}
+
+#[test]
+fn into_task_stamps_created_from_the_supplied_clock() {
+    assert_eq!(create("Ship login", None).frontmatter.created, stamp());
 }
 
 #[test]

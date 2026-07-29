@@ -2,6 +2,17 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
+use op_task::Timestamp;
+
+fn frontmatter_value(contents: &str, key: &str) -> String {
+    let prefix = format!("{key}: ");
+    contents
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("no {key} in {contents}"))
+        .to_owned()
+}
+
 fn oplan() -> Command {
     Command::new(env!("CARGO_BIN_EXE_oplan"))
 }
@@ -50,7 +61,7 @@ fn list_reports_real_status_and_title() {
     std::fs::create_dir_all(&tasks).unwrap();
     write(
         &tasks.join("shipit.md"),
-        "---\nstatus: done\n---\n# Ship it\n",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
     let out = oplan()
@@ -64,7 +75,7 @@ fn list_reports_real_status_and_title() {
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("shipit"), "{stdout}");
     assert!(
-        stdout.contains("Done"),
+        stdout.contains("done"),
         "status must be read from the file: {stdout}"
     );
     assert!(
@@ -96,7 +107,7 @@ fn merge_driver_clean_conflict_and_read_error() {
     let base = dir.path().join("base.md");
     let ours = dir.path().join("ours.md");
     let theirs = dir.path().join("theirs.md");
-    let content = "---\nstatus: todo\n---\n# T\n\n## Plan\nhi\n";
+    let content = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\nhi\n";
     write(&base, content);
     write(&ours, content);
     write(&theirs, content);
@@ -111,7 +122,10 @@ fn merge_driver_clean_conflict_and_read_error() {
         "identical inputs should merge cleanly"
     );
 
-    write(&theirs, "---\nstatus: todo\n---\n# T\n\n## Plan\nBYE\n");
+    write(
+        &theirs,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\nBYE\n",
+    );
     let conflict = oplan()
         .arg("merge-driver")
         .args([&base, &ours, &theirs])
@@ -137,12 +151,25 @@ fn merge_driver_clean_conflict_and_read_error() {
 #[test]
 fn create_writes_slug_file_and_prints_id() {
     let dir = store();
+    let before = op_task::now();
     let id = create(dir.path(), "Wire the parser");
     assert!(id.starts_with("wire-the-parser-"), "id: {id}");
 
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     let contents = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(contents, "---\nstatus: todo\n---\n# Wire the parser\n");
+    let created = frontmatter_value(&contents, "created");
+    assert_eq!(
+        contents,
+        format!("---\nstatus: todo\ncreated: {created}\n---\n# Wire the parser\n")
+    );
+    assert!(
+        created.parse::<Timestamp>().unwrap() >= before,
+        "created must come from the clock at creation: {created}"
+    );
+    assert!(
+        !created.contains('.'),
+        "a stored timestamp carries whole seconds: {created}"
+    );
 
     let second = create(dir.path(), "Wire the parser");
     assert_ne!(id, second, "same title must yield a distinct id");
@@ -163,7 +190,7 @@ fn get_show_and_missing_id() {
     assert!(get.status.success());
     let view: serde_json::Value = serde_json::from_slice(&get.stdout).unwrap();
     assert_eq!(view["title"], "Ship it");
-    assert_eq!(view["status"], "todo");
+    assert_eq!(view["metadata"]["status"], "todo");
 
     let missing = run(dir.path(), &["get", "does-not-exist"]);
     assert!(
@@ -189,7 +216,7 @@ fn set_updates_only_frontmatter() {
 
     let contents = std::fs::read_to_string(&path).unwrap();
     assert!(
-        contents.starts_with("---\nstatus: in_progress\n---\n"),
+        contents.starts_with("---\nstatus: in_progress\ncreated: "),
         "{contents}"
     );
     assert_eq!(
@@ -249,7 +276,7 @@ fn list_json_filters_by_status() {
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(tasks.len(), 1, "only the todo task should match: {tasks:?}");
     assert_eq!(tasks[0]["id"], todo);
-    assert_eq!(tasks[0]["status"], "todo");
+    assert_eq!(tasks[0]["metadata"]["status"], "todo");
 }
 
 #[test]
@@ -279,7 +306,7 @@ fn set_preserves_unknown_frontmatter_keys() {
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
     write(
         &path,
-        "---\nstatus: todo\nestimate: 3.5\nassignee: milan\n---\n# Task C\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nestimate: 3.5\nassignee: milan\n---\n# Task C\n",
     );
 
     assert!(
@@ -305,7 +332,8 @@ fn get_prints_the_file_verbatim() {
     let dir = store();
     let id = create(dir.path(), "Task D");
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
-    let raw = "---\nstatus: todo\nrank: 7\n---\n# Task D\n\nsome body\n";
+    let raw =
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: 7\n---\n# Task D\n\nsome body\n";
     write(&path, raw);
 
     let out = run(dir.path(), &["get", &id]);
@@ -337,9 +365,13 @@ fn create_with_body_places_content_below_title() {
     let id = stdout(&out).trim().to_owned();
 
     let path = dir.path().join(".plan/tasks").join(format!("{id}.md"));
+    let contents = std::fs::read_to_string(&path).unwrap();
+    let created = frontmatter_value(&contents, "created");
     assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
-        "---\nstatus: todo\n---\n# Ship login\n\nSupport OAuth and email login.\n"
+        contents,
+        format!(
+            "---\nstatus: todo\ncreated: {created}\n---\n# Ship login\n\nSupport OAuth and email login.\n"
+        )
     );
 
     let view = run(dir.path(), &["get", &id, "--json"]);
@@ -462,23 +494,52 @@ fn list_distinguishes_empty_store_from_empty_filter() {
 }
 
 #[test]
-fn list_json_reports_unreadable_tasks_on_stderr() {
+fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
     let dir = store();
     let good = create(dir.path(), "Good one");
     write(
         &dir.path().join(".plan/tasks/broken.md"),
         "this file has no frontmatter\n",
     );
+    write(
+        &dir.path().join(".plan/tasks/legacy.md"),
+        "---\nstatus: in_progress\n---\n# Legacy\n",
+    );
 
     let out = run(dir.path(), &["list", "--json"]);
     assert!(out.status.success());
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(tasks.len(), 1, "only the readable task appears: {tasks:?}");
-    assert_eq!(tasks[0]["id"], good);
-    assert!(
-        String::from_utf8_lossy(&out.stderr).contains("broken"),
-        "the unreadable task must be reported on stderr"
+    let by_id = |id: &str| {
+        tasks
+            .iter()
+            .find(|t| t["id"] == id)
+            .unwrap_or_else(|| panic!("{id} missing from {tasks:?}"))
+            .clone()
+    };
+
+    assert_eq!(by_id(&good)["metadata"]["status"], "todo");
+    // A file with no readable frontmatter says so, instead of borrowing a status it never claimed.
+    assert_eq!(by_id("broken")["metadata"]["kind"], "error");
+    // One unreadable field costs only itself: the status is still the file's own.
+    assert_eq!(by_id("legacy")["metadata"]["status"], "in_progress");
+    assert_eq!(by_id("legacy")["metadata"]["created"]["kind"], "missing");
+}
+
+#[test]
+fn list_filters_by_status_across_an_unreadable_task() {
+    let dir = store();
+    write(
+        &dir.path().join(".plan/tasks/broken.md"),
+        "this file has no frontmatter\n",
     );
+    let good = create(dir.path(), "Good one");
+
+    let out = run(dir.path(), &["list", "--json", "--status", "todo"]);
+    let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+
+    // A task with no readable status matches no status filter, rather than matching the default.
+    assert_eq!(tasks.len(), 1, "{tasks:?}");
+    assert_eq!(tasks[0]["id"], good);
 }
 
 fn git(dir: &Path, args: &[&str]) {
@@ -501,14 +562,14 @@ fn diverged_repo() -> tempfile::TempDir {
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
     write(
         &root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: todo\n---\n# Alpha\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     );
     git(root, &["add", "."]);
     git(root, &["commit", "-qm", "init"]);
     git(root, &["checkout", "-q", "-b", "feature"]);
     write(
         &root.join(".plan/tasks/alpha.md"),
-        "---\nstatus: done\n---\n# Alpha done\n",
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha done\n",
     );
     git(root, &["commit", "-qam", "edit alpha on feature"]);
     git(root, &["checkout", "-q", "main"]);
@@ -554,14 +615,14 @@ fn list_branch_reads_other_branch_without_checking_it_out() {
 
     let tasks: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(tasks.len(), 1);
-    assert_eq!(tasks[0]["status"], "done", "feature's version");
+    assert_eq!(tasks[0]["metadata"]["status"], "done", "feature's version");
     assert_eq!(tasks[0]["title"], "Alpha done");
 
     // The current worktree is untouched: still on main, alpha still `todo`.
     let head = run(dir.path(), &["get", "alpha", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&head.stdout).unwrap();
     assert_eq!(
-        view["status"], "todo",
+        view["metadata"]["status"], "todo",
         "reading a branch must not mutate the worktree"
     );
     let on_disk = std::fs::read_to_string(dir.path().join(".plan/tasks/alpha.md")).unwrap();
@@ -640,7 +701,7 @@ fn set_rejects_a_cross_branch_write() {
         &["get", "alpha", "--branch", "feature", "--json"],
     );
     let view: serde_json::Value = serde_json::from_slice(&feature.stdout).unwrap();
-    assert_eq!(view["status"], "done");
+    assert_eq!(view["metadata"]["status"], "done");
 }
 
 fn child(root: &Path, title: &str, parent: &str) -> String {
@@ -866,4 +927,63 @@ fn a_refused_move_leaves_sibling_ranks_untouched() {
         before,
         "a refused move must not rewrite the target group"
     );
+}
+
+fn commit_at(root: &Path, seconds: i64, message: &str) {
+    let date = format!("@{seconds} +0000");
+    git(root, &["add", "-A"]);
+    let status = Command::new("git")
+        .current_dir(root)
+        .args(["commit", "-qm", message])
+        .env("GIT_AUTHOR_DATE", &date)
+        .env("GIT_COMMITTER_DATE", &date)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git commit failed");
+}
+
+#[test]
+fn get_json_dates_the_checked_out_branch_not_the_headline() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    // `created` predates both commits, so the view's clamp cannot mask which one is reported.
+    write(
+        &root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: todo\ncreated: 2000-01-01T00:00:00Z\n---\n# Alpha\n",
+    );
+    commit_at(root, 1_000_000_000, "add alpha");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write(
+        &root.join(".plan/tasks/alpha.md"),
+        "---\nstatus: done\ncreated: 2000-01-01T00:00:00Z\n---\n# Alpha done\n",
+    );
+    commit_at(root, 2_000_000_000, "edit alpha on feature");
+    git(root, &["checkout", "-q", "main"]);
+
+    let out = run(root, &["get", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+
+    // `feature` headlines the task, but the file `get` read is main's — so is its date.
+    assert_eq!(view["title"], "Alpha");
+    assert_eq!(view["updated"], "2001-09-09T01:46:40Z");
+}
+
+#[test]
+fn set_on_a_task_without_created_explains_what_to_add() {
+    let dir = store();
+    write(
+        &dir.path().join(".plan/tasks/legacy.md"),
+        "---\nstatus: todo\n---\n# Legacy\n",
+    );
+
+    let out = run(dir.path(), &["set", "legacy", "status", "done"]);
+
+    assert!(!out.status.success());
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(err.contains("created:"), "{err}");
+    assert!(err.contains("git log --diff-filter=A"), "{err}");
 }

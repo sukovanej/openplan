@@ -1,12 +1,25 @@
-use op_api::{Board, Status, TaskListItem};
+use op_api::{Board, Field, FrontmatterFields, Metadata, Status, TaskListItem};
 
 fn item(id: &str, status: Status, parent: Option<&str>, rank: Option<&str>) -> TaskListItem {
+    with_metadata(id, fields(Field::Value(status), parent, rank))
+}
+
+fn fields(status: Field<Status>, parent: Option<&str>, rank: Option<&str>) -> Metadata {
+    Metadata::Fields(FrontmatterFields {
+        status,
+        created: Field::Value(op_api::Rfc3339("2026-01-01T00:00:00Z".parse().unwrap())),
+        parent: Field::Value(parent.map(str::to_owned)),
+        rank: Field::Value(rank.map(str::to_owned)),
+        deps: Field::Value(Vec::new()),
+    })
+}
+
+fn with_metadata(id: &str, metadata: Metadata) -> TaskListItem {
     TaskListItem {
         id: id.to_owned(),
         title: id.to_uppercase(),
-        status,
-        parent: parent.map(str::to_owned),
-        rank: rank.map(str::to_owned),
+        metadata,
+        updated: op_api::Field::Error(op_api::FieldError::Missing),
         headline: "main".to_owned(),
         branches: Vec::new(),
     }
@@ -16,7 +29,7 @@ fn row_ids(board: &Board, status: Status) -> Vec<&str> {
     board
         .groups
         .iter()
-        .find(|g| g.status == status)
+        .find(|g| g.status == Some(status))
         .map(|g| g.rows.iter().map(|r| r.task.id.as_str()).collect())
         .unwrap_or_default()
 }
@@ -28,7 +41,7 @@ fn groups_appear_in_board_order_skipping_empties() {
         item("p", Status::InProgress, None, None),
         item("t", Status::Todo, None, None),
     ]);
-    let order: Vec<Status> = board.groups.iter().map(|g| g.status).collect();
+    let order: Vec<Status> = board.groups.iter().filter_map(|g| g.status).collect();
     assert_eq!(order, vec![Status::InProgress, Status::Todo, Status::Done]);
 }
 
@@ -52,7 +65,7 @@ fn same_status_child_nests_under_parent_with_depth() {
     let group = board
         .groups
         .iter()
-        .find(|g| g.status == Status::InProgress)
+        .find(|g| g.status == Some(Status::InProgress))
         .unwrap();
     assert_eq!(
         group
@@ -75,7 +88,7 @@ fn cross_status_child_is_a_root_with_a_parent_hint() {
     let group = board
         .groups
         .iter()
-        .find(|g| g.status == Status::InProgress)
+        .find(|g| g.status == Some(Status::InProgress))
         .unwrap();
     let row = &group.rows[0];
     assert_eq!(row.task.id, "sub");

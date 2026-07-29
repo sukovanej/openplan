@@ -15,6 +15,8 @@ impl Daemon {
         let root = tempfile::tempdir().unwrap();
         // `oplan serve` requires a git repository, so the daemon's root must be one.
         git(root.path(), &["init", "-q", "-b", "main"]);
+        git(root.path(), &["config", "user.email", "t@example.com"]);
+        git(root.path(), &["config", "user.name", "Test"]);
         std::fs::create_dir_all(root.path().join(".plan/tasks")).unwrap();
         Self { home, root }
     }
@@ -633,4 +635,113 @@ fn foreground_start_refuses_when_a_daemon_holds_the_lock() {
         !status.success(),
         "second foreground daemon must fail to lock"
     );
+}
+
+fn updated_of(daemon: &Daemon, id: &str) -> serde_json::Value {
+    let out = daemon.cmd().args(["get", id, "--json"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    view["updated"].clone()
+}
+
+#[test]
+fn a_running_daemon_dates_a_task_exactly_as_the_local_index_does() {
+    let daemon = Daemon::new();
+    let created = daemon
+        .cmd()
+        .args(["create", "Dated task"])
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+    let id = String::from_utf8(created.stdout).unwrap().trim().to_owned();
+    git(daemon.root.path(), &["add", "-A"]);
+    git(daemon.root.path(), &["commit", "-qm", "add the task"]);
+
+    let alone = updated_of(&daemon, &id);
+    assert!(alone.is_string(), "{alone}");
+
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "start", "--port", "0"])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+
+    // Same answer, from the daemon's warm index instead of one built and thrown away here.
+    assert_eq!(updated_of(&daemon, &id), alone);
+}
+
+fn commit_at(dir: &Path, seconds: i64, message: &str) {
+    let date = format!("@{seconds} +0000");
+    git(dir, &["add", "-A"]);
+    let status = Command::new("git")
+        .current_dir(dir)
+        .args(["commit", "-qm", message])
+        .env("GIT_AUTHOR_DATE", &date)
+        .env("GIT_COMMITTER_DATE", &date)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git commit failed");
+}
+
+fn task_repo(seconds: i64) -> TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    git(dir.path(), &["init", "-q", "-b", "main"]);
+    git(dir.path(), &["config", "user.email", "t@example.com"]);
+    git(dir.path(), &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
+    // The id is the filename stem, so both repos can hold the same id on purpose.
+    std::fs::write(
+        dir.path().join(".plan/tasks/shared-0001.md"),
+        "---\nstatus: todo\ncreated: 2001-01-01T00:00:00Z\n---\n# Shared\n",
+    )
+    .unwrap();
+    commit_at(dir.path(), seconds, "add the task");
+    dir
+}
+
+#[test]
+fn a_daemon_indexing_another_repository_is_not_asked() {
+    let daemon = Daemon::new();
+    let theirs = task_repo(1_000_000_000);
+    let ours = task_repo(1_500_000_000);
+
+    let mut start = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    start.env("OPLAN_HOME", daemon.home_path());
+    assert!(
+        start
+            .args(["--root"])
+            .arg(theirs.path())
+            .args(["server", "start", "--port", "0"])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+
+    let mut read = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    read.env("OPLAN_HOME", daemon.home_path())
+        .arg("--root")
+        .arg(ours.path());
+    let out = read
+        .args(["get", "shared-0001", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+
+    // Both repositories hold `shared-0001`, dated differently. The running daemon indexes only
+    // one of them, and answering from it would date this read by a file it never read.
+    assert_eq!(view["updated"], "2017-07-14T02:40:00Z");
 }

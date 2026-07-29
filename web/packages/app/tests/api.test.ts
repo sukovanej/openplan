@@ -41,14 +41,14 @@ it.effect("decodes the branch-aware task list from GET /api/tasks", () =>
       {
         id: "a-1",
         title: "First",
-        status: "todo",
+        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
         headline: "main",
         branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" }],
       },
       {
         id: "b-2",
         title: "Second",
-        status: "in_progress",
+        metadata: { status: "in_progress", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
         parent: "a-1",
         headline: "feature",
         branches: [
@@ -74,9 +74,9 @@ it.effect("decodes a task detail with its branch set and hierarchy from GET /api
     json({
       id: "a-1",
       title: "First",
-      status: "todo",
       parent: "epic-1",
       body: "# First\n",
+      metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
       headline: "feature",
       branches: [
         { branch: "feature", status: "done", blob_oid: "ccc", dirty: false, kind: "modified" },
@@ -90,7 +90,7 @@ it.effect("decodes a task detail with its branch set and hierarchy from GET /api
     Effect.gen(function* () {
       const task = yield* getTask("a-1")
       expect(task.title).toBe("First")
-      expect(task.status).toBe("todo")
+      expect(task.metadata).toMatchObject({ status: "todo" })
       expect(task.body).toBe("# First\n")
       expect(task.headline).toBe("feature")
       expect(task.branches.map((b) => b.branch)).toEqual(["feature", "main"])
@@ -106,7 +106,7 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
     json({
       id: "solo-1",
       title: "Solo",
-      status: "todo",
+      metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
       body: "# Solo\n",
       headline: "main",
       branches: [],
@@ -122,13 +122,20 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
 )
 
 const detailResponse = () =>
-  json({ id: "a-1", title: "First", status: "done", body: "# First\n", headline: "feature", branches: [] })
+  json({
+    id: "a-1",
+    title: "First",
+    metadata: { status: "done", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+    body: "# First\n",
+    headline: "feature",
+    branches: [],
+  })
 
 it.effect("requests a specific branch's version with ?branch=", () =>
   Effect.gen(function* () {
     const { captured, provide } = captureRequest(detailResponse)
     const task = yield* provide(getTask("a-1", "feature"))
-    expect(task.status).toBe("done")
+    expect(task.metadata).toMatchObject({ status: "done" })
     expect(captured.request?.url).toContain("/api/tasks/a-1")
     expect(UrlParams.toString(captured.request!.urlParams)).toBe("branch=feature")
   }),
@@ -185,7 +192,17 @@ it.effect("a read that fails on a malformed task carries the server's reason", (
 )
 
 it.effect("rejects a malformed status with a decode failure", () =>
-  withResponse(() => json([{ id: "a-1", title: "First", status: "bogus", headline: "main", branches: [] }]))(
+  withResponse(() =>
+    json([
+      {
+        id: "a-1",
+        title: "First",
+        metadata: { status: "bogus", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+        headline: "main",
+        branches: [],
+      },
+    ]),
+  )(
     Effect.gen(function* () {
       const outcome = yield* Effect.result(listTasks)
       expect(Result.isFailure(outcome)).toBe(true)
@@ -196,7 +213,14 @@ it.effect("rejects a malformed status with a decode failure", () =>
 it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
   Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
-      json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] }),
+      json({
+        id: "child",
+        title: "Child",
+        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+        body: "# Child\n",
+        headline: "main",
+        branches: [],
+      }),
     )
     const detail = yield* provide(patchTask("child", { parent: null }))
     expect(captured.request?.method).toBe("PATCH")
@@ -209,7 +233,14 @@ it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
 it.effect("PATCH sends a parent id to reparent", () =>
   Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
-      json({ id: "child", title: "Child", status: "todo", body: "# Child\n", headline: "main", branches: [] }),
+      json({
+        id: "child",
+        title: "Child",
+        metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, deps: [] },
+        body: "# Child\n",
+        headline: "main",
+        branches: [],
+      }),
     )
     yield* provide(patchTask("child", { parent: "epic-1" }))
     expect(requestBody(captured.request!)).toEqual({ parent: "epic-1" })

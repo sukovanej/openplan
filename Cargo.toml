@@ -33,6 +33,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 
 gix = "0.85" # default features provide the sha1 object hash
+jiff = { version = "0.2", default-features = false, features = ["std", "serde"] } # UTC only, so no tzdb
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs"] }
 tokio-stream = { version = "0.1", features = ["sync"] }

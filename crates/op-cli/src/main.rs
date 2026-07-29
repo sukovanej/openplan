@@ -9,13 +9,13 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand};
 use op_api::{
-    BranchMark, ChangeKind, CreateTask, Matrix, MatrixCell, TaskSummary, TaskTree, TaskView,
-    sibling_cmp,
+    BranchMark, ChangeKind, CreateTask, Matrix, MatrixCell, Metadata, TaskSummary, TaskTree,
+    TaskView, sibling_cmp,
 };
 use op_git::Repo;
 use op_index::Index;
 use op_store::Store;
-use op_task::{Status, rank};
+use op_task::{FieldError, FieldResult, Status, Timestamp, rank};
 
 use daemon::{Control, DEFAULT_PORT, Home};
 
@@ -303,7 +303,7 @@ fn create(
             deps,
             body,
         }
-        .into_task(),
+        .into_task(op_task::now()),
     )?;
     println!("{id}");
     Ok(())
@@ -328,15 +328,16 @@ fn list(
     let ids = store.task_ids()?;
     let mut summaries = Vec::new();
     for id in &ids {
-        match store.read(id) {
-            Ok(task) => {
-                if status.is_some_and(|s| task.frontmatter.status != s) {
+        match store.read_raw(id) {
+            Ok(raw) => {
+                let summary = TaskSummary::from_partial(id.clone(), op_task::parse_partial(&raw));
+                if status.is_some_and(|s| summary.metadata.status() != Some(s)) {
                     continue;
                 }
-                if parent.is_some_and(|p| task.frontmatter.parent.as_deref() != Some(p)) {
+                if parent.is_some_and(|p| summary.metadata.parent() != Some(p)) {
                     continue;
                 }
-                summaries.push(TaskSummary::from_task(id.clone(), &task));
+                summaries.push(summary);
             }
             // stderr keeps the diagnostic out of stdout's JSON while still surfacing it.
             Err(err) => eprintln!("{id}: {err}"),
@@ -361,7 +362,7 @@ fn list_all_branches(root: &Path, status: Option<Status>, json: bool) -> Result<
         .matrix()
         .cells
         .iter()
-        .filter(|cell| status.is_none_or(|s| cell.task.status == s))
+        .filter(|cell| status.is_none_or(|s| cell.task.metadata.status() == Some(s)))
         .cloned()
         .collect();
     if json {
@@ -370,7 +371,7 @@ fn list_all_branches(root: &Path, status: Option<Status>, json: bool) -> Result<
         println!("no tasks on any branch");
     } else {
         for cell in &cells {
-            let status = format!("{:?}", cell.task.status);
+            let status = status_label(&cell.task.metadata);
             println!(
                 "{:<22} {:<28} {status:<11} {}{}",
                 cell.branch,
@@ -395,8 +396,8 @@ fn list_branch(
     let summaries: Vec<TaskSummary> = index
         .branch_summaries(branch)
         .into_iter()
-        .filter(|s| status.is_none_or(|st| s.status == st))
-        .filter(|s| parent.is_none_or(|p| s.parent.as_deref() == Some(p)))
+        .filter(|s| status.is_none_or(|st| s.metadata.status() == Some(st)))
+        .filter(|s| parent.is_none_or(|p| s.metadata.parent() == Some(p)))
         .collect();
     if json {
         println!("{}", serde_json::to_string_pretty(&summaries)?);
@@ -414,11 +415,9 @@ fn get(root: &Path, id: &str, json: bool, branch: Option<&str>) -> Result<()> {
     }
     let store = Store::discover(root)?;
     if json {
-        let task = store.read(id)?;
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&TaskView::from_task(id.to_owned(), &task))?
-        );
+        let partial = op_task::parse_partial(&store.read_raw(id)?);
+        let view = TaskView::from_partial(id.to_owned(), partial, local_updated(root, id));
+        println!("{}", serde_json::to_string_pretty(&view)?);
     } else {
         // Print the file verbatim; re-serializing would normalize formatting and is a lossy
         // view of what is actually on disk.
@@ -449,20 +448,25 @@ fn show(root: &Path, id: &str, branches: bool) -> Result<()> {
         return show_branches(root, id);
     }
     let store = Store::discover(root)?;
-    let task = store.read(id)?;
-    let fm = &task.frontmatter;
+    let partial = op_task::parse_partial(&store.read_raw(id)?);
+    let summary = TaskSummary::from_partial(id.to_owned(), partial);
+    let metadata = &summary.metadata;
     println!("id:     {id}");
-    println!("title:  {}", task.title().unwrap_or_default());
-    println!("status: {}", fm.status.as_str());
-    println!("parent: {}", fm.parent.as_deref().unwrap_or("-"));
+    println!("title:  {}", summary.title);
+    println!("status: {}", status_label(metadata));
+    println!("parent: {}", metadata.parent().unwrap_or("-"));
+    let deps = metadata.deps();
     println!(
         "deps:   {}",
-        if fm.deps.is_empty() {
+        if deps.is_empty() {
             "-".to_owned()
         } else {
-            fm.deps.join(", ")
+            deps.join(", ")
         }
     );
+    for problem in metadata.problems() {
+        println!("!       {problem}");
+    }
     Ok(())
 }
 
@@ -486,13 +490,40 @@ fn show_branches(root: &Path, id: &str) -> Result<()> {
         let short = &version.blob_oid[..version.blob_oid.len().min(12)];
         println!(
             "  {short}  {:<11} {}",
-            version.summary.status.as_str(),
+            status_label(&version.summary.metadata),
             version.summary.title,
         );
         let branches: Vec<String> = version.branches.iter().map(mark_label).collect();
         println!("    branches: {}", branches.join(", "));
     }
     Ok(())
+}
+
+// `updated` is git-derived, so a store that sits outside a repository — or a task no commit holds —
+// simply has none to report. It dates the checked-out branch, the one whose file was just read; a
+// task matching its merge-base has no cell of its own there, and falls back to the branch that did
+// last change it.
+//
+// A running daemon already holds this, kept warm across requests. Asking it spares a one-shot
+// process the whole cross-branch index — every branch's blobs parsed and its history walked — built
+// to fill this one field and then dropped.
+fn local_updated(root: &Path, id: &str) -> FieldResult<Timestamp> {
+    let (Ok(repo), Ok(store)) = (Repo::discover(root), Store::discover(root)) else {
+        return Err(FieldError::Missing);
+    };
+    // The worktree's own root, not the `--root` the caller passed, which may be any directory
+    // beneath it.
+    let branch = repo.worktree_branch(store.root()).ok().flatten();
+    if let Some(updated) = Control::resolve()
+        .ok()
+        .and_then(|control| control.task_updated(&repo.git_common_dir(), id, branch.as_deref()))
+    {
+        return updated;
+    }
+    let Ok((_repo, index)) = build_index(root) else {
+        return Err(FieldError::Missing);
+    };
+    index.task_updated_or_headline(id, index.current_branch())
 }
 
 fn build_index(root: &Path) -> Result<(Repo, Index)> {
@@ -511,9 +542,16 @@ fn ensure_branch(repo: &Repo, branch: &str) -> Result<()> {
     }
 }
 
+fn status_label(metadata: &Metadata) -> String {
+    match metadata.status() {
+        Some(status) => status.as_str().to_owned(),
+        None => "unreadable".to_owned(),
+    }
+}
+
 fn print_summaries(summaries: &[TaskSummary]) {
     for summary in summaries {
-        let status = format!("{:?}", summary.status);
+        let status = status_label(&summary.metadata);
         println!("{:<28} {status:<11} {}", summary.id, summary.title);
     }
 }
@@ -636,8 +674,8 @@ fn parse_parent(value: &str) -> Option<String> {
 fn local_summaries(store: &Store) -> Result<Vec<TaskSummary>> {
     let mut summaries = Vec::new();
     for id in store.task_ids()? {
-        match store.read(&id) {
-            Ok(task) => summaries.push(TaskSummary::from_task(id, &task)),
+        match store.read_raw(&id) {
+            Ok(raw) => summaries.push(TaskSummary::from_partial(id, op_task::parse_partial(&raw))),
             Err(err) => eprintln!("{id}: {err}"),
         }
     }
@@ -672,7 +710,7 @@ fn print_tree(node: &TaskTree, depth: usize) {
         "{}{:<28} {:<11} {}",
         "  ".repeat(depth),
         node.id,
-        node.status.as_str(),
+        status_label(&node.metadata),
         node.title,
     );
     for child in &node.children {
@@ -696,7 +734,7 @@ fn move_task(
     let summaries = local_summaries(&store)?;
     let mut siblings: Vec<&TaskSummary> = summaries
         .iter()
-        .filter(|s| s.parent == new_parent && s.id != id)
+        .filter(|s| s.metadata.parent() == new_parent.as_deref() && s.id != id)
         .collect();
     siblings.sort_by(|a, b| sibling_cmp(a, b));
     let insert = insert_index(&siblings, before.as_deref(), after.as_deref())?;
@@ -765,7 +803,7 @@ enum RankPlan {
 }
 
 fn rank_plan(siblings: &[&TaskSummary], insert: usize) -> RankPlan {
-    let ranks: Vec<&str> = siblings.iter().filter_map(|s| s.rank.as_deref()).collect();
+    let ranks: Vec<&str> = siblings.iter().filter_map(|s| s.metadata.rank()).collect();
     if ranks.len() == siblings.len() && rank::is_ordered(&ranks) {
         let neighbour = |i: usize| ranks.get(i).copied();
         let between = rank::between(insert.checked_sub(1).and_then(neighbour), neighbour(insert));

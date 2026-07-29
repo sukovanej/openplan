@@ -1,8 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
-pub use op_task::Status;
 use op_task::Task;
+pub use op_task::{Status, Timestamp};
 
 pub const ADMIN_HEADER: &str = "x-oplan-admin";
 
@@ -17,27 +17,38 @@ pub struct DaemonInfo {
     pub port: u16,
     pub version: String,
     pub started_at: u64,
+    // The git common directory of the repository it indexes — the same for every worktree of that
+    // repository, so a client can tell whether this daemon's answers are about its own store.
+    // Optional because this file outlives the binary that wrote it: a newer CLI must still be able
+    // to read, and stop, a daemon started before the field existed.
+    #[serde(default)]
+    pub repo: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// Every read surface carries the same `metadata`: the frontmatter parsed field by field, so a file
+// with one bad field still renders the rest and flags only what failed. `title` and `body` come from
+// the markdown, which has no schema to violate.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskSummary {
     pub id: String,
     pub title: String,
-    pub status: Status,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rank: Option<String>,
+    pub metadata: Metadata,
 }
 
 impl TaskSummary {
+    pub fn from_partial(id: String, partial: op_task::PartialTask) -> Self {
+        Self {
+            id,
+            title: partial.title.unwrap_or_default(),
+            metadata: partial.metadata.into(),
+        }
+    }
+
     pub fn from_task(id: String, task: &Task) -> Self {
         Self {
             id,
             title: task.title().unwrap_or_default(),
-            status: task.frontmatter.status,
-            parent: task.frontmatter.parent.clone(),
-            rank: task.frontmatter.rank.clone(),
+            metadata: Metadata::from_frontmatter(&task.frontmatter),
         }
     }
 }
@@ -46,30 +57,276 @@ impl TaskSummary {
 pub struct TaskView {
     pub id: String,
     pub title: String,
-    pub status: Status,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub parent: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub rank: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub deps: Vec<String>,
+    pub metadata: Metadata,
     pub body: String,
+    // Derived from git rather than read from the file, so it sits outside `metadata`.
+    pub updated: Field<Rfc3339>,
 }
 
 impl TaskView {
-    pub fn from_task(id: String, task: &Task) -> Self {
+    pub fn from_partial(
+        id: String,
+        partial: op_task::PartialTask,
+        updated: op_task::FieldResult<Timestamp>,
+    ) -> Self {
+        let metadata: Metadata = partial.metadata.into();
+        let created = metadata.created();
+        Self {
+            id,
+            title: partial.title.unwrap_or_default(),
+            updated: updated_field(created, updated),
+            metadata,
+            body: partial.body,
+        }
+    }
+
+    // `updated` is git-derived, so only a caller holding the history can supply it; a store-only
+    // read passes `None`.
+    pub fn from_task(id: String, task: &Task, updated: op_task::FieldResult<Timestamp>) -> Self {
         Self {
             id,
             title: task.title().unwrap_or_default(),
-            status: task.frontmatter.status,
-            parent: task.frontmatter.parent.clone(),
-            rank: task.frontmatter.rank.clone(),
-            deps: task.frontmatter.deps.clone(),
+            updated: updated_field(Some(task.frontmatter.created), updated),
+            metadata: Metadata::from_frontmatter(&task.frontmatter),
             body: task.body.clone(),
         }
     }
+}
+
+// An instant on the wire. JSON has no time type, so it travels as RFC3339 text; wrapping it keeps
+// the Rust side a real `Timestamp` instead of re-parsing at each use, and gives utoipa a schema for
+// a type it cannot see inside `Field<T>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
+#[schema(value_type = String, format = DateTime)]
+pub struct Rfc3339(pub Timestamp);
+
+impl From<Timestamp> for Rfc3339 {
+    fn from(at: Timestamp) -> Self {
+        Self(at)
+    }
+}
+
+impl std::fmt::Display for Rfc3339 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+// A frontmatter field on the read path: its parsed value, or a per-field error, so a client can
+// render every field that parsed and flag only the ones that did not. Serialized untagged — a value
+// is its bare JSON (`"todo"`, `null`, `["a"]`), an error is a `{ "kind": … }` object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum Field<T> {
+    Value(T),
+    Error(FieldError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FieldError {
+    Missing,
+    Invalid { message: String },
+}
+
+impl<T> From<op_task::FieldResult<T>> for Field<T> {
+    fn from(result: op_task::FieldResult<T>) -> Self {
+        match result {
+            Ok(value) => Field::Value(value),
+            Err(op_task::FieldError::Missing) => Field::Error(FieldError::Missing),
+            Err(op_task::FieldError::Invalid(message)) => {
+                Field::Error(FieldError::Invalid { message })
+            }
+        }
+    }
+}
+
+impl<T> Field<T> {
+    pub fn value(self) -> Option<T> {
+        match self {
+            Field::Value(value) => Some(value),
+            Field::Error(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FrontmatterFields {
+    pub status: Field<Status>,
+    // RFC3339 UTC, already validated by the parser — a value that did not parse arrives as an error
+    // rather than as text.
+    pub created: Field<Rfc3339>,
+    pub parent: Field<Option<String>>,
+    pub rank: Field<Option<String>>,
+    pub deps: Field<Vec<String>>,
+}
+
+// The task's metadata as parsed: `Fields` when the YAML is a mapping (each field carries its own
+// value or error), `Error` when the fence or the YAML itself is unrecoverable. Serialized untagged:
+// the error is `{ "kind": "error", "message": … }`, the fields case a plain object of the fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum Metadata {
+    Error {
+        kind: MetadataErrorTag,
+        message: String,
+    },
+    Fields(FrontmatterFields),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MetadataErrorTag {
+    Error,
+}
+
+impl From<op_task::PartialMetadata> for Metadata {
+    fn from(partial: op_task::PartialMetadata) -> Self {
+        match partial {
+            op_task::PartialMetadata::Error(message) => Metadata::Error {
+                kind: MetadataErrorTag::Error,
+                message,
+            },
+            op_task::PartialMetadata::Fields(fields) => Metadata::Fields(FrontmatterFields {
+                status: fields.status.into(),
+                created: Field::from(fields.created).map(Rfc3339),
+                parent: fields.parent.into(),
+                rank: fields.rank.into(),
+                deps: fields.deps.into(),
+            }),
+        }
+    }
+}
+
+impl<T> Field<T> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Field<U> {
+        match self {
+            Field::Value(value) => Field::Value(f(value)),
+            Field::Error(err) => Field::Error(err),
+        }
+    }
+
+    pub fn into_result(self) -> op_task::FieldResult<T> {
+        match self {
+            Field::Value(value) => Ok(value),
+            Field::Error(FieldError::Missing) => Err(op_task::FieldError::Missing),
+            Field::Error(FieldError::Invalid { message }) => {
+                Err(op_task::FieldError::Invalid(message))
+            }
+        }
+    }
+
+    pub fn as_error(&self) -> Option<&FieldError> {
+        match self {
+            Field::Value(_) => None,
+            Field::Error(err) => Some(err),
+        }
+    }
+
+    pub fn as_value(&self) -> Option<&T> {
+        match self {
+            Field::Value(value) => Some(value),
+            Field::Error(_) => None,
+        }
+    }
+}
+
+impl Metadata {
+    pub fn from_frontmatter(fm: &op_task::Frontmatter) -> Self {
+        Metadata::Fields(FrontmatterFields {
+            status: Field::Value(fm.status),
+            created: Field::Value(Rfc3339(fm.created)),
+            parent: Field::Value(fm.parent.clone()),
+            rank: Field::Value(fm.rank.clone()),
+            deps: Field::Value(fm.deps.clone()),
+        })
+    }
+
+    pub fn fields(&self) -> Option<&FrontmatterFields> {
+        match self {
+            Metadata::Fields(fields) => Some(fields),
+            Metadata::Error { .. } => None,
+        }
+    }
+
+    // The display value: a field that failed has none, so a client shows the failure instead of a
+    // fabricated one.
+    pub fn status(&self) -> Option<Status> {
+        self.fields()?.status.as_value().copied()
+    }
+
+    // The status as a field, so a surface that renders a badge can show the failure instead of a
+    // status the file never claimed. A file whose metadata did not parse at all fails every field.
+    pub fn status_field(&self) -> Field<Status> {
+        match self {
+            Metadata::Fields(fields) => fields.status.clone(),
+            Metadata::Error { message, .. } => Field::Error(FieldError::Invalid {
+                message: message.clone(),
+            }),
+        }
+    }
+
+    // The structural values. A field that failed reads as absent, which is how the tree, the board
+    // grouping, and the sort already handle a task that genuinely has no parent or rank — the
+    // failure itself stays visible in `metadata`.
+    pub fn parent(&self) -> Option<&str> {
+        self.fields()?.parent.as_value()?.as_deref()
+    }
+
+    pub fn rank(&self) -> Option<&str> {
+        self.fields()?.rank.as_value()?.as_deref()
+    }
+
+    pub fn created(&self) -> Option<Timestamp> {
+        self.fields()?.created.as_value().map(|at| at.0)
+    }
+
+    // Every field that failed, named, for a surface that reports what is wrong rather than only
+    // that something is.
+    pub fn problems(&self) -> Vec<String> {
+        let fields = match self {
+            Metadata::Error { message, .. } => return vec![format!("frontmatter: {message}")],
+            Metadata::Fields(fields) => fields,
+        };
+        let mut out = Vec::new();
+        let mut push = |name: &str, err: Option<&FieldError>| {
+            if let Some(err) = err {
+                out.push(match err {
+                    FieldError::Missing => format!("{name}: missing"),
+                    FieldError::Invalid { message } => format!("{name}: {message}"),
+                });
+            }
+        };
+        push("status", fields.status.as_error());
+        push("created", fields.created.as_error());
+        push("parent", fields.parent.as_error());
+        push("rank", fields.rank.as_error());
+        push("deps", fields.deps.as_error());
+        out
+    }
+
+    pub fn deps(&self) -> &[String] {
+        match self.fields().map(|fields| &fields.deps) {
+            Some(Field::Value(deps)) => deps,
+            _ => &[],
+        }
+    }
+}
+
+// A hand-set `created` later than the last edit would otherwise show a task updated before it
+// existed. Every surface reporting `updated` clamps the same way, so a task cannot read one age in
+// the list and another on its own page.
+pub fn updated_field(
+    created: Option<Timestamp>,
+    updated: op_task::FieldResult<Timestamp>,
+) -> Field<Rfc3339> {
+    updated
+        .map(|at| match created {
+            Some(created) => Rfc3339(at.max(created)),
+            None => Rfc3339(at),
+        })
+        .into()
 }
 
 // A direct child of a task, in sibling (`rank`) order — enough to render the subtasks list without
@@ -78,7 +335,7 @@ impl TaskView {
 pub struct TaskChild {
     pub id: String,
     pub title: String,
-    pub status: Status,
+    pub status: Field<Status>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub rank: Option<String>,
@@ -90,19 +347,22 @@ pub struct TaskChild {
 pub struct TaskRef {
     pub id: String,
     pub title: String,
-    pub status: Status,
+    pub status: Field<Status>,
 }
 
-// One task's full view on a single branch, paired with every branch it lives on so a cold-loaded
-// detail page can render a branch switcher without the list in memory. The `view` is the requested
-// branch's version, or the headline version for a branchless read; `headline` names the branch that
-// version resolves to (the most recently changed one), so the switcher can mark it. `parent_title`,
-// `children`, and `refs` carry the immediate hierarchy context so the page renders from this one
-// read instead of fetching the whole task set.
+// One task read for the detail page: `metadata` parsed field by field, so a file with one bad field
+// still renders everything else and flags only what failed, and `body` always the raw markdown.
+// `updated` is derived from git rather than read from the file, so it sits outside `metadata`.
+// Paired with every branch it lives on, so a cold-loaded page renders a branch switcher without the
+// list in memory; `headline` names the branch the shown version resolves to. `parent_title`,
+// `children`, and `refs` carry the immediate hierarchy so the page renders from this one read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskDetail {
-    #[serde(flatten)]
-    pub view: TaskView,
+    pub id: String,
+    pub title: String,
+    pub metadata: Metadata,
+    pub body: String,
+    pub updated: Field<Rfc3339>,
     pub headline: String,
     pub branches: Vec<BranchState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -114,20 +374,15 @@ pub struct TaskDetail {
     pub refs: Vec<TaskRef>,
 }
 
-// One logical task aggregated across every branch it lives on: the `status`/`title` come from the
+// One logical task aggregated across every branch it lives on: `metadata` and `title` come from the
 // `headline` branch (the most recently changed one), plus one `branches` entry per branch so a
 // client can render badges, mark the headline, and spot divergence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskListItem {
     pub id: String,
     pub title: String,
-    pub status: Status,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub parent: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub rank: Option<String>,
+    pub metadata: Metadata,
+    pub updated: Field<Rfc3339>,
     pub headline: String,
     pub branches: Vec<BranchState>,
 }
@@ -146,7 +401,7 @@ pub enum ChangeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct BranchState {
     pub branch: String,
-    pub status: Status,
+    pub status: Field<Status>,
     pub blob_oid: String,
     pub dirty: bool,
     pub kind: ChangeKind,
@@ -166,8 +421,8 @@ pub struct CreateTask {
 }
 
 impl CreateTask {
-    pub fn into_task(self) -> Task {
-        let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Todo));
+    pub fn into_task(self, created: Timestamp) -> Task {
+        let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Todo), created);
         task.set_parent(self.parent);
         task.set_deps(self.deps);
         if let Some(body) = &self.body {
@@ -238,17 +493,13 @@ impl TaskPatch {
 pub struct TaskTree {
     pub id: String,
     pub title: String,
-    pub status: Status,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rank: Option<String>,
+    pub metadata: Metadata,
     pub children: Vec<TaskTree>,
 }
 
 // Siblings sort by `rank` ascending; a task without a rank sorts last, ties broken by id so the
 // order is stable across rebuilds (§4).
-fn rank_cmp(ra: &Option<String>, ia: &str, rb: &Option<String>, ib: &str) -> std::cmp::Ordering {
+fn rank_cmp(ra: Option<&str>, ia: &str, rb: Option<&str>, ib: &str) -> std::cmp::Ordering {
     match (ra, rb) {
         (Some(x), Some(y)) => x.cmp(y).then_with(|| ia.cmp(ib)),
         (Some(_), None) => std::cmp::Ordering::Less,
@@ -258,11 +509,11 @@ fn rank_cmp(ra: &Option<String>, ia: &str, rb: &Option<String>, ib: &str) -> std
 }
 
 pub fn sibling_cmp(a: &TaskSummary, b: &TaskSummary) -> std::cmp::Ordering {
-    rank_cmp(&a.rank, &a.id, &b.rank, &b.id)
+    rank_cmp(a.metadata.rank(), &a.id, b.metadata.rank(), &b.id)
 }
 
 pub fn list_item_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
-    rank_cmp(&a.rank, &a.id, &b.rank, &b.id)
+    rank_cmp(a.metadata.rank(), &a.id, b.metadata.rank(), &b.id)
 }
 
 impl TaskTree {
@@ -281,11 +532,8 @@ impl TaskTree {
         let mut children_of: std::collections::HashMap<&str, Vec<&TaskSummary>> =
             std::collections::HashMap::new();
         for summary in summaries {
-            if let Some(parent) = &summary.parent {
-                children_of
-                    .entry(parent.as_str())
-                    .or_default()
-                    .push(summary);
+            if let Some(parent) = summary.metadata.parent() {
+                children_of.entry(parent).or_default().push(summary);
             }
         }
         let root = by_id.get(root)?;
@@ -327,9 +575,7 @@ fn build_node(
     TaskTree {
         id: summary.id.clone(),
         title: summary.title.clone(),
-        status: summary.status,
-        parent: summary.parent.clone(),
-        rank: summary.rank.clone(),
+        metadata: summary.metadata.clone(),
         children,
     }
 }
@@ -353,9 +599,14 @@ pub struct Board {
     pub groups: Vec<BoardGroup>,
 }
 
+// `status` is absent for the group of tasks whose own status could not be read. They are not
+// filed under a status they never claimed; they get their own group, first, so a broken file is the
+// first thing seen rather than a plausible-looking row buried among real ones.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct BoardGroup {
-    pub status: Status,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub status: Option<Status>,
     pub rows: Vec<BoardRow>,
 }
 
@@ -379,14 +630,17 @@ impl Board {
             .iter()
             .map(|t| (t.id.as_str(), t.title.as_str()))
             .collect();
-        let mut by_status: std::collections::HashMap<Status, Vec<&TaskListItem>> =
+        let mut by_status: std::collections::HashMap<Option<Status>, Vec<&TaskListItem>> =
             std::collections::HashMap::new();
         for task in tasks {
-            by_status.entry(task.status).or_default().push(task);
+            by_status
+                .entry(task.metadata.status())
+                .or_default()
+                .push(task);
         }
 
         let mut groups = Vec::new();
-        for status in BOARD_ORDER {
+        for status in std::iter::once(None).chain(BOARD_ORDER.map(Some)) {
             let Some(members) = by_status.get(&status) else {
                 continue;
             };
@@ -396,16 +650,16 @@ impl Board {
                 std::collections::HashMap::new();
             let mut roots: Vec<&TaskListItem> = Vec::new();
             for member in members {
-                match &member.parent {
-                    Some(parent) if member_ids.contains(parent.as_str()) => {
-                        children_of.entry(parent.as_str()).or_default().push(member);
+                match member.metadata.parent() {
+                    Some(parent) if member_ids.contains(parent) => {
+                        children_of.entry(parent).or_default().push(member);
                     }
                     _ => roots.push(member),
                 }
             }
-            roots.sort_by(|a, b| rank_cmp(&a.rank, &a.id, &b.rank, &b.id));
+            roots.sort_by(|a, b| list_item_cmp(a, b));
             for kids in children_of.values_mut() {
-                kids.sort_by(|a, b| rank_cmp(&a.rank, &a.id, &b.rank, &b.id));
+                kids.sort_by(|a, b| list_item_cmp(a, b));
             }
 
             let mut rows = Vec::new();
@@ -456,8 +710,8 @@ fn emit_row<'a>(
     }
     let kids = children_of.get(node.id.as_str());
     let parent_title = if is_root {
-        node.parent
-            .as_deref()
+        node.metadata
+            .parent()
             .and_then(|p| title_of.get(p).map(|t| t.to_string()))
     } else {
         None

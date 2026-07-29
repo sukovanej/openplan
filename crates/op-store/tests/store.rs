@@ -1,5 +1,9 @@
 use op_store::{Store, StoreError};
-use op_task::{Status, Task};
+use op_task::{Status, Task, Timestamp};
+
+fn stamp() -> Timestamp {
+    "2026-01-01T00:00:00Z".parse().unwrap()
+}
 
 fn make_store() -> (tempfile::TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -44,8 +48,16 @@ fn discover_fails_when_no_store_above() {
 #[test]
 fn task_ids_are_sorted_stems() {
     let (_dir, store) = make_store();
-    std::fs::write(store.task_path("beta"), "---\nstatus: done\n---\n# B\n").unwrap();
-    std::fs::write(store.task_path("alpha"), "---\nstatus: todo\n---\n# A\n").unwrap();
+    std::fs::write(
+        store.task_path("beta"),
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# B\n",
+    )
+    .unwrap();
+    std::fs::write(
+        store.task_path("alpha"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    )
+    .unwrap();
     std::fs::write(store.tasks_dir().join("notes.txt"), "ignored").unwrap();
 
     assert_eq!(store.task_ids().unwrap(), vec!["alpha", "beta"]);
@@ -54,7 +66,11 @@ fn task_ids_are_sorted_stems() {
 #[test]
 fn read_parses_status_and_title() {
     let (_dir, store) = make_store();
-    std::fs::write(store.task_path("t"), "---\nstatus: done\n---\n# Ship it\n").unwrap();
+    std::fs::write(
+        store.task_path("t"),
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
+    )
+    .unwrap();
 
     let task = store.read("t").unwrap();
     assert_eq!(task.frontmatter.status, Status::Done);
@@ -64,7 +80,11 @@ fn read_parses_status_and_title() {
 #[test]
 fn with_lock_runs_closure_under_existing_file() {
     let (_dir, store) = make_store();
-    std::fs::write(store.task_path("t"), "---\nstatus: todo\n---\n# T\n").unwrap();
+    std::fs::write(
+        store.task_path("t"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n",
+    )
+    .unwrap();
 
     let value = store.with_lock("t", || Ok(42)).unwrap();
     assert_eq!(value, 42);
@@ -86,7 +106,7 @@ fn create_read_update_delete_roundtrip() {
     let (_dir, store) = make_store();
 
     let id = store
-        .create(&Task::new("Wire the parser", Status::Todo))
+        .create(&Task::new("Wire the parser", Status::Todo, stamp()))
         .unwrap();
     assert!(id.starts_with("wire-the-parser-"), "slug id: {id}");
 
@@ -118,10 +138,10 @@ fn create_read_update_delete_roundtrip() {
 fn create_gives_distinct_ids_for_same_title() {
     let (_dir, store) = make_store();
     let a = store
-        .create(&Task::new("Same title", Status::Todo))
+        .create(&Task::new("Same title", Status::Todo, stamp()))
         .unwrap();
     let b = store
-        .create(&Task::new("Same title", Status::Todo))
+        .create(&Task::new("Same title", Status::Todo, stamp()))
         .unwrap();
     assert_ne!(a, b);
     assert!(store.exists(&a) && store.exists(&b));
@@ -133,7 +153,7 @@ fn update_preserves_body_byte_for_byte() {
     let body = "# Ship it\n\n## Plan\n- a\n- b\n";
     std::fs::write(
         store.task_path("t"),
-        format!("---\nstatus: todo\n---\n{body}"),
+        format!("---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n{body}"),
     )
     .unwrap();
 
@@ -145,7 +165,10 @@ fn update_preserves_body_byte_for_byte() {
         .unwrap();
 
     let raw = std::fs::read_to_string(store.task_path("t")).unwrap();
-    assert_eq!(raw, format!("---\nstatus: done\n---\n{body}"));
+    assert_eq!(
+        raw,
+        format!("---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n{body}")
+    );
 }
 
 #[test]
@@ -160,7 +183,7 @@ fn missing_task_mutations_are_not_found() {
         Err(StoreError::NotFound { .. })
     ));
     assert!(matches!(
-        store.write("ghost", &Task::new("x", Status::Todo)),
+        store.write("ghost", &Task::new("x", Status::Todo, stamp())),
         Err(StoreError::NotFound { .. })
     ));
 }
@@ -168,9 +191,11 @@ fn missing_task_mutations_are_not_found() {
 #[test]
 fn create_and_update_validate_references() {
     let (_dir, store) = make_store();
-    let parent = store.create(&Task::new("Parent", Status::Todo)).unwrap();
+    let parent = store
+        .create(&Task::new("Parent", Status::Todo, stamp()))
+        .unwrap();
 
-    let mut child = Task::new("Child", Status::Todo);
+    let mut child = Task::new("Child", Status::Todo, stamp());
     child.set_parent(Some("does-not-exist".to_owned()));
     assert!(matches!(store.create(&child), Err(StoreError::Invalid(_))));
 
@@ -195,13 +220,15 @@ fn create_and_update_validate_references() {
 #[test]
 fn reparenting_under_a_descendant_is_refused() {
     let (_dir, store) = make_store();
-    let a = store.create(&Task::new("A", Status::Todo)).unwrap();
+    let a = store
+        .create(&Task::new("A", Status::Todo, stamp()))
+        .unwrap();
 
-    let mut b = Task::new("B", Status::Todo);
+    let mut b = Task::new("B", Status::Todo, stamp());
     b.set_parent(Some(a.clone()));
     let b = store.create(&b).unwrap();
 
-    let mut c = Task::new("C", Status::Todo);
+    let mut c = Task::new("C", Status::Todo, stamp());
     c.set_parent(Some(b.clone()));
     let c = store.create(&c).unwrap();
 
@@ -224,9 +251,11 @@ fn reparenting_under_a_descendant_is_refused() {
 #[test]
 fn dangling_reference_does_not_block_unrelated_edit() {
     let (_dir, store) = make_store();
-    let a = store.create(&Task::new("A", Status::Todo)).unwrap();
+    let a = store
+        .create(&Task::new("A", Status::Todo, stamp()))
+        .unwrap();
 
-    let mut b = Task::new("B", Status::Todo);
+    let mut b = Task::new("B", Status::Todo, stamp());
     b.set_deps(vec![a.clone()]);
     let b = store.create(&b).unwrap();
 
@@ -246,7 +275,7 @@ fn dangling_reference_does_not_block_unrelated_edit() {
 #[test]
 fn create_rejects_malformed_title() {
     let (_dir, store) = make_store();
-    let mut bad = Task::new("placeholder", Status::Todo);
+    let mut bad = Task::new("placeholder", Status::Todo, stamp());
 
     for body in ["no heading at all\n", "# \n", "# One\n# Two\n"] {
         bad.body = body.to_owned();
@@ -267,7 +296,7 @@ fn update_preserves_unknown_frontmatter_keys() {
     let (_dir, store) = make_store();
     std::fs::write(
         store.task_path("t"),
-        "---\nstatus: todo\nestimate: 3.5\n---\n# T\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nestimate: 3.5\n---\n# T\n",
     )
     .unwrap();
 
@@ -289,7 +318,9 @@ fn update_preserves_unknown_frontmatter_keys() {
 #[test]
 fn concurrent_updates_to_one_task_serialize() {
     let (_dir, store) = make_store();
-    let id = store.create(&Task::new("Contended", Status::Todo)).unwrap();
+    let id = store
+        .create(&Task::new("Contended", Status::Todo, stamp()))
+        .unwrap();
 
     let threads = 8;
     let handles: Vec<_> = (0..threads)
@@ -327,7 +358,9 @@ fn concurrent_updates_to_one_task_serialize() {
 #[test]
 fn happy_path_leaves_no_temp_files() {
     let (_dir, store) = make_store();
-    let id = store.create(&Task::new("Clean", Status::Todo)).unwrap();
+    let id = store
+        .create(&Task::new("Clean", Status::Todo, stamp()))
+        .unwrap();
     store
         .update(&id, |task| {
             task.set_status(Status::Done);
@@ -344,7 +377,9 @@ fn happy_path_leaves_no_temp_files() {
 #[test]
 fn a_malformed_rank_is_refused() {
     let (_dir, store) = make_store();
-    let id = store.create(&Task::new("A", Status::Todo)).unwrap();
+    let id = store
+        .create(&Task::new("A", Status::Todo, stamp()))
+        .unwrap();
 
     for bad in ["A", "1.5", "", "a b"] {
         let result = store.update(&id, |task| {
@@ -379,7 +414,9 @@ fn an_already_persisted_malformed_rank_does_not_block_an_unrelated_edit() {
     // Task files are hand-editable, so a bad rank can predate the write being validated. Blocking
     // an unrelated status change on it would strand the task; `move` rebalances the group instead.
     let (_dir, store) = make_store();
-    let id = store.create(&Task::new("A", Status::Todo)).unwrap();
+    let id = store
+        .create(&Task::new("A", Status::Todo, stamp()))
+        .unwrap();
     let path = store.tasks_dir().join(format!("{id}.md"));
     let raw = std::fs::read_to_string(&path).unwrap();
     std::fs::write(
@@ -395,4 +432,49 @@ fn an_already_persisted_malformed_rank_does_not_block_an_unrelated_edit() {
         })
         .expect("an unrelated edit still lands");
     assert_eq!(store.read(&id).unwrap().frontmatter.status, Status::Done);
+}
+
+#[test]
+fn a_status_change_preserves_created() {
+    let (_dir, store) = make_store();
+    let id = store
+        .create(&Task::new("A", Status::Todo, stamp()))
+        .unwrap();
+
+    store
+        .update(&id, |task| {
+            task.set_status(Status::InReview);
+            Ok(())
+        })
+        .unwrap();
+
+    let task = store.read(&id).unwrap();
+    assert_eq!(task.frontmatter.status, Status::InReview);
+    assert_eq!(task.frontmatter.created, stamp());
+}
+
+#[test]
+fn a_file_without_created_refuses_to_be_written_and_says_how_to_fix_it() {
+    let (dir, store) = make_store();
+    let path = dir.path().join(".plan/tasks/legacy.md");
+    std::fs::write(&path, "---\nstatus: in_progress\n---\n# Legacy\n").unwrap();
+
+    let err = store
+        .update("legacy", |task| {
+            task.set_status(Status::Done);
+            Ok(())
+        })
+        .expect_err("a write must not invent the date the task was created");
+
+    assert!(matches!(err, StoreError::MissingCreated { .. }), "{err:?}");
+    let message = err.to_string();
+    // The reader is told which file, which field, and the two ways to get the value.
+    assert!(message.contains(&path.display().to_string()), "{message}");
+    assert!(message.contains("created:"), "{message}");
+    assert!(message.contains("--diff-filter=A"), "{message}");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "---\nstatus: in_progress\n---\n# Legacy\n",
+        "a refused write leaves the file alone"
+    );
 }

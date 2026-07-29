@@ -16,31 +16,45 @@ export const CreatedTask = Schema.Struct({ id: Schema.String })
 export type DaemonInfo = {
   readonly pid: number
   readonly port: number
+  readonly repo?: string | null
   readonly started_at: number
   readonly version: string
 }
 export const DaemonInfo = Schema.Struct({
   pid: Schema.Number.annotate({ format: "int32" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
   port: Schema.Number.annotate({ format: "int32" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+  repo: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   started_at: Schema.Number.annotate({ format: "int64" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
   version: Schema.String,
 })
+export type FieldError = { readonly kind: "missing" } | { readonly kind: "invalid"; readonly message: string }
+export const FieldError = Schema.Union(
+  [
+    Schema.Struct({ kind: Schema.Literal("missing") }),
+    Schema.Struct({ kind: Schema.Literal("invalid"), message: Schema.String }),
+  ],
+  { mode: "oneOf" },
+)
+export type MetadataErrorTag = "error"
+export const MetadataErrorTag = Schema.Literal("error")
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
-export type BranchState = {
-  readonly blob_oid: string
-  readonly branch: string
-  readonly dirty: boolean
-  readonly kind: ChangeKind
-  readonly status: Status
-}
-export const BranchState = Schema.Struct({
-  blob_oid: Schema.String,
-  branch: Schema.String,
-  dirty: Schema.Boolean,
-  kind: ChangeKind,
-  status: Status,
+export type Field_Option_String = null | string | FieldError
+export const Field_Option_String = Schema.Union(
+  [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError],
+  { mode: "oneOf" },
+)
+export type Field_Rfc3339 = string | FieldError
+export const Field_Rfc3339 = Schema.Union([Schema.String.annotate({ format: "date-time" }), FieldError], {
+  mode: "oneOf",
 })
+export type Field_Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled" | FieldError
+export const Field_Status = Schema.Union(
+  [Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]), FieldError],
+  { mode: "oneOf" },
+)
+export type Field_Vec_String = ReadonlyArray<string> | FieldError
+export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError], { mode: "oneOf" })
 export type CreateTask = {
   readonly body?: string | null
   readonly deps?: ReadonlyArray<string>
@@ -55,13 +69,6 @@ export const CreateTask = Schema.Struct({
   status: Schema.optionalKey(Schema.Union([Schema.Null, Status], { mode: "oneOf" })),
   title: Schema.String,
 })
-export type TaskChild = { readonly id: string; readonly rank?: string; readonly status: Status; readonly title: string }
-export const TaskChild = Schema.Struct({
-  id: Schema.String,
-  rank: Schema.optionalKey(Schema.String),
-  status: Status,
-  title: Schema.String,
-})
 export type TaskPatch = {
   readonly deps?: ReadonlyArray<string>
   readonly parent?: string | null
@@ -74,53 +81,92 @@ export const TaskPatch = Schema.Struct({
   rank: Schema.optionalKey(Schema.String),
   status: Schema.optionalKey(Status),
 })
-export type TaskRef = { readonly id: string; readonly status: Status; readonly title: string }
-export const TaskRef = Schema.Struct({ id: Schema.String, status: Status, title: Schema.String })
+export type BranchState = {
+  readonly blob_oid: string
+  readonly branch: string
+  readonly dirty: boolean
+  readonly kind: ChangeKind
+  readonly status: Field_Status
+}
+export const BranchState = Schema.Struct({
+  blob_oid: Schema.String,
+  branch: Schema.String,
+  dirty: Schema.Boolean,
+  kind: ChangeKind,
+  status: Field_Status,
+})
+export type TaskChild = {
+  readonly id: string
+  readonly rank?: string
+  readonly status: Field_Status
+  readonly title: string
+}
+export const TaskChild = Schema.Struct({
+  id: Schema.String,
+  rank: Schema.optionalKey(Schema.String),
+  status: Field_Status,
+  title: Schema.String,
+})
+export type TaskRef = { readonly id: string; readonly status: Field_Status; readonly title: string }
+export const TaskRef = Schema.Struct({ id: Schema.String, status: Field_Status, title: Schema.String })
+export type FrontmatterFields = {
+  readonly created: Field_Rfc3339
+  readonly deps: Field_Vec_String
+  readonly parent: Field_Option_String
+  readonly rank: Field_Option_String
+  readonly status: Field_Status
+}
+export const FrontmatterFields = Schema.Struct({
+  created: Field_Rfc3339,
+  deps: Field_Vec_String,
+  parent: Field_Option_String,
+  rank: Field_Option_String,
+  status: Field_Status,
+})
+export type Metadata = { readonly kind: MetadataErrorTag; readonly message: string } | FrontmatterFields
+export const Metadata = Schema.Union(
+  [Schema.Struct({ kind: MetadataErrorTag, message: Schema.String }), FrontmatterFields],
+  { mode: "oneOf" },
+)
+export type TaskDetail = {
+  readonly body: string
+  readonly branches: ReadonlyArray<BranchState>
+  readonly children?: ReadonlyArray<TaskChild>
+  readonly headline: string
+  readonly id: string
+  readonly metadata: Metadata
+  readonly parent_title?: string
+  readonly refs?: ReadonlyArray<TaskRef>
+  readonly title: string
+  readonly updated: Field_Rfc3339
+}
+export const TaskDetail = Schema.Struct({
+  body: Schema.String,
+  branches: Schema.Array(BranchState),
+  children: Schema.optionalKey(Schema.Array(TaskChild)),
+  headline: Schema.String,
+  id: Schema.String,
+  metadata: Metadata,
+  parent_title: Schema.optionalKey(Schema.String),
+  refs: Schema.optionalKey(Schema.Array(TaskRef)),
+  title: Schema.String,
+  updated: Field_Rfc3339,
+})
 export type TaskListItem = {
   readonly branches: ReadonlyArray<BranchState>
   readonly headline: string
   readonly id: string
-  readonly parent?: string
-  readonly rank?: string
-  readonly status: Status
+  readonly metadata: Metadata
   readonly title: string
+  readonly updated: Field_Rfc3339
 }
 export const TaskListItem = Schema.Struct({
   branches: Schema.Array(BranchState),
   headline: Schema.String,
   id: Schema.String,
-  parent: Schema.optionalKey(Schema.String),
-  rank: Schema.optionalKey(Schema.String),
-  status: Status,
+  metadata: Metadata,
   title: Schema.String,
-})
-export type TaskDetail = {
-  readonly body: string
-  readonly deps?: ReadonlyArray<string>
-  readonly id: string
-  readonly parent?: string
-  readonly rank?: string
-  readonly status: Status
-  readonly title: string
-  readonly branches: ReadonlyArray<BranchState>
-  readonly children?: ReadonlyArray<TaskChild>
-  readonly headline: string
-  readonly parent_title?: string
-  readonly refs?: ReadonlyArray<TaskRef>
-}
-export const TaskDetail = Schema.Struct({
-  body: Schema.String,
-  deps: Schema.optionalKey(Schema.Array(Schema.String)),
-  id: Schema.String,
-  parent: Schema.optionalKey(Schema.String),
-  rank: Schema.optionalKey(Schema.String),
-  status: Status,
-  title: Schema.String,
-  branches: Schema.Array(BranchState),
-  children: Schema.optionalKey(Schema.Array(TaskChild)),
-  headline: Schema.String,
-  parent_title: Schema.optionalKey(Schema.String),
-  refs: Schema.optionalKey(Schema.Array(TaskRef)),
+  updated: Field_Rfc3339,
 })
 export type BoardRow = {
   readonly depth: number
@@ -134,8 +180,8 @@ export const BoardRow = Schema.Struct({
   parent_title: Schema.optionalKey(Schema.String),
   task: TaskListItem,
 })
-export type BoardGroup = { readonly rows: ReadonlyArray<BoardRow>; readonly status: Status }
-export const BoardGroup = Schema.Struct({ rows: Schema.Array(BoardRow), status: Status })
+export type BoardGroup = { readonly rows: ReadonlyArray<BoardRow>; readonly status?: Status }
+export const BoardGroup = Schema.Struct({ rows: Schema.Array(BoardRow), status: Schema.optionalKey(Status) })
 export type Board = { readonly groups: ReadonlyArray<BoardGroup> }
 export const Board = Schema.Struct({ groups: Schema.Array(BoardGroup) })
 // schemas

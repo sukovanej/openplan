@@ -24,7 +24,7 @@ fn write_task(dir: &Path, id: &str, body: &str) {
     std::fs::create_dir_all(&tasks).unwrap();
     std::fs::write(
         tasks.join(format!("{id}.md")),
-        format!("---\nstatus: todo\n---\n\n# {body}\n"),
+        format!("---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n\n# {body}\n"),
     )
     .unwrap();
 }

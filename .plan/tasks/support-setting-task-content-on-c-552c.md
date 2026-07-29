@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T00:07:02Z
 ---
 # Support setting task content on create via --body / --body-file
 

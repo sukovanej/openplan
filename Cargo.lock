@@ -2173,6 +2173,7 @@ name = "op-git"
 version = "0.1.0"
 dependencies = [
  "gix",
+ "jiff",
  "tempfile",
  "thiserror",
 ]
@@ -2248,6 +2249,7 @@ dependencies = [
 name = "op-task"
 version = "0.1.0"
 dependencies = [
+ "jiff",
  "op-md",
  "serde",
  "serde_yaml",

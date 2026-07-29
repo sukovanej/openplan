@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T16:45:20Z
 ---
 # Improve daemon tracing: causes on failed responses, unified tracing, per-request debug logs
 

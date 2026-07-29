@@ -1,10 +1,18 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use jiff::Timestamp;
+
 const OBJECT_CACHE_BYTES: usize = 8 * 1024 * 1024;
-// A safety valve on the last-change walk: an id whose change lies deeper than this stays undated
-// (read as "old"), which only ever lets a more recent branch outrank it — never the reverse.
+// A safety valve on the last-change walk: an id whose change lies deeper than this stays undated,
+// which reports as no `updated` and, for ranking, as older than any dated branch.
 const HISTORY_WALK_BUDGET: usize = 4096;
+
+// When a task's last change was authored, or why the commit that made it cannot say. Author time,
+// not commit time: a rebase, squash, or amend rewrites the commit date of everything it replays, so
+// ranking or dating by that makes the most recently rebased branch look like the newest work on
+// every task it carries — including the ones it never touched.
+pub type ChangeTime = Result<Timestamp, String>;
 
 #[derive(Debug, Clone)]
 pub struct Repo {
@@ -84,6 +92,14 @@ impl Repo {
         Ok(out)
     }
 
+    pub fn worktree_branch(&self, path: &Path) -> Result<Option<String>, GitError> {
+        Ok(self
+            .worktrees()?
+            .into_iter()
+            .find(|worktree| same_path(&worktree.path, path))
+            .and_then(|worktree| worktree.branch))
+    }
+
     pub fn branch_task_blobs(&self, branch: &str) -> Result<Vec<(String, String)>, GitError> {
         let repo = self.repo();
         let tree = repo
@@ -107,15 +123,15 @@ impl Repo {
         task_blobs(&tree)
     }
 
-    // The unix time of the newest commit on `branch` that changed each of `ids`, found by walking
-    // history newest-first and stopping once every id is dated. Bounded to the requested ids — which
-    // the caller draws from the branch's divergent cells — so the walk exhausts the short branch tip
-    // rather than descending the whole default-branch history.
+    // The newest commit on `branch` that changed each of `ids`, found by walking history newest-first
+    // and stopping once every id is dated. Bounded to the requested ids — which the caller draws from
+    // the branch's cells — so a walk for a short branch tip need not descend the whole default-branch
+    // history.
     pub fn task_change_times(
         &self,
         branch: &str,
         ids: &HashSet<String>,
-    ) -> Result<HashMap<String, u64>, GitError> {
+    ) -> Result<HashMap<String, ChangeTime>, GitError> {
         if ids.is_empty() {
             return Ok(HashMap::new());
         }
@@ -139,15 +155,23 @@ impl Repo {
                 break;
             }
             let info = info.map_err(|e| GitError::Object(e.to_string()))?;
-            let seconds = info.commit_time().max(0) as u64;
             let this = commit_task_map(&repo, info.id)?;
-            let parent = match info.parent_ids.first() {
-                Some(pid) => commit_task_map(&repo, *pid)?,
-                None => HashMap::new(),
-            };
+            let parents: Vec<HashMap<String, String>> = info
+                .parent_ids
+                .iter()
+                .map(|parent| commit_task_map(&repo, *parent))
+                .collect::<Result<_, _>>()?;
+            // Read once per commit, and only for a commit that changes something asked for: a
+            // commit touching no task must not be able to fail the walk with its own header.
+            let mut when = None;
             needed.retain(|id| match this.get(*id) {
-                Some(blob) if parent.get(*id) != Some(blob) => {
-                    times.insert((*id).to_owned(), seconds);
+                // Every parent, not just the first: a merge carrying a task version unchanged from
+                // either side did not edit it, and crediting the merge would restamp every task the
+                // merged branch touched. Only a version matching no parent — a conflict resolved by
+                // hand — is the merge's own change.
+                Some(blob) if parents.iter().all(|parent| parent.get(*id) != Some(blob)) => {
+                    let at = when.get_or_insert_with(|| author_time(&repo, info.id));
+                    times.insert((*id).to_owned(), at.clone());
                     false
                 }
                 _ => true,
@@ -248,6 +272,21 @@ impl Repo {
     }
 }
 
+// Git stores an author date as a bare i64 and validates nothing, so a clock-skewed machine or an
+// importer can leave one no calendar can express. Such a commit dates nothing — reported, not
+// raised: it must cost the tasks it changed their `updated`, and nothing else its own.
+fn author_time(repo: &gix::Repository, commit: gix::ObjectId) -> Result<Timestamp, String> {
+    let object = repo
+        .find_object(commit)
+        .map_err(|e| format!("commit {commit} is unreadable: {e}"))?
+        .into_commit();
+    let author = object
+        .author()
+        .map_err(|e| format!("commit {commit} has an unreadable author: {e}"))?;
+    Timestamp::from_second(author.seconds())
+        .map_err(|e| format!("commit {commit} has an unusable author date: {e}"))
+}
+
 fn commit_task_map(
     repo: &gix::Repository,
     commit: gix::ObjectId,
@@ -302,6 +341,13 @@ fn worktree_of(repo: &gix::Repository) -> Option<Worktree> {
         branch,
         op_in_progress: op_markers_present(repo.git_dir()),
     })
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
 }
 
 fn op_markers_present(git_dir: &Path) -> bool {

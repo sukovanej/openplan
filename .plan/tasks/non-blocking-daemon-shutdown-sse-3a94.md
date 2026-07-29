@@ -1,5 +1,6 @@
 ---
 status: done
+created: 2026-07-14T14:09:12Z
 ---
 # Non-blocking daemon shutdown + SSE connection status/reconnect UX
 

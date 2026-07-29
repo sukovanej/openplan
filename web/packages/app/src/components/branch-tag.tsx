@@ -1,5 +1,6 @@
 import type { BranchState, ChangeKind } from "@open-planner/api-client"
 
+import { fieldValue } from "../lib/metadata"
 import { cn } from "../lib/utils"
 
 // Border and text share one hue per change kind, so a tag never pairs a grey border with coloured text.
@@ -55,8 +56,10 @@ function Dot({ className }: { className: string }) {
   return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", className)} />
 }
 
+const statusText = (status: BranchState["status"]): string => fieldValue(status) ?? "unreadable"
+
 function branchTitle(branch: BranchState, headline: boolean): string {
-  const notes: Array<string> = [branch.status]
+  const notes: Array<string> = [statusText(branch.status)]
   if (headline) notes.push("latest")
   if (branch.kind !== "base") notes.push(branch.kind)
   if (branch.dirty) notes.push("uncommitted")
