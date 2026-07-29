@@ -39,10 +39,19 @@ fn groups_appear_in_board_order_skipping_empties() {
     let board = Board::build(&[
         item("d", Status::Done, None, None),
         item("p", Status::InProgress, None, None),
+        item("r", Status::InReview, None, None),
         item("t", Status::Todo, None, None),
     ]);
     let order: Vec<Status> = board.groups.iter().filter_map(|g| g.status).collect();
-    assert_eq!(order, vec![Status::InProgress, Status::Todo, Status::Done]);
+    assert_eq!(
+        order,
+        vec![
+            Status::InReview,
+            Status::InProgress,
+            Status::Todo,
+            Status::Done
+        ]
+    );
 }
 
 #[test]
