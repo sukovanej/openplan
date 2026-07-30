@@ -110,38 +110,57 @@ fn run(
         match message {
             Some(Msg::Stop) => break,
             Some(Msg::FsEvent) => deadline = Some(Instant::now() + DEBOUNCE),
-            None => deadline = attempt_pass(&repo, &mut notifier, &mut watched, &mut state, &sink),
+            None => match attempt_pass(&repo, &mut notifier, &mut watched, &mut state, &sink) {
+                Pass::Settled => deadline = None,
+                Pass::Retry(at) => deadline = Some(at),
+                Pass::RepoGone => {
+                    tracing::warn!("git dir is gone; stopping the watcher");
+                    break;
+                }
+            },
         }
     }
 }
 
-// One settled diff pass. Returns the next deadline: `None` once a clean snapshot has been taken (wait
-// for the next fs event), or a `SETTLE` retry when a git op is mid-flight or a read failed — never
-// diffing a torn or partially-read tree.
+enum Pass {
+    Settled,
+    Retry(Instant),
+    RepoGone,
+}
+
+// One settled diff pass. `Settled` once a clean snapshot has been taken (wait for the next fs
+// event); a `SETTLE` retry when a git op is mid-flight or a read failed — never diffing a torn or
+// partially-read tree.
 fn attempt_pass(
     repo: &Repo,
     notifier: &mut RecommendedWatcher,
     watched: &mut HashSet<PathBuf>,
     state: &mut Snapshot,
     sink: &Sender<ChangeEvent>,
-) -> Option<Instant> {
+) -> Pass {
+    // `git worktree remove` can prune this repo's own git dir out from under it, and gix then
+    // resolves nothing rather than failing: worktrees and branches read as empty, so a diff would
+    // report every task on every branch as deleted. Nothing is watchable from here again either.
+    if canonical_dir(&repo.git_common_dir()).is_none() {
+        return Pass::RepoGone;
+    }
     let Ok(worktrees) = repo.worktrees() else {
-        return Some(Instant::now() + SETTLE);
+        return Pass::Retry(Instant::now() + SETTLE);
     };
     // A git rewrite leaves the tree torn and refs churning mid-op; defer until every worktree settles.
     if worktrees.iter().any(|worktree| worktree.op_in_progress) {
-        return Some(Instant::now() + SETTLE);
+        return Pass::Retry(Instant::now() + SETTLE);
     }
     reconcile(repo, &worktrees, notifier, watched);
     match snapshot(repo, &worktrees) {
         Ok(next) => {
             emit_diff(state, &next, sink);
             *state = next;
-            None
+            Pass::Settled
         }
         // A transient read error must not be read as "everything deleted"; keep the prior state and
         // retry, so the diff never emits a spurious deletion flood.
-        Err(_) => Some(Instant::now() + SETTLE),
+        Err(_) => Pass::Retry(Instant::now() + SETTLE),
     }
 }
 
@@ -271,12 +290,24 @@ fn reconcile(
         .cloned()
         .collect::<Vec<_>>()
     {
-        let _ = notifier.unwatch(&stale);
+        tracing::debug!(path = %stale.display(), "unwatching");
+        if let Err(err) = notifier.unwatch(&stale) {
+            tracing::debug!(path = %stale.display(), %err, "unwatch failed");
+        }
         watched.remove(&stale);
     }
     for (path, mode) in desired {
-        if !watched.contains(&path) && notifier.watch(&path, mode).is_ok() {
-            watched.insert(path);
+        if watched.contains(&path) {
+            continue;
+        }
+        tracing::debug!(path = %path.display(), ?mode, "watching");
+        match notifier.watch(&path, mode) {
+            Ok(()) => {
+                watched.insert(path);
+            }
+            // Not a warning: a path that stays unwatchable is retried on every settled pass, so a
+            // persistent failure would log on every git operation for the daemon's lifetime.
+            Err(err) => tracing::debug!(path = %path.display(), %err, "watch failed"),
         }
     }
 }
@@ -285,22 +316,31 @@ fn reconcile(
 // git-side refs/HEAD/worktrees under the shared `.git`. The common dir is watched non-recursively so
 // HEAD, `packed-refs`, and the first creation of `worktrees/` register without pulling in objects/;
 // the callback's `is_relevant` filter drops the index/log churn that watch still surfaces.
-fn watch_paths(repo: &Repo, worktrees: &[Worktree]) -> Vec<(PathBuf, RecursiveMode)> {
+pub fn watch_paths(repo: &Repo, worktrees: &[Worktree]) -> Vec<(PathBuf, RecursiveMode)> {
     let common = repo.git_common_dir();
     let mut paths = vec![(common.clone(), RecursiveMode::NonRecursive)];
     for sub in ["refs", "worktrees"] {
-        let dir = common.join(sub);
-        if dir.is_dir() {
-            paths.push((dir, RecursiveMode::Recursive));
-        }
+        paths.push((common.join(sub), RecursiveMode::Recursive));
     }
     for worktree in worktrees {
-        let tasks = worktree.path.join(".plan").join("tasks");
-        if tasks.is_dir() {
-            paths.push((tasks, RecursiveMode::Recursive));
-        }
+        paths.push((
+            worktree.path.join(".plan").join("tasks"),
+            RecursiveMode::Recursive,
+        ));
     }
     paths
+        .into_iter()
+        .filter_map(|(path, mode)| Some((canonical_dir(&path)?, mode)))
+        .collect()
+}
+
+// Only ever hand notify a canonical path. gix reports a linked worktree's common dir unnormalized,
+// as `<git-dir>/../..`, and the fsevent backend resolves a path that has gone missing by deleting
+// its last component until what remains exists — which on a trailing `..` appends another `../`
+// instead, spinning forever on a path that can never resolve.
+fn canonical_dir(path: &Path) -> Option<PathBuf> {
+    let canonical = path.canonicalize().ok()?;
+    canonical.is_dir().then_some(canonical)
 }
 
 // A watched path is worth a diff pass only when it touches a task file (`.plan/tasks/*`) or a git ref

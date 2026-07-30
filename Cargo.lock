@@ -2270,6 +2270,8 @@ dependencies = [
  "op-store",
  "tempfile",
  "thiserror",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
