@@ -8,7 +8,7 @@ use op_api::{
     updated_field,
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
-use op_store::{Store, StoreError};
+use op_store::{RawTask, Store, StoreError};
 use op_task::{Abbreviation, FieldError, FieldResult, Timestamp};
 
 // Every id the index holds and hands out is a key (§3.1); the numbers it reads from file names and
@@ -22,6 +22,9 @@ pub struct Index {
     // the filename, absent from the blob) so two tasks sharing a blob don't leak each other's id.
     blob_cache: HashMap<String, Version>,
     live: HashMap<String, Store>,
+    // branch -> when its worktree last wrote each task file. A working-tree edit belongs to no
+    // commit, so the file itself is the only thing that can date it.
+    live_times: HashMap<String, HashMap<String, Timestamp>>,
     // The branch checked out in the serve-root worktree; the headline of an aggregated task.
     current_branch: Option<String>,
     default_branch: Option<String>,
@@ -63,7 +66,7 @@ struct DiffCtx<'a> {
     committed: &'a HashMap<String, String>,
     base: &'a HashMap<String, HashSet<String>>,
     default_blobs: &'a HashMap<String, String>,
-    live: Option<&'a BTreeMap<String, String>>,
+    live: Option<&'a BTreeMap<String, RawTask>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -81,6 +84,7 @@ impl Index {
             matrix: Matrix::default(),
             blob_cache: HashMap::new(),
             live: HashMap::new(),
+            live_times: HashMap::new(),
             current_branch: None,
             default_branch: None,
             changes: HashMap::new(),
@@ -125,9 +129,9 @@ impl Index {
             .expect("every matrix id is a key this index formatted")
     }
 
-    fn keyed_raw(&self, raw: BTreeMap<u64, String>) -> BTreeMap<String, String> {
+    fn keyed_raw(&self, raw: BTreeMap<u64, RawTask>) -> BTreeMap<String, RawTask> {
         raw.into_iter()
-            .map(|(number, text)| (self.abbreviation.format_key(number), text))
+            .map(|(number, task)| (self.abbreviation.format_key(number), task))
             .collect()
     }
 
@@ -145,6 +149,7 @@ impl Index {
             .find(|worktree| same_path(&worktree.path, store.root()))
             .and_then(|worktree| worktree.branch.clone());
         self.live = live_worktrees(&worktrees, store);
+        self.live_times.clear();
         self.default_branch = repo.default_branch()?;
 
         let default_commit = self
@@ -179,6 +184,9 @@ impl Index {
                 .map(Store::read_all_raw)
                 .transpose()?
                 .map(|raw| self.keyed_raw(raw));
+            if let Some(live) = live.as_ref() {
+                self.live_times.insert(branch.clone(), live_times(live));
+            }
             let present = present_ids(&committed, live.as_ref());
             // Every id the branch holds, not just the cells it contributes: a task identical to its
             // merge base is skipped below, and its number would otherwise read as free.
@@ -414,7 +422,7 @@ impl Index {
         branch: &str,
         present: &BTreeSet<String>,
         committed: &HashMap<String, String>,
-        live: Option<&BTreeMap<String, String>>,
+        live: Option<&BTreeMap<String, RawTask>>,
         cells: &mut Vec<MatrixCell>,
     ) -> Result<(), IndexError> {
         for id in present {
@@ -492,12 +500,12 @@ impl Index {
         id: &str,
         committed_oid: Option<&String>,
         kind: ChangeKind,
-        live: Option<&BTreeMap<String, String>>,
+        live: Option<&BTreeMap<String, RawTask>>,
     ) -> Result<Option<MatrixCell>, IndexError> {
         if let Some(worktree) = live {
             return match worktree.get(id) {
-                Some(text) => {
-                    let bytes = text.as_bytes();
+                Some(task) => {
+                    let bytes = task.text.as_bytes();
                     let working_oid = repo.hash_blob(bytes)?;
                     let dirty = committed_oid != Some(&working_oid);
                     let version = self.cache_bytes(&working_oid, bytes);
@@ -704,12 +712,14 @@ impl Index {
     }
 
     // Between versions with no ancestry either way, "newest" is a judgement call: a live
-    // uncommitted edit outranks any commit, a cell no walk could date reads as oldest, and author
-    // time settles the rest because it describes when the work was done rather than when it was
-    // last replayed.
+    // uncommitted edit is dated by its file — and outranks any commit only when the filesystem
+    // gives up no time to date it by — a cell no walk could date reads as oldest, and author time
+    // settles the rest because it describes when the work was done rather than when it was last
+    // replayed.
     fn tie_break(&self, cell: &MatrixCell) -> (i64, u8) {
         let authored = if cell.dirty {
-            i64::MAX
+            self.live_modified(cell)
+                .map_or(i64::MAX, |at| at.as_second())
         } else {
             self.change_time(cell)
                 .and_then(|at| at.as_ref().ok())
@@ -722,6 +732,13 @@ impl Index {
     // status do rather than a second read of the file.
     fn created_of(&self, cell: &MatrixCell) -> Option<Timestamp> {
         self.blob_cache.get(&cell.blob_oid)?.metadata.created()
+    }
+
+    fn live_modified(&self, cell: &MatrixCell) -> Option<Timestamp> {
+        self.live_times
+            .get(&cell.branch)?
+            .get(&cell.task.id)
+            .copied()
     }
 
     fn change_time(&self, cell: &MatrixCell) -> Option<&ChangeTime> {
@@ -739,11 +756,19 @@ impl Index {
         ))
     }
 
-    // A working-tree edit has no commit to date it by, so it reads as happening now. Otherwise the
-    // cell reports what its commit could say: a time, or why that commit could not give one.
+    // A working-tree edit has no commit to date it by, so the file dates it — otherwise every read
+    // would report it as happening now, and a change made days ago would never stop being fresh.
+    // Only a filesystem that gives up no time at all falls back to now. A cell no edit is live for
+    // reports what its commit could say: a time, or why that commit could not give one.
     fn cell_updated(&self, cell: &MatrixCell) -> FieldResult<Timestamp> {
+        if cell.kind == ChangeKind::Deleted {
+            // The file is gone, and no other date on disk belongs to this task: the directory that
+            // held it is restamped by every later write to any of its siblings, so reading it would
+            // hand a deletion whatever moment some unrelated task was last edited.
+            return Err(FieldError::Missing);
+        }
         if cell.dirty {
-            return Ok(Timestamp::now());
+            return Ok(self.live_modified(cell).unwrap_or_else(Timestamp::now));
         }
         match self.change_time(cell) {
             None => Err(FieldError::Missing),
@@ -915,9 +940,15 @@ fn branch_states(cells: &[&MatrixCell]) -> Vec<BranchState> {
     branches
 }
 
+fn live_times(live: &BTreeMap<String, RawTask>) -> HashMap<String, Timestamp> {
+    live.iter()
+        .filter_map(|(id, task)| Some((id.clone(), task.modified?)))
+        .collect()
+}
+
 fn present_ids(
     committed: &HashMap<String, String>,
-    live: Option<&BTreeMap<String, String>>,
+    live: Option<&BTreeMap<String, RawTask>>,
 ) -> BTreeSet<String> {
     let mut ids: BTreeSet<String> = committed.keys().cloned().collect();
     if let Some(worktree) = live {

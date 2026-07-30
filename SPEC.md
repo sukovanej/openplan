@@ -94,7 +94,7 @@ Frontmatter carries only what is *not* derivable from the file itself:
 | field | type | notes |
 |---|---|---|
 | `status` | enum | `backlog` / `todo` / `in_progress` / `in_review` / `done` / `cancelled`. `blocked` is **computed** from unmet `dependencies` — not stored. |
-| `created` | RFC3339 | UTC, set once when the task is written. Required. Its counterpart `updated` is **derived** from git — the author time of the last commit to touch the file — never stored. |
+| `created` | RFC3339 | UTC, set once when the task is written. Required. Its counterpart `updated` is **derived** — the author time of the last commit to touch the file, or the file's own mtime while the working tree holds an uncommitted change to it — never stored. |
 | `parent` | ref? | adjacency-list hierarchy (see §3.2). Absent = top-level. |
 | `dependencies` | ref[] | task→task blocking; a reference may target a section (`./00042-ship-login-page.md#Section`). Omitted when empty. |
 
@@ -112,6 +112,17 @@ status filter.
 commit's author date, so a commit may hold one no calendar can express. Such a commit dates nothing
 — the tasks it changed carry the reason in place of a time, and every other task, and every other
 read, is unaffected.
+
+**An uncommitted edit is dated by the file it wrote.** A working-tree edit belongs to no commit, so
+its file's mtime dates it. Reading the clock instead would make every such task report as changed
+*now* on every read, so work paused days ago would never age — and the same date orders the versions
+of a task across branches, where a live edit stands against the commits of the branches it competes
+with rather than automatically ahead of them. Only a filesystem that gives up no time at all falls
+back to now.
+
+A **deletion** carries no `updated` at all, committed or not: its file is gone, and the directory
+that held it is restamped by every later write to any sibling task, so dating a removal by it would
+report whenever some unrelated task was last edited.
 
 ### 3.2 Hierarchy & links
 - **Hierarchy is a reference graph, not physical nesting.** Subtasks are their own files

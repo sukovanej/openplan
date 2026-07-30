@@ -555,6 +555,17 @@ fn at(seconds: i64) -> Timestamp {
     Timestamp::from_second(seconds).unwrap()
 }
 
+// A file, or the directory holding them: both date an uncommitted change.
+fn touch(path: &Path, seconds: i64) {
+    let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds as u64);
+    std::fs::File::options()
+        .read(true)
+        .open(path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(at))
+        .unwrap();
+}
+
 // Older than the commit dates below, so the view's `updated = max(created, updated)` clamp does not
 // mask what the history walk found.
 const CREATED_SECONDS: i64 = 900_000_000;
@@ -594,20 +605,85 @@ fn updated_follows_the_last_commit_to_touch_the_task() {
 }
 
 #[test]
-fn an_uncommitted_edit_reads_as_updated_now() {
+fn an_uncommitted_edit_is_dated_by_the_file_it_wrote() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
     task(root, 1, &dated("todo"));
     commit_at(root, 1_000_000_000, "add t");
-    let before = Timestamp::now();
     task(root, 1, &dated("done"));
+    touch(&task_path(root, 1), 1_000_500_000);
 
-    let updated = built(root).task_updated(&key(1), None).unwrap();
+    // Not `now`: an edit made days ago must stop reading as fresh once it has been made.
+    assert_eq!(
+        built(root).task_updated(&key(1), None),
+        Ok(at(1_000_500_000))
+    );
+}
 
-    assert!(
-        updated >= before,
-        "a working-tree edit belongs to no commit, so it reads as now: {updated}"
+#[test]
+fn an_uncommitted_edit_dates_the_task_the_list_shows() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, 1, &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+    task(root, 1, &dated("done"));
+    touch(&task_path(root, 1), 1_000_500_000);
+
+    let listed = built(root)
+        .aggregated_tasks()
+        .into_iter()
+        .find(|item| item.id == key(1))
+        .unwrap();
+
+    assert_eq!(listed.updated, Field::Value(Rfc3339(at(1_000_500_000))));
+}
+
+#[test]
+fn an_uncommitted_deletion_reports_no_time_rather_than_a_neighbours() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, 1, &dated("todo"));
+    task(root, 2, &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+    git(root, &["checkout", "-q", "-b", "drop"]);
+    std::fs::remove_file(task_path(root, 1)).unwrap();
+    // The removal restamps `.plan/tasks`, and so does every later write to a sibling — which is why
+    // the directory cannot date the deletion.
+    task(root, 2, &dated("done"));
+
+    let index = built(root);
+    assert_eq!(find(&index, "drop", 1).unwrap().kind, ChangeKind::Deleted);
+    assert_eq!(
+        index.task_updated(&key(1), Some("drop")),
+        Err(op_task::FieldError::Missing)
+    );
+}
+
+#[test]
+fn a_commit_newer_than_an_uncommitted_edit_headlines_over_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, 1, &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+    git(root, &["checkout", "-q", "-b", "stale"]);
+    task(root, 1, &dated("in_progress"));
+    commit_at(root, 1_000_000_100, "start t on stale");
+    git(root, &["checkout", "-q", "main"]);
+    task(root, 1, &dated("in_review"));
+    // An edit left in the main worktree long before the commit `stale` went on to make.
+    touch(&task_path(root, 1), 999_000_000);
+
+    let index = built(root);
+
+    assert_eq!(index.headline_branch(&key(1)).as_deref(), Some("stale"));
+    assert_eq!(index.task_updated(&key(1), None), Ok(at(1_000_000_100)));
+    assert_eq!(
+        index.task_updated(&key(1), Some("main")),
+        Ok(at(999_000_000))
     );
 }
 
