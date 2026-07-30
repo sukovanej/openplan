@@ -73,6 +73,7 @@ function TaskDetailView({
     <div className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border">
       <div className="bg-muted/30 flex h-11 shrink-0 items-center gap-2 border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground">
         <StatusField metadata={task.metadata} />
+        <span className="shrink-0 tabular-nums">{task.id}</span>
         <span className="truncate">{task.title}</span>
         <div className="ml-auto shrink-0">
           <HeaderParent
@@ -193,8 +194,9 @@ function HeaderParent({
       {parentTitle !== undefined ? (
         <MetaLine>
           <MetaItem icon={PARENT_ICON} title={`Subtask of ${parentTitle}`}>
-            <Link to={`/task/${parent}`} className="text-foreground/90 max-w-[15rem] truncate hover:underline">
-              {parentTitle}
+            <Link to={`/task/${parent}`} className="text-foreground/90 group flex min-w-0 items-center gap-1.5">
+              <span className="text-muted-foreground shrink-0 tabular-nums">{parent}</span>
+              <span className="max-w-[15rem] truncate group-hover:underline">{parentTitle}</span>
             </Link>
           </MetaItem>
         </MetaLine>
@@ -335,6 +337,7 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
                 )}
               >
                 <StatusChip status={child.status} className="size-4 shrink-0" />
+                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{child.id}</span>
                 <span className="truncate">{child.title}</span>
               </Link>
             </li>
