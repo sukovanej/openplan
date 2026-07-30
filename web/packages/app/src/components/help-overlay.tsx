@@ -2,29 +2,9 @@ import { X } from "lucide-react"
 import type * as React from "react"
 import { useEffect, useRef } from "react"
 
+import { Kbd } from "@open-planner/ui"
+
 import { bindings, type HelpEntry, helpGroups } from "../lib/keys"
-import { cn } from "../lib/utils"
-
-const KEY_LABELS: Record<string, string> = {
-  Escape: "Esc",
-  Enter: "↵",
-  ArrowUp: "↑",
-  ArrowDown: "↓",
-  " ": "Space",
-}
-
-const APPLE = /Mac|iPhone|iPad/.test(navigator.userAgent)
-
-const MODIFIER_LABELS: Record<string, string> = APPLE
-  ? { mod: "⌘", alt: "⌥", shift: "⇧" }
-  : { mod: "Ctrl", alt: "Alt", shift: "Shift" }
-
-function keyLabel(token: string): string {
-  const parts = token.split("+")
-  const base = parts.pop() ?? token
-  const named = KEY_LABELS[base] ?? (base.length === 1 ? base.toUpperCase() : base)
-  return [...parts.map((part) => MODIFIER_LABELS[part] ?? part), named].join(APPLE ? "" : "+")
-}
 
 const FOCUSABLE = 'button, [href], [tabindex]:not([tabindex="-1"])'
 
@@ -112,14 +92,7 @@ function HelpRow({ entry }: { entry: HelpEntry }) {
       <span className="text-foreground/90 text-sm">{entry.label}</span>
       <span className="flex items-center gap-1">
         {entry.keys.map((token, index) => (
-          <kbd
-            key={index}
-            className={cn(
-              "bg-muted text-muted-foreground inline-flex h-6 min-w-6 items-center justify-center rounded border px-1.5 text-xs font-medium",
-            )}
-          >
-            {keyLabel(token)}
-          </kbd>
+          <Kbd key={index} token={token} />
         ))}
       </span>
     </li>

@@ -1,13 +1,7 @@
-import { Skeleton } from "./ui/skeleton"
+import { Skeleton, SkeletonList } from "@open-planner/ui"
 
 export function ListSkeleton() {
-  return (
-    <div className="space-y-3">
-      {[0, 1, 2, 3, 4].map((i) => (
-        <Skeleton key={i} className="h-14 w-full" />
-      ))}
-    </div>
-  )
+  return <SkeletonList count={5} className="h-14 w-full" />
 }
 
 export function DetailSkeleton() {
@@ -22,13 +16,4 @@ export function DetailSkeleton() {
 
 export function BodySkeleton() {
   return <Skeleton className="h-40 w-full" />
-}
-
-export function Message({ title, detail }: { title: string; detail?: string }) {
-  return (
-    <div className="rounded-lg border border-dashed p-8 text-center">
-      <p className="font-medium">{title}</p>
-      {detail !== undefined && <p className="text-muted-foreground mt-1 text-sm">{detail}</p>}
-    </div>
-  )
 }

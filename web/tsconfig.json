@@ -1,4 +1,9 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/app" }, { "path": "./packages/api-client" }]
+  "references": [
+    { "path": "./packages/app" },
+    { "path": "./packages/api-client" },
+    { "path": "./packages/ui" },
+    { "path": "./packages/task-ui" }
+  ]
 }

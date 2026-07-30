@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 created: 2026-07-30T18:53:03Z
 parent: ./00059-web-ui-extract-reusable-componen.md
 ---

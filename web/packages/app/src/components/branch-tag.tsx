@@ -1,7 +1,7 @@
 import type { BranchState, ChangeKind } from "@open-planner/api-client"
+import { cn, Tag } from "@open-planner/ui"
 
 import { fieldValue } from "../lib/metadata"
-import { cn } from "../lib/utils"
 
 // Border and text share one hue per change kind, so a tag never pairs a grey border with coloured text.
 const kindColor: Record<ChangeKind, string> = {
@@ -11,8 +11,7 @@ const kindColor: Record<ChangeKind, string> = {
   deleted: "border-rose-600 text-rose-600 line-through",
 }
 
-// The single branch tag used everywhere a branch is shown. Read-only (list badges) when `onSelect`
-// is omitted, a toggle button (detail switcher) when it is given.
+// The single branch tag used everywhere a branch is shown.
 export function BranchTag({
   branch,
   headline = false,
@@ -24,31 +23,17 @@ export function BranchTag({
   selected?: boolean
   onSelect?: () => void
 }) {
-  const interactive = onSelect !== undefined
-  const className = cn(
-    "inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] leading-tight",
-    "whitespace-nowrap transition-opacity",
-    kindColor[branch.kind],
-    branch.dirty && "border-dashed",
-    interactive && "cursor-pointer",
-    interactive && !selected && "opacity-55 hover:opacity-100",
-    interactive && selected && "font-semibold",
-  )
-  const title = branchTitle(branch, headline)
-  const content = (
-    <>
+  return (
+    <Tag
+      title={branchTitle(branch, headline)}
+      className={kindColor[branch.kind]}
+      dashed={branch.dirty}
+      selected={selected}
+      onSelect={onSelect}
+    >
       {headline && <Dot className="bg-current" />}
       <span>{branch.branch}</span>
-    </>
-  )
-  return onSelect === undefined ? (
-    <span title={title} className={className}>
-      {content}
-    </span>
-  ) : (
-    <button type="button" onClick={onSelect} aria-pressed={selected} title={title} className={className}>
-      {content}
-    </button>
+    </Tag>
   )
 }
 

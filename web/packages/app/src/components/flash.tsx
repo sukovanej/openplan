@@ -1,5 +1,6 @@
+import { cn } from "@open-planner/ui"
+
 import { useFlash } from "../lib/flash"
-import { cn } from "../lib/utils"
 
 export function Flash() {
   const message = useFlash()

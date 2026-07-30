@@ -17,6 +17,14 @@ collapse the duplication the primitives could not reach.
   `StatusChip`, `statusLabel`, `statusOrder`, and the palette, now reading the
   per-status tokens instead of bare Tailwind scales. `statusHeaderClass` is
   absorbed by `StatusGroupHeader`.
+
+  The six `--status-*` tokens OPP-60 added carry the **icon** rung only. A group
+  header uses two further rungs that no token covers yet: a surface (`/8` fill and
+  `/20` border, which is the icon's shade except for `todo`, where it is blue-500
+  against a blue-600 icon) and a text colour that flips per theme (`700/80` light,
+  `300/80` dark — `600/80` and `400/80` for the greys). Grow the token set with
+  those rungs; repointing the header at the single existing token would shift every
+  header's tint and drop the dark-mode text variant.
 - `StatusGroupHeader` from `routes/list.tsx:98-112`, including the unreadable
   group's own colour — a task whose status could not be read must not wear one it
   did not claim.
