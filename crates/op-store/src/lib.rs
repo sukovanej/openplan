@@ -5,7 +5,9 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt as _;
-use op_task::{Abbreviation, Frontmatter, Task, parse_id, rank, ref_id, ref_target, task_filename};
+use op_task::{
+    Abbreviation, Frontmatter, Task, Timestamp, parse_id, rank, ref_id, ref_target, task_filename,
+};
 
 mod config;
 pub use config::{CONFIG_FILE, Config, ConfigError};
@@ -24,6 +26,14 @@ const HEX: &[u8; 16] = b"0123456789abcdef";
 pub struct Store {
     root: PathBuf,
     abbreviation: Abbreviation,
+}
+
+#[derive(Debug, Clone)]
+pub struct RawTask {
+    pub text: String,
+    // `None` where the filesystem cannot say — a platform without mtimes, or a file that vanished
+    // between the scan and the stat.
+    pub modified: Option<Timestamp>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -176,10 +186,19 @@ impl Store {
 
     // One scan and one open per task, for a caller that wants them all: resolving each id on its own
     // rescans the directory, which turns a whole-store read into quadratic work.
-    pub fn read_all_raw(&self) -> Result<BTreeMap<u64, String>, StoreError> {
+    pub fn read_all_raw(&self) -> Result<BTreeMap<u64, RawTask>, StoreError> {
         self.task_files()?
             .into_iter()
-            .map(|(number, path)| Ok((number, self.read_file(&path, number)?)))
+            .map(|(number, path)| {
+                let text = self.read_file(&path, number)?;
+                Ok((
+                    number,
+                    RawTask {
+                        text,
+                        modified: modified_at(&path),
+                    },
+                ))
+            })
             .collect()
     }
 
@@ -510,6 +529,13 @@ fn body_in_file_form(body: &str, named: impl Fn(&str) -> String) -> String {
     }
     out.push_str(&body[last..]);
     out
+}
+
+// Whole seconds, the resolution every other time this reports carries — a commit's author date and
+// a task's `created` — so one task's dates cannot be compared at two different precisions.
+fn modified_at(path: &Path) -> Option<Timestamp> {
+    let at = Timestamp::try_from(std::fs::metadata(path).ok()?.modified().ok()?).ok()?;
+    Timestamp::from_second(at.as_second()).ok()
 }
 
 fn same_inode(file: &std::fs::File, path: &Path) -> Result<bool, StoreError> {
