@@ -2,8 +2,7 @@ export const meta = {
   name: 'implement-task',
   description: 'Implement an OPP task test-first: red tests, reviewed, then implement/review to green and a PR',
   whenToUse:
-    'When a task in .plan/tasks/ is ready to build. Pass args {taskKey:"OPP-42", maxRounds?:3, base?:"main"}. ' +
-    'Writes and reviews tests before any implementation. Returns a PR URL; leaves the task in_review.',
+    'When a task in .plan/tasks/ is ready to build. Pass args {taskKey:"OPP-42", maxRounds?:3, base?:"main"}. Writes and reviews tests before any implementation. Returns a PR URL; leaves the task in_review.',
   phases: [
     { title: 'Setup', detail: 'worktree, web dist, mark in_progress' },
     { title: 'Plan', detail: 'task body to file-scoped code and test units' },
@@ -188,11 +187,22 @@ const halt = (ctx, reason, extra) => ({
 const NO_TESTS = { converged: true, unresolved: [], rounds: 0, history: [] }
 
 function parseTaskArgs() {
-  const key = typeof args === 'string' ? args : args && args.taskKey
+  // The host may deliver an args object as its JSON encoding.
+  const input = decodeJsonObject(args)
+  const key = typeof input === 'string' ? input : input && input.taskKey
   if (!key || !/^[A-Z]{3}-[1-9][0-9]*$/.test(key)) {
     throw new Error(`args.taskKey must be a task key like "OPP-42", got ${JSON.stringify(key)}`)
   }
-  return { key, base: (args && args.base) || 'main', maxRounds: (args && args.maxRounds) || 3 }
+  return { key, base: input.base || 'main', maxRounds: input.maxRounds || 3 }
+}
+
+function decodeJsonObject(value) {
+  if (typeof value !== 'string' || !value.trim().startsWith('{')) return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
 }
 
 function findingKey(f) {
