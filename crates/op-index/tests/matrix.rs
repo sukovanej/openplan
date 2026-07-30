@@ -743,6 +743,100 @@ fn a_replayed_branch_does_not_outrank_newer_work_elsewhere() {
 }
 
 #[test]
+fn a_rebased_branch_headlines_over_the_branch_it_was_rebased_onto() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "1", &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+
+    // `feat` writes its version first, `main` writes a different one after it.
+    git(root, &["checkout", "-qb", "feat"]);
+    task(root, "1", &dated("in_progress"));
+    commit_at(root, 1_000_100_000, "feat moves t forward");
+    git(root, &["checkout", "-q", "main"]);
+    task(root, "1", &dated("done"));
+    commit_at(root, 1_000_200_000, "main closes t");
+
+    // Rebasing `feat` replays its edit over main's and the conflict is resolved by hand, so
+    // `feat` now holds main's version *and* the resolution — while still carrying the author date
+    // it was originally written with, older than the version it just superseded.
+    git(root, &["checkout", "-q", "feat"]);
+    rebase_resolving(root, "main", "1", &dated("in_progress"), 1_000_900_000);
+
+    let listed = built(root)
+        .aggregated_tasks()
+        .into_iter()
+        .find(|item| item.id == "1")
+        .unwrap();
+
+    // Ranking by author date would headline `main`, showing the version the resolution superseded.
+    assert_eq!(listed.headline, "feat");
+    assert_eq!(listed.metadata.status(), Some(Status::InProgress));
+}
+
+#[test]
+fn a_superseded_version_stays_beaten_when_a_third_branch_is_newer() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(root, "1", &dated("todo"));
+    commit_at(root, 1_000_000_000, "add t");
+
+    git(root, &["checkout", "-qb", "aa"]);
+    task(root, "1", &dated("in_progress"));
+    commit_at(root, 1_000_100_000, "aa moves t forward");
+
+    // `bb` knows nothing of the other two: no version supersedes it and none of it.
+    git(root, &["checkout", "-q", "main"]);
+    git(root, &["checkout", "-qb", "bb"]);
+    task(root, "1", &dated("in_review"));
+    commit_at(root, 1_000_150_000, "bb moves t elsewhere");
+
+    git(root, &["checkout", "-q", "main"]);
+    task(root, "1", &dated("done"));
+    commit_at(root, 1_000_200_000, "main closes t");
+    git(root, &["checkout", "-q", "aa"]);
+    rebase_resolving(root, "main", "1", &dated("in_progress"), 1_000_900_000);
+
+    let listed = built(root)
+        .aggregated_tasks()
+        .into_iter()
+        .find(|item| item.id == "1")
+        .unwrap();
+
+    // `aa` supersedes `main` and only loses to `bb` on date, so dropping the superseded versions
+    // has to come first: weighing one pair at a time lets `bb` knock `aa` out and `main` — the
+    // version `aa` already buried — take the row.
+    assert_eq!(listed.headline, "bb");
+    assert_eq!(listed.metadata.status(), Some(Status::InReview));
+}
+
+fn rebase_resolving(root: &Path, onto: &str, id: &str, resolved: &str, committed: i64) {
+    let conflicted = Command::new("git")
+        .current_dir(root)
+        .args(["rebase", onto])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .expect("git must be installed for this test");
+    assert!(
+        !conflicted.success(),
+        "the rebase must conflict for the resolution to be the branch's own version"
+    );
+    write(&task_path(root, id), resolved);
+    git(root, &["add", "-A"]);
+    let status = Command::new("git")
+        .current_dir(root)
+        .args(["rebase", "--continue"])
+        .env("GIT_EDITOR", "true")
+        .env("GIT_COMMITTER_DATE", format!("@{committed} +0000"))
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git rebase --continue failed");
+}
+
+#[test]
 fn the_id_floor_counts_a_task_no_commit_holds_yet() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

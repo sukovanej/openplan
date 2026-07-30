@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Command;
 
 use jiff::Timestamp;
-use op_git::Repo;
+use op_git::{ChangeTime, Repo, TaskChange};
 
 fn git(dir: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -45,6 +45,10 @@ fn ids(id: &str) -> HashSet<String> {
     HashSet::from([id.to_owned()])
 }
 
+fn authored(changes: &HashMap<String, TaskChange>, id: &str) -> Option<ChangeTime> {
+    changes.get(id).map(|change| change.at.clone())
+}
+
 #[test]
 fn a_change_is_dated_by_author_time_not_commit_time() {
     let dir = tempfile::tempdir().unwrap();
@@ -58,12 +62,12 @@ fn a_change_is_dated_by_author_time_not_commit_time() {
     // time keeps an untouched task from reading as freshly edited.
     commit_at(root, 1_000_000_000, 2_000_000_000, "add a");
 
-    let times = Repo::discover(root)
+    let changes = Repo::discover(root)
         .unwrap()
-        .task_change_times("main", &ids("1"))
+        .task_changes("main", &ids("1"))
         .unwrap();
 
-    assert_eq!(times.get("1"), Some(&Ok(at(1_000_000_000))));
+    assert_eq!(authored(&changes, "1"), Some(Ok(at(1_000_000_000))));
 }
 
 #[test]
@@ -80,13 +84,13 @@ fn the_newest_change_wins_and_untouched_tasks_keep_their_own_date() {
     task(root, "1", "done");
     commit_at(root, 1_000_000_500, 1_000_000_500, "finish a");
 
-    let times = Repo::discover(root)
+    let changes = Repo::discover(root)
         .unwrap()
-        .task_change_times("main", &HashSet::from(["1".to_owned(), "2".to_owned()]))
+        .task_changes("main", &HashSet::from(["1".to_owned(), "2".to_owned()]))
         .unwrap();
 
-    assert_eq!(times.get("1"), Some(&Ok(at(1_000_000_500))));
-    assert_eq!(times.get("2"), Some(&Ok(at(1_000_000_000))));
+    assert_eq!(authored(&changes, "1"), Some(Ok(at(1_000_000_500))));
+    assert_eq!(authored(&changes, "2"), Some(Ok(at(1_000_000_000))));
 }
 
 #[test]
@@ -105,13 +109,13 @@ fn a_merge_does_not_restamp_what_the_merged_branch_changed() {
     git(root, &["checkout", "-q", "main"]);
     merge_at(root, 1_790_000_000, "feature");
 
-    let times = Repo::discover(root)
+    let changes = Repo::discover(root)
         .unwrap()
-        .task_change_times("main", &ids("1"))
+        .task_changes("main", &ids("1"))
         .unwrap();
 
     // The merge introduced no version of its own, so the task is still dated by the edit itself.
-    assert_eq!(times.get("1"), Some(&Ok(at(1_700_000_000))));
+    assert_eq!(authored(&changes, "1"), Some(Ok(at(1_700_000_000))));
 }
 
 fn merge_at(dir: &Path, seconds: i64, branch: &str) {
@@ -145,13 +149,13 @@ fn a_commit_with_an_unusable_author_date_costs_only_the_tasks_it_changed() {
     git(root, &["add", "-A"]);
     commit_at(root, UNUSABLE_AUTHOR_SECONDS, 2_000_000_000, "edit b");
 
-    let times = Repo::discover(root)
+    let changes = Repo::discover(root)
         .unwrap()
-        .task_change_times("main", &HashSet::from(["1".to_owned(), "2".to_owned()]))
+        .task_changes("main", &HashSet::from(["1".to_owned(), "2".to_owned()]))
         .expect("one undatable commit must not sink the whole walk");
 
-    assert_eq!(times.get("1"), Some(&Ok(at(1_000_000_000))));
-    let why = times.get("2").unwrap().as_ref().unwrap_err();
+    assert_eq!(authored(&changes, "1"), Some(Ok(at(1_000_000_000))));
+    let why = changes["2"].at.clone().unwrap_err();
     assert!(why.contains("unusable author date"), "{why}");
 }
 
@@ -169,10 +173,10 @@ fn an_unusable_author_date_on_a_commit_touching_no_task_costs_nothing() {
     git(root, &["add", "-A"]);
     commit_at(root, UNUSABLE_AUTHOR_SECONDS, 2_000_000_000, "unrelated");
 
-    let times = Repo::discover(root)
+    let changes = Repo::discover(root)
         .unwrap()
-        .task_change_times("main", &ids("1"))
+        .task_changes("main", &ids("1"))
         .expect("a commit that changes no task must not be dated at all");
 
-    assert_eq!(times.get("1"), Some(&Ok(at(1_000_000_000))));
+    assert_eq!(authored(&changes, "1"), Some(Ok(at(1_000_000_000))));
 }

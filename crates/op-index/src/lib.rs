@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
@@ -6,7 +7,7 @@ use op_api::{
     TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, id_cmp, list_item_cmp,
     updated_field,
 };
-use op_git::{ChangeTime, Repo, Worktree};
+use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{Store, StoreError};
 use op_task::{FieldError, FieldResult, Timestamp};
 
@@ -21,22 +22,29 @@ pub struct Index {
     // The branch checked out in the serve-root worktree; the headline of an aggregated task.
     current_branch: Option<String>,
     default_branch: Option<String>,
-    // (branch, id) -> when that branch's last commit to touch the task was written and made. Absent
+    // (branch, id) -> the branch's last commit to touch the task, and when it was authored. Absent
     // for a task whose change lies deeper than the walk budget, and for one no commit holds yet.
-    change_times: HashMap<(String, String), ChangeTime>,
+    changes: HashMap<(String, String), TaskChange>,
     // branch -> a walk result reusable across the per-request rebuilds, instead of re-walking
     // history every time.
-    change_cache: HashMap<String, ChangeTimes>,
+    change_cache: HashMap<String, BranchChanges>,
+    // id -> the branch whose version supersedes the rest. Resolved during the rebuild because it
+    // asks git which change commit contains which, and the matrix alone cannot answer that.
+    headlines: HashMap<String, String>,
+    // change commit -> the commits it has been compared against, and whether it descends from
+    // each. History is immutable, so an answer holds forever: the map grows across rebuilds and is
+    // only ever added to, sparing the graph a walk per contested pair on every request.
+    ancestry: HashMap<String, HashMap<String, bool>>,
     max_id: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
-struct ChangeTimes {
+struct BranchChanges {
     tip: String,
-    // The ids the walk asked for: an id it found no commit for is absent from `times`, so only the
-    // request tells a cache hit from a task still to be dated.
+    // The ids the walk asked for: an id it found no commit for is absent from `changes`, so only
+    // the request tells a cache hit from a task still to be dated.
     requested: HashSet<String>,
-    times: HashMap<String, ChangeTime>,
+    changes: HashMap<String, TaskChange>,
 }
 
 #[derive(Debug, Clone)]
@@ -139,19 +147,20 @@ impl Index {
         }
         self.max_id = max_id;
         cells.sort_by(|a, b| id_cmp(&a.task.id, &b.task.id).then_with(|| a.branch.cmp(&b.branch)));
-        self.change_times = self.compute_change_times(repo, &cells)?;
+        self.changes = self.compute_changes(repo, &cells)?;
+        self.headlines = self.compute_headlines(repo, &cells)?;
         self.matrix = Matrix { cells };
         Ok(())
     }
 
-    // Every cell's last change, feeding the task's `updated` by author time and — through
-    // `recency_of` — the headline choice by commit time. A dirty cell is left undated: its
-    // working-tree edit belongs to no commit, so both readings substitute their own answer.
-    fn compute_change_times(
+    // Every cell's last change: the commit the headline choice compares by containment, and the
+    // author time behind the task's `updated`. A dirty cell is left out: its working-tree edit
+    // belongs to no commit, so both readings substitute their own answer.
+    fn compute_changes(
         &mut self,
         repo: &Repo,
         cells: &[MatrixCell],
-    ) -> Result<HashMap<(String, String), ChangeTime>, IndexError> {
+    ) -> Result<HashMap<(String, String), TaskChange>, IndexError> {
         let mut request: HashMap<String, HashSet<String>> = HashMap::new();
         for cell in cells {
             if cell.kind != ChangeKind::Deleted && !cell.dirty {
@@ -162,33 +171,134 @@ impl Index {
             }
         }
 
-        let mut change_times = HashMap::new();
+        let mut out = HashMap::new();
         for (branch, ids) in request {
             let tip = repo.branch_commit(&branch)?;
-            let times = match self.change_cache.get(&branch) {
+            let changes = match self.change_cache.get(&branch) {
                 Some(cached) if cached.tip == tip && ids.is_subset(&cached.requested) => {
-                    cached.times.clone()
+                    cached.changes.clone()
                 }
                 _ => {
-                    let times = repo.task_change_times(&branch, &ids)?;
+                    let changes = repo.task_changes(&branch, &ids)?;
                     self.change_cache.insert(
                         branch.clone(),
-                        ChangeTimes {
+                        BranchChanges {
                             tip,
                             requested: ids.clone(),
-                            times: times.clone(),
+                            changes: changes.clone(),
                         },
                     );
-                    times
+                    changes
                 }
             };
             for id in ids {
-                if let Some(time) = times.get(&id) {
-                    change_times.insert((branch.clone(), id), time.clone());
+                if let Some(change) = changes.get(&id) {
+                    out.insert((branch.clone(), id), change.clone());
                 }
             }
         }
-        Ok(change_times)
+        Ok(out)
+    }
+
+    // The branch each task headlines with: the version no other version supersedes, and the newest
+    // of those when several stand. Superseded versions are dropped before the dates are consulted
+    // at all — a single pass that mixed the two would let an unrelated third branch knock out the
+    // version that beats the one it then loses to.
+    fn compute_headlines(
+        &mut self,
+        repo: &Repo,
+        cells: &[MatrixCell],
+    ) -> Result<HashMap<String, String>, IndexError> {
+        let contenders: Vec<Vec<&MatrixCell>> = cells
+            .chunk_by(|a, b| a.task.id == b.task.id)
+            .map(|group| {
+                group
+                    .iter()
+                    .filter(|cell| cell.kind != ChangeKind::Deleted)
+                    .collect()
+            })
+            .collect();
+        self.cache_ancestry(repo, &contenders)?;
+
+        let mut headlines = HashMap::new();
+        for group in contenders {
+            // Containment is acyclic, so a non-empty group always leaves something standing.
+            let standing = group
+                .iter()
+                .copied()
+                .filter(|cell| !group.iter().any(|other| self.supersedes(other, cell)))
+                .max_by_key(|cell| self.tie_break(cell));
+            if let Some(cell) = standing {
+                headlines.insert(cell.task.id.clone(), cell.branch.clone());
+            }
+        }
+        Ok(headlines)
+    }
+
+    // Git is asked for containment rather than for a date: a version whose change commit descends
+    // from another's is strictly the later one, and a rebase leaves the author date of what it
+    // replays untouched while rewriting its commit date, so neither clock can answer this alone.
+    fn cache_ancestry(
+        &mut self,
+        repo: &Repo,
+        contenders: &[Vec<&MatrixCell>],
+    ) -> Result<(), IndexError> {
+        // Only versions that differ, and that a commit accounts for, can be contested: identical
+        // blobs say the same thing whichever branch wins, and a working-tree edit is in no commit
+        // for the graph to place.
+        let mut unanswered: BTreeSet<(String, String)> = BTreeSet::new();
+        for group in contenders {
+            for (index, one) in group.iter().enumerate() {
+                for other in &group[index + 1..] {
+                    if one.blob_oid == other.blob_oid {
+                        continue;
+                    }
+                    let (Some(one), Some(other)) =
+                        (self.change_commit(one), self.change_commit(other))
+                    else {
+                        continue;
+                    };
+                    if self.descends_from(one, other).is_none() {
+                        unanswered.insert((one.to_owned(), other.to_owned()));
+                    }
+                }
+            }
+        }
+
+        let pairs: Vec<(String, String)> = unanswered.into_iter().collect();
+        let asked: Vec<(&str, &str)> = pairs
+            .iter()
+            .map(|(one, other)| (one.as_str(), other.as_str()))
+            .collect();
+        for ((one, other), found) in pairs.iter().zip(repo.ancestry(&asked)?) {
+            self.remember(one, other, found == Some(Ordering::Greater));
+            self.remember(other, one, found == Some(Ordering::Less));
+        }
+        Ok(())
+    }
+
+    fn remember(&mut self, commit: &str, against: &str, descends: bool) {
+        self.ancestry
+            .entry(commit.to_owned())
+            .or_default()
+            .insert(against.to_owned(), descends);
+    }
+
+    fn descends_from(&self, commit: &str, against: &str) -> Option<bool> {
+        self.ancestry.get(commit)?.get(against).copied()
+    }
+
+    // Identical content supersedes nothing: both branches say the same thing, so which of them
+    // headlines is a matter of recency and not of which commit came later.
+    fn supersedes(&self, cell: &MatrixCell, over: &MatrixCell) -> bool {
+        if cell.blob_oid == over.blob_oid {
+            return false;
+        }
+        let (Some(commit), Some(against)) = (self.change_commit(cell), self.change_commit(over))
+        else {
+            return false;
+        };
+        self.descends_from(commit, against) == Some(true)
     }
 
     // Every non-baseline branch's task blobs at its merge-base(s) with the default branch, keyed by
@@ -372,8 +482,8 @@ impl Index {
             .collect()
     }
 
-    // One row per logical task across all branches, headlined by the branch that changed it most
-    // recently (see `select_headline`).
+    // One row per logical task across all branches, headlined by the branch whose version
+    // supersedes the rest (see `compute_headlines`).
     pub fn aggregated_tasks(&self) -> Vec<TaskListItem> {
         // The cells are ordered by id already, so grouping the runs keeps that order — collecting
         // into a map keyed by the id would re-sort it as text, filing 10 between 1 and 2.
@@ -382,7 +492,7 @@ impl Index {
             .chunk_by(|a, b| a.task.id == b.task.id)
             .map(|group| {
                 let cells: Vec<&MatrixCell> = group.iter().collect();
-                let headline = self.select_headline(&cells);
+                let headline = self.headline_cell(&cells);
                 TaskListItem {
                     id: headline.task.id.clone(),
                     title: headline.task.title.clone(),
@@ -439,7 +549,7 @@ impl Index {
         if cells.is_empty() {
             return Ok(None);
         }
-        let headline = self.select_headline(&cells);
+        let headline = self.headline_cell(&cells);
         let (raw, updated) = match branch {
             Some(branch) => (
                 self.effective_raw(repo, id, branch)?,
@@ -504,7 +614,7 @@ impl Index {
     // `TaskDetail` from the just-written task rather than through `task_detail`.
     pub fn headline_branch(&self, id: &str) -> Option<String> {
         let cells = self.cells_of(id);
-        (!cells.is_empty()).then(|| self.select_headline(&cells).branch.clone())
+        (!cells.is_empty()).then(|| self.headline_cell(&cells).branch.clone())
     }
 
     // The effective text of one cell, including a deletion's last-known blob so a branchless read of
@@ -519,30 +629,30 @@ impl Index {
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
-    // The version a task headlines with: the branch that changed it most recently, so active work
-    // shows over a stale baseline. Deletions never headline while any version survives; when every
-    // version is a deletion it falls back to the first cell.
-    fn select_headline<'a>(&self, cells: &[&'a MatrixCell]) -> &'a MatrixCell {
+    // The version a task headlines with, decided in `compute_headlines`. Deletions never headline
+    // while any version survives; when every version is a deletion it falls back to the first cell.
+    fn headline_cell<'a>(&self, cells: &[&'a MatrixCell]) -> &'a MatrixCell {
+        let chosen = self.headlines.get(&cells[0].task.id);
         cells
             .iter()
-            .filter(|c| c.kind != ChangeKind::Deleted)
+            .find(|cell| Some(&cell.branch) == chosen)
             .copied()
-            .max_by(|a, b| {
-                self.recency_of(a)
-                    .cmp(&self.recency_of(b))
-                    .then_with(|| self.headline_pref(a).cmp(&self.headline_pref(b)))
-            })
             .unwrap_or(cells[0])
     }
 
-    // A live uncommitted edit outranks any commit; a cell no walk could date reads as oldest.
-    fn recency_of(&self, cell: &MatrixCell) -> i64 {
-        if cell.dirty {
-            return i64::MAX;
-        }
-        self.change_time(cell)
-            .and_then(|at| at.as_ref().ok())
-            .map_or(i64::MIN, |at| at.as_second())
+    // Between versions with no ancestry either way, "newest" is a judgement call: a live
+    // uncommitted edit outranks any commit, a cell no walk could date reads as oldest, and author
+    // time settles the rest because it describes when the work was done rather than when it was
+    // last replayed.
+    fn tie_break(&self, cell: &MatrixCell) -> (i64, u8) {
+        let authored = if cell.dirty {
+            i64::MAX
+        } else {
+            self.change_time(cell)
+                .and_then(|at| at.as_ref().ok())
+                .map_or(i64::MIN, |at| at.as_second())
+        };
+        (authored, self.headline_pref(cell))
     }
 
     // `created` is a property of the blob, so it comes from the same parse the cell's title and
@@ -552,7 +662,15 @@ impl Index {
     }
 
     fn change_time(&self, cell: &MatrixCell) -> Option<&ChangeTime> {
-        self.change_times
+        Some(&self.change_of(cell)?.at)
+    }
+
+    fn change_commit(&self, cell: &MatrixCell) -> Option<&str> {
+        Some(self.change_of(cell)?.commit.as_str())
+    }
+
+    fn change_of(&self, cell: &MatrixCell) -> Option<&TaskChange> {
+        self.changes
             .get(&(cell.branch.clone(), cell.task.id.clone()))
     }
 
@@ -581,7 +699,7 @@ impl Index {
                 if cells.is_empty() {
                     return Err(FieldError::Missing);
                 }
-                self.cell_updated(self.select_headline(&cells))
+                self.cell_updated(self.headline_cell(&cells))
             }
         }
     }

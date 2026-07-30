@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -14,6 +15,12 @@ const HISTORY_WALK_BUDGET: usize = 4096;
 // ranking or dating by that makes the most recently rebased branch look like the newest work on
 // every task it carries — including the ones it never touched.
 pub type ChangeTime = Result<Timestamp, String>;
+
+#[derive(Debug, Clone)]
+pub struct TaskChange {
+    pub commit: String,
+    pub at: ChangeTime,
+}
 
 #[derive(Debug, Clone)]
 pub struct Repo {
@@ -128,8 +135,7 @@ impl Repo {
     }
 
     pub fn commit_task_blobs(&self, commit_hex: &str) -> Result<Vec<(String, String)>, GitError> {
-        let oid = gix::ObjectId::from_hex(commit_hex.as_bytes())
-            .map_err(|e| GitError::Object(e.to_string()))?;
+        let oid = object_id(commit_hex)?;
         let repo = self.repo();
         let tree = repo
             .find_object(oid)
@@ -143,21 +149,20 @@ impl Repo {
     // and stopping once every id is dated. Bounded to the requested ids — which the caller draws from
     // the branch's cells — so a walk for a short branch tip need not descend the whole default-branch
     // history.
-    pub fn task_change_times(
+    pub fn task_changes(
         &self,
         branch: &str,
         ids: &HashSet<String>,
-    ) -> Result<HashMap<String, ChangeTime>, GitError> {
+    ) -> Result<HashMap<String, TaskChange>, GitError> {
         if ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let tip = gix::ObjectId::from_hex(self.branch_commit(branch)?.as_bytes())
-            .map_err(|e| GitError::Object(e.to_string()))?;
+        let tip = object_id(&self.branch_commit(branch)?)?;
         let mut repo = self.repo();
         repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
 
         let mut needed: HashSet<&str> = ids.iter().map(String::as_str).collect();
-        let mut times = HashMap::new();
+        let mut changes = HashMap::new();
         let walk = repo
             .rev_walk([tip])
             .sorting(gix::revision::walk::Sorting::ByCommitTime(
@@ -187,13 +192,19 @@ impl Repo {
                 // hand — is the merge's own change.
                 Some(blob) if parents.iter().all(|parent| parent.get(*id) != Some(blob)) => {
                     let at = when.get_or_insert_with(|| author_time(&repo, info.id));
-                    times.insert((*id).to_owned(), at.clone());
+                    changes.insert(
+                        (*id).to_owned(),
+                        TaskChange {
+                            commit: info.id.to_string(),
+                            at: at.clone(),
+                        },
+                    );
                     false
                 }
                 _ => true,
             });
         }
-        Ok(times)
+        Ok(changes)
     }
 
     pub fn branch_commit(&self, branch: &str) -> Result<String, GitError> {
@@ -216,8 +227,7 @@ impl Repo {
         target_hex: &str,
         branch_hexes: &[String],
     ) -> Result<Vec<Vec<String>>, GitError> {
-        let target = gix::ObjectId::from_hex(target_hex.as_bytes())
-            .map_err(|e| GitError::Object(e.to_string()))?;
+        let target = object_id(target_hex)?;
         let mut repo = self.repo();
         repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
         let cache = repo
@@ -227,8 +237,7 @@ impl Repo {
         let others = [target];
         let mut out = Vec::with_capacity(branch_hexes.len());
         for hex in branch_hexes {
-            let commit = gix::ObjectId::from_hex(hex.as_bytes())
-                .map_err(|e| GitError::Object(e.to_string()))?;
+            let commit = object_id(hex)?;
             let bases = repo
                 .merge_bases_many_with_graph(commit, &others, &mut graph)
                 .map_err(|e| GitError::Object(e.to_string()))?;
@@ -238,6 +247,42 @@ impl Repo {
                     .map(|id| id.detach().to_string())
                     .collect(),
             );
+        }
+        Ok(out)
+    }
+
+    // Which commit of each pair contains the other: `Less` when the first is an ancestor of the
+    // second, `Greater` for the reverse, `None` when neither reaches the other (nor when they are
+    // the same commit, which supersedes nothing). One graph walk is shared across every pair.
+    pub fn ancestry(&self, pairs: &[(&str, &str)]) -> Result<Vec<Option<Ordering>>, GitError> {
+        if pairs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut repo = self.repo();
+        repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
+        let cache = repo
+            .commit_graph_if_enabled()
+            .map_err(|e| GitError::Object(e.to_string()))?;
+        let mut graph = repo.revision_graph(cache.as_ref());
+        let mut out = Vec::with_capacity(pairs.len());
+        for (first_hex, second_hex) in pairs {
+            let first = object_id(first_hex)?;
+            let second = object_id(second_hex)?;
+            if first == second {
+                out.push(None);
+                continue;
+            }
+            let bases: Vec<gix::ObjectId> = repo
+                .merge_bases_many_with_graph(first, &[second], &mut graph)
+                .map_err(|e| GitError::Object(e.to_string()))?
+                .into_iter()
+                .map(|id| id.detach())
+                .collect();
+            out.push(match (bases.contains(&first), bases.contains(&second)) {
+                (true, false) => Some(Ordering::Less),
+                (false, true) => Some(Ordering::Greater),
+                _ => None,
+            });
         }
         Ok(out)
     }
@@ -272,8 +317,7 @@ impl Repo {
     }
 
     pub fn read_blob(&self, oid_hex: &str) -> Result<Vec<u8>, GitError> {
-        let oid = gix::ObjectId::from_hex(oid_hex.as_bytes())
-            .map_err(|e| GitError::Object(e.to_string()))?;
+        let oid = object_id(oid_hex)?;
         let repo = self.repo();
         let object = repo
             .find_object(oid)
@@ -301,6 +345,10 @@ fn author_time(repo: &gix::Repository, commit: gix::ObjectId) -> Result<Timestam
         .map_err(|e| format!("commit {commit} has an unreadable author: {e}"))?;
     Timestamp::from_second(author.seconds())
         .map_err(|e| format!("commit {commit} has an unusable author date: {e}"))
+}
+
+fn object_id(hex: &str) -> Result<gix::ObjectId, GitError> {
+    gix::ObjectId::from_hex(hex.as_bytes()).map_err(|e| GitError::Object(e.to_string()))
 }
 
 fn commit_task_map(
