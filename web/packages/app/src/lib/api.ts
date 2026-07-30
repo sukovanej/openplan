@@ -83,6 +83,11 @@ export const listTasks: Effect.Effect<
   }),
 )
 
+export const getConfig: Effect.Effect<Api.StoreConfig, ApiError, HttpClient.HttpClient> = Effect.flatMap(
+  tasks,
+  (client) => client.getConfig(undefined),
+).pipe(Effect.catchTags({ HttpClientError: unexpected }))
+
 export const getBoard: Effect.Effect<Api.Board, ApiError, HttpClient.HttpClient> = Effect.flatMap(tasks, (client) =>
   client.getBoard(undefined),
 ).pipe(

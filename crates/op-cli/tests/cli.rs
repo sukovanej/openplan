@@ -39,6 +39,10 @@ impl Project {
         git(project.path(), &["config", "user.email", "t@example.com"]);
         git(project.path(), &["config", "user.name", "Test"]);
         std::fs::create_dir_all(project.path().join(".plan/tasks")).unwrap();
+        write(
+            &project.path().join(".plan/config.toml"),
+            "abbreviation = \"OPP\"\n",
+        );
         project
     }
 
@@ -85,10 +89,10 @@ fn create(project: &Project, title: &str) -> String {
 }
 
 // A task file's name carries a title slug its id does not (§3.1), so a test locates it by the
-// number the name starts with.
-fn task_file(root: &Path, id: &str) -> PathBuf {
+// number behind the key.
+fn task_file(root: &Path, key: &str) -> PathBuf {
     let dir = root.join(".plan/tasks");
-    let prefix = format!("{:0>5}-", id);
+    let prefix = format!("{:0>5}-", number(key));
     std::fs::read_dir(&dir)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -97,7 +101,15 @@ fn task_file(root: &Path, id: &str) -> PathBuf {
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| name.starts_with(&prefix))
         })
-        .unwrap_or_else(|| panic!("no file for task {id} in {}", dir.display()))
+        .unwrap_or_else(|| panic!("no file for task {key} in {}", dir.display()))
+}
+
+// The file layer's spelling of an id a command printed (§3.1).
+fn number(key: &str) -> u64 {
+    key.strip_prefix("OPP-")
+        .unwrap_or_else(|| panic!("not a key: {key}"))
+        .parse()
+        .unwrap()
 }
 
 fn task_body(path: &PathBuf) -> String {
@@ -115,6 +127,10 @@ fn list_reports_real_status_and_title() {
     let tasks = dir.path().join(".plan/tasks");
     std::fs::create_dir_all(&tasks).unwrap();
     write(
+        &dir.path().join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\n",
+    );
+    write(
         &tasks.join("00001-ship-it.md"),
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
@@ -128,7 +144,7 @@ fn list_reports_real_status_and_title() {
 
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("1"), "the id is the number: {stdout}");
+    assert!(stdout.contains("OPP-1"), "the id is the key: {stdout}");
     assert!(
         stdout.contains("done"),
         "status must be read from the file: {stdout}"
@@ -143,6 +159,10 @@ fn list_reports_real_status_and_title() {
 fn list_discovers_store_from_subdirectory() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
+    write(
+        &dir.path().join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\n",
+    );
     let nested = dir.path().join("crates/thing/src");
     std::fs::create_dir_all(&nested).unwrap();
 
@@ -208,7 +228,7 @@ fn create_names_the_file_after_the_id_and_the_title() {
     let dir = Project::new();
     let before = op_task::now();
     let id = create(&dir, "Wire the parser");
-    assert_eq!(id, "1", "the id printed is the number alone");
+    assert_eq!(id, "OPP-1", "the id printed is the key");
 
     let path = task_file(dir.path(), &id);
     assert_eq!(
@@ -232,7 +252,7 @@ fn create_names_the_file_after_the_id_and_the_title() {
     );
 
     // The number is allocated, not derived from the title, so the same title yields the next id.
-    assert_eq!(create(&dir, "Wire the parser"), "2");
+    assert_eq!(create(&dir, "Wire the parser"), "OPP-2");
     assert!(
         dir.home.path().join("daemon.json").is_file(),
         "the first write brought the daemon up on its own"
@@ -509,11 +529,11 @@ fn delete_removes_the_file() {
 #[test]
 fn delete_of_a_missing_id_fails_before_touching_the_daemon() {
     let dir = Project::new();
-    let out = run(&dir, &["delete", "ghost", "--yes"]);
+    let out = run(&dir, &["delete", "OPP-99", "--yes"]);
 
     assert!(!out.status.success());
     assert!(
-        String::from_utf8_lossy(&out.stderr).contains("no such task: ghost"),
+        String::from_utf8_lossy(&out.stderr).contains("no such task: OPP-99"),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -781,10 +801,10 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
 
     assert_eq!(by_id(&good)["metadata"]["status"], "backlog");
     // A file with no readable frontmatter says so, instead of borrowing a status it never claimed.
-    assert_eq!(by_id("2")["metadata"]["kind"], "error");
+    assert_eq!(by_id("OPP-2")["metadata"]["kind"], "error");
     // One unreadable field costs only itself: the status is still the file's own.
-    assert_eq!(by_id("3")["metadata"]["status"], "in_progress");
-    assert_eq!(by_id("3")["metadata"]["created"]["kind"], "missing");
+    assert_eq!(by_id("OPP-3")["metadata"]["status"], "in_progress");
+    assert_eq!(by_id("OPP-3")["metadata"]["created"]["kind"], "missing");
 }
 
 #[test]
@@ -879,7 +899,7 @@ fn list_branch_reads_other_branch_without_checking_it_out() {
     assert_eq!(tasks[0]["title"], "Alpha done");
 
     // The current worktree is untouched: still on main, alpha still `todo`.
-    let head = run(&dir, &["get", "1", "--json"]);
+    let head = run(&dir, &["get", "OPP-1", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&head.stdout).unwrap();
     assert_eq!(
         view["metadata"]["status"], "todo",
@@ -907,7 +927,7 @@ fn list_branch_nonexistent_errors_nonzero() {
 #[test]
 fn get_branch_prints_that_branchs_version() {
     let dir = Project::diverged();
-    let out = run(&dir, &["get", "1", "--branch", "feature"]);
+    let out = run(&dir, &["get", "OPP-1", "--branch", "feature"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -917,7 +937,7 @@ fn get_branch_prints_that_branchs_version() {
     assert!(text.contains("status: done"), "{text}");
     assert!(text.contains("# Alpha done"), "{text}");
 
-    let missing = run(&dir, &["get", "ghost", "--branch", "feature"]);
+    let missing = run(&dir, &["get", "OPP-99", "--branch", "feature"]);
     assert!(
         !missing.status.success(),
         "a missing task on a branch must fail"
@@ -927,7 +947,7 @@ fn get_branch_prints_that_branchs_version() {
 #[test]
 fn show_branches_groups_and_flags_divergence() {
     let dir = Project::diverged();
-    let out = run(&dir, &["show", "1", "--branches"]);
+    let out = run(&dir, &["show", "OPP-1", "--branches"]);
     assert!(
         out.status.success(),
         "stderr: {}",
@@ -946,14 +966,17 @@ fn show_branches_groups_and_flags_divergence() {
 fn set_rejects_a_cross_branch_write() {
     let dir = Project::diverged();
     // There is deliberately no cross-branch write flag; `--branch` is not a valid arg for `set`.
-    let out = run(&dir, &["set", "1", "--branch", "feature", "status", "done"]);
+    let out = run(
+        &dir,
+        &["set", "OPP-1", "--branch", "feature", "status", "done"],
+    );
     assert!(
         !out.status.success(),
         "writes must not accept a --branch target"
     );
 
     // feature's committed version is untouched by the failed attempt.
-    let feature = run(&dir, &["get", "1", "--branch", "feature", "--json"]);
+    let feature = run(&dir, &["get", "OPP-1", "--branch", "feature", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&feature.stdout).unwrap();
     assert_eq!(view["metadata"]["status"], "done");
 }
@@ -1207,7 +1230,7 @@ fn get_json_dates_the_checked_out_branch_not_the_headline() {
     commit_at(root, 2_000_000_000, "edit alpha on feature");
     git(root, &["checkout", "-q", "main"]);
 
-    let out = run(&dir, &["get", "1", "--json"]);
+    let out = run(&dir, &["get", "OPP-1", "--json"]);
     let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
 
     // `feature` headlines the task, but the file `get` read is main's — so is its date.
@@ -1223,7 +1246,7 @@ fn set_on_a_task_without_created_explains_what_to_add() {
         "---\nstatus: todo\n---\n# Legacy\n",
     );
 
-    let out = run(&dir, &["set", "2", "status", "done"]);
+    let out = run(&dir, &["set", "OPP-2", "status", "done"]);
 
     assert!(!out.status.success());
     let err = String::from_utf8(out.stderr).unwrap();

@@ -2,12 +2,13 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use fs2::FileExt as _;
+use op_api::ChangeEvent;
 use op_git::Repo;
 use op_server::AppState;
-use op_store::Store;
-use op_watch::Watcher;
+use op_store::{Config, STORE_DIR, Store, StoreError};
+use op_watch::{Change, Watcher};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
@@ -42,8 +43,14 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     // Reads route through the branch-aware index, which needs a repo; there is no degraded no-repo
     // serving mode. Fail before binding or taking the lifetime lock so a bad root leaves nothing
     // half-started.
-    let store = Store::discover(root)
-        .with_context(|| format!("no {} task store found at {}", ".plan", root.display()))?;
+    // A store with no valid abbreviation has no id space above its files, so there is nothing to
+    // degrade into: the daemon refuses to start rather than serve keys the store does not claim.
+    let store = Store::discover(root).map_err(|err| match err {
+        StoreError::StoreMissing => {
+            anyhow!("no {STORE_DIR} task store found at {}", root.display())
+        }
+        other => other.into(),
+    })?;
     let repo = Repo::discover(root).with_context(|| {
         format!(
             "oplan serve requires a git repository; none found at {}",
@@ -82,7 +89,8 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     };
     home.write_info(&info)?;
 
-    let state = AppState::new(repo.clone(), store.clone()).with_health(info.clone());
+    let state =
+        AppState::new(repo.clone(), store.clone(), store.abbreviation()).with_health(info.clone());
     if let Err(err) = state
         .index
         .lock()
@@ -95,7 +103,8 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     // Watcher::start scans every branch and hashes each worktree's task files; keep that off the
     // async runtime thread.
     let watch_repo = repo.clone();
-    let _watcher = tokio::task::spawn_blocking(move || Watcher::start(watch_repo, tx))
+    let watch_store = store.clone();
+    let _watcher = tokio::task::spawn_blocking(move || Watcher::start(watch_repo, watch_store, tx))
         .await
         .ok()
         .and_then(|started| {
@@ -103,13 +112,23 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
                 .inspect_err(|e| tracing::warn!("watch disabled: {e}"))
                 .ok()
         });
-    // Bridge the watcher's per-branch changes onto the broadcast so /api/events fans them out to
-    // every connected UI, alongside the writes the API handlers publish directly.
-    let events_tx = state.event_sender();
+    // Bridge the watcher's changes onto the broadcast so /api/events fans them out to every
+    // connected UI, alongside the writes the API handlers publish directly. The watcher reports a
+    // task by number, the file layer's spelling; the key it renders as is the daemon's to decide.
+    let bridged = state.clone();
+    let config_root = store.root().to_path_buf();
     std::thread::spawn(move || {
-        for event in rx {
-            tracing::debug!(?event, "watcher change forwarded");
-            let _ = events_tx.send(event);
+        for change in rx {
+            tracing::debug!(?change, "watcher change forwarded");
+            match change {
+                Change::Task { number, branch } => {
+                    let _ = bridged.event_sender().send(ChangeEvent::TaskChanged {
+                        id: bridged.abbreviation().format_key(number),
+                        branch,
+                    });
+                }
+                Change::Config => reload_config(&bridged, &config_root),
+            }
         }
     });
 
@@ -121,6 +140,23 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     home.clear_info();
     fs2::FileExt::unlock(&lock).ok();
     result.map_err(Into::into)
+}
+
+// A valid change applies live and every key re-renders. One that leaves the file missing or invalid
+// stops the daemon exactly as it would have refused to start, so no store is ever served without an
+// abbreviation — including after a checkout that removes the file.
+fn reload_config(state: &AppState, root: &std::path::Path) {
+    match Config::read(root) {
+        Ok(config) => {
+            state.set_abbreviation(config.abbreviation);
+            let _ = state.event_sender().send(ChangeEvent::ConfigChanged);
+            tracing::info!(abbreviation = %config.abbreviation, "store abbreviation reloaded");
+        }
+        Err(err) => {
+            tracing::error!(%err, "the store no longer names an abbreviation; stopping");
+            state.stop();
+        }
+    }
 }
 
 fn ignore_sighup() {

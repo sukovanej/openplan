@@ -47,6 +47,19 @@ pub fn headings(body: &str) -> Vec<Heading> {
     out
 }
 
+// The byte ranges where markdown reads text as something other than prose: inline code, fenced and
+// indented blocks, and existing link syntax. A `[[…]]` inside one is quoted source or already a
+// link, so a scanner looking for references must skip it rather than rewrite what it finds.
+pub fn opaque_ranges(body: &str) -> Vec<std::ops::Range<usize>> {
+    Parser::new(body)
+        .into_offset_iter()
+        .filter_map(|(event, range)| match event {
+            Event::Code(_) | Event::Start(Tag::CodeBlock(_) | Tag::Link { .. }) => Some(range),
+            _ => None,
+        })
+        .collect()
+}
+
 pub fn title(body: &str) -> Option<String> {
     headings(body)
         .into_iter()

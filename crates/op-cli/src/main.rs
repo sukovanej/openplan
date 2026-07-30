@@ -10,8 +10,8 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand};
 use op_api::{
-    BranchMark, ChangeKind, CreateTask, FieldUpdate, Matrix, MatrixCell, Metadata, TaskPatch,
-    TaskSummary, TaskTree, TaskView, sibling_cmp,
+    BranchMark, ChangeKind, CreateTask, FieldUpdate, KeyError, Matrix, MatrixCell, Metadata,
+    TaskPatch, TaskSummary, TaskTree, TaskView, sibling_cmp,
 };
 use op_git::Repo;
 use op_index::Index;
@@ -338,10 +338,15 @@ fn list(
     let store = Store::discover(root)?;
     let ids = store.task_ids()?;
     let mut summaries = Vec::new();
-    for id in &ids {
-        match store.read_raw(id) {
+    for number in &ids {
+        let key = store.abbreviation().format_key(*number);
+        match store.read_raw(*number) {
             Ok(raw) => {
-                let summary = TaskSummary::from_partial(id.clone(), op_task::parse_partial(&raw));
+                let summary = TaskSummary::from_partial(
+                    key,
+                    op_task::parse_partial(&raw),
+                    store.abbreviation(),
+                );
                 if status.is_some_and(|s| summary.metadata.status() != Some(s)) {
                     continue;
                 }
@@ -351,7 +356,7 @@ fn list(
                 summaries.push(summary);
             }
             // stderr keeps the diagnostic out of stdout's JSON while still surfacing it.
-            Err(err) => eprintln!("{id}: {err}"),
+            Err(err) => eprintln!("{key}: {err}"),
         }
     }
 
@@ -384,7 +389,7 @@ fn list_all_branches(root: &Path, status: Option<Status>, json: bool) -> Result<
         for cell in &cells {
             let status = status_label(&cell.task.metadata);
             println!(
-                "{:<22} {:<6} {status:<11} {}{}",
+                "{:<22} {:<10} {status:<11} {}{}",
                 cell.branch,
                 cell.task.id,
                 cell.task.title,
@@ -425,14 +430,20 @@ fn get(root: &Path, id: &str, json: bool, branch: Option<&str>) -> Result<()> {
         return get_branch(root, id, branch, json);
     }
     let store = Store::discover(root)?;
+    let number = number_of(&store, id)?;
     if json {
-        let partial = op_task::parse_partial(&store.read_raw(id)?);
-        let view = TaskView::from_partial(id.to_owned(), partial, local_updated(root, id));
+        let partial = op_task::parse_partial(&store.read_raw(number)?);
+        let view = TaskView::from_partial(
+            id.to_owned(),
+            partial,
+            local_updated(root, id),
+            store.abbreviation(),
+        );
         println!("{}", serde_json::to_string_pretty(&view)?);
     } else {
         // Print the file verbatim; re-serializing would normalize formatting and is a lossy
         // view of what is actually on disk.
-        print!("{}", store.read_raw(id)?);
+        print!("{}", store.read_raw(number)?);
     }
     Ok(())
 }
@@ -459,8 +470,8 @@ fn show(root: &Path, id: &str, branches: bool) -> Result<()> {
         return show_branches(root, id);
     }
     let store = Store::discover(root)?;
-    let partial = op_task::parse_partial(&store.read_raw(id)?);
-    let summary = TaskSummary::from_partial(id.to_owned(), partial);
+    let partial = op_task::parse_partial(&store.read_raw(number_of(&store, id)?)?);
+    let summary = TaskSummary::from_partial(id.to_owned(), partial, store.abbreviation());
     let metadata = &summary.metadata;
     println!("id:     {id}");
     println!("title:  {}", summary.title);
@@ -540,9 +551,18 @@ fn local_updated(root: &Path, id: &str) -> FieldResult<Timestamp> {
 fn build_index(root: &Path) -> Result<(Repo, Index)> {
     let repo = Repo::discover(root)?;
     let store = Store::discover(root)?;
-    let mut index = Index::new();
+    let mut index = Index::new(store.abbreviation());
     index.rebuild(&repo, &store)?;
     Ok((repo, index))
+}
+
+// Every id a command takes or prints is a key (§3.1); the number behind it goes no further than the
+// store call it was resolved for.
+fn number_of(store: &Store, key: &str) -> Result<u64> {
+    store
+        .abbreviation()
+        .parse_key(key)
+        .ok_or_else(|| KeyError::new(store.abbreviation(), key).into())
 }
 
 fn ensure_branch(repo: &Repo, branch: &str) -> Result<()> {
@@ -563,7 +583,7 @@ fn status_label(metadata: &Metadata) -> String {
 fn print_summaries(summaries: &[TaskSummary]) {
     for summary in summaries {
         let status = status_label(&summary.metadata);
-        println!("{:<6} {status:<11} {}", summary.id, summary.title);
+        println!("{:<10} {status:<11} {}", summary.id, summary.title);
     }
 }
 
@@ -653,7 +673,8 @@ fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
 fn delete(root: &Path, daemon_url: Option<&str>, id: &str, yes: bool) -> Result<ExitCode> {
     // A local read answers this: the delete targets the caller's branch, whose worktree is this one.
     // Prompting — and starting a daemon — for a typo would be the daemon's 404 arriving too late.
-    if !Store::discover(root)?.exists(id) {
+    let store = Store::discover(root)?;
+    if !store.exists(number_of(&store, id)?) {
         bail!("no such task: {id}");
     }
     if !yes && !confirm(id)? {
@@ -695,10 +716,15 @@ fn parse_parent(value: &str) -> Option<String> {
 
 fn local_summaries(store: &Store) -> Result<Vec<TaskSummary>> {
     let mut summaries = Vec::new();
-    for id in store.task_ids()? {
-        match store.read_raw(&id) {
-            Ok(raw) => summaries.push(TaskSummary::from_partial(id, op_task::parse_partial(&raw))),
-            Err(err) => eprintln!("{id}: {err}"),
+    for number in store.task_ids()? {
+        let key = store.abbreviation().format_key(number);
+        match store.read_raw(number) {
+            Ok(raw) => summaries.push(TaskSummary::from_partial(
+                key,
+                op_task::parse_partial(&raw),
+                store.abbreviation(),
+            )),
+            Err(err) => eprintln!("{key}: {err}"),
         }
     }
     Ok(summaries)
@@ -706,7 +732,7 @@ fn local_summaries(store: &Store) -> Result<Vec<TaskSummary>> {
 
 fn tree(root: &Path, id: &str, depth: Option<usize>, json: bool) -> Result<()> {
     let store = Store::discover(root)?;
-    if !store.exists(id) {
+    if !store.exists(number_of(&store, id)?) {
         bail!("no such task: {id}");
     }
     let summaries = local_summaries(&store)?;
@@ -729,7 +755,7 @@ fn tree(root: &Path, id: &str, depth: Option<usize>, json: bool) -> Result<()> {
 
 fn print_tree(node: &TaskTree, depth: usize) {
     println!(
-        "{}{:<6} {:<11} {}",
+        "{}{:<10} {:<11} {}",
         "  ".repeat(depth),
         node.id,
         status_label(&node.metadata),
@@ -750,7 +776,12 @@ fn move_task(
 ) -> Result<()> {
     // The sibling group is read locally — reads are global, writes go through the daemon.
     let store = Store::discover(root)?;
-    let current_parent = store.read(id)?.frontmatter.parent;
+    let current_parent = store
+        .read(number_of(&store, id)?)?
+        .frontmatter
+        .parent
+        .as_deref()
+        .and_then(|parent| store.abbreviation().format_ref(parent));
     let new_parent = match parent {
         None => current_parent,
         Some(value) => parse_parent(&value),

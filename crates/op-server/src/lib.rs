@@ -15,8 +15,8 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, TaskDetail, TaskListItem, TaskPatch,
-    TaskView,
+    Abbreviation, ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, KeyError, StoreConfig,
+    TaskDetail, TaskListItem, TaskPatch, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -79,9 +79,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(repo: Repo, store: Store) -> Self {
+    pub fn new(repo: Repo, store: Store, abbreviation: Abbreviation) -> Self {
         Self {
-            index: Arc::new(Mutex::new(Index::new())),
+            index: Arc::new(Mutex::new(Index::new(abbreviation))),
             presence: Arc::new(Mutex::new(Registry::new())),
             store,
             repo,
@@ -99,6 +99,27 @@ impl AppState {
 
     pub fn event_sender(&self) -> broadcast::Sender<ChangeEvent> {
         self.events.clone()
+    }
+
+    // The index is the one holder of the store's abbreviation, so a live config change lands here and
+    // every later read renders the new keys. Blocking, like every other index access: the mutex is
+    // held across rebuilds, which read the object DB and wait on flocks.
+    pub fn abbreviation(&self) -> Abbreviation {
+        self.index
+            .lock()
+            .expect("index mutex poisoned")
+            .abbreviation()
+    }
+
+    pub fn set_abbreviation(&self, abbreviation: Abbreviation) {
+        self.index
+            .lock()
+            .expect("index mutex poisoned")
+            .set_abbreviation(abbreviation);
+    }
+
+    pub fn stop(&self) {
+        let _ = self.shutdown.send(true);
     }
 }
 
@@ -119,6 +140,7 @@ struct ApiDoc;
 fn documented() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
+        .routes(routes!(get_config))
         .routes(routes!(list_tasks, create_task))
         .routes(routes!(get_board))
         .routes(routes!(get_task, patch_task, delete_task))
@@ -214,6 +236,23 @@ async fn health(State(state): State<AppState>) -> Response {
     }
 }
 
+// The abbreviation every key on the wire carries, so a client can tell this store's keys from any
+// other spelling. It only ever changes with the store's `config.toml`, which announces itself over
+// `/api/events`.
+#[utoipa::path(
+    get,
+    path = "/api/config",
+    responses((status = 200, description = "The served store's configuration", body = StoreConfig))
+)]
+async fn get_config(State(state): State<AppState>) -> Result<Json<StoreConfig>, ApiError> {
+    let abbreviation = tokio::task::spawn_blocking(move || state.abbreviation())
+        .await
+        .map_err(join_error)?;
+    Ok(Json(StoreConfig {
+        abbreviation: abbreviation.to_string(),
+    }))
+}
+
 async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Response {
     // Require a header a cross-site form POST cannot set without a preflight (which has no
     // CORS allowance here), so a page the user is browsing cannot drive-by shut us down.
@@ -287,69 +326,96 @@ struct CreatedTask {
     id: String,
 }
 
-enum ApiError {
-    Store(StoreError),
+struct ApiError {
+    status: StatusCode,
+    message: String,
+}
+
+impl ApiError {
+    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+        }
+    }
+
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, message)
+    }
+
+    fn internal(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, message)
+    }
+
     // A write aimed at a branch no live worktree has checked out. The server never fabricates a
     // commit, so it refuses rather than retargeting silently.
-    NotWritable(String),
+    fn not_writable(branch: &str) -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            format!(
+                "branch {branch} is not checked out in a writable worktree (no live worktree, or \
+                 an operation is in progress); refusing to write"
+            ),
+        )
+    }
+
     // The daemon's own root is gone, so no branch resolves and every write would read as
-    // `NotWritable` — a diagnosis that sends the user looking at their checkout instead.
-    RootGone(std::path::PathBuf),
-    NoIdAvailable(String),
+    // `not_writable` — a diagnosis that sends the user looking at their checkout instead.
+    fn root_gone(root: &std::path::Path) -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            format!(
+                "the daemon's root {} no longer exists, so it can no longer resolve any branch; \
+                 restart it with `oplan server restart`",
+                root.display()
+            ),
+        )
+    }
+
+    fn no_id_available(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, message)
+    }
 }
 
 impl From<StoreError> for ApiError {
     fn from(err: StoreError) -> Self {
-        Self::Store(err)
+        let status = match &err {
+            StoreError::NotFound { .. } => StatusCode::NOT_FOUND,
+            StoreError::Invalid(_) | StoreError::InvalidRef { .. } => StatusCode::BAD_REQUEST,
+            // The request is fine and the daemon is fine; the stored file is the thing that has to
+            // change, and only a human can change it.
+            StoreError::MissingCreated { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        Self::new(status, err.to_string())
+    }
+}
+
+impl From<KeyError> for ApiError {
+    fn from(err: KeyError) -> Self {
+        Self::bad_request(err.to_string())
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, message) = match self {
-            ApiError::Store(StoreError::NotFound { id }) => {
-                (StatusCode::NOT_FOUND, format!("no such task: {id}"))
-            }
-            ApiError::Store(StoreError::Invalid(message)) => (StatusCode::BAD_REQUEST, message),
-            ApiError::Store(err @ StoreError::InvalidId { .. }) => {
-                (StatusCode::BAD_REQUEST, err.to_string())
-            }
-            // The request is fine and the daemon is fine; the stored file is the thing that has to
-            // change, and only a human can change it.
-            ApiError::Store(err @ StoreError::MissingCreated { .. }) => {
-                (StatusCode::UNPROCESSABLE_ENTITY, err.to_string())
-            }
-            ApiError::Store(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
-            ApiError::NotWritable(branch) => (
-                StatusCode::CONFLICT,
-                format!(
-                    "branch {branch} is not checked out in a writable worktree (no live worktree, \
-                     or an operation is in progress); refusing to write"
-                ),
-            ),
-            ApiError::RootGone(root) => (
-                StatusCode::CONFLICT,
-                format!(
-                    "the daemon's root {} no longer exists, so it can no longer resolve any \
-                     branch; restart it with `oplan server restart`",
-                    root.display()
-                ),
-            ),
-            ApiError::NoIdAvailable(message) => (StatusCode::CONFLICT, message),
-        };
         // TraceLayer's failure line only sees the status code; record the cause onto the request
         // span so its single ERROR line carries route + request id + why, without a second event.
-        if status.is_server_error() {
-            Span::current().record("error", tracing::field::display(&message));
+        if self.status.is_server_error() {
+            Span::current().record("error", tracing::field::display(&self.message));
         }
-        (status, Json(ApiErrorBody { message })).into_response()
+        (
+            self.status,
+            Json(ApiErrorBody {
+                message: self.message,
+            }),
+        )
+            .into_response()
     }
 }
 
 fn join_error(err: tokio::task::JoinError) -> ApiError {
-    ApiError::Store(StoreError::Io(std::io::Error::other(format!(
-        "task failed: {err}"
-    ))))
+    ApiError::internal(format!("task failed: {err}"))
 }
 
 // Rebuild the index from the serve root's repo + worktrees, then return one entry per logical task
@@ -434,23 +500,27 @@ async fn create_task(
     let created = op_task::now();
     let (branch, id) =
         tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
-            let (branch, store, floor) = {
+            let (branch, store, floor, abbreviation) = {
                 let mut index = index.lock().expect("index mutex poisoned");
                 let (branch, store) = write_target(&mut index, &repo, &serve_store, query.branch)?;
-                (branch, store, index.max_id().unwrap_or(0))
+                (
+                    branch,
+                    store,
+                    index.max_id().unwrap_or(0),
+                    index.abbreviation(),
+                )
             };
-            let task = body.into_task(created);
+            let task = body.into_task(created, abbreviation)?;
             let mut taken = 0;
-            let id = loop {
+            let number = loop {
                 let number = ids.issue_above(floor).ok_or_else(|| {
-                    ApiError::NoIdAvailable(
+                    ApiError::no_id_available(
                         "the repository holds the highest task number there is; no number is left \
-                         to issue"
-                            .to_owned(),
+                         to issue",
                     )
                 })?;
                 match store.create(&task, number) {
-                    Ok(id) => break id,
+                    Ok(number) => break number,
                     // The floor only covers ids the rebuild could see; a file written out of band since
                     // then can still hold the number, and the next one is free.
                     Err(StoreError::IdTaken { id }) if taken + 1 < ID_ATTEMPTS => {
@@ -458,15 +528,15 @@ async fn create_task(
                         tracing::warn!(%id, "id already on disk; taking the next one");
                     }
                     Err(StoreError::IdTaken { id }) => {
-                        return Err(ApiError::NoIdAvailable(format!(
+                        return Err(ApiError::no_id_available(format!(
                             "{ID_ATTEMPTS} numbers in a row are already taken on disk, up to {id}; \
                              something outside the daemon is writing task files"
                         )));
                     }
-                    Err(err) => return Err(ApiError::Store(err)),
+                    Err(err) => return Err(err.into()),
                 }
             };
-            Ok((branch, id))
+            Ok((branch, abbreviation.format_key(number)))
         })
         .await
         .map_err(join_error)??;
@@ -492,7 +562,7 @@ struct TaskQuery {
     get,
     path = "/api/tasks/{id}",
     params(
-        ("id" = String, Path, description = "Task id"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
         ("branch" = Option<String>, Query, description = "Branch version to read; omit for the headline")
     ),
     responses(
@@ -507,15 +577,15 @@ async fn get_task(
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    // A read resolves through the index, which knows nothing of the id grammar; without this a path
-    // segment no id could ever name would 404 here and 400 on every write route.
-    reject_non_id(&id)?;
     let repo = state.repo.clone();
     let store = state.store.clone();
     let index = state.index.clone();
     let missing = id.clone();
     let detail = tokio::task::spawn_blocking(move || -> Result<Option<TaskDetail>, ApiError> {
         let mut index = index.lock().expect("index mutex poisoned");
+        // A read resolves through the index by matching cell ids, which would 404 a path segment no
+        // key could ever be — where every write route answers 400. Refuse it here, once, for both.
+        reject_non_key(index.abbreviation(), &id)?;
         index.rebuild(&repo, &store).map_err(index_error)?;
         index
             .task_detail(&repo, &id, query.branch.as_deref())
@@ -525,22 +595,19 @@ async fn get_task(
     .map_err(join_error)??;
     detail
         .map(Json)
-        .ok_or(ApiError::Store(StoreError::NotFound { id: missing }))
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("no such task: {missing}")))
 }
 
-fn reject_non_id(id: &str) -> Result<(), ApiError> {
-    match op_task::parse_id(id) {
-        Some(_) => Ok(()),
-        None => Err(ApiError::Store(StoreError::InvalidId { id: id.to_owned() })),
-    }
+fn reject_non_key(abbreviation: Abbreviation, key: &str) -> Result<u64, ApiError> {
+    abbreviation
+        .parse_key(key)
+        .ok_or_else(|| KeyError::new(abbreviation, key).into())
 }
 
 fn index_error(err: IndexError) -> ApiError {
     match err {
-        IndexError::Store(err) => ApiError::Store(err),
-        IndexError::Git(err) => {
-            ApiError::Store(StoreError::Io(std::io::Error::other(err.to_string())))
-        }
+        IndexError::Store(err) => err.into(),
+        IndexError::Git(err) => ApiError::internal(err.to_string()),
     }
 }
 
@@ -548,11 +615,10 @@ fn index_error(err: IndexError) -> ApiError {
 fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiError> {
     match requested {
         Some(branch) => Ok(branch),
-        None => index.current_branch().map(str::to_owned).ok_or_else(|| {
-            ApiError::Store(StoreError::Invalid(
-                "cannot determine the current worktree's branch".to_owned(),
-            ))
-        }),
+        None => index
+            .current_branch()
+            .map(str::to_owned)
+            .ok_or_else(|| ApiError::bad_request("cannot determine the current worktree's branch")),
     }
 }
 
@@ -568,9 +634,9 @@ fn write_target(
     let branch = write_branch(index, requested)?;
     let store = index.live_store(&branch).ok_or_else(|| {
         if serve_store.root().is_dir() {
-            ApiError::NotWritable(branch.clone())
+            ApiError::not_writable(&branch)
         } else {
-            ApiError::RootGone(serve_store.root().to_path_buf())
+            ApiError::root_gone(serve_store.root())
         }
     })?;
     Ok((branch, store))
@@ -580,7 +646,7 @@ fn write_target(
     patch,
     path = "/api/tasks/{id}",
     params(
-        ("id" = String, Path, description = "Task id"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
         ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
     ),
     request_body = TaskPatch,
@@ -603,13 +669,19 @@ async fn patch_task(
     let index = state.index.clone();
     let (branch, detail) =
         tokio::task::spawn_blocking(move || -> Result<(String, TaskDetail), ApiError> {
-            let (branch, store) = {
+            let (branch, store, abbreviation) = {
                 let mut index = index.lock().expect("index mutex poisoned");
-                write_target(&mut index, &repo, &serve_store, query.branch)?
+                let (branch, store) = write_target(&mut index, &repo, &serve_store, query.branch)?;
+                (branch, store, index.abbreviation())
             };
-            let task = store.update(&id, |task| {
-                patch.apply(task);
-                Ok(())
+            let number = reject_non_key(abbreviation, &id)?;
+            // The refusal has to leave the closure, not be carried out of it: `update` writes
+            // whenever the mutation reports success, and a patch that fails on its third field has
+            // already changed the first two.
+            let task = store.update(number, |task| {
+                patch
+                    .apply(task, abbreviation)
+                    .map_err(|err| StoreError::Invalid(err.to_string()))
             })?;
             // Echo the freshly written task rather than re-reading it from the matrix: a write that
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
@@ -618,8 +690,15 @@ async fn patch_task(
             let (headline, branches, parent_title, children, refs, updated) = {
                 let mut index = index.lock().expect("index mutex poisoned");
                 index.rebuild(&repo, &serve_store).map_err(index_error)?;
+                // The index resolves a parent by key; the frontmatter holds the number the file
+                // layer names it by.
+                let parent = task
+                    .frontmatter
+                    .parent
+                    .as_deref()
+                    .and_then(|parent| abbreviation.format_ref(parent));
                 let (parent_title, children, refs) =
-                    index.hierarchy_context(&id, task.frontmatter.parent.as_deref(), &task.body);
+                    index.hierarchy_context(&id, parent.as_deref(), &task.body);
                 (
                     index.headline_branch(&id).unwrap_or_default(),
                     index.task_branch_states(&id),
@@ -629,7 +708,7 @@ async fn patch_task(
                     index.task_updated_or_headline(&id, Some(&branch)),
                 )
             };
-            let view = TaskView::from_task(id, &task, updated);
+            let view = TaskView::from_task(id, &task, updated, abbreviation);
             let detail = TaskDetail {
                 id: view.id,
                 title: view.title,
@@ -660,7 +739,7 @@ async fn patch_task(
     delete,
     path = "/api/tasks/{id}",
     params(
-        ("id" = String, Path, description = "Task id"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
         ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
     ),
     responses(
@@ -681,11 +760,12 @@ async fn delete_task(
     let index = state.index.clone();
     let changed = id.clone();
     let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
-        let (branch, store) = {
+        let (branch, store, abbreviation) = {
             let mut index = index.lock().expect("index mutex poisoned");
-            write_target(&mut index, &repo, &serve_store, query.branch)?
+            let (branch, store) = write_target(&mut index, &repo, &serve_store, query.branch)?;
+            (branch, store, index.abbreviation())
         };
-        store.delete(&id)?;
+        store.delete(reject_non_key(abbreviation, &id)?)?;
         Ok(branch)
     })
     .await

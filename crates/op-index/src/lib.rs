@@ -9,10 +9,13 @@ use op_api::{
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{Store, StoreError};
-use op_task::{FieldError, FieldResult, Timestamp};
+use op_task::{Abbreviation, FieldError, FieldResult, Timestamp};
 
-#[derive(Debug, Default)]
+// Every id the index holds and hands out is a key (§3.1); the numbers it reads from file names and
+// git trees stop at the two conversions below, `keyed` and `number_of`.
+#[derive(Debug)]
 pub struct Index {
+    abbreviation: Abbreviation,
     matrix: Matrix,
     // Keyed by blob OID, which is content-addressed, so an entry never goes stale — the cache
     // grows across rebuilds and is only ever added to. Holds the id-independent parse (the id is
@@ -22,8 +25,9 @@ pub struct Index {
     // The branch checked out in the serve-root worktree; the headline of an aggregated task.
     current_branch: Option<String>,
     default_branch: Option<String>,
-    // (branch, id) -> the branch's last commit to touch the task, and when it was authored. Absent
-    // for a task whose change lies deeper than the walk budget, and for one no commit holds yet.
+    // (branch, number) -> the branch's last commit to touch the task, and when it was authored.
+    // Absent for a task whose change lies deeper than the walk budget, and for one no commit holds
+    // yet. Keyed by the number, the spelling git's file names carry.
     changes: HashMap<(String, String), TaskChange>,
     // branch -> a walk result reusable across the per-request rebuilds, instead of re-walking
     // history every time.
@@ -71,12 +75,60 @@ pub enum IndexError {
 }
 
 impl Index {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(abbreviation: Abbreviation) -> Self {
+        Self {
+            abbreviation,
+            matrix: Matrix::default(),
+            blob_cache: HashMap::new(),
+            live: HashMap::new(),
+            current_branch: None,
+            default_branch: None,
+            changes: HashMap::new(),
+            change_cache: HashMap::new(),
+            headlines: HashMap::new(),
+            ancestry: HashMap::new(),
+            max_id: None,
+        }
+    }
+
+    // A cached version holds its parent and dependencies as keys, so a new abbreviation invalidates
+    // every one of them; the next rebuild re-parses what it needs.
+    pub fn set_abbreviation(&mut self, abbreviation: Abbreviation) {
+        if self.abbreviation != abbreviation {
+            self.abbreviation = abbreviation;
+            self.blob_cache.clear();
+        }
+    }
+
+    pub fn abbreviation(&self) -> Abbreviation {
+        self.abbreviation
     }
 
     pub fn matrix(&self) -> &Matrix {
         &self.matrix
+    }
+
+    fn keyed(&self, blobs: Vec<(String, String)>) -> HashMap<String, String> {
+        blobs
+            .into_iter()
+            .filter_map(|(id, oid)| {
+                // A tree lists whatever `.plan/tasks/*.md` a commit holds; only a file a number names
+                // is a task, so the matrix and the store agree on what exists.
+                Some((self.abbreviation.format_key(op_task::parse_id(&id)?), oid))
+            })
+            .collect()
+    }
+
+    fn number_of(&self, key: &str) -> u64 {
+        self.abbreviation
+            .parse_key(key)
+            .expect("every matrix id is a key this index formatted")
+    }
+
+    fn keyed_raw(&self, raw: BTreeMap<u64, String>) -> BTreeMap<String, String> {
+        raw.into_iter()
+            .map(|(number, text)| (self.abbreviation.format_key(number), text))
+            .collect()
     }
 
     pub fn cached_versions(&self) -> usize {
@@ -84,6 +136,9 @@ impl Index {
     }
 
     pub fn rebuild(&mut self, repo: &Repo, store: &Store) -> Result<(), IndexError> {
+        // The index's abbreviation is the store's, whatever handle the caller passed: a live config
+        // change lands here, and every store this hands back out must speak the new keys.
+        let store = &store.with_abbreviation(self.abbreviation);
         let worktrees = repo.worktrees()?;
         self.current_branch = worktrees
             .iter()
@@ -98,7 +153,7 @@ impl Index {
             .map(|branch| repo.branch_commit(branch))
             .transpose()?;
         let default_blobs: HashMap<String, String> = match self.default_branch.as_deref() {
-            Some(branch) => repo.branch_task_blobs(branch)?.into_iter().collect(),
+            Some(branch) => self.keyed(repo.branch_task_blobs(branch)?),
             None => HashMap::new(),
         };
 
@@ -117,13 +172,17 @@ impl Index {
         // mid-merge is excluded from `live`. The number is taken the moment the file exists.
         let mut max_id = on_disk_id_floor(&worktrees, store);
         for branch in &branches {
-            let committed: HashMap<String, String> =
-                repo.branch_task_blobs(branch)?.into_iter().collect();
-            let live = self.live.get(branch).map(Store::read_all_raw).transpose()?;
-            let present = present_ids(&committed, live.as_ref())?;
+            let committed = self.keyed(repo.branch_task_blobs(branch)?);
+            let live = self
+                .live
+                .get(branch)
+                .map(Store::read_all_raw)
+                .transpose()?
+                .map(|raw| self.keyed_raw(raw));
+            let present = present_ids(&committed, live.as_ref());
             // Every id the branch holds, not just the cells it contributes: a task identical to its
             // merge base is skipped below, and its number would otherwise read as free.
-            max_id = max_id.max(present.iter().filter_map(|id| op_task::parse_id(id)).max());
+            max_id = max_id.max(present.iter().map(|key| self.number_of(key)).max());
             if self.is_baseline(branch) {
                 self.baseline_cells(
                     repo,
@@ -167,7 +226,7 @@ impl Index {
                 request
                     .entry(cell.branch.clone())
                     .or_default()
-                    .insert(cell.task.id.clone());
+                    .insert(self.number_of(&cell.task.id).to_string());
             }
         }
 
@@ -322,13 +381,13 @@ impl Index {
             .collect::<Result<_, _>>()?;
         let bases_per_branch = repo.merge_bases_against(default_commit, &commits)?;
 
-        let mut tree_cache: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        let mut tree_cache: HashMap<String, HashMap<String, String>> = HashMap::new();
         let mut out = HashMap::new();
         for (branch, base_commits) in non_baseline.iter().zip(bases_per_branch) {
             let mut blobs: HashMap<String, HashSet<String>> = HashMap::new();
             for base_commit in base_commits {
                 if !tree_cache.contains_key(&base_commit) {
-                    let read = repo.commit_task_blobs(&base_commit)?;
+                    let read = self.keyed(repo.commit_task_blobs(&base_commit)?);
                     tree_cache.insert(base_commit.clone(), read);
                 }
                 for (id, oid) in &tree_cache[&base_commit] {
@@ -468,7 +527,7 @@ impl Index {
         if let Some(version) = self.blob_cache.get(oid) {
             return version.clone();
         }
-        let version = parse_version(bytes);
+        let version = parse_version(bytes, self.abbreviation);
         self.blob_cache.insert(oid.to_owned(), version.clone());
         version
     }
@@ -563,7 +622,7 @@ impl Index {
         let Some(raw) = raw else {
             return Ok(None);
         };
-        let view = view_from_raw(id, &raw, updated);
+        let view = view_from_raw(id, &raw, updated, self.abbreviation);
         let (parent_title, children, refs) =
             self.hierarchy_context(id, view.metadata.parent(), &view.body);
         Ok(Some(TaskDetail {
@@ -607,7 +666,11 @@ impl Index {
                 rank: t.metadata.rank().map(str::to_owned),
             })
             .collect();
-        (parent_title, children, body_refs(body, &by_id))
+        (
+            parent_title,
+            children,
+            body_refs(self.abbreviation, body, &by_id),
+        )
     }
 
     // The branch a branchless read headlines with, for the write path which builds its own
@@ -622,7 +685,7 @@ impl Index {
     fn cell_raw(&self, repo: &Repo, cell: &MatrixCell) -> Result<String, IndexError> {
         if cell.dirty && cell.kind != ChangeKind::Deleted {
             if let Some(store) = self.live.get(&cell.branch) {
-                return Ok(store.read_raw(&cell.task.id)?);
+                return Ok(store.read_raw(self.number_of(&cell.task.id))?);
             }
         }
         let bytes = repo.read_blob(&cell.blob_oid)?;
@@ -670,8 +733,10 @@ impl Index {
     }
 
     fn change_of(&self, cell: &MatrixCell) -> Option<&TaskChange> {
-        self.changes
-            .get(&(cell.branch.clone(), cell.task.id.clone()))
+        self.changes.get(&(
+            cell.branch.clone(),
+            self.number_of(&cell.task.id).to_string(),
+        ))
     }
 
     // A working-tree edit has no commit to date it by, so it reads as happening now. Otherwise the
@@ -771,9 +836,14 @@ impl Index {
         id: &str,
         branch: &str,
     ) -> Result<Option<TaskView>, IndexError> {
-        Ok(self
-            .effective_raw(repo, id, branch)?
-            .map(|raw| view_from_raw(id, &raw, self.task_updated(id, Some(branch)))))
+        Ok(self.effective_raw(repo, id, branch)?.map(|raw| {
+            view_from_raw(
+                id,
+                &raw,
+                self.task_updated(id, Some(branch)),
+                self.abbreviation,
+            )
+        }))
     }
 
     // The raw file text of one task as it effectively stands on `branch`: the live working copy if
@@ -792,7 +862,12 @@ impl Index {
             return Ok(None);
         }
         if cell.dirty {
-            match self.live.get(branch).map(|worktree| worktree.read_raw(id)) {
+            let number = self.number_of(id);
+            match self
+                .live
+                .get(branch)
+                .map(|worktree| worktree.read_raw(number))
+            {
                 Some(Ok(text)) => Ok(Some(text)),
                 Some(Err(StoreError::NotFound { .. })) | None => Ok(None),
                 Some(Err(err)) => Err(err.into()),
@@ -843,18 +918,12 @@ fn branch_states(cells: &[&MatrixCell]) -> Vec<BranchState> {
 fn present_ids(
     committed: &HashMap<String, String>,
     live: Option<&BTreeMap<String, String>>,
-) -> Result<BTreeSet<String>, IndexError> {
-    // The tree lists whatever `.plan/tasks/*.md` a commit holds; only files a task id names are
-    // tasks, so the matrix and the store agree on what exists.
-    let mut ids: BTreeSet<String> = committed
-        .keys()
-        .filter(|id| op_task::parse_id(id).is_some())
-        .cloned()
-        .collect();
+) -> BTreeSet<String> {
+    let mut ids: BTreeSet<String> = committed.keys().cloned().collect();
     if let Some(worktree) = live {
         ids.extend(worktree.keys().cloned());
     }
-    Ok(ids)
+    ids
 }
 
 fn on_disk_id_floor(worktrees: &[Worktree], store: &Store) -> Option<u64> {
@@ -864,12 +933,11 @@ fn on_disk_id_floor(worktrees: &[Worktree], store: &Store) -> Option<u64> {
             if same_path(&worktree.path, store.root()) {
                 Some(store.clone())
             } else {
-                Store::open(&worktree.path).ok()
+                Store::open(&worktree.path, store.abbreviation()).ok()
             }
         })
         .filter_map(|worktree| worktree.task_ids().ok())
         .flatten()
-        .filter_map(|id| op_task::parse_id(&id))
         .max()
 }
 
@@ -885,7 +953,7 @@ fn live_worktrees(worktrees: &[Worktree], store: &Store) -> HashMap<String, Stor
         let opened = if same_path(&worktree.path, store.root()) {
             Some(store.clone())
         } else {
-            Store::open(&worktree.path).ok()
+            Store::open(&worktree.path, store.abbreviation()).ok()
         };
         if let Some(opened) = opened {
             live.entry(branch.clone()).or_insert(opened);
@@ -921,41 +989,32 @@ impl Version {
     }
 }
 
-fn parse_version(bytes: &[u8]) -> Version {
+fn parse_version(bytes: &[u8], abbreviation: Abbreviation) -> Version {
     let text = String::from_utf8_lossy(bytes);
     let partial = op_task::parse_partial(&text);
     Version {
         title: partial.title.unwrap_or_default(),
-        metadata: partial.metadata.into(),
+        metadata: Metadata::from_partial(partial.metadata, abbreviation),
     }
 }
 
-// Every `[[id]]` (or `[[id#Section]]`) in `body` that resolves to a known task, deduplicated in
-// first-seen order: inner text with no bracket or newline, id split off at the first `#`.
-// Unresolvable ids are skipped — the client renders those as a dangling chip anyway, so they need no
-// metadata. Deliberately looser than the web's matcher, which parses markdown and so also skips
-// `[[…]]` quoted inside code spans and fences: a superset here only costs a few unused entries,
-// where a subset would drop a chip's title and status.
-fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
+// Every `[[…]]` in `body` that resolves to a known task, deduplicated in first-seen order.
+// Unresolvable references are skipped — the client renders those as a dangling chip anyway, so they
+// need no metadata.
+fn body_refs(
+    abbreviation: Abbreviation,
+    body: &str,
+    by_id: &HashMap<&str, &TaskListItem>,
+) -> Vec<TaskRef> {
     let mut refs = Vec::new();
     let mut seen = HashSet::new();
-    let mut rest = body;
-    while let Some(open) = rest.find("[[") {
-        let after = &rest[open + 2..];
-        let Some(close) = after.find("]]") else {
-            break;
-        };
-        let inner = &after[..close];
-        rest = &after[close + 2..];
-        if inner.contains(['[', ']', '\n']) {
-            continue;
-        }
-        let Some(number) = op_task::ref_id(inner.trim()) else {
+    for (_, inner) in op_task::body_ref_spans(body) {
+        let Some(number) = op_task::body_ref_id(abbreviation, inner) else {
             continue;
         };
-        let id = number.to_string();
-        if let Some(item) = by_id.get(id.as_str()) {
-            if seen.insert(id.clone()) {
+        let key = abbreviation.format_key(number);
+        if let Some(item) = by_id.get(key.as_str()) {
+            if seen.insert(key) {
                 refs.push(TaskRef {
                     id: item.id.clone(),
                     title: item.title.clone(),
@@ -967,9 +1026,14 @@ fn body_refs(body: &str, by_id: &HashMap<&str, &TaskListItem>) -> Vec<TaskRef> {
     refs
 }
 
-fn view_from_raw(id: &str, raw: &str, updated: FieldResult<Timestamp>) -> TaskView {
+fn view_from_raw(
+    id: &str,
+    raw: &str,
+    updated: FieldResult<Timestamp>,
+    abbreviation: Abbreviation,
+) -> TaskView {
     let partial = op_task::parse_partial(raw);
-    let metadata: Metadata = partial.metadata.into();
+    let metadata = Metadata::from_partial(partial.metadata, abbreviation);
     let created = metadata.created();
     TaskView {
         id: id.to_owned(),

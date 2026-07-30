@@ -14,10 +14,10 @@ import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
 import { errorText } from "../lib/format"
-import { fuzzyMatch } from "../lib/fuzzy"
 import { createdOf, parentOf, problems } from "../lib/metadata"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
+import { taskMatches } from "../lib/task-search"
 import { cn } from "../lib/utils"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
@@ -150,27 +150,12 @@ function ComboTaskRow({ task, indices }: { task: TaskListItem; indices: Readonly
   return (
     <span className="flex min-w-0 items-center gap-2">
       <StatusField metadata={task.metadata} className="size-4 shrink-0" />
+      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{task.id}</span>
       <span className="truncate">
         <FuzzyText text={task.title} indices={indices} />
       </span>
     </span>
   )
-}
-
-// Ranked fuzzy matches over the task list, minus `excluded`. Capped so the popover stays scannable.
-function taskMatches(
-  tasks: ReadonlyArray<TaskListItem>,
-  query: string,
-  excluded: Set<string>,
-): Array<{ task: TaskListItem; indices: ReadonlyArray<number> }> {
-  const scored: Array<{ task: TaskListItem; score: number; indices: ReadonlyArray<number> }> = []
-  for (const task of tasks) {
-    if (excluded.has(task.id)) continue
-    const match = fuzzyMatch(query, task.title)
-    if (match !== null) scored.push({ task, score: match.score, indices: match.indices })
-  }
-  scored.sort((a, b) => a.score - b.score || a.task.title.localeCompare(b.task.title))
-  return scored.slice(0, 8)
 }
 
 // The parent as a header-right "Subtask of <link>", retargetable in place. Clicking the pencil (or

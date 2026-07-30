@@ -23,7 +23,9 @@ function connect(): void {
     attempts = 0
     stopped = false
     connectionStore.set("live")
-    // Recover anything missed while disconnected: refetch everything currently on screen.
+    // Recover anything missed while disconnected: the config that spells every id, then everything
+    // currently on screen.
+    storeInvalidator.refreshConfig()
     storeInvalidator.refreshVisible()
   }
 

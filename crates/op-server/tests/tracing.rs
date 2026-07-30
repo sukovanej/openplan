@@ -60,9 +60,11 @@ fn state(broken: bool) -> (tempfile::TempDir, AppState) {
     if broken {
         std::fs::create_dir_all(root.join(".plan/tasks/00001-broken.md")).unwrap();
     }
-    let store = op_store::Store::open(root).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    (dir, AppState::new(repo, store))
+    let abbreviation = store.abbreviation();
+    (dir, AppState::new(repo, store, abbreviation))
 }
 
 async fn capture(filter: &str, method: &str, uri: &str, broken: bool) -> String {

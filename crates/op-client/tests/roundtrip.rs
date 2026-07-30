@@ -19,8 +19,10 @@ fn spawn_server(info: DaemonInfo) -> (SocketAddr, JoinHandle<()>) {
     let root = dir.path().to_path_buf();
     git(&root, &["init", "-q", "-b", "main"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
-    let store = op_store::Store::open(&root).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    let store = op_store::Store::discover(&root).unwrap();
     let repo = op_git::Repo::discover(&root).unwrap();
+    let abbreviation = store.abbreviation();
 
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = std::thread::spawn(move || {
@@ -30,7 +32,7 @@ fn spawn_server(info: DaemonInfo) -> (SocketAddr, JoinHandle<()>) {
         runtime.block_on(async move {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             tx.send(listener.local_addr().unwrap()).unwrap();
-            let state = AppState::new(repo, store).with_health(info);
+            let state = AppState::new(repo, store, abbreviation).with_health(info);
             op_server::serve(listener, state, std::future::pending::<()>())
                 .await
                 .unwrap();
@@ -92,7 +94,10 @@ fn crud_roundtrips_through_the_daemon() {
     let id = client
         .create_task(&base, "main", &new_task("Ship login"))
         .unwrap();
-    assert_eq!(id, "1", "the id the daemon allocates is the number alone");
+    assert_eq!(
+        id, "OPP-1",
+        "the daemon answers in the store's key spelling"
+    );
 
     let patched = client
         .patch_task(

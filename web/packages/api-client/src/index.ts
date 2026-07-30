@@ -39,6 +39,10 @@ export type MetadataErrorTag = "error"
 export const MetadataErrorTag = Schema.Literal("error")
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
+export type StoreConfig = { readonly abbreviation: string }
+export const StoreConfig = Schema.Struct({
+  abbreviation: Schema.String.check(Schema.isPattern(new RegExp("^[A-Z]{3}$"))),
+})
 export type Field_Option_String = null | string | FieldError
 export const Field_Option_String = Schema.Union(
   [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError],
@@ -191,6 +195,8 @@ export type GetBoard400 = ApiErrorBody
 export const GetBoard400 = ApiErrorBody
 export type GetBoard500 = ApiErrorBody
 export const GetBoard500 = ApiErrorBody
+export type GetConfig200 = StoreConfig
+export const GetConfig200 = StoreConfig
 export type ListTasks200 = ReadonlyArray<TaskListItem>
 export const ListTasks200 = Schema.Array(TaskListItem)
 export type ListTasks400 = ApiErrorBody
@@ -331,6 +337,15 @@ export const make = (
           }),
         ),
       ),
+    getConfig: (options) =>
+      HttpClientRequest.get(`/api/config`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetConfig200),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     listTasks: (options) =>
       HttpClientRequest.get(`/api/tasks`).pipe(
         withResponse(options?.config)(
@@ -420,6 +435,12 @@ export interface TasksClient {
     | SchemaError
     | TasksClientError<"GetBoard400", typeof GetBoard400.Type>
     | TasksClientError<"GetBoard500", typeof GetBoard500.Type>
+  >
+  readonly getConfig: <Config extends OperationConfig>(
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetConfig200.Type, Config>,
+    HttpClientError.HttpClientError | SchemaError
   >
   readonly listTasks: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,

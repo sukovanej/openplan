@@ -7,6 +7,7 @@ pub mod rank;
 
 const SLUG_MAX: usize = 32;
 const ID_DIGITS: usize = 5;
+const ABBREVIATION_LEN: usize = 3;
 
 // Task files are hand-written and diffed, so a stored timestamp carries whole seconds — the clock's
 // sub-second tail is noise no reader of a task file wants.
@@ -89,12 +90,90 @@ pub struct Frontmatter {
     pub extra: serde_yaml::Mapping,
 }
 
-// A task id is the whole number the daemon allocated (§3.1), in the one spelling that names a file:
-// decimal, no sign, no padding. `042`, `+7`, and a slug from before the scheme are not ids at all,
-// and no task can be reached by them.
+// The number the daemon allocated (§3.1), in the one spelling that names a file: decimal, no sign,
+// no padding. `042`, `+7`, and a slug from before the scheme name no task.
 pub fn parse_id(id: &str) -> Option<u64> {
     let number: u64 = id.parse().ok()?;
     (number.to_string() == id).then_some(number)
+}
+
+// The store's key prefix (§3.1). The number allocates a task and names its file; the key —
+// `<ABBR>-<number>` — is the id everywhere above the store, so one number reads as one key across
+// the API, the CLI, and the UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Abbreviation([u8; ABBREVIATION_LEN]);
+
+#[derive(Debug, thiserror::Error)]
+#[error("must be exactly three uppercase letters")]
+pub struct ParseAbbreviationError;
+
+impl std::str::FromStr for Abbreviation {
+    type Err = ParseAbbreviationError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let letters: [u8; ABBREVIATION_LEN] = text
+            .as_bytes()
+            .try_into()
+            .map_err(|_| ParseAbbreviationError)?;
+        letters
+            .iter()
+            .all(u8::is_ascii_uppercase)
+            .then_some(Self(letters))
+            .ok_or(ParseAbbreviationError)
+    }
+}
+
+impl std::fmt::Display for Abbreviation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Abbreviation {
+    pub fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.0).expect("uppercase ASCII letters are UTF-8")
+    }
+
+    pub fn format_key(&self, number: u64) -> String {
+        format!("{}-{number}", self.as_str())
+    }
+
+    // One spelling, no leniency: this store's prefix, then the number as `parse_id` spells it. A
+    // lowercased prefix, a padded number, and another store's prefix all name no task.
+    pub fn parse_key(&self, key: &str) -> Option<u64> {
+        parse_id(key.strip_prefix(self.as_str())?.strip_prefix('-')?)
+    }
+
+    // A reference may aim at a section (`OPP-42#Design`); these carry it across the two spellings.
+    pub fn format_ref(&self, reference: &str) -> Option<String> {
+        let number = parse_id(ref_target(reference))?;
+        Some(with_section(&self.format_key(number), reference))
+    }
+
+    pub fn parse_ref(&self, reference: &str) -> Option<String> {
+        let number = self.parse_key(ref_target(reference))?;
+        Some(with_section(&number.to_string(), reference))
+    }
+}
+
+fn with_section(target: &str, reference: &str) -> String {
+    match section_of(reference) {
+        Some(section) => format!("{target}#{section}"),
+        None => target.to_owned(),
+    }
+}
+
+// Text spelled like some store's key (`WEB-7`), whichever store that is — enough to tell a
+// reference written for another project from ordinary bracketed prose.
+pub fn is_key_shaped(text: &str) -> bool {
+    match text.split_once('-') {
+        Some((prefix, number)) => {
+            prefix.len() == ABBREVIATION_LEN
+                && prefix.bytes().all(|b| b.is_ascii_uppercase())
+                && parse_id(number).is_some()
+        }
+        None => false,
+    }
 }
 
 // Zero-padded so a directory listing reads in task order, then the title so a human browsing the
@@ -151,19 +230,61 @@ pub fn ref_target(reference: &str) -> &str {
         .map_or(reference, |(target, _)| target)
 }
 
-// The task a reference names, by the digits its file name starts with — the slug in between is a
-// snapshot of the title and carries no identity, so a retitled target still resolves. A bare number
-// is a spelling a human may reach for; it resolves too, and the next write puts it in file form.
-pub fn ref_id(reference: &str) -> Option<u64> {
-    let target = ref_target(reference);
-    match target
+fn file_stem(target: &str) -> Option<&str> {
+    target
         .rsplit('/')
         .next()
         .and_then(|name| name.strip_suffix(".md"))
-    {
+}
+
+// The task a frontmatter reference names, by the digits its file name starts with — the slug in
+// between is a snapshot of the title and carries no identity, so a retitled target still resolves.
+// The bare number is the spelling the model carries in memory, so it resolves too.
+pub fn ref_id(reference: &str) -> Option<u64> {
+    let target = ref_target(reference);
+    match file_stem(target) {
         Some(stem) => file_id(stem),
         None => parse_id(target),
     }
+}
+
+// The task a `[[…]]` in a body names, in the spellings a body may carry: the target's file, or this
+// store's key. A bare number is not one of them — above the store the key is the whole id (§3.1).
+pub fn body_ref_id(abbreviation: Abbreviation, reference: &str) -> Option<u64> {
+    let target = ref_target(reference);
+    match file_stem(target) {
+        Some(stem) => file_id(stem),
+        None => abbreviation.parse_key(target),
+    }
+}
+
+// Every `[[…]]` in a body that a renderer would treat as a reference, as the range it occupies and
+// its trimmed inner text. Inner text carrying a bracket or a newline is bracketed prose, and a span
+// inside code or an existing link is quoted source — a body documenting `[[42]]` in a code span says
+// what the spelling looks like rather than naming task 42, so a rewrite must leave it alone.
+pub fn body_ref_spans(body: &str) -> Vec<(std::ops::Range<usize>, &str)> {
+    let opaque = op_md::opaque_ranges(body);
+    let quoted = |span: &std::ops::Range<usize>| {
+        opaque
+            .iter()
+            .any(|r| r.start < span.end && span.start < r.end)
+    };
+    let mut spans = Vec::new();
+    let mut pos = 0;
+    while let Some(open) = body[pos..].find("[[") {
+        let start = pos + open;
+        let inner_at = start + 2;
+        let Some(close) = body[inner_at..].find("]]") else {
+            break;
+        };
+        let inner = &body[inner_at..inner_at + close];
+        pos = inner_at + close + 2;
+        let span = start..pos;
+        if !inner.contains(['[', ']', '\n']) && !quoted(&span) {
+            spans.push((span, inner.trim()));
+        }
+    }
+    spans
 }
 
 fn section_of(reference: &str) -> Option<&str> {
@@ -192,7 +313,7 @@ fn parent_of(value: &serde_yaml::Value) -> Option<String> {
     }
 }
 
-const REFERENCE_EXPECTED: &str = "expected a task file, like ./00042-write-the-parser.md";
+pub const REFERENCE_EXPECTED: &str = "expected a task file, like ./00042-write-the-parser.md";
 
 fn deserialize_parent<'de, D: serde::Deserializer<'de>>(
     deserializer: D,

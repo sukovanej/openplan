@@ -11,7 +11,9 @@ repository.workspace = true
 op-task.workspace = true
 op-md.workspace = true
 fs2.workspace = true
+serde.workspace = true
 thiserror.workspace = true
+toml.workspace = true
 getrandom.workspace = true
 
 [dev-dependencies]

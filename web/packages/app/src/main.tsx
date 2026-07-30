@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom"
 
 import { App } from "./App"
 import { startRealtime } from "./lib/realtime"
+import { loadAbbreviation } from "./lib/store"
 import { DetailRoute } from "./routes/detail"
 import { ListRoute } from "./routes/list"
 
@@ -23,6 +24,7 @@ const router = createBrowserRouter([
 const root = document.getElementById("root")
 if (root === null) throw new Error("missing #root element")
 
+loadAbbreviation()
 startRealtime()
 
 createRoot(root).render(
