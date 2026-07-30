@@ -112,15 +112,17 @@ function HeaderRow({ status }: { status: Status | undefined }) {
 }
 
 // The current row loses its own bottom border — the outline draws that edge — and gets the outline
-// as an absolutely-positioned overlay, offset up 1px to sit on the separator above, so neither
-// participates in flow and the row keeps its height whether or not it is current.
+// as an absolutely-positioned overlay, so neither participates in flow and the row keeps its height
+// whether or not it is current. The overlay is positioned against the row's padding box, which stops
+// 1px short of each separator, so both offsets are -1px: the top edge lands on the separator above,
+// the bottom edge on the row's own, exactly where the neighbouring rows draw theirs.
 const CURRENT_ROW =
-  "border-transparent bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:bottom-px after:border after:border-blue-600/40 after:content-['']"
+  "border-transparent bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:-bottom-px after:border after:border-blue-600/40 after:content-['']"
 
 // The same treatment under the pointer, spelled out because Tailwind only emits classes it can read
 // literally in the source.
 const HOVERED_ROW =
-  "hover:border-transparent hover:bg-muted/30 hover:after:pointer-events-none hover:after:absolute hover:after:inset-x-0 hover:after:-top-px hover:after:bottom-px hover:after:border hover:after:border-blue-600/40 hover:after:content-['']"
+  "hover:border-transparent hover:bg-muted/30 hover:after:pointer-events-none hover:after:absolute hover:after:inset-x-0 hover:after:-top-px hover:after:-bottom-px hover:after:border hover:after:border-blue-600/40 hover:after:content-['']"
 
 function TaskRow({
   ref,
