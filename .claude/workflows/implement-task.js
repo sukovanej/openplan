@@ -112,11 +112,15 @@ async function reviewAndVerify(ctx, stage, round, seen) {
   const perDimension = await pipeline(
     dimensions,
     d =>
-      run(reviewStep(ctx, d, stage, round)).then(r =>
-        ((r && r.findings) || [])
+      run(reviewStep(ctx, d, stage, round)).then(r => {
+        const reported = (r && r.findings) || []
+        if (reported.length > MAX_FINDINGS) {
+          log(`${stage.short} round ${round}: ${d.key} reported ${reported.length}, keeping the first ${MAX_FINDINGS}`)
+        }
+        return reported
           .slice(0, MAX_FINDINGS)
-          .map(f => ({ ...f, dimension: d.key, angles: d.angles, question: d.question })),
-      ),
+          .map(f => ({ ...f, dimension: d.key, angles: d.angles, question: d.question }))
+      }),
     found => {
       const fresh = found.filter(f => !seen.has(findingKey(f)))
       fresh.forEach(f => seen.add(findingKey(f)))
@@ -124,10 +128,10 @@ async function reviewAndVerify(ctx, stage, round, seen) {
       return verifyDimension(ctx, stage, fresh).then(confirmed => ({ fresh: fresh.length, confirmed }))
     },
   )
-  const rounds = perDimension.filter(Boolean)
+  const perDimensionResults = perDimension.filter(Boolean)
   return {
-    fresh: rounds.reduce((n, r) => n + r.fresh, 0),
-    confirmed: rounds.flatMap(r => r.confirmed),
+    fresh: perDimensionResults.reduce((n, r) => n + r.fresh, 0),
+    confirmed: perDimensionResults.flatMap(r => r.confirmed),
   }
 }
 
@@ -136,7 +140,9 @@ function verifyDimension(ctx, stage, findings) {
   return parallel(angles.map(angle => () => run(verifyStep(ctx, findings, angle, stage)))).then(votes => {
     const keeps = findings.map(() => 0)
     for (const vote of votes.filter(Boolean)) {
-      for (const v of vote.verdicts || []) if (v.keep && keeps[v.index] !== undefined) keeps[v.index] += 1
+      // One agent gets one vote per finding however many verdicts it repeats for that index.
+      const kept = new Set(((vote && vote.verdicts) || []).filter(v => v.keep).map(v => v.index))
+      for (const i of kept) if (keeps[i] !== undefined) keeps[i] += 1
     }
     return findings.filter((_, i) => keeps[i] > angles.length / 2)
   })
@@ -552,8 +558,10 @@ Do NOT run \`mise run rebuild\` — it restarts the user's daemon, a side effect
 scope. Build the SPA directly instead.
 
 Every test from the test-first stage must now pass, and no \`todo!()\` may remain on a path the task
-requires. A still-failing test means the implementation is incomplete: report it against the
-production file that should satisfy it, never against the test.
+requires. A still-*failing* test means the implementation is incomplete: report it against the
+production file that should satisfy it, never against the test. A compilation error is the one
+exception — \`cargo test\` builds the workspace, so attribute it to whichever file does not compile,
+test file included.
 
 Fix nothing. Report each failure with its file and the compiler or test output verbatim. passed=true
 only if every command above exited zero.`,
