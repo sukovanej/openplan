@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 created: 2026-07-30T10:51:30Z
 ---
 # Fix the implement-task workflow: meta literal and args parsing
