@@ -178,6 +178,10 @@ function TaskRow({
       >
         <StatusField metadata={task.metadata} />
       </div>
+      {/* Wide enough for four digits, so a shorter id does not pull the titles below it out of line. */}
+      <div role="gridcell" className="text-muted-foreground min-w-14 shrink-0 py-3 pl-3 text-xs tabular-nums">
+        {task.id}
+      </div>
       <div className="min-w-0 flex-1 py-3 pl-3" role="gridcell">
         <Link
           to={`/task/${task.id}`}
@@ -191,9 +195,10 @@ function TaskRow({
             <MetaItem icon={PARENT_ICON} title={`Subtask of ${parent_title}`}>
               <Link
                 to={`/task/${parent}`}
-                className="text-foreground/90 relative z-10 max-w-[15rem] truncate hover:underline"
+                className="text-foreground/90 group relative z-10 flex min-w-0 items-center gap-1.5"
               >
-                {parent_title}
+                <span className="text-muted-foreground shrink-0 tabular-nums">{parent}</span>
+                <span className="max-w-[15rem] truncate group-hover:underline">{parent_title}</span>
               </Link>
             </MetaItem>
           )}

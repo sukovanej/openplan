@@ -1,5 +1,5 @@
 import { CircleDashed, Square, SquareCheckBig } from "lucide-react"
-import { createContext, type ReactNode, useContext, useMemo } from "react"
+import { createContext, useContext, useMemo } from "react"
 import Markdown, { type Components } from "react-markdown"
 import { Link } from "react-router-dom"
 import remarkGfm from "remark-gfm"
@@ -37,12 +37,14 @@ const proseClass = `prose prose-base prose-neutral dark:prose-invert max-w-none 
 const linkClass =
   "font-medium text-foreground underline decoration-1 decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
 
+// `align-middle` centres the chip on the surrounding font's x-height, which leaves it sitting ~1.5px
+// below the optical middle of the line; the nudge takes that back without disturbing the line box.
 const chipClass =
-  "not-prose mx-0.5 inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle text-sm font-medium leading-none no-underline transition-colors"
+  "not-prose relative -top-px mx-0.5 inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle text-sm font-medium leading-none no-underline transition-colors"
 
 const TASK_ROUTE = "/task/"
 
-function TaskRef({ href, fallback }: { href: string; fallback: ReactNode }) {
+function TaskRef({ href }: { href: string }) {
   const refs = useContext(RefsContext)
   const id = href.slice(TASK_ROUTE.length).split("#")[0]
   const task = refs.get(id)
@@ -61,7 +63,9 @@ function TaskRef({ href, fallback }: { href: string; fallback: ReactNode }) {
       ) : (
         <StatusChip status={task.status} className="size-4 shrink-0" />
       )}
-      <span className="min-w-0 truncate">{task?.title ?? fallback}</span>
+      <span className="text-muted-foreground shrink-0 tabular-nums">{id}</span>
+      {/* A reference the store cannot resolve has no title to show; its key is all there is to name it. */}
+      {task !== undefined && <span className="min-w-0 truncate">{task.title}</span>}
     </Link>
   )
 }
@@ -69,7 +73,7 @@ function TaskRef({ href, fallback }: { href: string; fallback: ReactNode }) {
 const components: Components = {
   a({ href, children }) {
     if (href !== undefined && href.startsWith(TASK_ROUTE)) {
-      return <TaskRef href={href} fallback={children} />
+      return <TaskRef href={href} />
     }
     if (href !== undefined && href.startsWith("/")) {
       return (
