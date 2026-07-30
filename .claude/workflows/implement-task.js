@@ -69,18 +69,14 @@ async function refineLoop(ctx, stage, initialWork, gateFor, maxRounds) {
       break
     }
 
-    const found = await reviewDiff(ctx, stage, round)
-    const fresh = found.filter(f => !seen.has(findingKey(f)))
-    fresh.forEach(f => seen.add(findingKey(f)))
-    log(`${stage.short} round ${round}: ${found.length} findings, ${fresh.length} new`)
-    if (!fresh.length) {
+    const { fresh, confirmed } = await reviewAndVerify(ctx, stage, round, seen)
+    log(`${stage.short} round ${round}: ${fresh} new finding(s), ${confirmed.length} survived verification`)
+    if (!fresh) {
       converged = true
       break
     }
 
-    const confirmed = await verifyAll(ctx, stage, fresh)
-    log(`${stage.short} round ${round}: ${confirmed.length}/${fresh.length} survived verification`)
-    history.push({ stage: stage.short, round, found: fresh.length, confirmed: confirmed.length })
+    history.push({ stage: stage.short, round, found: fresh, confirmed: confirmed.length })
     if (!confirmed.length) {
       converged = true
       break
@@ -111,33 +107,39 @@ async function applyUntilGate(ctx, initialWork, stage, gateFor, round) {
   return gate
 }
 
-async function reviewDiff(ctx, stage, round) {
-  phase(stage.phases.review)
+async function reviewAndVerify(ctx, stage, round, seen) {
   const dimensions = round === 1 ? stage.dimensions : stage.dimensions.filter(d => d.rerun)
-  const perDimension = await parallel(
-    dimensions.map(d => () =>
+  const perDimension = await pipeline(
+    dimensions,
+    d =>
       run(reviewStep(ctx, d, stage, round)).then(r =>
-        (r.findings || []).map(f => ({ ...f, dimension: d.key, angles: d.angles, question: d.question })),
+        ((r && r.findings) || [])
+          .slice(0, MAX_FINDINGS)
+          .map(f => ({ ...f, dimension: d.key, angles: d.angles, question: d.question })),
       ),
-    ),
+    found => {
+      const fresh = found.filter(f => !seen.has(findingKey(f)))
+      fresh.forEach(f => seen.add(findingKey(f)))
+      if (!fresh.length) return { fresh: 0, confirmed: [] }
+      return verifyDimension(ctx, stage, fresh).then(confirmed => ({ fresh: fresh.length, confirmed }))
+    },
   )
-  return perDimension.filter(Boolean).flat()
+  const rounds = perDimension.filter(Boolean)
+  return {
+    fresh: rounds.reduce((n, r) => n + r.fresh, 0),
+    confirmed: rounds.flatMap(r => r.confirmed),
+  }
 }
 
-async function verifyAll(ctx, stage, findings) {
-  phase(stage.phases.verify)
-  const verified = await parallel(
-    findings.map(f => () =>
-      parallel(f.angles.map(angle => () => run(verifyStep(ctx, f, angle, stage)))).then(votes => ({
-        finding: f,
-        keeps: votes.filter(Boolean).filter(v => v.keep).length,
-      })),
-    ),
-  )
-  return verified
-    .filter(Boolean)
-    .filter(v => v.keeps > v.finding.angles.length / 2)
-    .map(v => v.finding)
+function verifyDimension(ctx, stage, findings) {
+  const { angles } = findings[0]
+  return parallel(angles.map(angle => () => run(verifyStep(ctx, findings, angle, stage)))).then(votes => {
+    const keeps = findings.map(() => 0)
+    for (const vote of votes.filter(Boolean)) {
+      for (const v of vote.verdicts || []) if (v.keep && keeps[v.index] !== undefined) keeps[v.index] += 1
+    }
+    return findings.filter((_, i) => keeps[i] > angles.length / 2)
+  })
 }
 
 async function openPullRequest(ctx, tests, code) {
@@ -231,8 +233,9 @@ function findingsToWork(findings) {
   }))
 }
 
-const CHECKS = 'cargo build && cargo test && cargo fmt --check && cargo clippy -- -D warnings'
-const GATE_ATTEMPTS = 3
+const CHECKS = 'cargo test && cargo fmt --check && cargo clippy -- -D warnings'
+const GATE_ATTEMPTS = 2
+const MAX_FINDINGS = 6
 
 const str = { type: 'string' }
 const bool = { type: 'boolean' }
@@ -261,16 +264,20 @@ const SCHEMA = {
     failures: list(rec(['file', 'error'], { file: str, error: str })),
   }),
   findings: rec(['findings'], {
-    findings: list(
-      rec(['file', 'line', 'summary', 'failureScenario'], {
+    findings: {
+      type: 'array',
+      maxItems: MAX_FINDINGS,
+      items: rec(['file', 'line', 'summary', 'failureScenario'], {
         file: str,
         line: num,
         summary: str,
         failureScenario: str,
       }),
-    ),
+    },
   }),
-  verdict: rec(['keep', 'reasoning'], { keep: bool, reasoning: str }),
+  verdicts: rec(['verdicts'], {
+    verdicts: list(rec(['index', 'keep', 'reasoning'], { index: num, keep: bool, reasoning: str })),
+  }),
   pr: rec(['url'], { url: str, sha: str }),
 }
 
@@ -571,25 +578,37 @@ Verify criteria:
 ${ctx.verifyCriteria.map(c => `- ${c}`).join('\n')}
 
 Read the actual code before reporting anything. Report only findings you can point at with
-file:line. An empty findings array is a valid and useful answer.`,
+file:line. An empty findings array is a valid and useful answer.
+
+Report at most ${MAX_FINDINGS}, most severe first. Every one you report costs a verification pass, so
+spend that budget on what would actually hurt — not on the long tail you are merely unsure about.`,
   }
 }
 
-function verifyStep(ctx, finding, angle, stage) {
+function verifyStep(ctx, findings, angle, stage) {
+  const { dimension, question, angles } = findings[0]
   return {
-    label: `verify:${angle}:${finding.file}`,
+    label: `verify:${angle}:${dimension}`,
     phase: stage.phases.verify,
-    schema: SCHEMA.verdict,
-    effort: finding.angles.length > 1 ? 'high' : 'low',
+    schema: SCHEMA.verdicts,
+    effort: angles.length > 1 ? 'high' : 'medium',
     prompt: `${agentRules(ctx)}
 
-Judge this ${finding.dimension} finding through the "${angle}" lens:
+Judge these ${findings.length} ${dimension} finding(s) on branch ${ctx.branch} through the "${angle}"
+lens. They sit in one diff: read the code once, then rule on every one of them.
 
-  ${finding.summary}
-  at ${finding.file}:${finding.line}
-  claimed failure: ${finding.failureScenario}
+${findings
+  .map(
+    (f, i) => `[${i}] ${f.summary}
+    at ${f.file}:${f.line}
+    claimed failure: ${f.failureScenario}`,
+  )
+  .join('\n\n')}
 
-${finding.question}`,
+${question}
+
+Return one verdict per finding, carrying the index shown above. Judge each on its own merits — a weak
+neighbour is no reason to drop a strong finding, or the reverse.`,
   }
 }
 

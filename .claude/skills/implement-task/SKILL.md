@@ -23,8 +23,9 @@ paths resolve to a nested worktree and op-server tests 404.
 the workflow treats as the acceptance criteria and turns into the first round of tests. A
 task without one will halt at `plan-mismatch`.
 
-**Expect 18–26 agents.** Over the default workflow size cap; the run is throttled, not
-broken, if the cap is left at medium.
+**Expect 30–45 agents per round.** Over the default workflow size cap; the run is throttled,
+not broken, if the cap is left at medium. Verification is batched one agent per
+review-dimension × angle, so the count does not grow with the number of findings.
 
 ## What it does to the task
 
