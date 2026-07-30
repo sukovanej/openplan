@@ -426,6 +426,8 @@ op serve [--port N] [--open]                   # launches realtime web UI
 - **Branch-aware, task-centric primary view**: one row per logical task with per-branch status
   badges (`done@main`, `in_progress@feat/auth` …), branches grouped by identical version,
   divergent branches highlighted, and live presence dots for active worktrees.
+- **Newest first within a status group**: a task with no `rank` sorts by `updated`, most recently
+  changed at the top; an explicit `rank` (§3.2) still places its task.
 - **Branch/worktree swimlane view** as the secondary lens ("show me this worktree's board").
 - Interactions: status change, drag-to-reorder (`rank`), inline section edit, create task/doc,
   claim/release (create is task-only). **Writes target the current/selected worktree's branch only** (reads global,

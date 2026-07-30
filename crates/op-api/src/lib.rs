@@ -619,14 +619,18 @@ pub struct TaskTree {
     pub children: Vec<TaskTree>,
 }
 
-// Siblings sort by `rank` ascending; a task without a rank sorts last, ties broken by id so the
-// order is stable across rebuilds (§4).
-fn rank_cmp(ra: Option<&str>, ia: &str, rb: Option<&str>, ib: &str) -> std::cmp::Ordering {
+// A `rank` is an order somebody set on purpose (§3.2), so ranked tasks hold the top of the list
+// and `unranked` decides among the rest.
+fn rank_cmp(
+    ra: Option<&str>,
+    rb: Option<&str>,
+    unranked: impl Fn() -> std::cmp::Ordering,
+) -> std::cmp::Ordering {
     match (ra, rb) {
-        (Some(x), Some(y)) => x.cmp(y).then_with(|| id_cmp(ia, ib)),
+        (Some(x), Some(y)) => x.cmp(y).then_with(unranked),
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => id_cmp(ia, ib),
+        (None, None) => unranked(),
     }
 }
 
@@ -643,12 +647,36 @@ fn key_number(key: &str) -> Option<u64> {
     op_task::parse_id(key.rsplit_once('-')?.1)
 }
 
+// Rank ties break by id so the order is stable across rebuilds (§4).
 pub fn sibling_cmp(a: &TaskSummary, b: &TaskSummary) -> std::cmp::Ordering {
-    rank_cmp(a.metadata.rank(), &a.id, b.metadata.rank(), &b.id)
+    rank_cmp(a.metadata.rank(), b.metadata.rank(), || {
+        id_cmp(&a.id, &b.id)
+    })
 }
 
 pub fn list_item_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
-    rank_cmp(a.metadata.rank(), &a.id, b.metadata.rank(), &b.id)
+    rank_cmp(a.metadata.rank(), b.metadata.rank(), || {
+        id_cmp(&a.id, &b.id)
+    })
+}
+
+// The board leads with the work touched most recently, so what someone just changed is at hand
+// without scrolling for it.
+pub fn board_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
+    rank_cmp(a.metadata.rank(), b.metadata.rank(), || {
+        newest_first(a.updated.as_value(), b.updated.as_value()).then_with(|| id_cmp(&a.id, &b.id))
+    })
+}
+
+// An `updated` that could not be derived places the task nowhere on the scale, so it sorts after
+// every dated one rather than reading as the oldest.
+fn newest_first(a: Option<&Rfc3339>, b: Option<&Rfc3339>) -> std::cmp::Ordering {
+    match (a, b) {
+        (Some(x), Some(y)) => y.0.cmp(&x.0),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    }
 }
 
 impl TaskTree {
@@ -792,9 +820,9 @@ impl Board {
                     _ => roots.push(member),
                 }
             }
-            roots.sort_by(|a, b| list_item_cmp(a, b));
+            roots.sort_by(|a, b| board_cmp(a, b));
             for kids in children_of.values_mut() {
-                kids.sort_by(|a, b| list_item_cmp(a, b));
+                kids.sort_by(|a, b| board_cmp(a, b));
             }
 
             let mut rows = Vec::new();

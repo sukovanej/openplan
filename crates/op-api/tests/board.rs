@@ -25,6 +25,13 @@ fn with_metadata(id: &str, metadata: Metadata) -> TaskListItem {
     }
 }
 
+fn dated(id: &str, status: Status, parent: Option<&str>, at: &str) -> TaskListItem {
+    TaskListItem {
+        updated: Field::Value(op_api::Rfc3339(at.parse().unwrap())),
+        ..item(id, status, parent, None)
+    }
+}
+
 fn row_ids(board: &Board, status: Status) -> Vec<&str> {
     board
         .groups
@@ -127,6 +134,50 @@ fn siblings_order_by_rank_then_unranked_by_id() {
         row_ids(&board, Status::Todo),
         vec!["root", "b", "a", "y", "z"]
     );
+}
+
+#[test]
+fn unranked_rows_lead_with_the_most_recently_updated() {
+    let board = Board::build(&[
+        dated("old", Status::Todo, None, "2026-01-01T00:00:00Z"),
+        dated("newest", Status::Todo, None, "2026-03-01T00:00:00Z"),
+        dated("middle", Status::Todo, None, "2026-02-01T00:00:00Z"),
+    ]);
+    assert_eq!(
+        row_ids(&board, Status::Todo),
+        vec!["newest", "middle", "old"]
+    );
+}
+
+#[test]
+fn nested_children_lead_with_the_most_recently_updated() {
+    let board = Board::build(&[
+        dated("root", Status::Todo, None, "2026-01-01T00:00:00Z"),
+        dated("old", Status::Todo, Some("root"), "2026-01-02T00:00:00Z"),
+        dated("new", Status::Todo, Some("root"), "2026-02-02T00:00:00Z"),
+    ]);
+    assert_eq!(row_ids(&board, Status::Todo), vec!["root", "new", "old"]);
+}
+
+#[test]
+fn an_undated_task_sorts_after_every_dated_one() {
+    let board = Board::build(&[
+        item("undated", Status::Todo, None, None),
+        dated("ancient", Status::Todo, None, "2020-01-01T00:00:00Z"),
+    ]);
+    assert_eq!(row_ids(&board, Status::Todo), vec!["ancient", "undated"]);
+}
+
+#[test]
+fn a_rank_outranks_a_newer_update() {
+    let board = Board::build(&[
+        TaskListItem {
+            metadata: fields(Field::Value(Status::Todo), None, Some("m")),
+            ..dated("ranked", Status::Todo, None, "2020-01-01T00:00:00Z")
+        },
+        dated("fresh", Status::Todo, None, "2026-06-01T00:00:00Z"),
+    ]);
+    assert_eq!(row_ids(&board, Status::Todo), vec!["ranked", "fresh"]);
 }
 
 #[test]
