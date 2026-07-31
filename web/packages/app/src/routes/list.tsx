@@ -12,6 +12,7 @@ import { errorText } from "../lib/format"
 import { createdOf, parentOf, problems } from "../lib/metadata"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { boardQuery, useQuery } from "../lib/store"
+import { treeGuides, type RowGuides } from "../lib/tree-guides"
 import { cn } from "../lib/utils"
 
 export function ListRoute() {
@@ -45,6 +46,10 @@ function TaskGrid({ board }: { board: Board }) {
     activeRow.current?.scrollIntoView({ block: "nearest" })
   }, [index])
 
+  // A task and its subtasks part ways when their statuses differ, so the tree the guides draw is the
+  // one visible inside a group, not the whole parentage.
+  const guides = useMemo(() => board.groups.map((group) => treeGuides(group.rows)), [board])
+
   let base = 0
   return (
     <div
@@ -72,6 +77,7 @@ function TaskGrid({ board }: { board: Board }) {
                     key={row.task.id}
                     ref={i === index ? activeRow : undefined}
                     row={row}
+                    guides={guides[groupIndex][j]}
                     active={i === index}
                     // The pointer only marks the current row while the keyboard cursor is idle, so
                     // the two never claim it at once.
@@ -111,6 +117,37 @@ function HeaderRow({ status }: { status: Status | undefined }) {
   )
 }
 
+// Tree lines run down the middle of the status icon they hang from — half an icon in from the indent
+// that column occupies — and turn in at the row's own middle, where the icon they point at sits.
+// Guides stretch to the row's content box, so each segment overhangs it by the row's padding to meet
+// the segment in the row above or below: 12px up, and 12px plus the separator down.
+const GUIDE_ROW_TOP = "-top-3"
+const GUIDE_ROW_BOTTOM = "-bottom-[13px]"
+const GUIDE_TO_MIDDLE = "h-[calc(50%+0.75rem)]"
+
+function Guide({ className }: { className: string }) {
+  return <span aria-hidden className={cn("border-muted-foreground/30 absolute left-[0.625rem]", className)} />
+}
+
+function TreeGuides({ columns }: { columns: ReadonlyArray<boolean> }) {
+  return (
+    <div aria-hidden className="flex shrink-0 self-stretch pl-4">
+      {columns.map((continues, column) =>
+        column === columns.length - 1 ? (
+          <div key={column} className="relative w-6">
+            <Guide className={cn(GUIDE_ROW_TOP, GUIDE_TO_MIDDLE, "right-0 border-b border-l")} />
+            {continues && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-1/2 border-l")} />}
+          </div>
+        ) : (
+          <div key={column} className="relative w-6">
+            {continues && <Guide className={cn(GUIDE_ROW_TOP, GUIDE_ROW_BOTTOM, "border-l")} />}
+          </div>
+        ),
+      )}
+    </div>
+  )
+}
+
 // The current row loses its own bottom border — the outline draws that edge — and gets the outline
 // as an absolutely-positioned overlay, so neither participates in flow and the row keeps its height
 // whether or not it is current. The overlay is positioned against the row's padding box, which stops
@@ -127,6 +164,7 @@ const HOVERED_ROW =
 function TaskRow({
   ref,
   row,
+  guides,
   active,
   hoverable,
   tableLast,
@@ -134,12 +172,13 @@ function TaskRow({
 }: {
   ref?: Ref<HTMLDivElement>
   row: BoardRow
+  guides: RowGuides
   active: boolean
   hoverable: boolean
   tableLast: boolean
   onFocus: () => void
 }) {
-  const { task, depth, parent_title } = row
+  const { task, parent_title } = row
   const parent = parentOf(task.metadata)
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
@@ -165,30 +204,30 @@ function TaskRow({
       }}
       onMouseLeave={() => hoveredRow.leave(task.id)}
       className={cn(
-        "relative flex cursor-pointer items-center border-b transition-colors",
+        // Wrapping lets the branches drop to a line of their own once the title has no room left
+        // beside them, rather than the two columns overrunning each other.
+        "relative flex flex-wrap cursor-pointer items-start gap-y-2 border-b py-3 transition-colors",
         // The last row drops its divider; it has no row below to separate it from.
         tableLast && "border-transparent",
         active && CURRENT_ROW,
         hoverable && HOVERED_ROW,
       )}
     >
-      <div
-        role="gridcell"
-        className="shrink-0 py-3"
-        // Indent nested tasks so the parent→child relationship reads at a glance.
-        style={{ paddingLeft: `${1 + depth * 1.5}rem` }}
-      >
+      <TreeGuides columns={guides.columns} />
+      <div role="gridcell" className="relative flex shrink-0 items-center self-stretch">
         <StatusField metadata={task.metadata} />
+        {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
       </div>
-      {/* Wide enough for four digits, so a shorter id does not pull the titles below it out of line. */}
-      <div role="gridcell" className="text-muted-foreground min-w-14 shrink-0 py-3 pl-3 text-xs tabular-nums">
+      <div role="gridcell" className="text-muted-foreground shrink-0 self-center pl-3 text-xs tabular-nums">
         {task.id}
       </div>
-      <div className="min-w-0 flex-1 py-3 pl-3" role="gridcell">
+      <div className="min-w-0 grow basis-56 pr-4 pl-3 sm:pr-0" role="gridcell">
         <Link
           to={`/task/${task.id}`}
           tabIndex={-1}
-          className="text-foreground/90 block truncate text-sm font-normal after:absolute after:inset-0"
+          // Narrow enough and the title takes the second line it needs; a wide row has the room to
+          // keep every title on one.
+          className="text-foreground/90 block line-clamp-2 text-sm font-normal after:absolute after:inset-0 sm:line-clamp-none sm:truncate"
         >
           {task.title}
         </Link>
@@ -206,9 +245,12 @@ function TaskRow({
           )}
           <TaskTimes created={created} updated={task.updated} problems={broken} />
         </MetaLine>
+        {task.branches.length > 0 && (
+          <BranchBadges branches={task.branches} headline={task.headline} className="mt-2 sm:hidden" />
+        )}
       </div>
-      <div role="gridcell" className="shrink-0 py-3 pr-4 pl-3">
-        <BranchBadges branches={task.branches} headline={task.headline} />
+      <div role="gridcell" className="ml-auto hidden shrink-0 self-center pr-4 pl-3 sm:block">
+        <BranchBadges branches={task.branches} headline={task.headline} className="justify-end" />
       </div>
     </div>
   )

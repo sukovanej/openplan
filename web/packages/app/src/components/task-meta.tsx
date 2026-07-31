@@ -9,14 +9,13 @@ import { TimeAgo } from "./time-ago"
 
 export const PARENT_ICON = CornerLeftUp
 
-// Separators come from the items themselves, so any subset of them can be absent without leaving a
-// stray dot behind.
+// Items wrap rather than overrun each other once the line runs out of room, and each carries its own
+// icon, so spacing alone separates them — a dot would strand itself at the head of a wrapped line.
 export function MetaLine({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div
       className={cn(
-        "text-muted-foreground flex min-w-0 items-center text-xs",
-        "[&>*+*]:before:mx-1.5 [&>*+*]:before:text-muted-foreground/50 [&>*+*]:before:content-['·']",
+        "text-muted-foreground flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 overflow-hidden text-xs",
         className,
       )}
     >
@@ -25,8 +24,6 @@ export function MetaLine({ className, children }: { className?: string; children
   )
 }
 
-// The icon keeps its distance with a margin rather than the item's flex `gap`: the separator is a
-// pseudo-element inside the item that follows, and a gap would land on one of its sides only.
 export function MetaItem({
   icon: Icon,
   title,
@@ -62,12 +59,12 @@ export function TaskTimes({
   return (
     <>
       {created !== undefined && (
-        <MetaItem icon={CalendarPlus} className="whitespace-nowrap">
+        <MetaItem icon={CalendarPlus} className="shrink-0 whitespace-nowrap">
           <TimeAgo iso={created} label="Created" />
         </MetaItem>
       )}
       {updatedAt !== undefined && (
-        <MetaItem icon={History} className="whitespace-nowrap">
+        <MetaItem icon={History} className="shrink-0 whitespace-nowrap">
           <TimeAgo iso={updatedAt} label="Updated" />
         </MetaItem>
       )}
