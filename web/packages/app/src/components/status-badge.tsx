@@ -1,7 +1,7 @@
 import { CircleAlert, CircleCheck, CircleDot, CircleEllipsis, CircleX, Clock, Eye, type LucideIcon } from "lucide-react"
 
 import type { Field_Status, Metadata, Status } from "@open-planner/api-client"
-import { cn } from "@open-planner/ui"
+import { cn, Tooltip } from "@open-planner/ui"
 
 import { fieldValue, statusOf } from "../lib/metadata"
 
@@ -50,11 +50,13 @@ export const statusLabel = (status: Status): string => styles[status].label
 
 export const statusHeaderClass = (status: Status): string => styles[status].palette.header
 
+const UNREADABLE = "Status could not be read"
+
 // A single status field, for a chip that has one but no surrounding metadata.
 export function StatusChip({ status, className }: { status: Field_Status; className?: string }) {
   const value = fieldValue(status)
   return value === undefined ? (
-    <CircleAlert className={cn("size-5 text-red-500", className)} aria-label="Status could not be read" />
+    <UnreadableStatus className={className} />
   ) : (
     <StatusIcon status={value} className={className} />
   )
@@ -62,7 +64,11 @@ export function StatusChip({ status, className }: { status: Field_Status; classN
 
 export function StatusIcon({ status, className }: { status: Status; className?: string }) {
   const { icon: Icon, label, palette } = styles[status]
-  return <Icon className={cn("size-5", palette.icon, className)} aria-label={label} />
+  return (
+    <Tooltip content={label}>
+      <Icon className={cn("size-5", palette.icon, className)} aria-label={label} />
+    </Tooltip>
+  )
 }
 
 // A status that could not be read gets its own mark, so a broken file never wears a status it does
@@ -71,8 +77,16 @@ export function StatusIcon({ status, className }: { status: Status; className?: 
 export function StatusField({ metadata, className }: { metadata: Metadata; className?: string }) {
   const value = statusOf(metadata)
   return value === undefined ? (
-    <CircleAlert className={cn("size-5 text-red-500", className)} aria-label="Status could not be read" />
+    <UnreadableStatus className={className} />
   ) : (
     <StatusIcon status={value} className={className} />
+  )
+}
+
+function UnreadableStatus({ className }: { className?: string }) {
+  return (
+    <Tooltip content={UNREADABLE}>
+      <CircleAlert className={cn("size-5 text-red-500", className)} aria-label={UNREADABLE} />
+    </Tooltip>
   )
 }

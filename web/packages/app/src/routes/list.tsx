@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, type Ref } from "react"
-import { Link } from "react-router-dom"
+import { useEffect, useMemo, useRef, type MouseEvent, type Ref } from "react"
+import { Link, useNavigate } from "react-router-dom"
 
 import type { Board, BoardRow, Status } from "@open-planner/api-client"
 import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, Row } from "@open-planner/ui"
@@ -169,6 +169,18 @@ function TaskRow({
   const parent = parentOf(task.metadata)
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
+  const navigate = useNavigate()
+
+  // The row opens its task from its own click rather than from a link stretched over it: an overlay
+  // that size takes every hover in the row with it, leaving the tooltips underneath unreachable. The
+  // links the row does contain answer their own clicks, and a modified click is the browser's.
+  const open = (event: MouseEvent<HTMLDivElement>) => {
+    onFocus()
+    const link = event.target instanceof Element && event.target.closest("a") !== null
+    if (link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    navigate(`/task/${task.id}`)
+  }
+
   return (
     <Row
       ref={ref}
@@ -178,7 +190,7 @@ function TaskRow({
       active={active}
       hoverable={hoverable}
       last={tableLast}
-      onClick={onFocus}
+      onClick={open}
       // Scrolling a list under a still pointer moves `:hover` to another row without a mousemove,
       // so the row the pointer marks is only in step with the store if entering counts too. It must
       // not count while the keyboard drives, or walking with `j` would hand rows it scrolls past
@@ -217,17 +229,14 @@ function TaskRow({
           tabIndex={-1}
           // Narrow enough and the title takes the second line it needs; a wide row has the room to
           // keep every title on one.
-          className="text-foreground/90 block line-clamp-2 text-sm font-normal after:absolute after:inset-0 sm:line-clamp-none sm:truncate"
+          className="text-foreground/90 block line-clamp-2 text-sm font-normal sm:line-clamp-none sm:truncate"
         >
           {task.title}
         </Link>
         <MetaLine>
           {parent_title !== undefined && parent !== undefined && (
             <MetaItem icon={PARENT_ICON} title={`Subtask of ${parent_title}`}>
-              <Link
-                to={`/task/${parent}`}
-                className="text-foreground/90 group relative z-10 flex min-w-0 items-center gap-1.5"
-              >
+              <Link to={`/task/${parent}`} className="text-foreground/90 group flex min-w-0 items-center gap-1.5">
                 <span className="text-muted-foreground shrink-0 tabular-nums">{parent}</span>
                 <span className="max-w-[15rem] truncate group-hover:underline">{parent_title}</span>
               </Link>
