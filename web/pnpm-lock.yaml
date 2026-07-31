@@ -150,15 +150,9 @@ importers:
       react-dom:
         specifier: 'catalog:'
         version: 19.2.7(react@19.2.7)
-      react-markdown:
-        specifier: 'catalog:'
-        version: 10.1.0(@types/react@19.2.17)(react@19.2.7)
       react-router-dom:
         specifier: 'catalog:'
         version: 7.18.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      remark-gfm:
-        specifier: 'catalog:'
-        version: 4.0.1
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
@@ -199,16 +193,40 @@ importers:
 
   packages/task-ui:
     dependencies:
+      '@open-planner/api-client':
+        specifier: workspace:*
+        version: link:../api-client
       '@open-planner/ui':
         specifier: workspace:*
         version: link:../ui
+      lucide-react:
+        specifier: 'catalog:'
+        version: 1.24.0(react@19.2.7)
       react:
         specifier: 'catalog:'
         version: 19.2.7
+      react-markdown:
+        specifier: 'catalog:'
+        version: 10.1.0(@types/react@19.2.17)(react@19.2.7)
+      react-router-dom:
+        specifier: 'catalog:'
+        version: 7.18.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      remark-gfm:
+        specifier: 'catalog:'
+        version: 4.0.1
     devDependencies:
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.17
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.17)
+      happy-dom:
+        specifier: 'catalog:'
+        version: 20.10.6
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

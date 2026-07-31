@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useRef, type MouseEvent, type Ref } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
-import type { Board, BoardRow, Status } from "@open-planner/api-client"
-import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, Row } from "@open-planner/ui"
+import type { Board, BoardRow } from "@open-planner/api-client"
+import {
+  BranchBadges,
+  createdOf,
+  parentOf,
+  ParentLink,
+  problems,
+  StatusField,
+  StatusGroupHeader,
+  statusGroupLabel,
+  TaskTimes,
+} from "@open-planner/task-ui"
+import { cn, EmptyState, MetaLine, Panel, PanelBody, PanelHeader, Row } from "@open-planner/ui"
 
-import { BranchBadges } from "../components/branch-badges"
 import { ListSkeleton } from "../components/states"
-import { statusHeaderClass, StatusField, statusLabel } from "../components/status-badge"
-import { PARENT_ICON, TaskTimes } from "../components/task-meta"
 import { hoveredRow } from "../lib/copy-target"
 import { errorText } from "../lib/format"
-import { createdOf, parentOf, problems } from "../lib/metadata"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { boardQuery, useQuery } from "../lib/store"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
@@ -65,8 +72,8 @@ function TaskGrid({ board }: { board: Board }) {
         {board.groups.map((group, groupIndex) => {
           const lastGroup = groupIndex === board.groups.length - 1
           return (
-            <div key={group.status ?? "unreadable"} role="rowgroup" aria-label={groupLabel(group.status)}>
-              <HeaderRow status={group.status} />
+            <div key={group.status ?? "unreadable"} role="rowgroup" aria-label={statusGroupLabel(group.status)}>
+              <StatusGroupHeader status={group.status} />
               {group.rows.map((row, j) => {
                 const i = base++
                 return (
@@ -90,28 +97,6 @@ function TaskGrid({ board }: { board: Board }) {
         })}
       </PanelBody>
     </Panel>
-  )
-}
-
-// A group with no status holds the tasks whose own status could not be read; it is not a status
-// they claimed, so it gets its own header rather than borrowing one.
-const groupLabel = (status: Status | undefined) => (status === undefined ? "Unreadable" : statusLabel(status))
-
-const UNREADABLE_HEADER = "bg-red-500/8 border-red-500/20 text-red-600/80 dark:text-red-300/80"
-
-function HeaderRow({ status }: { status: Status | undefined }) {
-  return (
-    <div role="row" className="bg-muted/20 border-b p-2">
-      <span
-        role="columnheader"
-        className={cn(
-          "inline-block rounded-md border px-2 py-0.5 text-xs font-medium tracking-wide uppercase",
-          status === undefined ? UNREADABLE_HEADER : statusHeaderClass(status),
-        )}
-      >
-        {groupLabel(status)}
-      </span>
-    </div>
   )
 }
 
@@ -234,14 +219,7 @@ function TaskRow({
           {task.title}
         </Link>
         <MetaLine>
-          {parent_title !== undefined && parent !== undefined && (
-            <MetaItem icon={PARENT_ICON} title={`Subtask of ${parent_title}`}>
-              <Link to={`/task/${parent}`} className="text-foreground/90 group flex min-w-0 items-center gap-1.5">
-                <span className="text-muted-foreground shrink-0 tabular-nums">{parent}</span>
-                <span className="max-w-[15rem] truncate group-hover:underline">{parent_title}</span>
-              </Link>
-            </MetaItem>
-          )}
+          {parent_title !== undefined && parent !== undefined && <ParentLink id={parent} title={parent_title} />}
           <TaskTimes created={created} updated={task.updated} problems={broken} />
         </MetaLine>
         {task.branches.length > 0 && (

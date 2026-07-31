@@ -5,7 +5,7 @@ created: 2026-07-15T20:23:28Z
 # Web UI: syntax highlighting for markdown code fences
 
 Fenced code blocks in task bodies render as plain `<pre><code>` on a muted
-background (`web/packages/app/src/components/task-body.tsx`) with no token
+background (`web/packages/task-ui/src/task-body.tsx`) with no token
 colouring. Add language-aware syntax highlighting with **Shiki** (locked),
 integrated so git-diff highlighting can be added later without swapping engines.
 
@@ -61,7 +61,7 @@ Three pieces, mirroring the existing `themeStore` pattern for the async-ready se
    - Themes: one light + one dark VS Code theme (e.g. `github-light` /
      `github-dark`) whose palettes read well on `--muted`.
 
-2. `components/code-block.tsx` — the render seam.
+2. `task-ui/src/code-block.tsx` — the render seam.
    - `react-markdown` `components` overrides: `pre` unwraps to `<>{children}</>`
      (we emit our own `<pre>`), `code` decides inline vs block. Inline code (no
      `language-*` class) passes through untouched to keep the existing chip

@@ -1,11 +1,9 @@
-import { CalendarPlus, CircleAlert, CornerLeftUp, History } from "lucide-react"
+import { CalendarPlus, CircleAlert, History } from "lucide-react"
 
 import type { Field_Rfc3339 } from "@open-planner/api-client"
 import { MetaItem, TimeAgo } from "@open-planner/ui"
 
-import { type FieldProblem, fieldFailure, fieldValue } from "../lib/metadata"
-
-export const PARENT_ICON = CornerLeftUp
+import { type FieldProblem, fieldFailure, fieldValue } from "./metadata"
 
 export function TaskTimes({
   created,
@@ -33,12 +31,12 @@ export function TaskTimes({
         </MetaItem>
       )}
       {undatable !== undefined && undatable.kind === "invalid" && (
-        <MetaItem icon={History} title={undatable.message} className="min-w-0 text-red-600/90 dark:text-red-400/90">
+        <MetaItem icon={History} title={undatable.message} className="text-danger/90 min-w-0">
           <span className="truncate">{undatable.message}</span>
         </MetaItem>
       )}
       {problems.length > 0 && (
-        <MetaItem icon={CircleAlert} className="text-red-600/90 dark:text-red-400/90">
+        <MetaItem icon={CircleAlert} className="text-danger/90">
           <span className="truncate">{problems.map(({ field, message }) => `${field}: ${message}`).join(", ")}</span>
         </MetaItem>
       )}

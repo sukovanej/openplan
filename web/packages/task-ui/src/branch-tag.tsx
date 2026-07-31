@@ -1,7 +1,7 @@
 import type { BranchState, ChangeKind } from "@open-planner/api-client"
 import { cn, Tag } from "@open-planner/ui"
 
-import { fieldValue } from "../lib/metadata"
+import { fieldValue } from "./metadata"
 
 // Border and text share one hue per change kind, so a tag never pairs a grey border with coloured text.
 const kindColor: Record<ChangeKind, string> = {

@@ -1,6 +1,6 @@
-import { expect, it } from "@effect/vitest"
+import { expect, it } from "vitest"
 
-import { splitTaskRefs, taskLinkPlugins } from "../src/components/task-links"
+import { splitTaskRefs, taskLinkPlugins } from "../src/task-links"
 
 const split = (value: string) => splitTaskRefs(value, "OPP")
 

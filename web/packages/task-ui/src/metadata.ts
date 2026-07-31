@@ -1,4 +1,4 @@
-import type { Field_Status, FieldError, Metadata, Status } from "@open-planner/api-client"
+import type { Field_Status, FieldError, Metadata } from "@open-planner/api-client"
 
 // Both `Metadata` and `Field<T>` are untagged unions: a value is its bare JSON, a failure is an
 // object carrying `kind`. No value in the schema is an object with a `kind`, so that is what tells
@@ -19,11 +19,6 @@ const fields = (metadata: Metadata) => ("kind" in metadata ? undefined : metadat
 
 export const statusField = (metadata: Metadata): Field_Status | undefined => fields(metadata)?.status
 
-export const statusOf = (metadata: Metadata): Status | undefined => {
-  const field = statusField(metadata)
-  return field === undefined ? undefined : fieldValue(field)
-}
-
 export const parentOf = (metadata: Metadata): string | undefined => {
   const field = fields(metadata)?.parent
   return field === undefined ? undefined : (fieldValue(field) ?? undefined)
@@ -32,11 +27,6 @@ export const parentOf = (metadata: Metadata): string | undefined => {
 export const createdOf = (metadata: Metadata): string | undefined => {
   const field = fields(metadata)?.created
   return field === undefined ? undefined : fieldValue(field)
-}
-
-export const dependenciesOf = (metadata: Metadata): ReadonlyArray<string> => {
-  const field = fields(metadata)?.dependencies
-  return field === undefined ? [] : (fieldValue(field) ?? [])
 }
 
 export interface FieldProblem {

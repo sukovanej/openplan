@@ -25,12 +25,32 @@
   --success: oklch(0.596 0.145 163.225);
   --accent-line: oklch(0.546 0.245 262.881);
 
+  /* A surface follows its own mark, so recolouring one carries the group header with it; `todo` is
+     the one status whose header wants a lighter shade than the mark it belongs to. */
   --status-backlog: oklch(0.551 0.027 264.364);
+  --status-backlog-surface: var(--status-backlog);
+  --status-backlog-text: oklch(0.446 0.03 256.802);
   --status-todo: oklch(0.546 0.245 262.881);
+  --status-todo-surface: oklch(0.623 0.214 259.815);
+  --status-todo-text: oklch(0.488 0.243 264.376);
   --status-in-progress: oklch(0.666 0.179 58.318);
+  --status-in-progress-surface: var(--status-in-progress);
+  --status-in-progress-text: oklch(0.555 0.163 48.998);
   --status-in-review: oklch(0.637 0.237 25.331);
+  --status-in-review-surface: var(--status-in-review);
+  --status-in-review-text: oklch(0.577 0.245 27.325);
   --status-done: oklch(0.596 0.145 163.225);
+  --status-done-surface: var(--status-done);
+  --status-done-text: oklch(0.508 0.118 165.612);
   --status-cancelled: oklch(0.551 0.027 264.364);
+  --status-cancelled-surface: var(--status-cancelled);
+  --status-cancelled-text: oklch(0.446 0.03 256.802);
+
+  /* A task whose status could not be read is not one of the six; it carries its own rungs so
+     recolouring a status never lends it a tint it did not claim. */
+  --status-unreadable: oklch(0.637 0.237 25.331);
+  --status-unreadable-surface: var(--status-unreadable);
+  --status-unreadable-text: oklch(0.577 0.245 27.325);
 }
 
 .dark {
@@ -56,6 +76,14 @@
   --danger-surface: oklch(0.258 0.092 26.042);
   --danger-foreground: oklch(0.936 0.032 17.717);
   --success: oklch(0.696 0.17 162.48);
+
+  --status-backlog-text: oklch(0.707 0.022 261.325);
+  --status-todo-text: oklch(0.809 0.105 251.813);
+  --status-in-progress-text: oklch(0.879 0.169 91.605);
+  --status-in-review-text: oklch(0.808 0.114 19.571);
+  --status-done-text: oklch(0.845 0.143 164.978);
+  --status-cancelled-text: oklch(0.707 0.022 261.325);
+  --status-unreadable-text: oklch(0.808 0.114 19.571);
 }
 
 @theme inline {
@@ -88,9 +116,24 @@
   --color-success: var(--success);
   --color-accent-line: var(--accent-line);
   --color-status-backlog: var(--status-backlog);
+  --color-status-backlog-surface: var(--status-backlog-surface);
+  --color-status-backlog-text: var(--status-backlog-text);
   --color-status-todo: var(--status-todo);
+  --color-status-todo-surface: var(--status-todo-surface);
+  --color-status-todo-text: var(--status-todo-text);
   --color-status-in-progress: var(--status-in-progress);
+  --color-status-in-progress-surface: var(--status-in-progress-surface);
+  --color-status-in-progress-text: var(--status-in-progress-text);
   --color-status-in-review: var(--status-in-review);
+  --color-status-in-review-surface: var(--status-in-review-surface);
+  --color-status-in-review-text: var(--status-in-review-text);
   --color-status-done: var(--status-done);
+  --color-status-done-surface: var(--status-done-surface);
+  --color-status-done-text: var(--status-done-text);
   --color-status-cancelled: var(--status-cancelled);
+  --color-status-cancelled-surface: var(--status-cancelled-surface);
+  --color-status-cancelled-text: var(--status-cancelled-text);
+  --color-status-unreadable: var(--status-unreadable);
+  --color-status-unreadable-surface: var(--status-unreadable-surface);
+  --color-status-unreadable-text: var(--status-unreadable-text);
 }
