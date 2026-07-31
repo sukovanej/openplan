@@ -75,7 +75,7 @@ function TaskDetailView({
         <StatusField metadata={task.metadata} />
         <span className="shrink-0 tabular-nums">{task.id}</span>
         <span className="truncate">{task.title}</span>
-        <div className="ml-auto shrink-0">
+        <div className="ml-auto min-w-0">
           <HeaderParent
             id={task.id}
             parent={detail === null ? undefined : parentOf(detail.metadata)}
@@ -190,7 +190,7 @@ function HeaderParent({
   if (!ready) return null
   const hasParent = parent !== undefined
   return (
-    <div className="flex items-center gap-1 font-normal tracking-normal normal-case">
+    <div className="flex min-w-0 items-center gap-1 font-normal tracking-normal normal-case">
       {parentTitle !== undefined ? (
         <MetaLine>
           <MetaItem icon={PARENT_ICON} title={`Subtask of ${parentTitle}`}>
@@ -207,7 +207,7 @@ function HeaderParent({
         type="button"
         onClick={() => setEditing(true)}
         aria-label={hasParent ? "Change parent" : "Set parent"}
-        className="text-muted-foreground/60 hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md px-1.5 py-1 text-xs"
+        className="text-muted-foreground/60 hover:bg-muted hover:text-foreground flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs"
       >
         {hasParent ? (
           <Pencil className="size-3.5" />
