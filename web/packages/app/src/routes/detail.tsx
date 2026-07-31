@@ -116,7 +116,7 @@ function TaskDetailView({
         {body === undefined ? (
           <BodySkeleton />
         ) : (
-          <TaskBody markdown={stripTitle(body)} refs={detail?.refs} abbreviation={abbreviation} />
+          <TaskBody markdown={stripTitle(body)} refs={detail?.refs} abbreviation={abbreviation} data-keys-ignore />
         )}
         <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
       </PanelBody>

@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_review
 created: 2026-07-31T12:19:28Z
 parent: ./00059-web-ui-extract-reusable-componen.md
 ---
