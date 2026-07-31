@@ -138,7 +138,7 @@ export function Combobox({
                 choose(index)
               }}
               onMouseMove={() => setActive(index)}
-              className="cursor-pointer rounded"
+              className="cursor-pointer"
             >
               {option.content}
             </Row>
