@@ -316,6 +316,49 @@ impl Repo {
             .is_some())
     }
 
+    // The commit that first added `path` (repo-relative), with its author time — the answer
+    // `lint --fix` backfills a missing `created:` from, and the one `StoreError::MissingCreated`
+    // already tells a reader to look up by hand. `None` for a path no commit has ever added.
+    pub fn first_commit(&self, path: &Path) -> Result<Option<TaskChange>, GitError> {
+        let mut repo = self.repo();
+        repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
+        let Ok(head) = repo.head_id() else {
+            return Ok(None);
+        };
+        let walk = repo
+            .rev_walk([head.detach()])
+            .sorting(gix::revision::walk::Sorting::ByCommitTime(
+                gix::traverse::commit::simple::CommitTimeOrder::NewestFirst,
+            ))
+            .all()
+            .map_err(|e| GitError::Object(e.to_string()))?;
+        // The whole history, not the first match: a path deleted and later restored is added by
+        // several commits, and a newest-first walk meets the restore first. The creation is the
+        // oldest add, so each match overwrites the last — as in `git log --diff-filter=A`, whose
+        // final line is the answer.
+        let mut oldest_add = None;
+        for info in walk {
+            let info = info.map_err(|e| GitError::Object(e.to_string()))?;
+            if !tree_has_path(&repo, info.id, path)? {
+                continue;
+            }
+            let mut added = true;
+            for parent in &info.parent_ids {
+                if tree_has_path(&repo, *parent, path)? {
+                    added = false;
+                    break;
+                }
+            }
+            if added {
+                oldest_add = Some(TaskChange {
+                    commit: info.id.to_string(),
+                    at: author_time(&repo, info.id),
+                });
+            }
+        }
+        Ok(oldest_add)
+    }
+
     pub fn read_blob(&self, oid_hex: &str) -> Result<Vec<u8>, GitError> {
         let oid = object_id(oid_hex)?;
         let repo = self.repo();
@@ -345,6 +388,22 @@ fn author_time(repo: &gix::Repository, commit: gix::ObjectId) -> Result<Timestam
         .map_err(|e| format!("commit {commit} has an unreadable author: {e}"))?;
     Timestamp::from_second(author.seconds())
         .map_err(|e| format!("commit {commit} has an unusable author date: {e}"))
+}
+
+fn tree_has_path(
+    repo: &gix::Repository,
+    commit: gix::ObjectId,
+    path: &Path,
+) -> Result<bool, GitError> {
+    let tree = repo
+        .find_object(commit)
+        .map_err(|e| GitError::Object(e.to_string()))?
+        .peel_to_tree()
+        .map_err(|e| GitError::Object(e.to_string()))?;
+    Ok(tree
+        .lookup_entry_by_path(path)
+        .map_err(|e| GitError::Object(e.to_string()))?
+        .is_some_and(|entry| entry.mode().is_blob()))
 }
 
 fn object_id(hex: &str) -> Result<gix::ObjectId, GitError> {

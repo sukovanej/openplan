@@ -240,6 +240,10 @@ Per project it:
   committed file would conflict on every parallel-branch merge, so a restart re-seeds from the
   branches and worktree files instead — the ids on disk are the durable floor.
 
+`oplan lint --fix` is the one sanctioned out-of-band writer: it allocates no id and resolves no
+branch, so it rewrites task files directly under the store's advisory lock and atomic rename with no
+daemon (§6), rather than through the in-band write path.
+
 **Degraded fallback:** if the daemon is down, the CLI reads files / the object DB directly and
 uses the on-disk claims file (file-locked), so headless agents still function. **Reads** degrade;
 **writes** do not — a CLI write starts the daemon (auto-start, one per machine) and fails loudly if
