@@ -4,12 +4,21 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
 import {
+  BranchSwitcher,
+  createdOf,
+  parentOf,
+  ParentLink,
+  problems,
+  statusField,
+  TaskBody,
+  TaskIdentity,
+  TaskTimes,
+} from "@open-planner/task-ui"
+import {
   Button,
   type ComboOption,
   Combobox,
   EmptyState,
-  FuzzyText,
-  MetaItem,
   MetaLine,
   Panel,
   PanelBody,
@@ -18,16 +27,12 @@ import {
   Section,
 } from "@open-planner/ui"
 
-import { BranchSwitcher } from "../components/branch-switcher"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
-import { StatusChip, StatusField } from "../components/status-badge"
-import { TaskBody } from "../components/task-body"
-import { PARENT_ICON, TaskTimes } from "../components/task-meta"
+import { useAbbreviation } from "../lib/abbreviation"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
 import { errorText } from "../lib/format"
-import { createdOf, parentOf, problems } from "../lib/metadata"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
 import { taskMatches } from "../lib/task-search"
@@ -81,12 +86,11 @@ function TaskDetailView({
   selected: string | undefined
   onSelect: (branch: string | undefined) => void
 }) {
+  const abbreviation = useAbbreviation()
   return (
     <Panel>
       <PanelHeader className="gap-2">
-        <StatusField metadata={task.metadata} />
-        <span className="shrink-0 tabular-nums">{task.id}</span>
-        <span className="truncate">{task.title}</span>
+        <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
         <div className="ml-auto min-w-0">
           <HeaderParent
             id={task.id}
@@ -109,7 +113,11 @@ function TaskDetailView({
           />
         </MetaLine>
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
-        {body === undefined ? <BodySkeleton /> : <TaskBody markdown={stripTitle(body)} refs={detail?.refs} />}
+        {body === undefined ? (
+          <BodySkeleton />
+        ) : (
+          <TaskBody markdown={stripTitle(body)} refs={detail?.refs} abbreviation={abbreviation} />
+        )}
         <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
       </PanelBody>
     </Panel>
@@ -160,15 +168,7 @@ function descendantIds(tasks: ReadonlyArray<TaskListItem>, root: string): Set<st
 }
 
 function ComboTaskRow({ task, indices }: { task: TaskListItem; indices: ReadonlyArray<number> }) {
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <StatusField metadata={task.metadata} className="size-4 shrink-0" />
-      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{task.id}</span>
-      <span className="truncate">
-        <FuzzyText text={task.title} indices={indices} />
-      </span>
-    </span>
-  )
+  return <TaskIdentity status={statusField(task.metadata)} id={task.id} title={task.title} indices={indices} />
 }
 
 // The parent as a header-right "Subtask of <link>", retargetable in place. Clicking the pencil (or
@@ -203,14 +203,9 @@ function HeaderParent({
   const hasParent = parent !== undefined
   return (
     <div className="flex min-w-0 items-center gap-1 font-normal tracking-normal normal-case">
-      {parentTitle !== undefined ? (
+      {parentTitle !== undefined && parent !== undefined ? (
         <MetaLine>
-          <MetaItem icon={PARENT_ICON} title={`Subtask of ${parentTitle}`}>
-            <Link to={`/task/${parent}`} className="text-foreground/90 group flex min-w-0 items-center gap-1.5">
-              <span className="text-muted-foreground shrink-0 tabular-nums">{parent}</span>
-              <span className="max-w-[15rem] truncate group-hover:underline">{parentTitle}</span>
-            </Link>
-          </MetaItem>
+          <ParentLink id={parent} title={parentTitle} />
         </MetaLine>
       ) : hasParent ? (
         <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
@@ -340,9 +335,7 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
                 to={`/task/${child.id}`}
                 onClick={() => subtaskCursor.focus(i)}
               >
-                <StatusChip status={child.status} className="size-4 shrink-0" />
-                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{child.id}</span>
-                <span className="truncate">{child.title}</span>
+                <TaskIdentity status={child.status} id={child.id} title={child.title} />
               </Row>
             </li>
           ))}

@@ -9,11 +9,19 @@
   },
   "scripts": {},
   "dependencies": {
+    "@open-planner/api-client": "workspace:*",
     "@open-planner/ui": "workspace:*",
-    "react": "catalog:"
+    "lucide-react": "catalog:",
+    "react": "catalog:",
+    "react-markdown": "catalog:",
+    "react-router-dom": "catalog:",
+    "remark-gfm": "catalog:"
   },
   "devDependencies": {
     "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "happy-dom": "catalog:",
+    "react-dom": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

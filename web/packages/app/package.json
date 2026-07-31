@@ -18,9 +18,7 @@
     "lucide-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "react-markdown": "catalog:",
-    "react-router-dom": "catalog:",
-    "remark-gfm": "catalog:"
+    "react-router-dom": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
