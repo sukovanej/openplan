@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: in_review
 created: 2026-07-30T10:34:02Z
 ---
 # Lint task files: op-lint crate and the oplan lint command
