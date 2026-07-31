@@ -449,9 +449,12 @@ pub enum PartialMetadata {
     Fields(PartialFrontmatter),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PartialTask {
     pub metadata: PartialMetadata,
+    // The frontmatter as raw YAML, present whenever it parsed as a mapping — so a reader can report
+    // `path:line` and name which `dependencies` entry is bad rather than lose the whole list to one.
+    pub frontmatter: Option<serde_yaml::Mapping>,
     pub title: Option<String>,
     pub body: String,
 }
@@ -462,17 +465,19 @@ pub fn parse_partial(input: &str) -> PartialTask {
     match split_frontmatter(input) {
         None => PartialTask {
             metadata: PartialMetadata::Error("missing frontmatter fence".to_owned()),
+            frontmatter: None,
             title: op_md::title(input),
             body: input.to_owned(),
         },
         Some((fm_src, body)) => {
-            let metadata =
+            let (metadata, frontmatter) =
                 match serde_yaml::from_str::<serde_yaml::Mapping>(&fm_src.replace('\r', "")) {
-                    Ok(map) => PartialMetadata::Fields(extract_fields(&map)),
-                    Err(err) => PartialMetadata::Error(err.to_string()),
+                    Ok(map) => (PartialMetadata::Fields(extract_fields(&map)), Some(map)),
+                    Err(err) => (PartialMetadata::Error(err.to_string()), None),
                 };
             PartialTask {
                 metadata,
+                frontmatter,
                 title: op_md::title(body),
                 body: body.to_owned(),
             }

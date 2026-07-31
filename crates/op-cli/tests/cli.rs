@@ -1253,3 +1253,193 @@ fn set_on_a_task_without_created_explains_what_to_add() {
     assert!(err.contains("created:"), "{err}");
     assert!(err.contains("git log --diff-filter=A"), "{err}");
 }
+
+// A store `lint` can read: `.plan/config.toml` plus `.plan/tasks/`, no git and no daemon — lint
+// never starts one, so every case here drives the built binary directly against a bare directory.
+fn lint_store() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
+    write(
+        &dir.path().join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\n",
+    );
+    dir
+}
+
+fn run_lint(root: &Path, args: &[&str]) -> Output {
+    oplan()
+        .arg("--root")
+        .arg(root)
+        .arg("lint")
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+fn combined(output: &Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+const VALID: &str = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Title\n";
+
+#[test]
+fn lint_clean_project_exits_zero() {
+    let dir = lint_store();
+    write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
+
+    let out = run_lint(dir.path(), &[]);
+    assert!(
+        out.status.success(),
+        "a clean store must lint clean; output: {}",
+        combined(&out)
+    );
+}
+
+#[test]
+fn lint_seeded_defect_exits_nonzero_and_prints_it() {
+    let dir = lint_store();
+    write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
+    write(
+        &dir.path().join(".plan/tasks/00002-seeded-defect.md"),
+        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Seeded defect\n",
+    );
+
+    let out = run_lint(dir.path(), &[]);
+    assert!(
+        !out.status.success(),
+        "a defect must fail the run; output: {}",
+        combined(&out)
+    );
+    let report = combined(&out);
+    assert!(
+        report.contains("seeded-defect"),
+        "the diagnostic must name the offending file: {report}"
+    );
+}
+
+#[test]
+fn lint_json_carries_severity_error() {
+    let dir = lint_store();
+    write(
+        &dir.path().join(".plan/tasks/00001-seeded-defect.md"),
+        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Seeded defect\n",
+    );
+
+    let out = run_lint(dir.path(), &["--json"]);
+    assert!(
+        !out.status.success(),
+        "a defect must fail even under --json"
+    );
+    let diagnostics: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout)
+        .unwrap_or_else(|err| panic!("--json must emit a diagnostics array: {err}"));
+    let first = diagnostics
+        .first()
+        .unwrap_or_else(|| panic!("expected at least one diagnostic: {diagnostics:?}"));
+    assert_eq!(
+        first["severity"], "error",
+        "every diagnostic carries the severity field from day one: {first}"
+    );
+    assert!(
+        first.get("code").is_some() && first.get("path").is_some(),
+        "a diagnostic names its code and file: {first}"
+    );
+}
+
+#[test]
+fn lint_targets_filter_output_and_ignore_breakage_elsewhere() {
+    let dir = lint_store();
+    write(
+        &dir.path().join(".plan/tasks/00001-alpha-broken.md"),
+        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
+    );
+    write(
+        &dir.path().join(".plan/tasks/00002-beta-broken.md"),
+        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Beta\n",
+    );
+    write(&dir.path().join(".plan/tasks/00003-gamma-clean.md"), VALID);
+
+    // Targeting the one clean task: breakage in the others is off the commit's path, so the run
+    // passes and says nothing about them.
+    let clean = run_lint(dir.path(), &["OPP-3"]);
+    assert!(
+        clean.status.success(),
+        "breakage outside the targets must not fail the run; output: {}",
+        combined(&clean)
+    );
+    let clean_report = combined(&clean);
+    assert!(
+        !clean_report.contains("alpha-broken") && !clean_report.contains("beta-broken"),
+        "output must be filtered to the targets: {clean_report}"
+    );
+
+    // Targeting a broken task reports only that task, not its equally broken neighbour.
+    let alpha = run_lint(dir.path(), &["OPP-1"]);
+    assert!(
+        !alpha.status.success(),
+        "a targeted defect must fail the run"
+    );
+    let alpha_report = combined(&alpha);
+    assert!(
+        alpha_report.contains("alpha-broken"),
+        "the targeted task's diagnostic must show: {alpha_report}"
+    );
+    assert!(
+        !alpha_report.contains("beta-broken"),
+        "a non-targeted task must not leak into the output: {alpha_report}"
+    );
+}
+
+#[test]
+fn lint_fix_rewrites_then_reports_clean() {
+    let dir = lint_store();
+    write(&dir.path().join(".plan/tasks/00001-root.md"), VALID);
+    let child = dir.path().join(".plan/tasks/00002-child.md");
+    write(
+        &child,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00001-wrong-slug.md\n---\n# Child\n",
+    );
+
+    let fixed = run_lint(dir.path(), &["--fix"]);
+    assert!(
+        fixed.status.success(),
+        "--fix must repair the derivable defect and re-check clean; output: {}",
+        combined(&fixed)
+    );
+
+    let after = std::fs::read_to_string(&child).unwrap();
+    assert!(
+        after.contains("parent: ./00001-root.md"),
+        "the stale slug must be canonicalized to the target's path: {after}"
+    );
+    assert!(
+        !after.contains("wrong-slug"),
+        "the stale slug must be gone: {after}"
+    );
+
+    let relint = run_lint(dir.path(), &[]);
+    assert!(
+        relint.status.success(),
+        "a plain lint after --fix must be clean; output: {}",
+        combined(&relint)
+    );
+}
+
+#[test]
+fn lint_lints_this_repos_own_plan_cleanly() {
+    // The workspace root holds `.plan/`; CARGO_MANIFEST_DIR is this crate under `crates/`.
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .unwrap();
+
+    let out = run_lint(workspace, &[]);
+    assert!(
+        out.status.success(),
+        "the binary CI and `mise run lint` run must lint the real store clean; output: {}",
+        combined(&out)
+    );
+}

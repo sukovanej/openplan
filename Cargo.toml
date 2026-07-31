@@ -14,6 +14,7 @@ op-claude = { path = "crates/op-claude" }
 op-md = { path = "crates/op-md" }
 op-task = { path = "crates/op-task" }
 op-store = { path = "crates/op-store" }
+op-lint = { path = "crates/op-lint" }
 op-git = { path = "crates/op-git" }
 op-api = { path = "crates/op-api" }
 op-client = { path = "crates/op-client" }

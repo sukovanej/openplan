@@ -287,6 +287,15 @@ impl Store {
         })
     }
 
+    // A verbatim overwrite of a task's file, locked and atomic like every other write but bypassing
+    // the model: `lint --fix` splices bytes it computed itself and must not have them reflowed
+    // through `Task::to_file_string` (§5.3). Allocates no id and resolves no branch, so it is an
+    // out-of-band writer (§6, §7.3), not a daemon write.
+    pub fn replace_raw(&self, id: u64, bytes: &[u8]) -> Result<(), StoreError> {
+        self.task_path(id)?;
+        self.with_lock(id, || self.atomic_replace(id, bytes))
+    }
+
     pub fn delete(&self, id: u64) -> Result<(), StoreError> {
         match std::fs::remove_file(self.task_path(id)?) {
             Ok(()) => Ok(()),

@@ -1,3 +1,7 @@
+[tasks.lint]
+description = "Check the task store's .plan/ files with the oplan linter"
+run = "cargo run --quiet -p op-cli -- lint"
+
 [tasks.rebuild]
 description = "Rebuild the web SPA and restart the daemon with the fresh embed"
 run = [

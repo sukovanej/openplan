@@ -1,0 +1,22 @@
+[package]
+name = "op-lint"
+description = "Task-file linter for the store graph: snapshot, rules, diagnostics, and derivable fixes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+op-task.workspace = true
+op-md.workspace = true
+op-store.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+
+[dev-dependencies]
+op-git.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

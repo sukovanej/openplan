@@ -15,6 +15,7 @@ use op_api::{
 };
 use op_git::Repo;
 use op_index::Index;
+use op_lint::{CreatedSource, Diagnostic, Snapshot};
 use op_store::Store;
 use op_task::{FieldError, FieldResult, Status, Timestamp, rank};
 
@@ -118,6 +119,16 @@ enum Command {
     },
     /// List local git branches
     Branches,
+    /// Check task files (frontmatter, references, cycles, duplicate numbers); never starts a daemon
+    Lint {
+        /// Restrict the report and --fix to these tasks (file paths or keys); the whole store is always scanned
+        targets: Vec<String>,
+        #[arg(long)]
+        json: bool,
+        /// Apply the derivable fixes in place, then re-check
+        #[arg(long)]
+        fix: bool,
+    },
     /// Manage the background daemon and web UI
     Server {
         #[command(subcommand)]
@@ -225,6 +236,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         }
         Command::Delete { id, yes } => delete(&cli.root, daemon_url, &id, yes),
         Command::Branches => branches(&cli.root).map(|()| ExitCode::SUCCESS),
+        Command::Lint { targets, json, fix } => lint(&cli.root, &targets, json, fix),
         Command::Server { command } => server(command, &cli.root, daemon_url),
         Command::MergeDriver {
             ancestor,
@@ -703,6 +715,141 @@ fn branches(root: &Path) -> Result<()> {
         println!("{branch}");
     }
     Ok(())
+}
+
+fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCode> {
+    let store = Store::discover(root)?;
+    let snapshot = Snapshot::from_store(&store)?;
+    let selected = lint_target_paths(&snapshot, &store, targets)?;
+
+    let snapshot = if fix {
+        apply_fixes(&store, &snapshot, selected.as_ref())?;
+        Snapshot::from_store(&store)?
+    } else {
+        snapshot
+    };
+
+    let diagnostics = op_lint::lint(&snapshot);
+    let shown: Vec<&Diagnostic> = diagnostics
+        .iter()
+        .filter(|d| {
+            selected
+                .as_ref()
+                .is_none_or(|set| set.contains(&canonical(&d.path)))
+        })
+        .collect();
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&shown)?);
+    } else {
+        for diagnostic in &shown {
+            println!("{diagnostic}");
+        }
+    }
+    Ok(if shown.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
+}
+
+// Writes go through the store so a concurrent daemon or `oplan set` on the same task serializes on
+// the advisory lock and never observes a torn file (§7.3).
+fn apply_fixes(
+    store: &Store,
+    snapshot: &Snapshot,
+    selected: Option<&std::collections::HashSet<PathBuf>>,
+) -> Result<()> {
+    let created = GitCreated::at(store.root());
+    let Some(selected) = selected else {
+        op_lint::fix_store(store, &created)?;
+        return Ok(());
+    };
+    let fixed = op_lint::fix(snapshot, &created);
+    for file in snapshot.files() {
+        if !selected.contains(&canonical(&file.path)) {
+            continue;
+        }
+        let Some(after) = fixed.get(&file.path) else {
+            continue;
+        };
+        if after != &file.source {
+            store.replace_raw(file.number, after.as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
+// The whole store is always scanned; positional targets only pick which files this run reports on
+// and repairs, so an agent lints the one task it wrote and a pre-commit hook stays quiet about files
+// the commit never touched. None means no filter — report everything.
+fn lint_target_paths(
+    snapshot: &Snapshot,
+    store: &Store,
+    targets: &[String],
+) -> Result<Option<std::collections::HashSet<PathBuf>>> {
+    if targets.is_empty() {
+        return Ok(None);
+    }
+    let mut set = std::collections::HashSet::new();
+    for target in targets {
+        // A target that resolves to nothing would filter every diagnostic away and pass, so a stale
+        // key or a path spelled against the wrong directory has to stop the run instead.
+        let Some(path) = lint_target_path(snapshot, store, target) else {
+            bail!("no task file matches {target}");
+        };
+        set.insert(path);
+    }
+    Ok(Some(set))
+}
+
+fn lint_target_path(snapshot: &Snapshot, store: &Store, target: &str) -> Option<PathBuf> {
+    if let Some(number) = store.abbreviation().parse_key(target) {
+        return snapshot.file(number).map(|file| canonical(&file.path));
+    }
+    let spellings = [
+        canonical(Path::new(target)),
+        canonical(&store.root().join(target)),
+    ];
+    snapshot
+        .files()
+        .iter()
+        .map(|file| canonical(&file.path))
+        .find(|path| spellings.contains(path))
+}
+
+fn canonical(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+struct GitCreated {
+    repo: Option<Repo>,
+    root: PathBuf,
+}
+
+impl GitCreated {
+    fn at(root: &Path) -> Self {
+        GitCreated {
+            repo: Repo::discover(root).ok(),
+            root: canonical(root),
+        }
+    }
+}
+
+impl CreatedSource for GitCreated {
+    fn created(&self, path: &Path) -> Option<Timestamp> {
+        // git names blobs by their path from the repo root, and a symlinked or relative `--root`
+        // spells the same file differently than the store does, so both sides resolve first.
+        let path = canonical(path);
+        let relative = path.strip_prefix(&self.root).ok()?;
+        self.repo
+            .as_ref()?
+            .first_commit(relative)
+            .ok()
+            .flatten()?
+            .at
+            .ok()
+    }
 }
 
 // "" or the "-" sentinel clears the parent (top level); any other value sets it.
