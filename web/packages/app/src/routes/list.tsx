@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type Ref } from "react"
 import { Link } from "react-router-dom"
 
 import type { Board, BoardRow, Status } from "@open-planner/api-client"
-import { cn, EmptyState, MetaItem, MetaLine } from "@open-planner/ui"
+import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, Row } from "@open-planner/ui"
 
 import { BranchBadges } from "../components/branch-badges"
 import { ListSkeleton } from "../components/states"
@@ -52,19 +52,15 @@ function TaskGrid({ board }: { board: Board }) {
 
   let base = 0
   return (
-    <div
+    <Panel
       role="grid"
       aria-label="Tasks"
       aria-activedescendant={activeId}
       tabIndex={0}
-      // Box outline is an inset ring, not `border`, so the selected row's own inset ring lands on
-      // the same pixels and reads as one line instead of doubling up against a container border.
-      className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border text-sm focus:outline-none"
+      className="text-sm focus:outline-none"
     >
-      <div className="bg-muted/30 flex h-11 shrink-0 items-center border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground">
-        Tasks
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto" onMouseLeave={hoveredRow.clear}>
+      <PanelHeader>Tasks</PanelHeader>
+      <PanelBody onMouseLeave={hoveredRow.clear}>
         {board.groups.map((group, groupIndex) => {
           const lastGroup = groupIndex === board.groups.length - 1
           return (
@@ -90,8 +86,8 @@ function TaskGrid({ board }: { board: Board }) {
             </div>
           )
         })}
-      </div>
-    </div>
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -148,19 +144,6 @@ function TreeGuides({ columns }: { columns: ReadonlyArray<boolean> }) {
   )
 }
 
-// The current row loses its own bottom border — the outline draws that edge — and gets the outline
-// as an absolutely-positioned overlay, so neither participates in flow and the row keeps its height
-// whether or not it is current. The overlay is positioned against the row's padding box, which stops
-// 1px short of each separator, so both offsets are -1px: the top edge lands on the separator above,
-// the bottom edge on the row's own, exactly where the neighbouring rows draw theirs.
-const CURRENT_ROW =
-  "border-transparent bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:-bottom-px after:border after:border-blue-600/40 after:content-['']"
-
-// The same treatment under the pointer, spelled out because Tailwind only emits classes it can read
-// literally in the source.
-const HOVERED_ROW =
-  "hover:border-transparent hover:bg-muted/30 hover:after:pointer-events-none hover:after:absolute hover:after:inset-x-0 hover:after:-top-px hover:after:-bottom-px hover:after:border hover:after:border-blue-600/40 hover:after:content-['']"
-
 function TaskRow({
   ref,
   row,
@@ -183,11 +166,14 @@ function TaskRow({
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
   return (
-    <div
+    <Row
       ref={ref}
       id={rowDomId(task.id)}
       role="row"
       aria-selected={active}
+      active={active}
+      hoverable={hoverable}
+      last={tableLast}
       onClick={onFocus}
       // Scrolling a list under a still pointer moves `:hover` to another row without a mousemove,
       // so the row the pointer marks is only in step with the store if entering counts too. It must
@@ -203,15 +189,9 @@ function TaskRow({
         rowCursor.clear()
       }}
       onMouseLeave={() => hoveredRow.leave(task.id)}
-      className={cn(
-        // Wrapping lets the branches drop to a line of their own once the title has no room left
-        // beside them, rather than the two columns overrunning each other.
-        "relative flex flex-wrap cursor-pointer items-start gap-y-2 border-b py-3 transition-colors",
-        // The last row drops its divider; it has no row below to separate it from.
-        tableLast && "border-transparent",
-        active && CURRENT_ROW,
-        hoverable && HOVERED_ROW,
-      )}
+      // Wrapping lets the branches drop to a line of their own once the title has no room left
+      // beside them, rather than the two columns overrunning each other.
+      className="flex flex-wrap cursor-pointer items-start gap-y-2 py-3"
     >
       <TreeGuides columns={guides.columns} />
       <div role="gridcell" className="relative flex shrink-0 items-center self-stretch">
@@ -252,6 +232,6 @@ function TaskRow({
       <div role="gridcell" className="ml-auto hidden shrink-0 self-center pr-4 pl-3 sm:block">
         <BranchBadges branches={task.branches} headline={task.headline} className="justify-end" />
       </div>
-    </div>
+    </Row>
   )
 }

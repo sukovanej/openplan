@@ -1,7 +1,7 @@
 import { Loader2, Search } from "lucide-react"
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 
-import { cn } from "@open-planner/ui"
+import { cn, Row } from "@open-planner/ui"
 
 import { fuzzySegments } from "../lib/fuzzy"
 
@@ -126,8 +126,11 @@ export function SearchCombobox({
           <li className="text-muted-foreground px-2 py-3 text-center text-sm">{emptyLabel}</li>
         ) : (
           options.map((option, index) => (
-            <li
+            <Row
               key={option.key}
+              as="li"
+              variant="option"
+              active={index === active}
               role="option"
               aria-selected={index === active}
               onMouseDown={(event) => {
@@ -135,13 +138,10 @@ export function SearchCombobox({
                 choose(index)
               }}
               onMouseMove={() => setActive(index)}
-              className={cn(
-                "flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm",
-                index === active && "bg-accent",
-              )}
+              className="cursor-pointer rounded"
             >
               {option.content}
-            </li>
+            </Row>
           ))
         )}
       </ul>

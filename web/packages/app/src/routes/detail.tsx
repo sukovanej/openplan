@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
-import { cn, CountPill, EmptyState, MetaItem, MetaLine } from "@open-planner/ui"
+import { EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, Row, Section } from "@open-planner/ui"
 
 import { BranchSwitcher } from "../components/branch-switcher"
 import { type ComboOption, FuzzyText, SearchCombobox } from "../components/search-combobox"
@@ -70,8 +70,8 @@ function TaskDetailView({
   onSelect: (branch: string | undefined) => void
 }) {
   return (
-    <div className="bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border">
-      <div className="bg-muted/30 flex h-11 shrink-0 items-center gap-2 border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground">
+    <Panel>
+      <PanelHeader className="gap-2">
         <StatusField metadata={task.metadata} />
         <span className="shrink-0 tabular-nums">{task.id}</span>
         <span className="truncate">{task.title}</span>
@@ -83,8 +83,8 @@ function TaskDetailView({
             ready={detail !== null}
           />
         </div>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      </PanelHeader>
+      <PanelBody className="p-6">
         <h1 className="mb-1.5 text-2xl font-semibold tracking-tight">{task.title}</h1>
         {/* `created` arrives with the full detail while `updated` is already on the seeded list item,
             so the line renders as soon as the header does and fills in rather than shifting the body
@@ -99,8 +99,8 @@ function TaskDetailView({
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? <BodySkeleton /> : <TaskBody markdown={stripTitle(body)} refs={detail?.refs} />}
         <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
-      </div>
-    </div>
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -286,19 +286,20 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
   }, [index])
 
   return (
-    <section className="mt-8 border-t pt-5">
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Subtasks</h2>
-        {items.length > 0 && <CountPill count={items.length} />}
+    <Section
+      title="Subtasks"
+      count={items.length}
+      action={
         <button
           type="button"
           onClick={() => setAdding((open) => !open)}
-          className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-500/10"
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-500/10"
         >
           <Plus className="size-3.5" />
           Add subtask
         </button>
-      </div>
+      }
+    >
       {adding && (
         <div className="mb-3">
           <SubtaskPicker id={id} onClose={() => setAdding(false)} />
@@ -324,23 +325,23 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
               onMouseMove={() => hoveredRow.enter(child.id)}
               onMouseLeave={() => hoveredRow.leave(child.id)}
             >
-              <Link
+              <Row
+                as={Link}
+                variant="option"
+                active={i === index}
+                hoverable
                 to={`/task/${child.id}`}
                 onClick={() => subtaskCursor.focus(i)}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                  i === index ? "bg-accent" : "hover:bg-muted/50",
-                )}
               >
                 <StatusChip status={child.status} className="size-4 shrink-0" />
                 <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{child.id}</span>
                 <span className="truncate">{child.title}</span>
-              </Link>
+              </Row>
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </Section>
   )
 }
 
