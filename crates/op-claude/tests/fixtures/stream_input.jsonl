@@ -1,0 +1,4 @@
+{"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "Reply with exactly: hi"}]}}
+{"type": "user", "message": {"role": "user", "content": "bare string content is also accepted"}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "describe this"}, {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo...TRUNCATED"}}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_01ABC", "content": "exit 0"}]}}
