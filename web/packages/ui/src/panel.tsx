@@ -17,14 +17,12 @@ export function Panel({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 export function PanelHeader({ className, ...props }: React.ComponentProps<"div">) {
+  return <div className={cn("bg-muted/30 flex h-11 shrink-0 items-center border-b px-4", className)} {...props} />
+}
+
+export function PanelTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div
-      className={cn(
-        "bg-muted/30 flex h-11 shrink-0 items-center border-b px-4 text-xs font-medium tracking-wide uppercase text-muted-foreground",
-        className,
-      )}
-      {...props}
-    />
+    <div className={cn("text-muted-foreground text-xs font-medium tracking-wide uppercase", className)} {...props} />
   )
 }
 

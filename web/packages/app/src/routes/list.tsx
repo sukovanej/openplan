@@ -14,7 +14,7 @@ import {
   taskPath,
   TaskTimes,
 } from "@open-planner/task-ui"
-import { cn, EmptyState, MetaLine, Panel, PanelBody, PanelHeader, Row } from "@open-planner/ui"
+import { cn, EmptyState, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@open-planner/ui"
 
 import { ListSkeleton } from "../components/states"
 import { hoveredRow } from "../lib/copy-target"
@@ -68,7 +68,9 @@ function TaskGrid({ board }: { board: Board }) {
       tabIndex={0}
       className="text-sm focus:outline-none"
     >
-      <PanelHeader>Tasks</PanelHeader>
+      <PanelHeader>
+        <PanelTitle>Tasks</PanelTitle>
+      </PanelHeader>
       <PanelBody onMouseLeave={hoveredRow.clear}>
         {board.groups.map((group, groupIndex) => {
           const lastGroup = groupIndex === board.groups.length - 1

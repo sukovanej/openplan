@@ -8,7 +8,7 @@ export { type FuzzyMatch, fuzzyMatch, type FuzzySegment, fuzzySegments } from ".
 export { IconToggleGroup, type IconToggleOption } from "./icon-toggle-group"
 export { Kbd } from "./kbd"
 export { MetaItem, MetaLine } from "./meta-line"
-export { Panel, PanelBody, PanelHeader } from "./panel"
+export { Panel, PanelBody, PanelHeader, PanelTitle } from "./panel"
 export { Prose } from "./prose"
 export { Row } from "./row"
 export { Section } from "./section"

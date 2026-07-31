@@ -24,6 +24,7 @@ import {
   Panel,
   PanelBody,
   PanelHeader,
+  PanelTitle,
   Row,
   Section,
 } from "@open-planner/ui"
@@ -91,7 +92,9 @@ function TaskDetailView({
   return (
     <Panel>
       <PanelHeader className="gap-2">
-        <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
+        <PanelTitle className="min-w-0">
+          <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
+        </PanelTitle>
         <div className="ml-auto min-w-0">
           <HeaderParent
             id={task.id}
@@ -193,17 +196,13 @@ function HeaderParent({
   })
 
   if (editing) {
-    return (
-      <div className="normal-case">
-        <ParentPicker id={id} onClose={() => setEditing(false)} />
-      </div>
-    )
+    return <ParentPicker id={id} onClose={() => setEditing(false)} />
   }
   // The parent is unknown until the detail loads; show nothing rather than a misleading "Set parent".
   if (!ready) return null
   const hasParent = parent !== undefined
   return (
-    <div className="flex min-w-0 items-center gap-1 font-normal tracking-normal normal-case">
+    <div className="flex min-w-0 items-center gap-1">
       {parentTitle !== undefined && parent !== undefined ? (
         <MetaLine>
           <ParentLink id={parent} title={parentTitle} />
