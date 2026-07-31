@@ -2,18 +2,18 @@ import { useEffect, useMemo, useRef, type Ref } from "react"
 import { Link } from "react-router-dom"
 
 import type { Board, BoardRow, Status } from "@open-planner/api-client"
+import { cn, EmptyState, MetaItem, MetaLine } from "@open-planner/ui"
 
 import { BranchBadges } from "../components/branch-badges"
-import { ListSkeleton, Message } from "../components/states"
+import { ListSkeleton } from "../components/states"
 import { statusHeaderClass, StatusField, statusLabel } from "../components/status-badge"
-import { MetaItem, MetaLine, PARENT_ICON, TaskTimes } from "../components/task-meta"
+import { PARENT_ICON, TaskTimes } from "../components/task-meta"
 import { hoveredRow } from "../lib/copy-target"
 import { errorText } from "../lib/format"
 import { createdOf, parentOf, problems } from "../lib/metadata"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { boardQuery, useQuery } from "../lib/store"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
-import { cn } from "../lib/utils"
 
 export function ListRoute() {
   const board = useQuery(boardQuery)
@@ -21,10 +21,10 @@ export function ListRoute() {
     case "loading":
       return <ListSkeleton />
     case "failure":
-      return <Message title="Could not load tasks" detail={errorText(board.error)} />
+      return <EmptyState title="Could not load tasks" detail={errorText(board.error)} />
     case "success":
       return board.value.groups.length === 0 ? (
-        <Message title="No tasks yet" detail="Create one with `oplan create`." />
+        <EmptyState title="No tasks yet" detail="Create one with `oplan create`." />
       ) : (
         <TaskGrid board={board.value} />
       )

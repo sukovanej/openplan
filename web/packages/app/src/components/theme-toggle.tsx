@@ -1,8 +1,9 @@
 import { type LucideIcon, Monitor, Moon, Sun } from "lucide-react"
 import type * as React from "react"
 
+import { cn } from "@open-planner/ui"
+
 import { type ThemePreference, useTheme } from "../lib/theme"
-import { cn } from "../lib/utils"
 
 const OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; Icon: LucideIcon }> = [
   { value: "light", label: "Light", Icon: Sun },

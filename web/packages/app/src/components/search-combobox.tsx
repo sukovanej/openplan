@@ -1,8 +1,9 @@
 import { Loader2, Search } from "lucide-react"
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 
+import { cn } from "@open-planner/ui"
+
 import { fuzzySegments } from "../lib/fuzzy"
-import { cn } from "../lib/utils"
 
 export interface ComboOption {
   readonly key: string

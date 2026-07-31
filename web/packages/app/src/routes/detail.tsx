@@ -3,13 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
+import { cn, CountPill, EmptyState, MetaItem, MetaLine } from "@open-planner/ui"
 
 import { BranchSwitcher } from "../components/branch-switcher"
 import { type ComboOption, FuzzyText, SearchCombobox } from "../components/search-combobox"
-import { BodySkeleton, DetailSkeleton, Message } from "../components/states"
+import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusChip, StatusField } from "../components/status-badge"
 import { TaskBody } from "../components/task-body"
-import { MetaItem, MetaLine, PARENT_ICON, TaskTimes } from "../components/task-meta"
+import { PARENT_ICON, TaskTimes } from "../components/task-meta"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
@@ -18,7 +19,6 @@ import { createdOf, parentOf, problems } from "../lib/metadata"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
 import { taskMatches } from "../lib/task-search"
-import { cn } from "../lib/utils"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
 const NO_CHILDREN: ReadonlyArray<TaskChild> = []
@@ -45,7 +45,7 @@ export function DetailRoute() {
     return task.error instanceof TaskNotFound ? (
       <NotFound id={task.error.id} />
     ) : (
-      <Message title="Could not load task" detail={errorText(task.error)} />
+      <EmptyState title="Could not load task" detail={errorText(task.error)} />
     )
   }
   const shown = task._tag === "success" ? task.value : lastShown.current?.id === id ? lastShown.current.value : null
@@ -289,11 +289,7 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
     <section className="mt-8 border-t pt-5">
       <div className="mb-2 flex items-center gap-2">
         <h2 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Subtasks</h2>
-        {items.length > 0 && (
-          <span className="bg-muted text-muted-foreground rounded-full px-1.5 text-[11px] tabular-nums">
-            {items.length}
-          </span>
-        )}
+        {items.length > 0 && <CountPill count={items.length} />}
         <button
           type="button"
           onClick={() => setAdding((open) => !open)}
@@ -406,7 +402,7 @@ function NotFound({ id }: { id: string }) {
   return (
     <div className="space-y-4">
       <BackLink />
-      <Message title="Task not found" detail={id} />
+      <EmptyState title="Task not found" detail={id} />
     </div>
   )
 }

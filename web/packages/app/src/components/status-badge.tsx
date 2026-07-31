@@ -1,9 +1,9 @@
 import { CircleAlert, CircleCheck, CircleDot, CircleEllipsis, CircleX, Clock, Eye, type LucideIcon } from "lucide-react"
 
 import type { Field_Status, Metadata, Status } from "@open-planner/api-client"
+import { cn } from "@open-planner/ui"
 
 import { fieldValue, statusOf } from "../lib/metadata"
-import { cn } from "../lib/utils"
 
 interface Palette {
   readonly icon: string
