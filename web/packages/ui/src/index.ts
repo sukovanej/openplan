@@ -1,6 +1,7 @@
 export { Button } from "./button"
 export { cn } from "./cn"
-export { type ComboOption, Combobox, FuzzyText } from "./combobox"
+export { type ComboOption, Combobox } from "./combobox"
+export { FuzzyText } from "./fuzzy-text"
 export { CountPill } from "./count-pill"
 export { Dialog } from "./dialog"
 export { EmptyState } from "./empty-state"

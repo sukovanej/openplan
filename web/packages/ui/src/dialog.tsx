@@ -4,7 +4,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useRef } from "react"
 import { Button } from "./button"
 import { cn } from "./cn"
 
-const FOCUSABLE = 'button, [href], [tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 export function Dialog({
   open,
