@@ -5,14 +5,12 @@ import { cn } from "./cn"
 // The hue is the caller's — `className` carries the border and text colour that say what the tag is
 // about.
 export function Tag({
-  title,
   className,
   dashed = false,
   selected = false,
   onSelect,
   children,
 }: {
-  title?: string
   className?: string
   dashed?: boolean
   selected?: boolean
@@ -30,11 +28,9 @@ export function Tag({
     interactive && selected && "font-semibold",
   )
   return onSelect === undefined ? (
-    <span title={title} className={classes}>
-      {children}
-    </span>
+    <span className={classes}>{children}</span>
   ) : (
-    <button type="button" onClick={onSelect} aria-pressed={selected} title={title} className={classes}>
+    <button type="button" onClick={onSelect} aria-pressed={selected} className={classes}>
       {children}
     </button>
   )

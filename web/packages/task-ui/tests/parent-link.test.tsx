@@ -1,3 +1,4 @@
+import { act } from "react"
 import { describe, expect, it } from "vitest"
 
 import { ParentLink } from "../src/parent-link"
@@ -9,6 +10,11 @@ describe("ParentLink", () => {
     const link = root.querySelector("a")!
     expect(link.getAttribute("href")).toBe("/task/OPP-12")
     expect(link.textContent).toBe("OPP-12Web UI")
-    expect(root.querySelector("[title='Subtask of Web UI']")).not.toBeNull()
+  })
+
+  it("names the relationship when the keyboard lands on it", () => {
+    const root = render(<ParentLink id="OPP-12" title="Web UI" />)
+    act(() => root.querySelector("a")!.focus())
+    expect(root.querySelector("[role=tooltip]")?.textContent).toBe("Subtask of Web UI")
   })
 })

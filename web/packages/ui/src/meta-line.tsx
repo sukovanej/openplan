@@ -20,17 +20,15 @@ export function MetaLine({ className, children }: { className?: string; children
 
 export function MetaItem({
   icon: Icon,
-  title,
   className,
   children,
 }: {
   icon: LucideIcon
-  title?: string
   className?: string
   children: ReactNode
 }) {
   return (
-    <span title={title} className={cn("flex min-w-0 items-center", className)}>
+    <span className={cn("flex min-w-0 items-center", className)}>
       <Icon className="mr-1 size-3.5 shrink-0 opacity-70" />
       {children}
     </span>

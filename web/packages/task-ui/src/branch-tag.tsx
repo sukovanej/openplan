@@ -1,5 +1,5 @@
 import type { BranchState, ChangeKind } from "@open-planner/api-client"
-import { cn, Tag } from "@open-planner/ui"
+import { cn, Tag, Tooltip } from "@open-planner/ui"
 
 import { fieldValue } from "./metadata"
 
@@ -24,16 +24,12 @@ export function BranchTag({
   onSelect?: () => void
 }) {
   return (
-    <Tag
-      title={branchTitle(branch, headline)}
-      className={kindColor[branch.kind]}
-      dashed={branch.dirty}
-      selected={selected}
-      onSelect={onSelect}
-    >
-      {headline && <Dot className="bg-current" />}
-      <span>{branch.branch}</span>
-    </Tag>
+    <Tooltip content={branchTitle(branch, headline)}>
+      <Tag className={kindColor[branch.kind]} dashed={branch.dirty} selected={selected} onSelect={onSelect}>
+        {headline && <Dot className="bg-current" />}
+        <span>{branch.branch}</span>
+      </Tag>
+    </Tooltip>
   )
 }
 
