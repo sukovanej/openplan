@@ -13,6 +13,7 @@ export {
   statusOrder,
 } from "./status"
 export { TaskBody } from "./task-body"
+export { TASK_ROUTE, taskPath } from "./task-path"
 export { TaskIdentity } from "./task-identity"
 export { TaskRefChip } from "./task-ref-chip"
 export { TaskTimes } from "./task-times"

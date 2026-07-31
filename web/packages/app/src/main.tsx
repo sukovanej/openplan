@@ -2,6 +2,8 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 
+import { TASK_ROUTE } from "@open-planner/task-ui"
+
 import { App } from "./App"
 import { startRealtime } from "./lib/realtime"
 import { loadAbbreviation } from "./lib/store"
@@ -16,7 +18,7 @@ const router = createBrowserRouter([
     element: <App />,
     children: [
       { path: "/", element: <ListRoute /> },
-      { path: "/task/:id", element: <DetailRoute /> },
+      { path: `${TASK_ROUTE}:id`, element: <DetailRoute /> },
     ],
   },
 ])

@@ -1,3 +1,5 @@
+import { taskPath } from "./task-path"
+
 type Text = { type: "text"; value: string }
 type Link = { type: "link"; url: string; title: null; children: Text[] }
 type Node = { type: string; value?: string; children?: Node[] }
@@ -34,13 +36,12 @@ export function splitTaskRefs(value: string, abbreviation: string | undefined): 
   for (const match of value.matchAll(TASK_REF)) {
     const inner = match[1].trim()
     const hash = inner.indexOf("#")
-    const section = hash === -1 ? "" : inner.slice(hash + 1)
+    const section = hash === -1 ? undefined : inner.slice(hash + 1)
     const id = refKey(hash === -1 ? inner : inner.slice(0, hash), abbreviation)
     if (id === null) continue
     const start = match.index
     if (start > last) nodes.push(text(value.slice(last, start)))
-    const url = section ? `/task/${id}#${encodeURIComponent(section)}` : `/task/${id}`
-    nodes.push(link(url, inner))
+    nodes.push(link(taskPath(id, section), inner))
     last = start + match[0].length
   }
   if (nodes.length === 0) return null

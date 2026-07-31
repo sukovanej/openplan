@@ -1,3 +1,5 @@
+import { TASK_ROUTE } from "@open-planner/task-ui"
+
 let hovered: string | undefined
 
 export const hoveredRow = {
@@ -26,8 +28,8 @@ export function copyTargetId(
   return hoveredId ?? focusedId ?? routeId
 }
 
-const TASK_ROUTE = /^\/task\/([^/]+)/
+const TASK_ID = new RegExp(`^${TASK_ROUTE}([^/]+)`)
 
 export function routeTaskId(pathname: string): string | undefined {
-  return TASK_ROUTE.exec(pathname)?.[1]
+  return TASK_ID.exec(pathname)?.[1]
 }

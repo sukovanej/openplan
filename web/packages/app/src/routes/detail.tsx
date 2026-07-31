@@ -12,6 +12,7 @@ import {
   statusField,
   TaskBody,
   TaskIdentity,
+  taskPath,
   TaskTimes,
 } from "@open-planner/task-ui"
 import {
@@ -188,7 +189,7 @@ function HeaderParent({
   const [editing, setEditing] = useState(false)
   useDetailAction("edit-parent", () => setEditing(true))
   useDetailAction("go-parent", () => {
-    if (parent !== undefined && parentTitle !== undefined) navigate(`/task/${parent}`)
+    if (parent !== undefined && parentTitle !== undefined) navigate(taskPath(parent))
   })
 
   if (editing) {
@@ -332,7 +333,7 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
                 variant="option"
                 active={i === index}
                 hoverable
-                to={`/task/${child.id}`}
+                to={taskPath(child.id)}
                 onClick={() => subtaskCursor.focus(i)}
               >
                 <TaskIdentity status={child.status} id={child.id} title={child.title} />

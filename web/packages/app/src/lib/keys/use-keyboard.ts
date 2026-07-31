@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
+import { TASK_ROUTE } from "@open-planner/task-ui"
+
 import { copyTaskId } from "../clipboard"
 import { copyTargetId, hoveredRow, routeTaskId } from "../copy-target"
 import { detailActions, escapeOutcome } from "../detail-actions"
@@ -11,7 +13,7 @@ import { historyIndex } from "./history"
 import type { RouteScope, RunContext } from "./types"
 
 function routeScope(pathname: string): RouteScope {
-  return pathname.startsWith("/task/") ? "detail" : "list"
+  return pathname.startsWith(TASK_ROUTE) ? "detail" : "list"
 }
 
 export interface Keyboard {
