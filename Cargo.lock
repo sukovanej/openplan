@@ -2133,6 +2133,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "op-claude"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "op-cli"
 version = "0.1.0"
 dependencies = [

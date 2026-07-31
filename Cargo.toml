@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/milansuk/open-planner"
 
 [workspace.dependencies]
+op-claude = { path = "crates/op-claude" }
 op-md = { path = "crates/op-md" }
 op-task = { path = "crates/op-task" }
 op-store = { path = "crates/op-store" }
