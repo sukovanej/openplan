@@ -36,7 +36,7 @@ export function splitTaskRefs(value: string, abbreviation: string | undefined): 
   for (const match of value.matchAll(TASK_REF)) {
     const inner = match[1].trim()
     const hash = inner.indexOf("#")
-    const section = hash === -1 ? undefined : inner.slice(hash + 1)
+    const section = hash === -1 ? undefined : inner.slice(hash + 1) || undefined
     const id = refKey(hash === -1 ? inner : inner.slice(0, hash), abbreviation)
     if (id === null) continue
     const start = match.index

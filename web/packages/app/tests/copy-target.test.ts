@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { copyTargetId, hoveredRow, routeTaskId } from "../src/lib/copy-target"
+import { copyTargetId, hoveredRow } from "../src/lib/copy-target"
 
 beforeEach(() => {
   hoveredRow.clear()
@@ -46,17 +46,5 @@ describe("copyTargetId", () => {
 
   it("resolves to nothing when there is no candidate at all", () => {
     expect(copyTargetId(undefined, undefined, undefined)).toBeUndefined()
-  })
-})
-
-describe("routeTaskId", () => {
-  it("reads the id of a detail route", () => {
-    expect(routeTaskId("/task/28")).toBe("28")
-    expect(routeTaskId("/task/28/")).toBe("28")
-  })
-
-  it("has no id on the list route or an id-less path", () => {
-    expect(routeTaskId("/")).toBeUndefined()
-    expect(routeTaskId("/task/")).toBeUndefined()
   })
 })

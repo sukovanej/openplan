@@ -1,5 +1,5 @@
 import type { BranchState, ChangeKind } from "@open-planner/api-client"
-import { cn, Tag, Tooltip } from "@open-planner/ui"
+import { Tag, Tooltip } from "@open-planner/ui"
 
 import { fieldValue } from "./metadata"
 
@@ -26,15 +26,11 @@ export function BranchTag({
   return (
     <Tooltip content={branchTitle(branch, headline)}>
       <Tag className={kindColor[branch.kind]} dashed={branch.dirty} selected={selected} onSelect={onSelect}>
-        {headline && <Dot className="bg-current" />}
+        {headline && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />}
         <span>{branch.branch}</span>
       </Tag>
     </Tooltip>
   )
-}
-
-function Dot({ className }: { className: string }) {
-  return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", className)} />
 }
 
 const statusText = (status: BranchState["status"]): string => fieldValue(status) ?? "unreadable"

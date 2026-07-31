@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { TASK_ROUTE } from "@open-planner/task-ui"
+import { TASK_ROUTE, taskIdOf } from "@open-planner/task-ui"
 
 import { copyTaskId } from "../clipboard"
-import { copyTargetId, hoveredRow, routeTaskId } from "../copy-target"
+import { copyTargetId, hoveredRow } from "../copy-target"
 import { detailActions, escapeOutcome } from "../detail-actions"
 import { focusedId, rowCursor, subtaskCursor } from "../row-cursor"
 import { bindings } from "./bindings"
@@ -70,7 +70,7 @@ export function useKeyboard(): Keyboard {
       copy: {
         taskId: () => {
           const cursor = activeCursor().getSnapshot()
-          const id = copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), routeTaskId(live.current.pathname))
+          const id = copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), taskIdOf(live.current.pathname))
           if (id !== undefined) copyTaskId(id)
         },
       },

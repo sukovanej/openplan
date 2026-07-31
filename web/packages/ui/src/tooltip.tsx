@@ -15,6 +15,7 @@ export function Tooltip({
   children: ReactNode
 }) {
   const anchor = useRef<HTMLSpanElement>(null)
+  const pointed = useRef(false)
   const bubble = useRef<HTMLDivElement>(null)
   const delay = useRef<number>(undefined)
   const [shown, setShown] = useState(false)
@@ -63,8 +64,16 @@ export function Tooltip({
         delay.current = window.setTimeout(() => setShown(true), HOVER_DELAY)
       }}
       onPointerLeave={hide}
-      onFocus={() => setShown(true)}
-      onBlur={hide}
+      onPointerDown={() => {
+        pointed.current = true
+      }}
+      onFocus={() => {
+        if (!pointed.current) setShown(true)
+      }}
+      onBlur={() => {
+        pointed.current = false
+        hide()
+      }}
     >
       {children}
       {shown && (
@@ -74,7 +83,7 @@ export function Tooltip({
           role="tooltip"
           style={at}
           className={cn(
-            "bg-background text-foreground/90 pointer-events-none fixed top-0 left-0 z-50 max-w-xs rounded-md border px-2 py-1 text-xs whitespace-nowrap shadow-md",
+            "bg-background text-foreground/90 pointer-events-none fixed top-0 left-0 z-50 max-w-xs rounded-md border px-2 py-1 text-xs shadow-md",
             // It spends its first layout at the corner it is measured in.
             at === undefined && "invisible",
           )}

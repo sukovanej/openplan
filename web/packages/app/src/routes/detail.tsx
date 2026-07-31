@@ -92,7 +92,7 @@ function TaskDetailView({
   return (
     <Panel>
       <PanelHeader className="gap-2">
-        <PanelTitle className="min-w-0">
+        <PanelTitle>
           <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
         </PanelTitle>
         <div className="ml-auto min-w-0">

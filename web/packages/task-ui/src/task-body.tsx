@@ -8,7 +8,7 @@ import type { TaskRef } from "@open-planner/api-client"
 import { cn, Prose } from "@open-planner/ui"
 
 import { taskLinkPlugins } from "./task-links"
-import { TASK_ROUTE } from "./task-path"
+import { taskIdOf } from "./task-path"
 import { TaskRefChip } from "./task-ref-chip"
 
 const RefsContext = createContext<ReadonlyMap<string, TaskRef>>(new Map())
@@ -16,16 +16,16 @@ const RefsContext = createContext<ReadonlyMap<string, TaskRef>>(new Map())
 const linkClass =
   "font-medium text-foreground underline decoration-1 decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
 
-function BodyTaskRef({ href }: { href: string }) {
+function BodyTaskRef({ href, id }: { href: string; id: string }) {
   const refs = useContext(RefsContext)
-  const id = href.slice(TASK_ROUTE.length).split("#")[0]
   return <TaskRefChip to={href} id={id} task={refs.get(id)} />
 }
 
 const components: Components = {
   a({ href, children }) {
-    if (href !== undefined && href.startsWith(TASK_ROUTE)) {
-      return <BodyTaskRef href={href} />
+    const id = href === undefined ? undefined : taskIdOf(href)
+    if (href !== undefined && id !== undefined) {
+      return <BodyTaskRef href={href} id={id} />
     }
     if (href !== undefined && href.startsWith("/")) {
       return (

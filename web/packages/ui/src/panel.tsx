@@ -22,7 +22,10 @@ export function PanelHeader({ className, ...props }: React.ComponentProps<"div">
 
 export function PanelTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("text-muted-foreground text-xs font-medium tracking-wide uppercase", className)} {...props} />
+    <div
+      className={cn("text-muted-foreground min-w-0 text-xs font-medium tracking-wide uppercase", className)}
+      {...props}
+    />
   )
 }
 
