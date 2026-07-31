@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 created: 2026-07-28T08:19:15Z
 ---
 # Web UI: row tooltips are unreachable under the title stretched-link

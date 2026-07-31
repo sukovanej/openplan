@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, type Ref } from "react"
-import { Link } from "react-router-dom"
+import { useEffect, useMemo, useRef, type MouseEvent, type Ref } from "react"
+import { Link, useNavigate } from "react-router-dom"
 
 import type { Board, BoardRow, Status } from "@open-planner/api-client"
 import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, Row } from "@open-planner/ui"
@@ -39,6 +39,7 @@ function TaskGrid({ board }: { board: Board }) {
   const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
   const ids = useMemo(() => rows.map((row) => row.task.id), [rows])
   const { index } = useRowCursor(ids)
+  const widestId = useMemo(() => ids.reduce((widest, id) => (id.length > widest.length ? id : widest), ""), [ids])
   const activeId = index >= 0 && index < rows.length ? rowDomId(rows[index].task.id) : undefined
 
   const activeRow = useRef<HTMLDivElement>(null)
@@ -73,6 +74,7 @@ function TaskGrid({ board }: { board: Board }) {
                     key={row.task.id}
                     ref={i === index ? activeRow : undefined}
                     row={row}
+                    widestId={widestId}
                     guides={guides[groupIndex][j]}
                     active={i === index}
                     // The pointer only marks the current row while the keyboard cursor is idle, so
@@ -147,6 +149,7 @@ function TreeGuides({ columns }: { columns: ReadonlyArray<boolean> }) {
 function TaskRow({
   ref,
   row,
+  widestId,
   guides,
   active,
   hoverable,
@@ -155,6 +158,7 @@ function TaskRow({
 }: {
   ref?: Ref<HTMLDivElement>
   row: BoardRow
+  widestId: string
   guides: RowGuides
   active: boolean
   hoverable: boolean
@@ -165,6 +169,18 @@ function TaskRow({
   const parent = parentOf(task.metadata)
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
+  const navigate = useNavigate()
+
+  // The row opens its task from its own click rather than from a link stretched over it: an overlay
+  // that size takes every hover in the row with it, leaving the tooltips underneath unreachable. The
+  // links the row does contain answer their own clicks, and a modified click is the browser's.
+  const open = (event: MouseEvent<HTMLDivElement>) => {
+    onFocus()
+    const link = event.target instanceof Element && event.target.closest("a") !== null
+    if (link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    navigate(`/task/${task.id}`)
+  }
+
   return (
     <Row
       ref={ref}
@@ -174,7 +190,7 @@ function TaskRow({
       active={active}
       hoverable={hoverable}
       last={tableLast}
-      onClick={onFocus}
+      onClick={open}
       // Scrolling a list under a still pointer moves `:hover` to another row without a mousemove,
       // so the row the pointer marks is only in step with the store if entering counts too. It must
       // not count while the keyboard drives, or walking with `j` would hand rows it scrolls past
@@ -198,8 +214,14 @@ function TaskRow({
         <StatusField metadata={task.metadata} />
         {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
       </div>
-      <div role="gridcell" className="text-muted-foreground shrink-0 self-center pl-3 text-xs tabular-nums">
-        {task.id}
+      <div role="gridcell" className="text-muted-foreground grid shrink-0 self-center pl-3 text-xs tabular-nums">
+        {/* Laying the widest id on the board under this one, in the same grid cell, makes every id
+            cell that wide — so the title clears the longest id without the shorter ones leaving a
+            gap. Sizing the cell by the row's own id instead would shift each title separately. */}
+        <span aria-hidden className="invisible col-start-1 row-start-1">
+          {widestId}
+        </span>
+        <span className="col-start-1 row-start-1">{task.id}</span>
       </div>
       <div className="min-w-0 grow basis-56 pr-4 pl-3 sm:pr-0" role="gridcell">
         <Link
@@ -207,17 +229,14 @@ function TaskRow({
           tabIndex={-1}
           // Narrow enough and the title takes the second line it needs; a wide row has the room to
           // keep every title on one.
-          className="text-foreground/90 block line-clamp-2 text-sm font-normal after:absolute after:inset-0 sm:line-clamp-none sm:truncate"
+          className="text-foreground/90 block line-clamp-2 text-sm font-normal sm:line-clamp-none sm:truncate"
         >
           {task.title}
         </Link>
         <MetaLine>
           {parent_title !== undefined && parent !== undefined && (
             <MetaItem icon={PARENT_ICON} title={`Subtask of ${parent_title}`}>
-              <Link
-                to={`/task/${parent}`}
-                className="text-foreground/90 group relative z-10 flex min-w-0 items-center gap-1.5"
-              >
+              <Link to={`/task/${parent}`} className="text-foreground/90 group flex min-w-0 items-center gap-1.5">
                 <span className="text-muted-foreground shrink-0 tabular-nums">{parent}</span>
                 <span className="max-w-[15rem] truncate group-hover:underline">{parent_title}</span>
               </Link>
