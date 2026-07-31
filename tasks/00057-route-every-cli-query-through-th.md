@@ -76,21 +76,52 @@ repo, take `current_branch()`, `ensure_daemon` at the main-checkout serve root,
 `ensure_same_repo`. Unlike `Writer` it has no branchless mode; unlike today's read
 paths it has no local mode.
 
-**Four missing routes.** The response types already exist in `op-api` and the index
-methods behind them are already `pub`; only the HTTP surface is absent:
+**Four missing routes**, plus a branch parameter on the two that exist:
 
 | Route | Index method | CLI command |
 |---|---|---|
-| `GET /api/tasks?branch=` | `branch_summaries` | `list`, `list --branch` |
+| `GET /api/tasks?branch=` | `branch_tasks` (new) | `list`, `list --branch` |
 | `GET /api/matrix` | `matrix` | `list --all-branches` |
-| `GET /api/tasks/{id}/tree` | `hierarchy_context` | `tree` |
+| `GET /api/tasks/{id}/tree?branch=` | `branch_summaries` + `TaskTree::build` | `tree` |
 | `GET /api/tasks/{id}/branches` | `task_branches` | `show --branches` |
+| `GET /api/tasks/{id}?branch=` | `effective_view` | `get`, `show` |
+
+Two of these need more than an HTTP handler, and the shapes below are the design —
+the CLI bends to the daemon's answer, not the reverse:
+
+- **`GET /api/tasks?branch=` keeps one response schema in both forms**:
+  `Vec<TaskListItem>`, exactly what the SPA's task list already decodes. Branchless
+  stays `aggregated_tasks` — one row per logical task across every branch. With
+  `?branch=` a new `Index::branch_tasks` returns that branch's cells as
+  `TaskListItem`, `headline` being the branch asked for and `branches` holding only
+  its own state. `list --json` therefore prints `TaskListItem`, not `TaskSummary`:
+  its JSON grows `updated`, `headline`, and `branches`. That output change is the
+  point — CLI and UI read one route with one shape. The human-readable table keeps
+  its current columns, and `TaskSummary` survives only where the matrix already
+  uses it.
+- **`GET /api/tasks/{id}/tree` needs a response type that does not exist yet.**
+  `hierarchy_context` answers a different question (parent title, *direct*
+  children, body refs — what `TaskDetail` embeds for the UI). `oplan tree` prints a
+  recursive, `--depth`-bounded `TaskTree` whose nodes carry full `Metadata`, plus
+  one stderr warning per parent cycle it truncated. Add the response type to
+  `op-api` carrying the `TaskTree` and the truncated ids, and build it from
+  `branch_summaries` the way `tree` builds it locally today.
 
 Regenerate the web client (`mise run generate-web-client`) since the OpenAPI spec
 grows.
 
-**`op-client`**: read methods for the four routes above plus the existing
-`GET /api/tasks/{id}`.
+**`op-client`**: read methods for every route in the table above.
+
+**`get` prints the daemon's `TaskDetail`, re-serialized — not the file's bytes.**
+Today it prints the file verbatim, because the local path has the bytes in hand and
+re-serializing would normalize formatting (`op-cli/src/main.rs`, pinned by
+`get_prints_the_file_verbatim`). No route reconstructs those bytes, and none should:
+the daemon answers with parsed state, so `get` renders that state back to markdown —
+canonical frontmatter from `Metadata`, `# title`, then `body`. Frontmatter key order,
+spacing, and unknown keys normalize. Retire the verbatim test in favour of one that
+asserts the normalized rendering, and drop `get --branch`'s separate raw path with
+it. `get --json` prints `TaskDetail` for the same reason `list --json` prints
+`TaskListItem`.
 
 **Delete the local read paths** in `op-cli/src/main.rs`: `Store::discover` in
 `list`, `get`, `show`, `tree`, `delete`'s confirmation read, and `move`'s sibling
@@ -116,6 +147,19 @@ checkout. Check §6 and the §7.1 "reads are global, writes are local" invariant
 wording that now reads as a fallback licence; the invariant itself still holds (a
 read may span branches, a write may not) and should survive.
 
+## Out of scope: a repository with no commits
+
+`Index::rebuild` walks `refs/heads/*`, so a repository whose HEAD is unborn has no
+branches, no matrix cells, and therefore no daemon-answerable reads — every read
+starts from a cell, and `effective_raw` returns `None` before it ever consults
+`self.live`. Local reads work there today; routed through the daemon they stop.
+
+Closing that gap belongs to [[./00058-index-a-live-worktree-whose-bran.md]], not
+here. This task accepts the regression and gives `op-cli/tests/cli.rs` its own
+birthing commit — `Project::new` never commits, so nearly every CLI test runs on an
+unborn branch — matching what `op-server`'s harness already does. Do not work around
+it per-test, and do not smuggle worktree indexing into this change.
+
 ## Failure modes to get right
 
 The point of removing the fallback is that a broken daemon is *reported*, so each
@@ -130,9 +174,15 @@ of these needs a message that names the cause and the fix:
 ## Acceptance
 
 - No `Store::discover`, `Index::rebuild`, or `Repo`-based task read remains in
-  `op-cli` outside `merge-driver` and the `server` lifecycle commands.
-- `list`, `get`, `show`, `tree`, `move`, and `delete` produce byte-identical output
-  to today for a task on the caller's branch, with the daemon running.
+  `op-cli` outside `merge-driver` and the `server` lifecycle commands. `serve_root`
+  in `writer.rs` keeps its `Store::discover` — it anchors the daemon, it is not a
+  task read — and `branches` keeps `Repo::local_branches()` with a stated why.
+- `show`, `tree`, `move`, and `delete` produce byte-identical output to today for a
+  task on the caller's branch, with the daemon running.
+- `get` and `list` produce today's output up to the two deliberate changes above:
+  `get`'s markdown is normalized rather than verbatim, and `list --json` prints
+  `TaskListItem`. Nothing else about either shifts — the human-readable table's
+  columns, ordering, `--status`/`--parent` filtering, and empty-state lines hold.
 - With the daemon stopped and auto-start sabotaged, every one of those commands
   exits non-zero with a message naming the daemon as the cause — none prints task
   data.
@@ -140,5 +190,10 @@ of these needs a message that names the cause and the fix:
   and its dirty state; `--branch <other>` prints it.
 - A read from a linked worktree returns that worktree's branch's version, not the
   serve root's.
+- `list --branch <unknown>` exits non-zero naming the branch — it does not degrade
+  into a successful empty list now that `ensure_branch` is gone, which means the
+  daemon rejects an unknown `?branch=` rather than answering with no cells.
+- The SPA is untouched by the branchless `/api/tasks` response, and the regenerated
+  client's existing decode tests pass unchanged.
 - SPEC.md carries no remaining claim that reads degrade to local access.
 - `cargo build && cargo test && cargo fmt --check && cargo clippy -- -D warnings` pass.
