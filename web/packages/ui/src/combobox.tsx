@@ -1,9 +1,9 @@
 import { Loader2, Search } from "lucide-react"
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 
-import { cn, Row } from "@open-planner/ui"
-
-import { fuzzySegments } from "../lib/fuzzy"
+import { cn } from "./cn"
+import { fuzzySegments } from "./fuzzy"
+import { Row } from "./row"
 
 export interface ComboOption {
   readonly key: string
@@ -22,9 +22,9 @@ function useDebounced<T>(value: T, ms: number): T {
 
 // A single-line search field over a popover list, driven by a caller-supplied `buildOptions`. It
 // owns the debounced query, keyboard navigation (↑ ↓ Enter Esc), and dismissal on outside click;
-// callers decide what the options are and what selecting one does. Reused for the parent picker and
-// the add-subtask box.
-export function SearchCombobox({
+// callers decide what the options are and what selecting one does. Reused for the parent picker, the
+// add-subtask box, and anything else that wants the same contract.
+export function Combobox({
   placeholder,
   buildOptions,
   onClose,

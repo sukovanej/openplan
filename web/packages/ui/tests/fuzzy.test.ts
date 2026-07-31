@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { fuzzyMatch, fuzzySegments } from "../src/lib/fuzzy"
+import { fuzzyMatch, fuzzySegments } from "../src/fuzzy"
 
 describe("fuzzyMatch", () => {
   it("matches a subsequence and reports the hit positions", () => {
