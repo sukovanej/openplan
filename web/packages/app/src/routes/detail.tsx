@@ -3,10 +3,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
-import { EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, Row, Section } from "@open-planner/ui"
+import {
+  Button,
+  type ComboOption,
+  Combobox,
+  EmptyState,
+  FuzzyText,
+  MetaItem,
+  MetaLine,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  Row,
+  Section,
+} from "@open-planner/ui"
 
 import { BranchSwitcher } from "../components/branch-switcher"
-import { type ComboOption, FuzzyText, SearchCombobox } from "../components/search-combobox"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusChip, StatusField } from "../components/status-badge"
 import { TaskBody } from "../components/task-body"
@@ -203,11 +215,10 @@ function HeaderParent({
       ) : hasParent ? (
         <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
       ) : null}
-      <button
-        type="button"
+      <Button
         onClick={() => setEditing(true)}
         aria-label={hasParent ? "Change parent" : "Set parent"}
-        className="text-muted-foreground/60 hover:bg-muted hover:text-foreground flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs"
+        className="gap-1 px-1.5"
       >
         {hasParent ? (
           <Pencil className="size-3.5" />
@@ -217,7 +228,7 @@ function HeaderParent({
             Set parent
           </>
         )}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -262,7 +273,7 @@ function ParentPicker({ id, onClose }: { id: string; onClose: () => void }) {
   )
 
   return (
-    <SearchCombobox
+    <Combobox
       placeholder="Change parent…"
       buildOptions={buildOptions}
       onClose={onClose}
@@ -290,14 +301,10 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
       title="Subtasks"
       count={items.length}
       action={
-        <button
-          type="button"
-          onClick={() => setAdding((open) => !open)}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-500/10"
-        >
+        <Button variant="accent" onClick={() => setAdding((open) => !open)}>
           <Plus className="size-3.5" />
           Add subtask
-        </button>
+        </Button>
       }
     >
       {adding && (
@@ -388,7 +395,7 @@ function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
   )
 
   return (
-    <SearchCombobox
+    <Combobox
       placeholder="Find a task or type a new subtask title…"
       buildOptions={buildOptions}
       onClose={onClose}
