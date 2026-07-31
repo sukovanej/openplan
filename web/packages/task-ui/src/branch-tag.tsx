@@ -6,9 +6,9 @@ import { fieldValue } from "./metadata"
 // Border and text share one hue per change kind, so a tag never pairs a grey border with coloured text.
 const kindColor: Record<ChangeKind, string> = {
   base: "border-foreground text-foreground",
-  added: "border-emerald-600 text-emerald-600",
-  modified: "border-sky-600 text-sky-600",
-  deleted: "border-rose-600 text-rose-600 line-through",
+  added: "border-change-added text-change-added",
+  modified: "border-change-modified text-change-modified",
+  deleted: "border-change-deleted text-change-deleted line-through",
 }
 
 // The single branch tag used everywhere a branch is shown.
