@@ -39,6 +39,7 @@ function TaskGrid({ board }: { board: Board }) {
   const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
   const ids = useMemo(() => rows.map((row) => row.task.id), [rows])
   const { index } = useRowCursor(ids)
+  const widestId = useMemo(() => ids.reduce((widest, id) => (id.length > widest.length ? id : widest), ""), [ids])
   const activeId = index >= 0 && index < rows.length ? rowDomId(rows[index].task.id) : undefined
 
   const activeRow = useRef<HTMLDivElement>(null)
@@ -73,6 +74,7 @@ function TaskGrid({ board }: { board: Board }) {
                     key={row.task.id}
                     ref={i === index ? activeRow : undefined}
                     row={row}
+                    widestId={widestId}
                     guides={guides[groupIndex][j]}
                     active={i === index}
                     // The pointer only marks the current row while the keyboard cursor is idle, so
@@ -147,6 +149,7 @@ function TreeGuides({ columns }: { columns: ReadonlyArray<boolean> }) {
 function TaskRow({
   ref,
   row,
+  widestId,
   guides,
   active,
   hoverable,
@@ -155,6 +158,7 @@ function TaskRow({
 }: {
   ref?: Ref<HTMLDivElement>
   row: BoardRow
+  widestId: string
   guides: RowGuides
   active: boolean
   hoverable: boolean
@@ -198,8 +202,14 @@ function TaskRow({
         <StatusField metadata={task.metadata} />
         {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
       </div>
-      <div role="gridcell" className="text-muted-foreground shrink-0 self-center pl-3 text-xs tabular-nums">
-        {task.id}
+      <div role="gridcell" className="text-muted-foreground grid shrink-0 self-center pl-3 text-xs tabular-nums">
+        {/* Laying the widest id on the board under this one, in the same grid cell, makes every id
+            cell that wide — so the title clears the longest id without the shorter ones leaving a
+            gap. Sizing the cell by the row's own id instead would shift each title separately. */}
+        <span aria-hidden className="invisible col-start-1 row-start-1">
+          {widestId}
+        </span>
+        <span className="col-start-1 row-start-1">{task.id}</span>
       </div>
       <div className="min-w-0 grow basis-56 pr-4 pl-3 sm:pr-0" role="gridcell">
         <Link
