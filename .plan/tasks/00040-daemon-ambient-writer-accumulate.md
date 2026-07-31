@@ -1,5 +1,5 @@
 ---
-status: todo
+status: backlog
 created: 2026-07-26T15:40:55Z
 parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:

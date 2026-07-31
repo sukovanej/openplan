@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: todo
 created: 2026-07-30T18:53:10Z
 parent: ./00059-web-ui-extract-reusable-componen.md
 dependencies:
