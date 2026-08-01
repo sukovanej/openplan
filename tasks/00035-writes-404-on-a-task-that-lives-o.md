@@ -27,7 +27,7 @@ plainly exists.
 
 - **Write through to the owning branch.** `PATCH` targets the branch the task
   headlines on when the serve root does not have it. Needs a writable worktree
-  for that branch; §7 already refuses writes to a branch with no live worktree,
+  for that branch; writes to a branch with no live worktree are already refused,
   so this reduces to picking the branch rather than a new mechanism.
 - **Say so in the read model.** Carry a per-row "writable here" flag from the
   index, and have the client disable the controls and explain why. Cheaper, and

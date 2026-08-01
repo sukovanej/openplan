@@ -139,13 +139,10 @@ it is `Missing`.
 daemon — a read-modify-write split across two resolvers. Take the sibling group from
 the daemon so the ranks are computed from the same state the write lands on.
 
-**SPEC.md §7.3** documents the opposite of this task: "if the daemon is down, the CLI
-reads files / the object DB directly … **Reads** degrade; **writes** do not."
-Rewrite that paragraph — neither degrades, and the auto-start/fail-loudly rule now
-covers both. Keep the existing note that auto-start roots the daemon at the main
-checkout. Check §6 and the §7.1 "reads are global, writes are local" invariant for
-wording that now reads as a fallback licence; the invariant itself still holds (a
-read may span branches, a write may not) and should survive.
+Neither reads nor writes degrade any more — the auto-start/fail-loudly rule covers
+both. Auto-start still roots the daemon at the main checkout. The "reads are global,
+writes are local" invariant survives unchanged: a read may span branches, a write may
+not.
 
 ## Out of scope: a repository with no commits
 
@@ -195,5 +192,4 @@ of these needs a message that names the cause and the fix:
   daemon rejects an unknown `?branch=` rather than answering with no cells.
 - The SPA is untouched by the branchless `/api/tasks` response, and the regenerated
   client's existing decode tests pass unchanged.
-- SPEC.md carries no remaining claim that reads degrade to local access.
 - `cargo build && cargo test && cargo fmt --check && cargo clippy -- -D warnings` pass.

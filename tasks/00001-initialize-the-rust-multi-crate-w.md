@@ -60,7 +60,7 @@ Each crate has one job — no catch-all core, no catch-all daemon.
 
 **Binary — one `oplan`**
 - **op-cli** (bin `oplan`): the single binary; each face is a subcommand rather than a separate bin:
-  - the **CLI surface** (spec §8) — talks to the daemon over HTTP, falls back to op-store/op-git
+  - the **CLI surface** — talks to the daemon over HTTP, falls back to op-store/op-git
     directly when it's down;
   - **`serve`** — the singleton daemon (process lifecycle, project registry; wires watch + index +
     presence + server);

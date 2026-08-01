@@ -23,7 +23,7 @@ open-plan is single-machine, so [[./00033-daemon-as-single-write-id-author.md]] 
 the machine daemon the sole writer. Allocation follows from that:
 
 - `next = max(numeric id over all local branches) + 1`, computed from the set the
-  §7.4 matrix builder already aggregates (working-tree copies for checked-out
+  matrix builder already aggregates (working-tree copies for checked-out
   branches + committed blobs for the rest). No stored or committed counter.
 - The single daemon serializes creates and holds an in-memory reservation set, so
   the floor accounts for all branches and back-to-back creates never repeat.
@@ -46,15 +46,13 @@ a per-branch `op-store` counter here; allocation belongs behind the daemon.
 - Migration: rename existing `.plan/tasks/*.md` and rewrite every reference to old
   ids — `parent`, `deps` (including `id#Section`), and `[[id]]` body refs — as a
   one-shot pass, including tasks that live on other local branches.
-- Aggregation (`op-index` / matrix builder, §7.4) and presence (§7.5, keyed by
-  logical id) must agree on the new identity.
-- SPEC updates: §3.1 (Identity) and §7.1 (many-branch model) rewritten to describe
-  the numeric identity and how single-writer allocation keeps it collision-free.
+- Aggregation (`op-index` / matrix builder) and presence (keyed by logical id)
+  must agree on the new identity.
 
 ## Acceptance
 
 - New tasks get an incrementing numeric identity; `oplan create` prints it.
-- No two tasks ever share a filename; SPEC §3.1/§7.1 document exactly why
-  (single-writer, global-across-branch floor).
+- No two tasks ever share a filename — single-writer allocation over a
+  global-across-branch floor.
 - Existing tasks and all their references migrate without dangling links.
 - `cargo build && cargo test && cargo fmt --check && cargo clippy -- -D warnings` pass.

@@ -8,7 +8,7 @@ dependencies:
 # Refresh engine: rebase rolling-updates onto main (event-driven)
 
 **Phase 4** of the rolling-updates plan
-([[./00023-design-a-continuous-changes-accu.md]] §7.11). Keep
+([[./00023-design-a-continuous-changes-accu.md]]). Keep
 `refs/open-plan/rolling-updates` reconciled onto `main` so it is always
 `main` + the pending ambient stack, worktree-less, conflict-gated.
 
@@ -48,7 +48,7 @@ Flush staged ambient edits first, then:
   step.
 - `Done { tip }` -> CAS `rolling` old->new; `SyncState` -> `InSync` / `Pending`.
 - `Blocked { last_good, tasks }` -> **hold** the ref at its last good tip, set
-  `SyncState::Blocked`, record `tasks` as **conflicted** (machine-local per §7.7,
+  `SyncState::Blocked`, record `tasks` as **conflicted** (machine-local,
   in `SyncStatus.conflicted`, surfaced to the UI). Retry on the next refresh once
   a human reconciles. Show `Syncing` while the replay runs.
 

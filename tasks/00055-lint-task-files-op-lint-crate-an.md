@@ -23,7 +23,7 @@ contacts or starts a daemon, in CI or locally.
 - **Snapshot** — every `.plan/tasks/*.md` read once through
   `op_task::parse_partial` (lenient: one broken file must not hide the rest),
   plus an index of paths and headings that the reference rules resolve against.
-  Standalone docs (§12) plug into that index later; it is the only seam built
+  Standalone docs plug into that index later; it is the only seam built
   ahead of need.
 - **Rules** — `const TASK_RULES: &[TaskRule]` (per file,
   `fn(&Snapshot, &TaskFile, &mut Sink)`) and `const STORE_RULES: &[StoreRule]`
@@ -43,7 +43,7 @@ contacts or starts a daemon, in CI or locally.
   An `#anchor` matches by **GitHub slug** (lowercase, spaces → `-`, punctuation
   dropped, duplicates `-1`, `-2`): the scheme GitHub, GitLab, and VS Code all
   resolve, so our own links stay clickable outside oplan. `[[42]]` and `[[WEB-7]]`
-  are reported, never rewritten — §3.1 refuses those spellings.
+  are reported, never rewritten — the id rules refuse those spellings.
 - Exactly one non-empty `# ` title.
 - Parent cycles and dependency cycles.
 - Two files claiming one number.
@@ -67,10 +67,10 @@ Only where the right output is **derivable**, never guessed:
 
 Fixes are textual splices (`Range<usize>` + replacement) applied by the runner to
 a fixpoint, never `Task::to_file_string` — reserializing reflows the whole
-frontmatter, the diff blowup §5.3 exists to prevent. They are written under
+frontmatter, the diff blowup splicing exists to prevent. They are written under
 `Store`'s advisory lock + atomic rename with no daemon: `--fix` allocates no id
-and resolves no branch, so it is an out-of-band writer of the kind §6 already
-sanctions. SPEC §7.3 gains a line saying so.
+and resolves no branch, so it is an out-of-band writer of the kind the
+concurrency model already sanctions.
 
 Dangling refs, an invalid `status`, and duplicate H1s stay report-only — each has
 more than one valid repair, and picking one is a guess.

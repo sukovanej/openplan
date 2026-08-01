@@ -48,6 +48,5 @@ user's default browser.
 
 ## Refs
 
-- SPEC.md:250 (`op serve [--open]`) — superseded by this standalone command.
 - Reuse: `crates/op-cli/src/daemon.rs` (`Control`, `Home`),
   `crates/op-server/src/lib.rs` (`static_handler` already serves the embedded SPA).

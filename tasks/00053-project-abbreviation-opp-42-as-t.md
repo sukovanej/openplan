@@ -8,19 +8,18 @@ Linear-style project keys: `OPP-42` replaces `42` as the id everywhere above the
 store. The number keeps allocating tasks and naming files; it stops being the
 thing anyone types or reads.
 
-This **contradicts SPEC §3.1** ("The number is the whole id … exactly one string
-is the id: `42` is one") — rewriting that paragraph is part of the task, not a
-follow-up.
+This **reverses the previous identity rule** ("The number is the whole id …
+exactly one string is the id: `42` is one").
 
 ## The model
 
-- **Number = allocation unit + file name.** The daemon's allocator (§7.3), the
+- **Number = allocation unit + file name.** The daemon's allocator, the
   `00042-` prefix, and `./00042-ship-login-page.md` references are untouched.
 - **Key = `<ABBR>-<number>` = the id.** It is what the API, the CLI, the URLs,
   and the UI carry. `id` in every payload becomes `"OPP-42"`.
 - **Disk and wire deliberately diverge.** A task file stays numeric so a plain
   markdown reader, an editor, and `grep` still follow a reference without oplan
-  (§3.1's actual point); the key is a boundary rendering of the same number.
+  (the point of a numeric id); the key is a boundary rendering of the same number.
 
 ## `.plan/config.toml`
 
@@ -35,13 +34,13 @@ abbreviation = "OPP"
 - **Required. Missing or invalid is a hard stop**: the daemon exits at startup
   and every CLI command exits non-zero with `error: .plan/config.toml:
   'abbreviation' required` (or `: must be exactly three uppercase letters`).
-  This is not the per-field "a read never fails" model of §3.1 — that governs a
+  This is not the per-field "a read never fails" model — that governs a
   *task's* fields; a store with no abbreviation has no id space at all, so there
   is nothing to degrade into.
 - **One store, one abbreviation.** Read from the worktree the daemon serves; a
   different value on another branch's copy of the file is ignored, so one task
-  renders as one key across the whole cross-branch matrix. Consistent with
-  §7.10 (one repository per daemon).
+  renders as one key across the whole cross-branch matrix. Consistent with one
+  repository per daemon.
 - The daemon watches the file (op-watch already watches `.plan/`) and applies a
   valid change live — every key re-renders. A change that leaves it missing or
   invalid stops the daemon exactly as startup does, so "no store operates
@@ -100,14 +99,6 @@ numerically — the prefix is constant within a store, so ordering is unchanged.
   or agent passing a bare number to `oplan` fails loudly. Acceptable pre-1.0 on
   a single-machine tool — a silent numeric fallback would reintroduce the second
   spelling this task exists to remove.
-
-## SPEC.md
-
-- §3.1 — replace "The number is the whole id" with the two-layer model: number
-  allocates and names the file, key is the id above the store; state the single
-  spelling and the refusals.
-- §4 — add `.plan/config.toml` to the storage layout.
-- §8 — the CLI sketch's `<id>` placeholders.
 
 ## Verify
 

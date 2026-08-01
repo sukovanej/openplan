@@ -6,9 +6,9 @@ created: 2026-07-14T10:31:28Z
 
 ## Goal
 Ship the full vertical slice for editing a task's markdown **body**: a section-addressable
-splice **engine** (§5), its **CLI** surface, an **op-server** mutation **endpoint**, and a
-**raw-markdown + live-preview inline editor** in the web UI (§9). A human edits sections in the
-browser while agents edit the same store; edits **splice source byte ranges** (§5.3) so files
+splice **engine**, its **CLI** surface, an **op-server** mutation **endpoint**, and a
+**raw-markdown + live-preview inline editor** in the web UI. A human edits sections in the
+browser while agents edit the same store; edits **splice source byte ranges** so files
 stay pristine and diffs stay minimal. Builds directly on the read-only viewer from
 [[./00005-bootstrap-the-realtime-web-ui-re.md]] and the whole-file/metadata writes from
 [[./00003-task-crud-across-the-store-daemo.md]] and [[./00004-support-setting-task-content-on-c.md]].
@@ -18,7 +18,7 @@ and stays out.
 
 ## Decisions (locked)
 - **Vertical slice**: engine + CLI + HTTP mutation endpoint + web editor, one coherent slice.
-- **Section-level splice** (§5.3): compute the target node's source byte range and splice new
+- **Section-level splice**: compute the target node's source byte range and splice new
   text in; the rest of the file is byte-for-byte untouched. No reparse-and-reserialize.
 - **Operations in v1**: edit an existing section, append a new `##` section, edit the `# H1`
   title, and delete / reorder sections.
@@ -26,42 +26,42 @@ and stays out.
   `react-markdown` + `remark-gfm` renderer for the preview pane.
 - **Concurrency**: optimistic, **per-section** base-version guard. A save carries the base it
   edited; the server rejects only if *that section* changed underneath — a concurrent edit to a
-  different section of the same file does not block the save (§7.7 philosophy).
+  different section of the same file does not block the save.
 - **Live collision**: if the section being edited changes on disk while the buffer is dirty,
   keep the buffer, show a non-destructive "changed underneath" flag, and reconcile at save time;
-  untouched sections still live-update in the view (§9). Never silently discard in-flight typing.
-- **Section handle**: deduped heading-slug path (§5.2) + a content hash of the section as loaded.
+  untouched sections still live-update in the view. Never silently discard in-flight typing.
+- **Section handle**: deduped heading-slug path + a content hash of the section as loaded.
   The server re-derives the byte range from the *current* file and checks the hash for the guard
-  — no persisted anchors, robust to shifts above the section ("list → act", §5.2).
+  — no persisted anchors, robust to shifts above the section ("list → act").
 
-## Parser spike (resolves §10 [OPEN])
+## Parser spike
 Before building the engine, spike section-splice against all three candidates and pick one:
-**pulldown-cmark `OffsetIter`** (§10's splice-friendly byte-range option), **comrak**
+**pulldown-cmark `OffsetIter`** (splice-friendly byte ranges), **comrak**
 (`sourcepos`), **markdown-rs** (mdast + positions). Judge on: fidelity of untouched-region
-bytes after a splice, correct heading→next-heading span (a section includes nested subsections,
-§5.1), GFM coverage (tables, `- [ ]` checklists), and speed. Record the choice and why.
+bytes after a splice, correct heading→next-heading span (a section includes nested subsections),
+GFM coverage (tables, `- [ ]` checklists), and speed. Record the choice and why.
 
 ## Splice engine (shared core crate)
 One engine, called identically by the CLI, the HTTP endpoint, and (where relevant) the
 [[merge-driver]]. Capabilities:
-- **Address** a section by deduped heading-slug path (`Section`, `Section.Sub`, §5.1) → source
+- **Address** a section by deduped heading-slug path (`Section`, `Section.Sub`) → source
   byte range (heading through the byte before the next same-or-higher heading).
 - **Overwrite** a section: splice new text into its byte range; surrounding bytes unchanged.
 - **Append** a new `##` section at end of body.
 - **Delete / reorder**: cut a section's byte block and (for reorder) reinsert it elsewhere.
   Reorder/delete inherently touch two regions, so the guarantee is *"untouched text is never
   reflowed or reprinted,"* not "a single hunk changes."
-- **Title**: read/overwrite the single `# H1` (§3.1).
+- **Title**: read/overwrite the single `# H1`.
 - **List handles**: enumerate addressable sections with their slug paths + content hashes (feeds
   the guard and the editor).
-- **Invariants enforced on every write**: exactly one `# H1` survives (§3.1); sections start at
-  `##`; the result reparses; atomic temp-write + rename under the per-file advisory lock (§6).
+- **Invariants enforced on every write**: exactly one `# H1` survives; sections start at
+  `##`; the result reparses; atomic temp-write + rename under the per-file advisory lock.
 - **Guard primitive**: given (slug path, base hash), resolve the current range and reject with a
   typed "section changed" error if the hash no longer matches.
 - **Edge case**: preamble body between the `# H1` and the first `##` — define its addressing
   (implicit lead region) or explicitly reject editing it in v1; do not corrupt it on other edits.
 
-## CLI surface (§8)
+## CLI surface
 Wire the engine into `oplan`, JSON-first for agents:
 ```
 oplan sections <id> [--json]                 # addressable targets: slug path + hash
@@ -78,7 +78,7 @@ Section writes take an optional `--base-hash` so headless agents can opt into th
 Add body-mutation endpoints (the first writes op-server exposes — the bootstrap shipped reads
 only). Requests carry `{ slug path, new text, base hash }`; the handler calls the engine, returns
 the new section handle + hash, and returns a typed **409-style conflict** when the guard rejects.
-Writes target the **server's own worktree/branch** only (reads global, writes local, §7.1);
+Writes target the **server's own worktree/branch** only (reads global, writes local);
 multi-worktree write targeting is out of scope here. A successful write flows to all clients via
 the existing realtime stream.
 
@@ -97,7 +97,7 @@ the existing realtime stream.
 ## Out of scope
 - Block-level (sub-section) addressing — open decision #6, stays deferred.
 - Frontmatter editing in the UI (already `oplan set`).
-- Cross-worktree write targeting and the merge/conflict *resolution* view (§7.7 driver exists
+- Cross-worktree write targeting and the merge/conflict *resolution* view (the driver exists
   separately; this task only adds the per-section optimistic guard for live editing).
 - WYSIWYG editing.
 

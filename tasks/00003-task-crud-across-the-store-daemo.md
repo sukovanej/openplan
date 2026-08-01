@@ -13,17 +13,17 @@ truth — the daemon observes CLI writes through its watcher, it does not own th
 
 ## Design
 - **`op-store` owns all mutation.** `create` / `write` / `delete`, each under the existing
-  per-file advisory lock, each an atomic temp-write + rename (§6, §7.8) so the watcher never
+  per-file advisory lock, each an atomic temp-write + rename so the watcher never
   reads a torn file. This is the single code path; the CLI and the daemon both delegate here.
 - **Reads are local-first for v1.** The daemon's aggregated matrix (`op-index`) is still empty,
   so CLI reads resolve against `op-store` directly. Daemon-aggregated / cross-branch reads land
   with the index task, not here.
-- **Writes are local (§7.1).** The CLI writes the current worktree's `.plan/` directly — the
+- **Writes are local.** The CLI writes the current worktree's `.plan/` directly — the
   always-available path that works headless and with the daemon down. The daemon exposes the
   same CRUD over HTTP so the UI can drive it; those handlers call the identical `op-store`
-  functions. Routing CLI *writes* through the daemon for busy-worktree gating (§7.8) is
+  functions. Routing CLI *writes* through the daemon for busy-worktree gating is
   deferred until that gating exists.
-- **Identity = filename (§3.1).** `create` generates `<title-slug>-<rand>.md` (kebab slug of the
+- **Identity = filename.** `create` generates `<title-slug>-<rand>.md` (kebab slug of the
   title, truncated; short random suffix), retrying on the rare collision. `id` is never written
   into the file. `title` is the body's single `# H1`, never frontmatter.
 
@@ -93,12 +93,12 @@ DELETE /api/tasks/:id        # remove
   target-resolution task.
 - Building the task×branch matrix and cross-branch / `--all-branches` reads — the `op-index`
   task.
-- Presence / `claim` / `release` and busy-worktree write gating (§7.6, §7.8).
+- Presence / `claim` / `release` and busy-worktree write gating.
 - Section-aware merge driver, and the actual web UI consuming these routes.
 
 ## Notes
 - Keep writes minimal-diff: `set` mutates frontmatter and re-serializes only the frontmatter
   block; it must not reflow the markdown body (full section-splice fidelity comes with op-md).
-- `blocked` stays computed from unmet `deps`, never stored (§3.1) — out of scope to compute
+- `blocked` stays computed from unmet `deps`, never stored — out of scope to compute
   here; just persist `deps`.
 - This task dogfoods itself: once `create` works, new task files should be made with `oplan`.

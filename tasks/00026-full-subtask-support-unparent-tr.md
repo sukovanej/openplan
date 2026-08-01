@@ -6,13 +6,13 @@ created: 2026-07-15T15:11:28Z
 
 ## Goal
 
-The data model already supports arbitrary hierarchy (§2, §3.2): a subtask is a
+The data model already supports arbitrary hierarchy: a subtask is a
 task with a `parent` pointer, subtasks are their own files, sibling order is a
 fractional `rank`. But the surfaced feature is thin — you can set/filter a direct
 parent from the CLI and API, and nothing else. Make subtasks *fully* work end to
 end: unparenting, tree traversal, reparent + reorder, sibling ranking, and a web
 UI that actually renders the hierarchy. Honour "reads global, writes local"
-(§7.1) throughout — this adds no cross-branch writes.
+throughout — this adds no cross-branch writes.
 
 ## Current state (what's missing)
 
@@ -30,7 +30,7 @@ UI that actually renders the hierarchy. Honour "reads global, writes local"
 - **CLI (`op-cli`)** — `create --parent`, `list --parent <id>` (direct children
   only, not recursive), `set <id> parent <value>` (always `Some`, **can't
   clear**), `show` prints `parent`. The specced `oplan tree <id> [--depth N]`
-  and `oplan move <id> --parent <id> [--before/--after <id>]` (§8) are **not
+  and `oplan move <id> --parent <id> [--before/--after <id>]` are **not
   implemented**.
 - **Web UI (`web/packages/app`)** — `parent` is decoded into the `TaskListItem`
   and `TaskDetail` schemas (`lib/api.ts`) but **never read, rendered, or
@@ -54,17 +54,17 @@ UI that actually renders the hierarchy. Honour "reads global, writes local"
 - **op-cli** `set`: allow `oplan set <id> parent ""` (or a `-`/`none` sentinel)
   to clear the parent, matching how `deps ""` clears deps.
 
-### 2. `tree` — recursive hierarchy read (§8)
+### 2. `tree` — recursive hierarchy read
 
 `oplan tree <id> [--depth N] [--json]`: print the subtree rooted at `<id>`,
-indented, bounded by `--depth` (default unbounded; §8 "cap context"). Traverse
+indented, bounded by `--depth` (default unbounded, to cap context). Traverse
 by grouping all tasks on `parent`; order siblings by `rank` (see §4 below), ties
 broken by id for stability. `--json` emits a nested
 `{id, title, status, children: [...]}` shape. Cycle-safe: a `parent` chain that
 loops must not infinite-loop — detect via a visited set and report the offending
 id rather than hang. Reads are local-branch-scoped like every other read.
 
-### 3. `move` — reparent + reorder (§8)
+### 3. `move` — reparent + reorder
 
 `oplan move <id> --parent <id> [--before <id> | --after <id>]`:
 
@@ -77,12 +77,12 @@ id rather than hang. Reads are local-branch-scoped like every other read.
   must be refused with a clear error, not allowed to create a cycle.
 - Same write target rules as `set`: current worktree/branch only (writes local).
 
-### 4. Sibling `rank` (fractional ordering, §3.2)
+### 4. Sibling `rank` (fractional ordering)
 
 - Add `rank` to the model as a first-class, typed frontmatter field
   (`op-task::Frontmatter`) instead of leaving it in `extra`. Keep it
   `skip_serializing_if` empty so a rank-less task's frontmatter stays minimal
-  (§3.1: "no parent and no deps → just `status`"). Decide the type: fractional
+  ("no parent and no deps → just `status`"). Decide the type: fractional
   index as a string key (lexicographically sortable, e.g. jittered midpoints) is
   preferred over `f64` to avoid precision collapse on repeated `--before`
   inserts — pick during implementation and document the choice in the task.
@@ -104,7 +104,7 @@ id rather than hang. Reads are local-branch-scoped like every other read.
   express `{parent, rank}` atomically — prefer extending `PATCH` over a bespoke
   route, and have the CLI `move` compute the target `rank` then issue one patch.
 
-### 6. Web UI (§9: hierarchical, drag-to-reorder)
+### 6. Web UI (hierarchical, drag-to-reorder)
 
 - **List (`routes/list.tsx`)**: render the hierarchy — either indented rows
   (parent → child nesting) or grouped-under-parent, with collapse/expand.
@@ -114,7 +114,7 @@ id rather than hang. Reads are local-branch-scoped like every other read.
   link (task ids are already clickable elsewhere) and list direct children with
   their status. Allow changing the parent (including clearing it) and creating a
   child task.
-- **Reorder**: `rank` drag-to-reorder is specced (§9) but is the largest UI
+- **Reorder**: `rank` drag-to-reorder is designed but is the largest UI
   piece — it may split into a follow-up. At minimum this task renders in `rank`
   order and exposes reparent + unparent; call out in "Out of scope" whether
   drag lands here or later.
@@ -159,7 +159,7 @@ The actual CLI is flat (`oplan tree`, not `oplan task tree`); match the existing
 
 ## Out of scope (possible follow-ups)
 
-- **Drag-to-reorder in the UI** (§9) if it proves large — this task guarantees
+- **Drag-to-reorder in the UI** if it proves large — this task guarantees
   `rank`-ordered rendering + reparent/unparent; drag can be its own task.
 - **Cross-project / multi-store tree views** — hierarchy is within one store.
 - **`op task next`** (actionable/unblocked) and `deps`-based `blocked` computation
@@ -168,14 +168,12 @@ The actual CLI is flat (`oplan tree`, not `oplan task tree`); match the existing
 
 ## Notes
 
-- §3.2 makes hierarchy a *reference graph, not physical nesting* — the 200-subtask
+- Hierarchy is a *reference graph, not physical nesting* — the 200-subtask
   epic stays 200 small files. Every new read (`tree`, children) is built by
   grouping the flat task set on `parent`, reusing the branch-aware `Index`.
 - The unparent gap (§1) is a genuine correctness bug in `TaskPatch`/`set`, not
   just a missing feature: today a parent, once set, can never be removed through
   any interface. Land that fix even if the `tree`/`move`/UI pieces split off.
-- §11.1 records subtasks-as-files-with-`parent` as **resolved: yes** — this task
-  is the delivery of that decision, end to end.
 
 ## Implementation notes (as landed)
 

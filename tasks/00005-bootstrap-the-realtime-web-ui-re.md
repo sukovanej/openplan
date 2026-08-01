@@ -7,11 +7,11 @@ created: 2026-07-14T00:24:07Z
 ## Goal
 Stand up the real web frontend that `op-server` embeds (replacing the `web/index.html`
 placeholder from [[./00001-initialize-the-rust-multi-crate-w.md]]): a minimal, realtime SPA a human watches while
-agents change tasks live (§9). This init delivers two read views end-to-end — a task **list**
+agents change tasks live. This init delivers two read views end-to-end — a task **list**
 and a single-task **detail with a markdown viewer** — inside a **TypeScript monorepo** set up
 the way Effect projects are, so later packages (a generated API client, shared UI, shared
 domain schemas) drop in without re-plumbing. Mutations and the branch/matrix/presence views
-(§9) are explicit follow-ups.
+are explicit follow-ups.
 
 ## Monorepo (`web/`)
 `web/` becomes a **pnpm workspace**, the TS-side mirror of the Rust cargo workspace under
@@ -67,7 +67,7 @@ Rust-native bias:
 
 ## App stack (`packages/app`)
 - **Vite + React + TypeScript** SPA; build embedded by `op-server` so the daemon stays one
-  static binary (§10).
+  static binary.
 - **Effect v4** (`effect`) data/effect layer: API access and the realtime stream are `Effect`
   services exposed as `Layer`s over one `ManagedRuntime`; React binds via
   `@effect-atom/atom-react` (atoms derived from services — declarative views, realtime drives
@@ -104,7 +104,7 @@ complete path so realtime is real, not mocked:
   invalidates (`TaskChanged{id}` → that task + the list; coarse events → the list). Editing a
   task via `oplan` or an agent visibly updates the open UI.
 - **SSE over WebSocket** for v1: the UI's realtime need is one-directional (reads global, writes
-  via REST — §7.1), so SSE is the simpler, self-healing fit. The spec's WS (§9/§10) is reserved
+  via REST), so SSE is the simpler, self-healing fit. WebSocket is reserved
   for later bidirectional needs (presence/cursors).
 
 ## Dev workflow
@@ -133,9 +133,9 @@ complete path so realtime is real, not mocked:
 ## Out of scope (follow-up tasks)
 - The future packages themselves: `packages/domain`, the generated `packages/api-client`, shared
   `ui`/`config` — this task only lays the workspace so they slot in.
-- All write UI: create/edit, inline section edit, status change, drag-to-reorder, claim/release
-  (§9). REST + `oplan` write paths already exist ([[./00003-task-crud-across-the-store-daemo.md]]).
-- Branch-aware matrix view, worktree swimlanes, presence dots (§9) — need `/api/matrix`,
+- All write UI: create/edit, inline section edit, status change, drag-to-reorder, claim/release.
+  REST + `oplan` write paths already exist ([[./00003-task-crud-across-the-store-daemo.md]]).
+- Branch-aware matrix view, worktree swimlanes, presence dots — need `/api/matrix`,
   presence, and richer events.
 - **Event fidelity**: real debounced `TaskChanged`/ref/presence events from `op-watch` (still a
   skeleton `TODO` emitting coarse `RefMoved` on any modify) — the UI degrades by refetching on
