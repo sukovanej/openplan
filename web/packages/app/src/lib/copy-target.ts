@@ -25,9 +25,3 @@ export function copyTargetId(
 ): string | undefined {
   return hoveredId ?? focusedId ?? routeId
 }
-
-const TASK_ROUTE = /^\/task\/([^/]+)/
-
-export function routeTaskId(pathname: string): string | undefined {
-  return TASK_ROUTE.exec(pathname)?.[1]
-}

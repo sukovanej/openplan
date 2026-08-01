@@ -47,8 +47,6 @@ const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; he
 const UNREADABLE_HEADER =
   "bg-status-unreadable-surface/8 border-status-unreadable-surface/20 text-status-unreadable-text/80"
 
-export const statusOrder: ReadonlyArray<Status> = ["in_review", "in_progress", "todo", "backlog", "done", "cancelled"]
-
 export const statusLabel = (status: Status): string => styles[status].label
 
 export function StatusIcon({ status, className }: { status: Status; className?: string }) {

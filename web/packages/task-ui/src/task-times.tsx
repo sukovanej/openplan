@@ -1,7 +1,7 @@
 import { CalendarPlus, CircleAlert, History } from "lucide-react"
 
 import type { Field_Rfc3339 } from "@open-planner/api-client"
-import { MetaItem, TimeAgo } from "@open-planner/ui"
+import { MetaItem, TimeAgo, Tooltip } from "@open-planner/ui"
 
 import { type FieldProblem, fieldFailure, fieldValue } from "./metadata"
 
@@ -31,9 +31,11 @@ export function TaskTimes({
         </MetaItem>
       )}
       {undatable !== undefined && undatable.kind === "invalid" && (
-        <MetaItem icon={History} title={undatable.message} className="text-danger/90 min-w-0">
-          <span className="truncate">{undatable.message}</span>
-        </MetaItem>
+        <Tooltip content={undatable.message} className="min-w-0">
+          <MetaItem icon={History} className="text-danger/90 min-w-0">
+            <span className="truncate">{undatable.message}</span>
+          </MetaItem>
+        </Tooltip>
       )}
       {problems.length > 0 && (
         <MetaItem icon={CircleAlert} className="text-danger/90">

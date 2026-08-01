@@ -5,10 +5,9 @@ import { render } from "./render"
 
 describe("Tag", () => {
   it("renders as static text when it cannot be selected", () => {
-    const tag = render(<Tag title="a branch">main</Tag>).firstElementChild!
+    const tag = render(<Tag>main</Tag>).firstElementChild!
     expect(tag.tagName).toBe("SPAN")
     expect(tag.textContent).toBe("main")
-    expect(tag.getAttribute("title")).toBe("a branch")
   })
 
   it("becomes a toggle button once given a handler", () => {

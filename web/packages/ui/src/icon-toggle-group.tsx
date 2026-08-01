@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react"
 import type * as React from "react"
 
 import { cn } from "./cn"
+import { Tooltip } from "./tooltip"
 
 export interface IconToggleOption<T extends string> {
   readonly value: T
@@ -32,21 +33,21 @@ export function IconToggleGroup<T extends string>({
       {options.map((option) => {
         const active = value === option.value
         return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            aria-label={option.label}
-            title={option.label}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              "focus-visible:ring-ring inline-flex size-7 items-center justify-center rounded-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
-              active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <option.Icon className="size-4" aria-hidden="true" />
-          </button>
+          <Tooltip key={option.value} content={option.label}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={option.label}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "focus-visible:ring-ring inline-flex size-7 items-center justify-center rounded-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
+                active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <option.Icon className="size-4" aria-hidden="true" />
+            </button>
+          </Tooltip>
         )
       })}
     </div>

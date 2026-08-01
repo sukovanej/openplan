@@ -1,8 +1,7 @@
 import { Loader2, Search } from "lucide-react"
-import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react"
 
 import { cn } from "./cn"
-import { fuzzySegments } from "./fuzzy"
 import { Row } from "./row"
 
 export interface ComboOption {
@@ -50,6 +49,7 @@ export function Combobox({
   const inputRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const listId = useId()
 
   useEffect(() => inputRef.current?.focus(), [])
   useEffect(() => setActive(0), [options])
@@ -108,14 +108,14 @@ export function Combobox({
           spellCheck={false}
           role="combobox"
           aria-expanded
-          aria-controls="combobox-list"
+          aria-controls={listId}
           className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
         />
         {pending && <Loader2 className="text-muted-foreground size-3.5 shrink-0 animate-spin" />}
       </div>
       <ul
         ref={listRef}
-        id="combobox-list"
+        id={listId}
         role="listbox"
         className={cn(
           "bg-popover mt-1.5 max-h-64 w-full scroll-mb-6 overflow-y-auto rounded-md border p-1",
@@ -146,22 +146,5 @@ export function Combobox({
         )}
       </ul>
     </div>
-  )
-}
-
-export function FuzzyText({ text, indices }: { text: string; indices: ReadonlyArray<number> }) {
-  const segments = fuzzySegments(text, indices)
-  return (
-    <>
-      {segments.map((segment, i) =>
-        segment.match ? (
-          <strong key={i} className="text-foreground font-semibold">
-            {segment.text}
-          </strong>
-        ) : (
-          <span key={i}>{segment.text}</span>
-        ),
-      )}
-    </>
   )
 }

@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { copyTargetId, hoveredRow, routeTaskId } from "../../src/lib/copy-target"
+import { taskIdOf } from "@open-planner/task-ui"
+
+import { copyTargetId, hoveredRow } from "../../src/lib/copy-target"
 import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
 import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
@@ -48,7 +50,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     copy: {
       taskId: () => {
         const cursor = rowCursor.getSnapshot()
-        copied.push(copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), routeTaskId(pathname)))
+        copied.push(copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), taskIdOf(pathname)))
       },
     },
     detail: {

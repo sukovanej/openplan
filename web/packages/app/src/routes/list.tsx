@@ -11,9 +11,10 @@ import {
   StatusField,
   StatusGroupHeader,
   statusGroupLabel,
+  taskPath,
   TaskTimes,
 } from "@open-planner/task-ui"
-import { cn, EmptyState, MetaLine, Panel, PanelBody, PanelHeader, Row } from "@open-planner/ui"
+import { cn, EmptyState, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@open-planner/ui"
 
 import { ListSkeleton } from "../components/states"
 import { hoveredRow } from "../lib/copy-target"
@@ -67,7 +68,9 @@ function TaskGrid({ board }: { board: Board }) {
       tabIndex={0}
       className="text-sm focus:outline-none"
     >
-      <PanelHeader>Tasks</PanelHeader>
+      <PanelHeader>
+        <PanelTitle>Tasks</PanelTitle>
+      </PanelHeader>
       <PanelBody onMouseLeave={hoveredRow.clear}>
         {board.groups.map((group, groupIndex) => {
           const lastGroup = groupIndex === board.groups.length - 1
@@ -163,7 +166,7 @@ function TaskRow({
     onFocus()
     const link = event.target instanceof Element && event.target.closest("a") !== null
     if (link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    navigate(`/task/${task.id}`)
+    navigate(taskPath(task.id))
   }
 
   return (
@@ -210,7 +213,7 @@ function TaskRow({
       </div>
       <div className="min-w-0 grow basis-56 pr-4 pl-3 sm:pr-0" role="gridcell">
         <Link
-          to={`/task/${task.id}`}
+          to={taskPath(task.id)}
           tabIndex={-1}
           // Narrow enough and the title takes the second line it needs; a wide row has the room to
           // keep every title on one.

@@ -12,6 +12,7 @@ import {
   statusField,
   TaskBody,
   TaskIdentity,
+  taskPath,
   TaskTimes,
 } from "@open-planner/task-ui"
 import {
@@ -23,6 +24,7 @@ import {
   Panel,
   PanelBody,
   PanelHeader,
+  PanelTitle,
   Row,
   Section,
 } from "@open-planner/ui"
@@ -90,7 +92,9 @@ function TaskDetailView({
   return (
     <Panel>
       <PanelHeader className="gap-2">
-        <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
+        <PanelTitle>
+          <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
+        </PanelTitle>
         <div className="ml-auto min-w-0">
           <HeaderParent
             id={task.id}
@@ -116,7 +120,7 @@ function TaskDetailView({
         {body === undefined ? (
           <BodySkeleton />
         ) : (
-          <TaskBody markdown={stripTitle(body)} refs={detail?.refs} abbreviation={abbreviation} />
+          <TaskBody markdown={stripTitle(body)} refs={detail?.refs} abbreviation={abbreviation} data-keys-ignore />
         )}
         <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
       </PanelBody>
@@ -188,21 +192,17 @@ function HeaderParent({
   const [editing, setEditing] = useState(false)
   useDetailAction("edit-parent", () => setEditing(true))
   useDetailAction("go-parent", () => {
-    if (parent !== undefined && parentTitle !== undefined) navigate(`/task/${parent}`)
+    if (parent !== undefined && parentTitle !== undefined) navigate(taskPath(parent))
   })
 
   if (editing) {
-    return (
-      <div className="normal-case">
-        <ParentPicker id={id} onClose={() => setEditing(false)} />
-      </div>
-    )
+    return <ParentPicker id={id} onClose={() => setEditing(false)} />
   }
   // The parent is unknown until the detail loads; show nothing rather than a misleading "Set parent".
   if (!ready) return null
   const hasParent = parent !== undefined
   return (
-    <div className="flex min-w-0 items-center gap-1 font-normal tracking-normal normal-case">
+    <div className="flex min-w-0 items-center gap-1">
       {parentTitle !== undefined && parent !== undefined ? (
         <MetaLine>
           <ParentLink id={parent} title={parentTitle} />
@@ -332,7 +332,7 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
                 variant="option"
                 active={i === index}
                 hoverable
-                to={`/task/${child.id}`}
+                to={taskPath(child.id)}
                 onClick={() => subtaskCursor.focus(i)}
               >
                 <TaskIdentity status={child.status} id={child.id} title={child.title} />
