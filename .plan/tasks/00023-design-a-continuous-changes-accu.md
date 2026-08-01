@@ -5,15 +5,14 @@ parent: ./00039-continuous-changes-accumulation-v.md
 ---
 # Design a continuous-changes accumulation branch
 
-A design task. Produce a SPEC section (extending §7) and an implementation plan;
-no code yet.
+A design task. Produce the design and an implementation plan; no code yet.
 
 ## Problem
 
-The spec's invariant is **reads global, writes local** (§7.1): a task can only be
+The design's invariant is **reads global, writes local**: a task can only be
 mutated on the branch whose worktree is checked out. That fits *code-coupled*
 edits — an agent on `feat/auth` flipping a task to `in_progress` as part of its
-loop (§7.8), where `status` is correctly a branch fact (§7.2).
+loop, where `status` is correctly a branch fact.
 
 It leaves a gap for **ambient / triage edits that belong to no feature branch**:
 reprioritizing, rewriting a description, adding a subtask, changing `rank`, or any
@@ -39,7 +38,7 @@ the **sole writer**, so it serializes writes in-process — no cross-process fil
 lock needed. Inbound edits are **debounced/coalesced** into few commits (rapid
 UI keystrokes / drag-reorder collapse together), keeping history legible.
 
-The **section-aware merge driver** (§7.7) is the enabler for reconciliation:
+The **section-aware merge driver** is the enabler for reconciliation:
 non-overlapping section/field edits auto-merge, so the flow is mostly plumbing +
 policy, not a new merge algorithm.
 
@@ -47,12 +46,12 @@ policy, not a new merge algorithm.
 - `main → updates` **refresh** — **rebase** `refs/open-plan/rolling-updates` onto `main`, so
   the ref is always `main` + a clean linear stack of pending ambient commits
   (rebase is safe: the ref is private and never consumed by others; see backup).
-  **Event-driven** off the ref-watcher (§7.5) — triggered when `main`'s ref
+  **Event-driven** off the ref-watcher — triggered when `main`'s ref
   moves, not on a timer — and **debounced** on a quiet window (default ~1 min):
   further ref moves reset the timer; the rebase runs once `main` has settled,
   coalescing a burst into one refresh. The merge driver fires during the replay,
   so non-overlapping edits reconcile automatically; a genuine same-section
-  conflict stops the rebase → mark that task `conflicted` in the UI (§7.7),
+  conflict stops the rebase → mark that task `conflicted` in the UI,
   `git rebase --abort` to keep the ref usable, hold, and retry on the next
   refresh once a human reconciles. All refresh work belongs to the **daemon**; if
   it is down nothing refreshes (acceptable — refresh isn't urgent, publish is
@@ -77,7 +76,7 @@ survive disk/machine loss. Safe because this machine is the **sole writer** and
 the remote is a write-only mirror nobody pulls — force is fine, and there is no
 distributed concurrency. Multi-machine / collaborative sync is **out of scope**
 (it would forbid rebase, require merge-based flow + push-race handling, and cross
-the §7.10 single-machine boundary).
+the single-machine boundary).
 
 ## Decisions made
 
@@ -85,7 +84,7 @@ the §7.10 single-machine boundary).
   default, addressed by the daemon; accumulation is worktree-less (blob → tree →
   commit → ref CAS), daemon is the sole serialized writer.
 - **Refresh (`main → updates`):** **rebase** the ref onto `main` (not merge) so it
-  stays linear `main` + pending edits; **event-driven** off the ref-watcher (§7.5)
+  stays linear `main` + pending edits; **event-driven** off the ref-watcher
   and **debounced** (~1 min). Periodic sweep + startup reconcile are in-daemon
   safety nets for dropped/missed watcher events — **not** a daemon-down path.
 - **Publish (`updates → main`):** **manual, fast-forward only** — cannot conflict
@@ -102,13 +101,13 @@ the §7.10 single-machine boundary).
   `refs/open-plan/rolling-updates`. "Ambient" = a write with no feature-branch
   context. Concretely:
   - CLI/agent in a **feature** worktree (`feat/*`) → that feature branch
-    (unchanged, §7.1 writes-local).
+    (unchanged, writes-local).
   - CLI/agent in the **`main`** (trunk) worktree → `rolling-updates`. This also
     enforces CLAUDE.md's "never write to the main checkout" — the write is
     rerouted rather than allowed to dirty `main`.
   - **UI**, global task-centric view (no worktree context) → `rolling-updates`.
   - **UI**, worktree swimlane scoped to a branch → that branch (still a feature
-    context; consistent with §9).
+    context).
   - Escape hatch: a `--ambient` flag forces a CLI write to `rolling-updates` even
     from a feature worktree (for triage edits unrelated to the current branch).
 - **UI surface — one header control + review popover (Option C):** a single
@@ -135,10 +134,10 @@ the §7.10 single-machine boundary).
 ## Open questions
 
 - ~~**Merge driver under rebase:**~~ **Resolved by spike (see below).** The custom
-  §7.7 driver fires during `git rebase` replay *and* under the worktree-less
+  merge driver fires during `git rebase` replay *and* under the worktree-less
   `git merge-tree --write-tree` path — so the ephemeral worktree is dropped from
   the primary flow.
-- **Presence & claims** (§7.6) — the cross-branch collision-warning question for
+- **Presence & claims** — the cross-branch collision-warning question for
   ambient edits is tracked on `21`, not here.
 - **v2 fan-out:** publishing ambient edits to active feature branches, not just
   `main`.
@@ -161,26 +160,25 @@ Ran on git 2.50.1 with a logging `merge=openplan` driver registered via
 - **Consequence:** the refresh reconcile needs **no checkout**. The daemon merges
   trees in the object DB (`merge-tree --write-tree`), reads the conflict set from
   the plumbing output, and builds/CAS-es the new ref tip. The ephemeral worktree
-  becomes a fallback, not the primary path. The SPEC redline (§7.11) reflects
-  this.
+  becomes a fallback, not the primary path.
 
 ## Deliverable — status
 
-- [x] SPEC.md redline: new **§7.11 Ambient edits & the rolling-updates ref**
-  (branch home, bidirectional flow, conflict-gated manual publish, routing rules,
-  UI surface, backup, scope).
+- [x] Design of **ambient edits & the rolling-updates ref** (branch home,
+  bidirectional flow, conflict-gated manual publish, routing rules, UI surface,
+  backup, scope) — above.
 - [x] Spike resolving the merge-driver open question (above).
 - [x] Phased implementation plan (below).
 
 ## Implementation plan (phased)
 
 Each phase is independently shippable and leaves the tree green
-(`build` / `test` / `fmt` / `clippy`). Crates per §7 layout.
+(`build` / `test` / `fmt` / `clippy`).
 
 - **Phase 0 — Real section merge driver (unblocks everything).** Replace the
   `op-cli merge-driver` stub (`crates/op-cli/src/mergedriver.rs`, currently
-  conflicts on any diff) with the actual 3-way frontmatter-field + section merge
-  (§7.7), reusing `op-md` heading/section addressing and `op-task` parsing. Ship
+  conflicts on any diff) with the actual 3-way frontmatter-field + section merge,
+  reusing `op-md` heading/section addressing and `op-task` parsing. Ship
   `/.plan/**.md merge=openplan` in a repo `.gitattributes` and register the
   driver in local git config on project init. *Verify:* non-overlapping
   section/field edits auto-merge; same-section overlap exits non-zero. Tests in
@@ -194,11 +192,11 @@ Each phase is independently shippable and leaves the tree green
   (Phase 3 rules) into the ref through a single in-process serialized writer with
   inbound **debounce/coalesce**. Track pending-count + per-task change summary for
   the API. *Verify:* burst of edits collapses to few commits; ref tip advances.
-- **Phase 3 — Routing.** Apply the §7.11 routing table at the write boundary
+- **Phase 3 — Routing.** Apply the routing table above at the write boundary
   (UI global vs. swimlane; CLI trunk vs. feature worktree) and add the
   `--ambient` CLI escape hatch. *Verify:* `op-cli` tests assert target ref per
   context.
-- **Phase 4 — Refresh engine.** Event-driven off the §7.5 ref-watcher, debounced
+- **Phase 4 — Refresh engine.** Event-driven off the ref-watcher, debounced
   (~1 min quiet window); reconcile worktree-less; on conflict mark the named
   tasks `conflicted` and hold at last good tip; periodic sweep + startup
   reconcile as safety nets. *Verify:* moving `main` triggers one coalesced

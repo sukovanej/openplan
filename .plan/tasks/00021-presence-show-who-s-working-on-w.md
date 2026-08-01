@@ -10,7 +10,7 @@ Show, live in the web UI, **who is working on what** — which agent/human sessi
 is actively on each task right now — driven by Claude Code session activity, with
 an optional live view of the working session's transcript.
 
-This is the machine-fact coordination channel (SPEC §7.6): "is anyone else on
+This is the machine-fact coordination channel: "is anyone else on
 this task, so I don't collide." It is orthogonal to the git-content signals the
 daemon already broadcasts (the branch badges + the "dirty" overlay) — those say
 *a file changed*; presence says *a person/agent is here*, true from the moment
@@ -23,7 +23,7 @@ they start, before any file is touched.
 Claims live in the daemon's in-memory registry (`op-presence::Registry`), keyed by
 task id, **never** written into `.plan/*.md` frontmatter. Putting session ids in
 the task file would push a machine-fact into branch-scoped git content and violate
-the reads-global/writes-local invariant (§7.1/§7.2). The "sessions" data is a
+the reads-global/writes-local invariant. The "sessions" data is a
 field on the *presence record / API response*, not on the markdown.
 
 A claim record: `{ session_id, worktree, branch, since, last_active }`. Multiple

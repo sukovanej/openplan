@@ -31,7 +31,7 @@ fn create(store: &Store, task: &Task) -> Result<u64, StoreError> {
     store.create(task, NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
-// A task file's name pads its id and carries a title slug (§3.1); a test that plants one by hand
+// A task file's name pads its id and carries a title slug; a test that plants one by hand
 // still has to name it the way the store does.
 fn plant(store: &Store, id: u64, contents: &str) -> std::path::PathBuf {
     let path = store
@@ -66,7 +66,7 @@ fn open_takes_the_abbreviation_it_is_given_whatever_the_file_says() {
     assert_eq!(
         store.abbreviation(),
         abbreviation(),
-        "a sibling worktree is read under the serving store's abbreviation, not its own (§7.10)"
+        "a sibling worktree is read under the serving store's abbreviation, not its own"
     );
 }
 

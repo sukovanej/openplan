@@ -14,7 +14,7 @@ stub `ping` with an `oplan server {start,stop,ping}` command group.
 ## Design
 
 ### Machine singleton
-The daemon is a **per-machine singleton** (§7.3), keyed by a machine-local home dir
+The daemon is a **per-machine singleton**, keyed by a machine-local home dir
 (default `~/.plan`, overridable via `OPLAN_HOME` — required so tests never touch the real
 home). All lifecycle state lives there:
 - `daemon.json` — `{ pid, port, version, started_at }`, written atomically once the port is
@@ -110,7 +110,7 @@ oplan server ping                              # status only: prints pid/port/up
 - [x] `cargo build`, `cargo test`, `cargo fmt --check`, `cargo clippy -- -D warnings` pass.
 
 ## Out of scope (follow-up tasks)
-- **Multi-project registration** — one machine daemon serving N stores (`§7.3` registry,
+- **Multi-project registration** — one machine daemon serving N stores (a daemon registry,
   `POST /admin/register`). For now the daemon watches the store it was started in; a single
   active project is assumed. This is the immediate next step and blocks nothing here.
 - OS service integration (launchd/systemd unit files); crash auto-restart / supervision.

@@ -44,7 +44,7 @@ open-plan is **single-machine**. That anchors the design:
    creating a task consequently requires a live worktree for its branch (same rule
    as edits — document it).
 3. **Global-across-branch allocation ⇒ no merge repair.** The sole writer derives
-   its floor across *all* local branches (the set the §7.4 matrix builder already
+   its floor across *all* local branches (the set the matrix builder already
    reads), so any integer is issued exactly once. Two *different* task-`N`s can
    never exist; a merge only ever sees one task `N` with divergent versions.
    `mergedriver.rs` stays a pure content merger — no renumber / ref-rewrite pass.

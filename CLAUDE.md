@@ -1,6 +1,6 @@
 # open-planner
 
-Local-first task manager (Rust workspace). Design lives in `SPEC.md`, work in `.plan/tasks/`.
+Local-first task manager (Rust workspace). Design and work live in `.plan/tasks/`.
 
 ## Worktrees
 

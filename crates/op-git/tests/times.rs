@@ -25,7 +25,7 @@ fn commit_at(dir: &Path, authored: i64, committed: i64, message: &str) {
     assert!(status.success(), "git commit failed");
 }
 
-// Named the way the store names files (§3.1): the id is the number, the slug is decoration, and
+// Named the way the store names files: the id is the number, the slug is decoration, and
 // the pair must still be read as one task.
 fn task(root: &Path, id: &str, status: &str) {
     std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();

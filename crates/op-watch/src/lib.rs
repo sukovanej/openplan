@@ -9,7 +9,7 @@ use op_git::{GitError, Repo, Worktree};
 use op_store::{CONFIG_FILE, Store, StoreError};
 
 // What a settled pass found. Tasks are named by the number their file carries — the watcher reads
-// file names and git trees, so it stays on the file side of the id (§3.1) and leaves rendering the
+// file names and git trees, so it stays on the file side of the id and leaves rendering the
 // key to whoever publishes the change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {
@@ -46,7 +46,7 @@ enum Msg {
 
 impl Watcher {
     // `store` is the one the daemon serves: its `.plan/config.toml` is the store's single
-    // abbreviation, whatever another branch's copy of the file says (§7.10).
+    // abbreviation, whatever another branch's copy of the file says.
     pub fn start(repo: Repo, store: Store, sink: Sender<Change>) -> Result<Self, WatchError> {
         let (tx, rx) = mpsc::channel();
         let fs_tx = tx.clone();
@@ -367,7 +367,7 @@ fn reconcile(
     }
 }
 
-// The change sources of SPEC §7.5: every live worktree's `.plan/tasks` for working edits, the served
+// The change sources: every live worktree's `.plan/tasks` for working edits, the served
 // store's own `.plan` for its `config.toml`, and the git-side refs/HEAD/worktrees under the shared
 // `.git`. The common dir and `.plan` are watched non-recursively so HEAD, `packed-refs`, the first
 // creation of `worktrees/`, and the config file register without pulling in objects/ or every task;

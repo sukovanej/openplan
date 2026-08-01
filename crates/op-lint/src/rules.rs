@@ -254,7 +254,7 @@ fn dependency_defect(item: &serde_yaml::Value) -> Option<&'static str> {
     let Some(text) = scalar_text(item).filter(|text| op_task::ref_id(text).is_some()) else {
         return Some("must be a task reference, like ./00042-write-the-parser.md");
     };
-    // A dependency may name a section (§3), but only in file form: a sectioned reference is the one
+    // A dependency may name a section, but only in file form: a sectioned reference is the one
     // spelling `--fix` cannot canonicalize, so the file name has to be written already.
     let sectioned_bare = text.contains('#') && !op_task::ref_target(&text).ends_with(".md");
     sectioned_bare.then_some(
@@ -528,7 +528,7 @@ fn references_resolve(snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
             None => {
                 // The one filesystem read left in a rule: the snapshot indexes task files, and a
                 // link into source (`../../crates/…`) has nothing there to resolve against until it
-                // indexes the paths around them too — the index §12's standalone docs would need.
+                // indexes the paths around them too.
                 if !resolved.exists() {
                     emit_ref(
                         sink,

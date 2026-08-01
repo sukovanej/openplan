@@ -568,7 +568,7 @@ fn build_index(root: &Path) -> Result<(Repo, Index)> {
     Ok((repo, index))
 }
 
-// Every id a command takes or prints is a key (§3.1); the number behind it goes no further than the
+// Every id a command takes or prints is a key; the number behind it goes no further than the
 // store call it was resolved for.
 fn number_of(store: &Store, key: &str) -> Result<u64> {
     store
@@ -754,7 +754,7 @@ fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCo
 }
 
 // Writes go through the store so a concurrent daemon or `oplan set` on the same task serializes on
-// the advisory lock and never observes a torn file (§7.3).
+// the advisory lock and never observes a torn file.
 fn apply_fixes(
     store: &Store,
     snapshot: &Snapshot,
@@ -954,7 +954,7 @@ fn move_task(
             )?;
         }
         // A sibling group with missing, colliding, or malformed ranks can't be split by a single
-        // fractional key, so materialize a fresh, evenly-spaced order for the whole group (§4).
+        // fractional key, so materialize a fresh, evenly-spaced order for the whole group.
         RankPlan::Rebalance {
             siblings: assigned,
             x_rank,

@@ -25,7 +25,7 @@ of truth.
   alt / link text; mime and size are sniffed from the blob at render time. No
   sidecar manifest, no new frontmatter — the reference lives entirely in the
   addressable markdown body.
-- **Branch-scoped, reads-global / writes-local** (§7.1): an asset is readable
+- **Branch-scoped, reads-global / writes-local**: an asset is readable
   from another branch only once its blob is committed; the daemon serves it from
   the object DB by blob at that branch. In the active worktree it renders
   immediately from the uncommitted working-tree file.
@@ -56,13 +56,13 @@ without blocking legitimate large design artifacts.
   asset-serving HTTP endpoint on the daemon.
 - The endpoint serves bytes from the active worktree's working tree when that
   branch is checked out, else from the git object DB by blob for cross-branch
-  views (mirrors the §7.4 blob-OID model).
+  views (mirrors the matrix's blob-OID model).
 - **Images** render inline; **other types** render as a download chip showing
   the filename (from link text) and size (sniffed).
 
 ## Out of scope (v1)
 
-- Standalone doc primitive as an asset home (§12 remains deferred) — assets
+- Standalone doc primitive as an asset home (still deferred) — assets
   attach to tasks only.
 - `oplan asset gc` / orphan pruning.
 - git-lfs.
@@ -71,5 +71,5 @@ without blocking legitimate large design artifacts.
 
 - Hash function and truncation length for the on-disk name.
 - Exact soft/hard size thresholds.
-- Whether the section-aware merge driver (§7.7) needs any awareness of assets
+- Whether the section-aware merge driver needs any awareness of assets
   (embeds are ordinary markdown, so likely not).

@@ -446,7 +446,7 @@ async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListIt
 }
 
 // The list view's whole data set in one read: tasks grouped by status and flattened into
-// render-ordered rows (§9). Built from the same branch-aware aggregation as `list_tasks`, so board
+// render-ordered rows. Built from the same branch-aware aggregation as `list_tasks`, so board
 // reads stay "reads global"; the client consumes it verbatim.
 #[utoipa::path(
     get,

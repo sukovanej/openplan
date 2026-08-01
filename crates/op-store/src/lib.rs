@@ -18,7 +18,7 @@ const ID_ATTEMPTS: usize = 16;
 const LOCK_ATTEMPTS: usize = 1024;
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
-// One store, one abbreviation (§7.10): a `Store` is always read under the abbreviation of the
+// One store, one abbreviation: a `Store` is always read under the abbreviation of the
 // worktree the daemon serves, so a sibling worktree whose `config.toml` says something else — or has
 // none — still renders one task as one key. The number names the file; the key is what the store's
 // own refusals are phrased in, since every caller reached it through one.
@@ -138,7 +138,7 @@ impl Store {
         Ok(self.task_files()?.remove(&id))
     }
 
-    // The file names carry a title slug the id does not (§3.1), so a task is found by the number its
+    // The file names carry a title slug the id does not, so a task is found by the number its
     // name starts with rather than by a name built from its id. The lowest name wins, so a store
     // hand-edited into two files of one number resolves to the same one every time.
     fn task_files(&self) -> Result<BTreeMap<u64, PathBuf>, StoreError> {
@@ -289,8 +289,8 @@ impl Store {
 
     // A verbatim overwrite of a task's file, locked and atomic like every other write but bypassing
     // the model: `lint --fix` splices bytes it computed itself and must not have them reflowed
-    // through `Task::to_file_string` (§5.3). Allocates no id and resolves no branch, so it is an
-    // out-of-band writer (§6, §7.3), not a daemon write.
+    // through `Task::to_file_string`. Allocates no id and resolves no branch, so it is an
+    // out-of-band writer, not a daemon write.
     pub fn replace_raw(&self, id: u64, bytes: &[u8]) -> Result<(), StoreError> {
         self.task_path(id)?;
         self.with_lock(id, || self.atomic_replace(id, bytes))
@@ -341,7 +341,7 @@ impl Store {
     // Only references this write newly introduces are validated. A parent/dep that was
     // already persisted (and may now dangle because its target was deleted) must not block
     // an unrelated edit like a status change — otherwise deleting one task bricks another.
-    // A task's own words for another task, in the form the file carries them (§3.1): the target's
+    // A task's own words for another task, in the form the file carries them: the target's
     // file name, which only the store can spell — in the frontmatter and in the body's `[[…]]` alike.
     // A reference whose task has since been deleted keeps the bare number — it names no file, and
     // inventing one would be a lie a reader could follow.
@@ -367,7 +367,7 @@ impl Store {
             .iter()
             .map(|reference| named(reference))
             .collect();
-        // A body's reference is read by a markdown renderer, which knows no bare number (§3.1): one
+        // A body's reference is read by a markdown renderer, which knows no bare number: one
         // that names no file is written as the key, so it still resolves once that task exists.
         task.body = body_in_file_form(&task.body, |reference| {
             let named = named(reference);
@@ -492,7 +492,7 @@ impl Store {
     }
 }
 
-// A task's title is its single `# H1` (§3.1). Reject bodies with zero, empty, or multiple level-1
+// A task's title is its single `# H1`. Reject bodies with zero, empty, or multiple level-1
 // headings so a title carrying a newline (`"a\n# b"` → two H1s) or no text can never be persisted.
 fn single_title(body: &str) -> Result<String, StoreError> {
     let mut h1s = op_md::headings(body).into_iter().filter(|h| h.level == 1);

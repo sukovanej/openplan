@@ -9,7 +9,7 @@ dependencies:
 # Ref plumbing in op-git for the rolling-updates ref
 
 **Phase 1** of the rolling-updates plan
-([[./00023-design-a-continuous-changes-accu.md]] §7.11). Gives `op-git` its first
+([[./00023-design-a-continuous-changes-accu.md]]). Gives `op-git` its first
 **write** path (today it is read-only: "Raw git reads"), scoped to the single
 `refs/open-plan/rolling-updates` ref. Depends on the section-merge **library**
 from [[./00041-implement-the-section-aware-merg.md]].

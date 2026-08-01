@@ -19,7 +19,7 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
-// Named the way the store names files (§3.1): the id is the number the name starts with.
+// Named the way the store names files: the id is the number the name starts with.
 fn write_task(dir: &Path, number: u64, body: &str) {
     let tasks = dir.join(".plan").join("tasks");
     std::fs::create_dir_all(&tasks).unwrap();
