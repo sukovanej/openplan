@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-07-31T12:19:40Z
 parent: ./00059-web-ui-extract-reusable-componen.md
 ---
