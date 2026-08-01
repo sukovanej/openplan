@@ -21,7 +21,7 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
-// Named the way the store names files (§3.1): the number the name starts with allocates the task,
+// Named the way the store names files: the number the name starts with allocates the task,
 // and the slug after it is decoration the index must look past.
 fn task(root: &Path, number: u64, contents: &str) {
     write(&task_path(root, number), contents);
@@ -31,7 +31,7 @@ fn task_path(root: &Path, number: u64) -> std::path::PathBuf {
     root.join(format!(".plan/tasks/{number:05}-task-{number}.md"))
 }
 
-// The id everything above the store speaks (§3.1).
+// The id everything above the store speaks.
 fn key(number: u64) -> String {
     format!("OPP-{number}")
 }

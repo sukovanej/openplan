@@ -1,4 +1,4 @@
-// Sibling order (§3.2) is a fractional index: a short base-36 string key that sorts
+// Sibling order is a fractional index: a short base-36 string key that sorts
 // lexicographically. `between` returns a key strictly between two neighbours, so a task can be
 // reordered by writing one key without renumbering its siblings. Base-36 digits (`0-9a-z`) are in
 // ASCII order, so byte comparison of keys matches their fractional value.

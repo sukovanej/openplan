@@ -8,7 +8,7 @@ dependencies:
 # Backup: force-push rolling-updates to a mirror remote (durability)
 
 **Phase 6** of the rolling-updates plan
-([[./00023-design-a-continuous-changes-accu.md]] §7.11). Durability only: un-published
+([[./00023-design-a-continuous-changes-accu.md]]). Durability only: un-published
 ambient edits survive disk/machine loss. Sole-writer, no distributed concurrency;
 multi-machine / collaborative sync stays out of scope.
 
@@ -34,7 +34,7 @@ debounces/coalesces a burst into one push of the latest tip:
 git push --force <remote> refs/open-plan/rolling-updates:refs/open-plan/rolling-updates
 ```
 
-Force is safe (§7.11): sole writer, write-only mirror nobody pulls.
+Force is safe: sole writer, write-only mirror nobody pulls.
 
 **Best-effort.** A failed push logs `warn` and is NOT propagated to the edit; it
 retries on the next tip move. A **startup push** of the current tip covers a

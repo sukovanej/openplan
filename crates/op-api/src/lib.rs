@@ -609,7 +609,7 @@ impl TaskPatch {
     }
 }
 
-// The subtree rooted at one task: siblings within `children` are ordered by `rank` (§3.2), the tree
+// The subtree rooted at one task: siblings within `children` are ordered by `rank`, the tree
 // built by grouping the flat task set on `parent`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskTree {
@@ -619,7 +619,7 @@ pub struct TaskTree {
     pub children: Vec<TaskTree>,
 }
 
-// A `rank` is an order somebody set on purpose (§3.2), so ranked tasks hold the top of the list
+// A `rank` is an order somebody set on purpose, so ranked tasks hold the top of the list
 // and `unranked` decides among the rest.
 fn rank_cmp(
     ra: Option<&str>,
@@ -634,7 +634,7 @@ fn rank_cmp(
     }
 }
 
-// A key is a number behind a prefix (§3.1), so it orders as one — text order would file `OPP-10`
+// A key is a number behind a prefix, so it orders as one — text order would file `OPP-10`
 // between `OPP-1` and `OPP-2`. The prefix is constant within a store, so dropping it changes nothing.
 pub fn id_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     match (key_number(a), key_number(b)) {
@@ -647,7 +647,7 @@ fn key_number(key: &str) -> Option<u64> {
     op_task::parse_id(key.rsplit_once('-')?.1)
 }
 
-// Rank ties break by id so the order is stable across rebuilds (§4).
+// Rank ties break by id so the order is stable across rebuilds.
 pub fn sibling_cmp(a: &TaskSummary, b: &TaskSummary) -> std::cmp::Ordering {
     rank_cmp(a.metadata.rank(), b.metadata.rank(), || {
         id_cmp(&a.id, &b.id)
@@ -743,7 +743,7 @@ fn build_node(
     }
 }
 
-// The order status groups appear in on the board — active work first, terminal states last (§9).
+// The order status groups appear in on the board — active work first, terminal states last.
 const BOARD_ORDER: [Status; 6] = [
     Status::InReview,
     Status::InProgress,
@@ -907,7 +907,7 @@ pub struct Matrix {
 }
 
 // One task viewed across every branch it lives on, its cells grouped by blob OID so identical
-// versions collapse into a single row and divergent ones stand out (§7.4). A `Deleted` mark carries
+// versions collapse into a single row and divergent ones stand out. A `Deleted` mark carries
 // the pre-deletion blob, so a branch that removes the task groups under the version it removed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskBranches {

@@ -8,7 +8,7 @@ dependencies:
 # Publish: fast-forward main to the rolling-updates tip (API + CLI)
 
 **Phase 5** of the rolling-updates plan
-([[./00023-design-a-continuous-changes-accu.md]] §7.11). Manual, explicit,
+([[./00023-design-a-continuous-changes-accu.md]]). Manual, explicit,
 **fast-forward-only** advance of `main` to the `rolling-updates` tip. Never a
 merge, never a force; publish cannot conflict (Phase 4 forces conflicts to
 surface at refresh).
@@ -16,7 +16,7 @@ surface at refresh).
 ## Wrinkle: `main` may be checked out
 
 A bare ref CAS on `main` would desync a worktree that has `main` checked out
-(torn index / working tree, §7.8). Handle both cases.
+(torn index / working tree). Handle both cases.
 
 ## Design
 
@@ -32,7 +32,7 @@ that already owns ref ops avoids the interleave. Manual only, never timed.
   rolling)`, then CAS `main` old->rolling.
 - `main` **checked out in W** -> guarded `--ff-only` that also updates W's index +
   working tree (gix, or `git merge --ff-only` in W); **refuse** if W's `.plan/` is
-  dirty or the daemon has W busy (§7.8). The delta is only `.plan/` task files
+  dirty or the daemon has W busy. The delta is only `.plan/` task files
   (ambient edits were routed away from W in Phase 3), so code in W is untouched.
 
 **Only failure mode — non-FF.** `main` can move after the last refresh, making

@@ -436,8 +436,8 @@ fn task_blobs(tree: &gix::Tree) -> Result<Vec<(String, String)>, GitError> {
         .object()
         .map_err(|e| GitError::Object(e.to_string()))?
         .into_tree();
-    // Keyed by id, not by file name: a task renamed on one branch (the name carries a title slug,
-    // §3.1) is the same task, and the matrix must line its versions up rather than read them as two.
+    // Keyed by id, not by file name: a task renamed on one branch (the name carries a title slug)
+    // is the same task, and the matrix must line its versions up rather than read them as two.
     // Two names of one number is a hand-made state; the lowest wins, as it does in the store, so a
     // read and a write cannot land on different files.
     let mut found: BTreeMap<u64, (String, String)> = BTreeMap::new();

@@ -9,7 +9,7 @@ dependencies:
 # UI: rolling-updates sync control + review popover
 
 **Phase 7** (final) of the rolling-updates plan
-([[./00023-design-a-continuous-changes-accu.md]] §7.11). The header sync control + the
+([[./00023-design-a-continuous-changes-accu.md]]). The header sync control + the
 "Rolling updates" review popover. Mockup of every state/layout:
 [../assets/sync-button-options.html](../assets/sync-button-options.html).
 

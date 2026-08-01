@@ -24,7 +24,7 @@ The read model this pushes to already exists: `aggregate-tasks-across-all-branch
 task is the missing **push** side: watch the real change sources, and publish
 correct, per-branch events into the existing `broadcast::Sender<ChangeEvent>`.
 
-## Sources to watch (SPEC §7.5)
+## Sources to watch
 
 1. **Worktree `.plan/` edits** — `notify` on each active worktree's `.plan/tasks/`.
    Catches live working-tree saves (an agent editing a task file in another
@@ -60,7 +60,7 @@ branch }` stays the wire contract for now.
 Git operations touch many files rapidly and leave the tree transiently
 inconsistent mid-operation. Coalesce bursts of fs events into a single diff pass,
 and skip diffing while a git op is in progress — gate on
-`op-git::Repo::op_in_progress` / the §7.8 busy-worktree signal, then settle and
+`op-git::Repo::op_in_progress` / the busy-worktree signal, then settle and
 diff. (The `op-watch` skeleton's `TODO(skeleton): debounce; settle git ops` is
 exactly this.)
 
@@ -77,7 +77,7 @@ exactly this.)
 
 ## Out of scope
 
-- **Presence (§7.6)** — the machine-local "who is actively on this task right now"
+- **Presence** — the machine-local "who is actively on this task right now"
   channel (`op-presence::Registry`, `PresenceChanged`) is a separate source
   (claim/release + heartbeat reaper, plus a new UI signal). Its own task.
 - **Branch-aware single-task read/update/delete** — tracked by

@@ -45,13 +45,13 @@ async fn send(state: &AppState, method: &str, uri: &str, body: Option<Value>) ->
 }
 
 // A worktree added mid-test carries no uncommitted `config.toml`, so it is opened the way the index
-// opens a sibling worktree: under the serving store's abbreviation (§7.10).
+// opens a sibling worktree: under the serving store's abbreviation.
 fn worktree_store(path: impl AsRef<std::path::Path>) -> op_store::Store {
     op_store::Store::open(path, "OPP".parse().unwrap()).unwrap()
 }
 
 // A test that reaches past the API into the store crosses from the key spelling to the number that
-// names a file (§3.1).
+// names a file.
 fn number(key: &str) -> u64 {
     key.strip_prefix("OPP-").unwrap().parse().unwrap()
 }

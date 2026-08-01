@@ -20,7 +20,7 @@ optional description. Tasks reference tags by name in a new `tags:` frontmatter 
 - **Color = fixed palette.** A closed set of ~12 named colors (theme-aware in the UI); free hex is
   rejected. Names, not hexes, cross the wire.
 - **Consequences we accept:** names are globally unique; `rename` rewrites references but only on
-  the current branch (writes are branch-local, §7.1), so cross-branch refs to the old name are left
+  the current branch (writes are branch-local), so cross-branch refs to the old name are left
   dangling; readers render dangling tag refs gracefully (name only, muted) rather than erroring.
 
 ## Data model
@@ -36,7 +36,7 @@ optional description. Tasks reference tags by name in a new `tags:` frontmatter 
 - **Palette** has a single Rust source of truth (e.g. `op-task::Palette`) enumerating the color
   names; the web package mirrors the same names → theme-aware CSS tokens (light + dark).
 
-## Referential integrity (reads global, writes local — §7.1)
+## Referential integrity (reads global, writes local)
 - Assigning a tag validates it exists in the current worktree's registry; unknown → non-zero exit
   with a hint to `oplan tag create`.
 - `tag delete` refuses when tasks on the current branch reference it, unless `--force`; it **cannot**
@@ -125,16 +125,16 @@ DELETE /api/tags/:name      # ?force= overrides the reference check
 
 ## Out of scope (follow-ups)
 - **Filtering:** `oplan list --tag …` and any UI filter control (explicitly deferred).
-- **Merge-driver set-union for `tags:`** — the section-aware merge driver (§7.7) must treat `tags`
+- **Merge-driver set-union for `tags:`** — the section-aware merge driver must treat `tags`
   as an unordered set so two branches adding different tags auto-merge; that lands with the
   merge-driver task. Model the field as a set now so it is ready.
 - **Cross-branch tag dedup / "merge duplicate tags"** tooling, and cross-branch rename propagation
-  (impossible under §7.1; left dangling by design).
+  (impossible under writes-local; left dangling by design).
 - Bulk retag, tag groups / namespaces, per-tag task counts in the registry view.
 
 ## Notes
 - Keep writes minimal-diff: assigning tags re-serializes only the frontmatter block, never the body
   (same discipline as `set status`).
 - A tag file reuses the task markdown format but lives in `.plan/tags/`, not `.plan/tasks/`; the two
-  never mix. This is the SPEC's first primitive beyond the task since docs were deferred — keep it
+  never mix. This is the first primitive beyond the task since docs were deferred — keep it
   as thin as possible.

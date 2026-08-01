@@ -8,7 +8,7 @@ dependencies:
 # Daemon ambient writer: accumulate + serialize into rolling-updates
 
 **Phase 2** of the rolling-updates plan
-([[./00023-design-a-continuous-changes-accu.md]] §7.11). The daemon becomes the
+([[./00023-design-a-continuous-changes-accu.md]]). The daemon becomes the
 **sole serialized writer** of `refs/open-plan/rolling-updates`, accumulating
 ambient edits worktree-less via the Phase 1 primitives
 ([[./00043-ref-plumbing-in-op-git-for-the-r.md]]).
@@ -24,8 +24,8 @@ a second, parallel writer built on `op-git::{commit_overlay, update_ref}`.
 
 ## `AmbientWriter` actor
 
-A single tokio task owning the ref (the "sole serialized writer, no
-cross-process lock" of the SPEC), behind an mpsc command channel:
+A single tokio task owning the ref — the sole serialized writer, with no
+cross-process lock — behind an mpsc command channel:
 
 - **State:** current `tip` (rolling commit) + `staged: HashMap<TaskId, Upsert(Task)|Delete>`
   (the coalescing buffer).

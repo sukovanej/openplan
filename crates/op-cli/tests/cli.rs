@@ -88,7 +88,7 @@ fn create(project: &Project, title: &str) -> String {
     stdout(&out).trim().to_owned()
 }
 
-// A task file's name carries a title slug its id does not (§3.1), so a test locates it by the
+// A task file's name carries a title slug its id does not, so a test locates it by the
 // number behind the key.
 fn task_file(root: &Path, key: &str) -> PathBuf {
     let dir = root.join(".plan/tasks");
@@ -104,7 +104,7 @@ fn task_file(root: &Path, key: &str) -> PathBuf {
         .unwrap_or_else(|| panic!("no file for task {key} in {}", dir.display()))
 }
 
-// The file layer's spelling of an id a command printed (§3.1).
+// The file layer's spelling of an id a command printed.
 fn number(key: &str) -> u64 {
     key.strip_prefix("OPP-")
         .unwrap_or_else(|| panic!("not a key: {key}"))

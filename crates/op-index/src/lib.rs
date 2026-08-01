@@ -11,7 +11,7 @@ use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{RawTask, Store, StoreError};
 use op_task::{Abbreviation, FieldError, FieldResult, Timestamp};
 
-// Every id the index holds and hands out is a key (§3.1); the numbers it reads from file names and
+// Every id the index holds and hands out is a key; the numbers it reads from file names and
 // git trees stop at the two conversions below, `keyed` and `number_of`.
 #[derive(Debug)]
 pub struct Index {

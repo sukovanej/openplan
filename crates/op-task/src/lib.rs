@@ -90,14 +90,14 @@ pub struct Frontmatter {
     pub extra: serde_yaml::Mapping,
 }
 
-// The number the daemon allocated (§3.1), in the one spelling that names a file: decimal, no sign,
+// The number the daemon allocated, in the one spelling that names a file: decimal, no sign,
 // no padding. `042`, `+7`, and a slug from before the scheme name no task.
 pub fn parse_id(id: &str) -> Option<u64> {
     let number: u64 = id.parse().ok()?;
     (number.to_string() == id).then_some(number)
 }
 
-// The store's key prefix (§3.1). The number allocates a task and names its file; the key —
+// The store's key prefix. The number allocates a task and names its file; the key —
 // `<ABBR>-<number>` — is the id everywhere above the store, so one number reads as one key across
 // the API, the CLI, and the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -177,7 +177,7 @@ pub fn is_key_shaped(text: &str) -> bool {
 }
 
 // Zero-padded so a directory listing reads in task order, then the title so a human browsing the
-// files can tell them apart. Neither is part of the id (§3.1): the padding is a naming convention
+// files can tell them apart. Neither is part of the id: the padding is a naming convention
 // and the slug is a snapshot of the title, free to be re-slugged by hand as long as the digits stay.
 pub fn task_filename(number: u64, title: &str) -> String {
     format!("{number:0ID_DIGITS$}-{}.md", slug(title))
@@ -216,7 +216,7 @@ fn slug(title: &str) -> String {
 }
 
 // How one task file names another: the path to its file, so the reference is one a plain markdown
-// reader can follow and a `grep` can see (§3.1). Written next to the target, which is where every
+// reader can follow and a `grep` can see. Written next to the target, which is where every
 // task file lives.
 pub fn task_ref(filename: &str) -> String {
     format!("./{filename}")
@@ -249,7 +249,7 @@ pub fn ref_id(reference: &str) -> Option<u64> {
 }
 
 // The task a `[[…]]` in a body names, in the spellings a body may carry: the target's file, or this
-// store's key. A bare number is not one of them — above the store the key is the whole id (§3.1).
+// store's key. A bare number is not one of them — above the store the key is the whole id.
 pub fn body_ref_id(abbreviation: Abbreviation, reference: &str) -> Option<u64> {
     let target = ref_target(reference);
     match file_stem(target) {
@@ -291,7 +291,7 @@ fn section_of(reference: &str) -> Option<&str> {
     reference.split_once('#').map(|(_, section)| section)
 }
 
-// The in-memory spelling of a reference is the id (§3.1), so nothing above the store has to know
+// The in-memory spelling of a reference is the id, so nothing above the store has to know
 // what a task's file is called; only the store, which can see the directory, writes the file form.
 fn ref_of(value: &serde_yaml::Value) -> Option<String> {
     let reference = match value {
