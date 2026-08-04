@@ -8,59 +8,59 @@ dependencies:
 ---
 # SPA: project routes, switcher, merged home
 
-Rewire the SPA onto the project routes and give it the multi-project surface:
-a merged home, a per-project view, and a switcher. This child also deletes the
-daemon's unprefixed single-project routes, which stop having callers here.
+Rewire the SPA onto the project routes. Give it the multi-project surface: a
+merged home, a per-project view, and a switcher. This child also deletes the
+daemon's unprefixed single-project routes. They lose their last callers here.
 
 ## Routes
 
-`main.tsx` grows one level:
+`main.tsx` gets one more level:
 
 - `/` — the merged all-projects board (`GET /api/board`).
-- `/:project` — that project's board.
-- the task detail route gains the project segment; `TASK_ROUTE` and the route
-  helper from [[./00066-spell-the-task-route-once-with-a.md]] absorb it so the
-  segment is spelled once.
+- `/:project` — the board of that project.
+- The task detail route gets the project segment. Put the segment in
+  `TASK_ROUTE` and the route helper from
+  [[./00066-spell-the-task-route-once-with-a.md]]. The segment is then
+  spelled once.
 
-Task links rendered on the merged board carry the row's `project`; within a
-project view the segment comes from the URL.
+A task link on the merged board carries the row's `project`. In a project
+view, the segment comes from the URL.
 
 ## Project state
 
-- `lib/abbreviation.ts`'s single global `AbbreviationStore` becomes a
-  per-project map loaded from `GET /api/projects` (replacing `/api/config`);
-  key rendering resolves through the task's project.
-- `lib/store.ts`: query keys gain the project — `boardQuery` per project plus
-  one merged, `taskQuery(project, id, branch)`.
-- `lib/realtime.ts`: still one EventSource. `applyChange` routes on the
-  event's `project` — invalidate that project's queries and the merged board;
-  `ProjectsChanged` re-reads the project list; `Resync` invalidates
+- `lib/abbreviation.ts` holds one global `AbbreviationStore`. Make it a
+  per-project map. Load the map from `GET /api/projects`; this replaces
+  `/api/config`. Key rendering resolves through the task's project.
+- `lib/store.ts`: add the project to the query keys. One `boardQuery` per
+  project, plus one merged. `taskQuery(project, id, branch)`.
+- `lib/realtime.ts`: keep one EventSource. `applyChange` routes on the
+  event's `project`: invalidate that project's queries and the merged board.
+  On `ProjectsChanged`, read the project list again. On `Resync`, invalidate
   everything.
 
 ## Surface
 
-- A header switcher: the merged view plus one entry per project, with a
-  demoted project visibly marked and its reason available (from
-  `/api/projects`), not silently absent.
-- On the merged board, a task row shows its project name beside the key —
-  the display answer to two stores sharing an abbreviation.
-- Zero projects renders an empty state pointing at `oplan project add`.
+- A header switcher: the merged view, plus one entry per project. Mark a
+  demoted project and make its reason available (from `/api/projects`). Do
+  not hide it.
+- On the merged board, show the project name adjacent to the key on each
+  row. This is the display answer to two stores that share an abbreviation.
+- With zero projects, show an empty state that points at `oplan project add`.
 
 ## Cleanup
 
 Delete the daemon's unprefixed `/api/tasks`, `/api/tasks/{id}`, and
-`/api/config` delegations — the SPA was their last caller; the unprefixed
-`/api/board` stays as the merged board. Regenerate the client
-(`mise run generate-web-client`), then `mise run rebuild` so the embedded SPA
-and the daemon move together.
+`/api/config` delegations. The SPA was their last caller. The unprefixed
+`/api/board` stays as the merged board. Run `mise run generate-web-client`,
+then `mise run rebuild`. The embedded SPA and the daemon then move together.
 
 ## Acceptance
 
-- With two registered projects: the merged home shows both, the switcher moves
-  between them, a detail opened from the merged board deep-links with the
-  project in the URL, and an SSE change in one project does not refetch the
-  other's queries.
-- With one project the UI is today's UI plus the switcher chrome.
-- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm format:check` pass, and an
-  interactive pass covers the merged board, project board, detail, and the
-  demoted-project marking.
+- With two registered projects: the merged home shows both; the switcher
+  moves between them; a detail opened from the merged board deep-links with
+  the project in the URL; an SSE change in one project does not refetch the
+  queries of the other project.
+- With one project, the UI is today's UI plus the switcher chrome.
+- `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm format:check` pass.
+  An interactive pass covers the merged board, the project board, the
+  detail view, and the demoted-project mark.

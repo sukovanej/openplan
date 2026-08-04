@@ -7,47 +7,48 @@ dependencies:
 ---
 # Merged all-projects board
 
-One board over every project: `GET /api/board` (unprefixed, daemon-wide)
-answers the union of all registered projects, replacing the single-project
-delegation that route carries today. With one project registered the merged
-board renders exactly what today's board does — which is what keeps the
-embedded SPA working until its own rewire lands.
+Serve one board over all projects. `GET /api/board` (unprefixed, daemon-wide)
+answers the union of all registered projects. This replaces the
+single-project delegation on that route. With one registered project, the
+merged board shows exactly what today's board shows. This keeps the embedded
+SPA correct until its own rewire lands.
 
 ## `project` on the wire
 
-`TaskListItem` gains a `project` field (board rows inherit it via `task`), and
-`TaskDetail` carries it too so a detail fetched from a merged-view link knows
-its coordinate. Per-project routes fill it as well — one shape everywhere.
+Add a `project` field to `TaskListItem`. Board rows get the field through
+`task`. Add the field to `TaskDetail` too. A detail opened from a merged-view
+link then knows its coordinate. The per-project routes also fill the field.
+One shape serves all routes.
 
 ## `Board::build` keys on `(project, id)`
 
 `Board::build` (`op-api/src/lib.rs`) keys `title_of`, `member_ids`,
-`children_of`, and `emitted` by the id string alone. Two projects whose stores
-committed the same abbreviation both hold an `APP-3`; under a merged board a
-parent reference would then nest a task under another project's row. Every map
-in `build` and `emit_row` keys on `(project, id)`, and parent resolution only
-ever looks inside the task's own project — parent references are store-scoped
-by construction.
+`children_of`, and `emitted` by the id string alone. Two stores can commit
+the same abbreviation, and each then holds an `APP-3`. On a merged board, a
+parent reference could then nest a task under a row from a different
+project. Key each map in `build` and `emit_row` on `(project, id)`. Resolve a
+parent only in the task's own project. Parent references are store-scoped by
+construction.
 
-Ordering inside a status group: `board_cmp` first, project name then id as the
-tiebreaker, so the merged board is deterministic and same-project tasks read
-contiguously where ranks tie.
+Order in a status group: `board_cmp` first; then the project name and the id
+as the tiebreaker. The merged board is then deterministic, and same-project
+tasks stay adjacent when ranks tie.
 
 ## The merged read
 
-For each `ok` project: rebuild (dirty-gated), collect `aggregated_tasks()`
-tagged with the project name; one `Board::build` over the concatenation.
-Demoted projects are skipped here — the client learns about them from
-`/api/projects`, not from a half-broken board. Project index mutexes are taken
-one at a time, never nested.
+For each `ok` project: rebuild (dirty-gated), then collect
+`aggregated_tasks()` with the project name attached. Run one `Board::build`
+over the full set. Skip demoted projects. The client learns about them from
+`/api/projects`, not from a half-broken board. Take the project index mutexes
+one at a time. Never nest them.
 
 ## Acceptance
 
-- A test over two temp repositories sharing an abbreviation: same-numbered
-  tasks stay distinct rows, and a child nests only under its own project's
-  parent.
+- A test runs over two temporary repositories that share an abbreviation:
+  tasks with the same number stay distinct rows, and a child nests only under
+  the parent in its own project.
 - With one project, the merged board's JSON equals today's board plus the
   additive `project` fields.
-- A demoted project drops out of the merged board without erroring it.
-- OpenAPI spec reflects the new field and route semantics.
+- A demoted project drops out of the merged board without an error.
+- The OpenAPI spec shows the new field and the new route semantics.
 - `cargo build && cargo test && cargo fmt --check && cargo clippy -- -D warnings` pass.

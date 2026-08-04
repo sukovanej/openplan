@@ -4,22 +4,23 @@ created: 2026-08-02T13:56:24Z
 ---
 # Multi-repo daemon: one daemon and one UI over N repositories
 
-The daemon is a machine singleton (`~/.plan/daemon.lock`) that serves exactly
-one repository: `AppState` (`op-server/src/lib.rs`) holds one `Repo`, one
-`Store`, one `Index`, one `IdCounter`, and `serve.rs` builds all of it from the
-single `--root`. A second repository on the same machine has nowhere to go —
-`ensure_same_repo` (`op-cli/src/writer.rs`) refuses the daemon outright — so
-working on two projects means restarting the daemon per project, and the UI
-only ever shows one of them.
+The daemon is a machine singleton (`~/.plan/daemon.lock`). It serves one
+repository only. `AppState` (`op-server/src/lib.rs`) holds one `Repo`, one
+`Store`, one `Index`, and one `IdCounter`. `serve.rs` builds all of them from
+the one `--root`. A second repository on the same machine has no daemon that
+accepts it: `ensure_same_repo` (`op-cli/src/writer.rs`) refuses a daemon that
+serves a different repository. You must restart the daemon for each project,
+and the UI shows one project only.
 
-Make the one daemon serve every repository on the machine: per-project routes,
-one SSE stream, a merged all-projects board at `/`, a project switcher in the
-UI, and a CLI that registers a repository automatically on its first write.
+Make the one daemon serve all repositories on the machine. Give it
+per-project routes, one SSE stream, and a merged all-projects board at `/`.
+Give the UI a project switcher. Make the CLI register a repository on its
+first write.
 
 ## Project identity
 
-A registry at `~/.plan/registry.toml`, beside `daemon.json` in the same
-`OPLAN_HOME` dir:
+Add a registry at `~/.plan/registry.toml`. Put it adjacent to `daemon.json`,
+in the same `OPLAN_HOME` directory:
 
 ```toml
 [[project]]
@@ -27,42 +28,48 @@ name = "open-plan"
 path = "/Users/milansuk/Projects/open-plan"
 ```
 
-- `path` is the serve root: the main checkout holding a `.plan` store — the
-  same anchor `serve_root` picks today (`op-cli/src/writer.rs`), for the same
-  reason: it outlives the per-task worktrees this workflow creates and removes.
-- `name` is the project's machine-local identity: slugged from the directory
-  name at registration, uniquified on collision, renameable. It is deliberately
-  **not** the store's abbreviation. The abbreviation is committed in
-  `.plan/config.toml`, so two unrelated clones can both claim `APP` and
-  nothing local can fix that. Keys stay store-scoped (`OPP-42`); the project is
-  an explicit coordinate on routes and URLs; an abbreviation collision is a
-  display concern — show the project name beside the key — never an identity
-  question.
-- The daemon is the registry's only writer. CLI and UI change it through
-  `/api/projects`, so registry writes never race across processes.
+- `path` is the serve root: the main checkout that holds a `.plan` store.
+  This is the same anchor that `serve_root` (`op-cli/src/writer.rs`) selects
+  today, for the same reason: it stays when this workflow creates and removes
+  a worktree for each task.
+- `name` is the machine-local identity of the project. The daemon makes it
+  from the directory name at registration. The daemon makes the name unique
+  on a collision. The user can rename it. The name is **not** the store's
+  abbreviation, and this is intentional: the abbreviation is committed in
+  `.plan/config.toml`, so two unrelated clones can both claim `APP`, and no
+  local change can correct that. Keys stay store-scoped (`OPP-42`). The
+  project is an explicit coordinate on routes and URLs. An abbreviation
+  collision is a display concern: show the project name adjacent to the key.
+  It is never an identity question.
+- The daemon is the only writer of the registry. The CLI and the UI change it
+  through `/api/projects`. Registry writes then never race across processes.
 
-## What changes, what holds
+## What changes, and what holds
 
-Per-project failure isolation is the semantic core: a project whose
-`config.toml` goes invalid or whose root vanishes is demoted to an error entry
-the UI can show — today either one stops the daemon for everything
-(`reload_config`, `root_removed` in `op-cli/src/serve.rs`).
+Per-project failure isolation is the semantic core. When a project's
+`config.toml` becomes invalid, the daemon demotes that project to an error
+entry. When a project's root is deleted, the daemon does the same. The UI can
+show the error entry. Today, each of these two conditions stops the daemon
+for everything (`reload_config` and `root_removed` in `op-cli/src/serve.rs`).
 
-What holds, per project, exactly as specified by
-[[./00033-daemon-as-single-write-id-author.md]]: keys as the only id spelling,
-one id counter per repository, "reads are global, writes are local",
-branch-pinned writes, the daemon as the sole in-band writer.
+These rules hold for each project, as
+[[./00033-daemon-as-single-write-id-author.md]] specifies: keys are the only
+id spelling; each repository has one id counter; reads are global and writes
+are local; a write is pinned to a branch; the daemon is the only in-band
+writer.
 
-## Sequencing with open work
+## Sequence with open work
 
-- [[./00057-route-every-cli-query-through-th.md]] builds a `Reader` mirroring
-  `Writer`; it must land after (or be written against) the project model, since
-  both resolve "which project is this repo" the same way.
-- Presence and rolling updates ([[./00039-continuous-changes-accumulation-v.md]]
-  onward) become per-project state when they land; nothing here blocks them.
-- The dirty-gated rebuild leans on the watcher, whose known gap is
-  [[./00052-watcher-misses-working-tree-edit.md]]; the child task carries the
-  mitigation.
+- [[./00057-route-every-cli-query-through-th.md]] adds a `Reader` that
+  mirrors `Writer`. It must come after the project model, or be written
+  against it. Both answer the same question: which project is this
+  repository?
+- Presence and rolling updates
+  ([[./00039-continuous-changes-accumulation-v.md]] onward) become
+  per-project state when they land. This task does not block them.
+- The dirty-gated rebuild uses the watcher. The watcher has a known gap:
+  [[./00052-watcher-misses-working-tree-edit.md]]. The child task contains
+  the mitigation.
 
-The five children are ordered by their dependencies; each leaves the daemon,
-CLI, and UI working.
+The five children are in dependency order. Each child keeps the daemon, the
+CLI, and the UI in a working state.
