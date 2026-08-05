@@ -60,6 +60,11 @@ Target resolution + dispatch only. AmbientWriter (Phase 2) does the
 accumulation; refresh/publish (Phase 4/5) and UI (Phase 7) untouched.
 `op-client` gains write methods (today only `health` / `shutdown`).
 
+Ambient writes cover **all** `.plan/` plan files, not just tasks: once
+[[./00012-tags-registered-labels-name-colo.md]] lands, the tag registry
+(`.plan/tags/`) routes through the same table — otherwise tag assignments
+would flow to rolling-updates while `tag create` still dirties the worktree.
+
 ## Verify
 
 - Server: `?target=ambient` create/patch/delete lands on the AmbientWriter (ref
