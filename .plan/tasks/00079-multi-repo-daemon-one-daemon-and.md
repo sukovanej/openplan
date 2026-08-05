@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: in_progress
 created: 2026-08-02T13:56:24Z
 ---
 # Multi-repo daemon: one daemon and one UI over N repositories
