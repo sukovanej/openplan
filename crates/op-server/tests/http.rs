@@ -1428,19 +1428,43 @@ async fn two_projects_write_to_their_own_store_under_their_own_numbers() {
     }
 }
 
-// With more than one project the unprefixed spelling has no answer to give, so it must refuse and
-// say which names would work rather than pick one.
+// A second project must not take the unprefixed routes away from the SPA and the CLI client, which
+// have no project to name yet. They keep answering for the default — the project passed first, which
+// the daemon takes from `--root` — never for whichever name sorts first.
 #[tokio::test]
-async fn the_unprefixed_routes_refuse_once_a_second_project_is_registered() {
-    let (_alpha, _beta, state) = two_project_state();
-    let response = send(&state, "GET", "/api/tasks", None).await;
-    assert_eq!(response.status(), StatusCode::CONFLICT);
-    let message = body_json(response).await["message"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert!(message.contains("alpha"), "{message}");
-    assert!(message.contains("beta"), "{message}");
+async fn the_unprefixed_routes_keep_answering_for_the_default_project() {
+    let (alpha_dir, alpha) = one_project("alpha");
+    let (beta_dir, beta) = one_project("beta");
+    // `beta` is passed first, so it is the default even though `alpha` sorts before it.
+    let state = AppState::new([beta, alpha]);
+
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks",
+        Some(json!({ "title": "Default" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    let listed = body_json(send(&state, "GET", "/api/tasks", None).await).await;
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["title"], "Default");
+
+    assert_eq!(
+        std::fs::read_dir(beta_dir.path().join(".plan/tasks"))
+            .unwrap()
+            .count(),
+        1,
+        "the write lands in the default project"
+    );
+    assert_eq!(
+        std::fs::read_dir(alpha_dir.path().join(".plan/tasks"))
+            .unwrap()
+            .count(),
+        0,
+        "the name that sorts first must not capture the unprefixed routes"
+    );
 }
 
 #[test]

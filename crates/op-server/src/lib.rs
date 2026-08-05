@@ -135,19 +135,32 @@ impl std::fmt::Debug for Project {
 #[derive(Clone)]
 pub struct AppState {
     projects: Arc<RwLock<BTreeMap<String, Arc<Project>>>>,
+    // The project the routes that carry no project segment answer for. The map is ordered by name,
+    // which says nothing about which repository the daemon was pointed at, so the caller names it by
+    // passing that project first.
+    default_project: Option<String>,
     shutdown: Arc<watch::Sender<bool>>,
     health: Option<Arc<DaemonInfo>>,
     events: broadcast::Sender<ChangeEvent>,
 }
 
 impl AppState {
+    // The first project answers the routes that carry no project segment. A repeated name keeps the
+    // first project of that name, so the default is never the entry that shadowed another.
     pub fn new(projects: impl IntoIterator<Item = Project>) -> Self {
-        let projects = projects
-            .into_iter()
-            .map(|project| (project.name.clone(), Arc::new(project)))
-            .collect();
+        let mut map: BTreeMap<String, Arc<Project>> = BTreeMap::new();
+        let mut default_project = None;
+        for project in projects {
+            let name = project.name.clone();
+            if map.contains_key(&name) {
+                continue;
+            }
+            default_project.get_or_insert_with(|| name.clone());
+            map.insert(name, Arc::new(project));
+        }
         Self {
-            projects: Arc::new(RwLock::new(projects)),
+            projects: Arc::new(RwLock::new(map)),
+            default_project,
             shutdown: Arc::new(watch::channel(false).0),
             health: None,
             events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
@@ -170,6 +183,10 @@ impl AppState {
 
     pub fn projects(&self) -> Vec<Arc<Project>> {
         self.read_projects().values().cloned().collect()
+    }
+
+    pub fn default_project(&self) -> Option<Arc<Project>> {
+        self.project(self.default_project.as_deref()?)
     }
 
     pub fn stop(&self) {
@@ -208,20 +225,23 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     documented().split_for_parts().1
 }
 
-// The pre-project spellings the embedded SPA still calls. They carry no project segment, so they
-// only answer while exactly one project is registered; the project-prefixed routes above are the
+// The pre-project spellings the embedded SPA and the CLI client still call. They carry no project
+// segment, so they answer for the default project; the project-prefixed routes above are the
 // documented ones. Undocumented on purpose: the generated web client must not grow a second,
 // ambiguous way to reach a task.
-fn sole_project_routes() -> Router<AppState> {
+fn default_project_routes() -> Router<AppState> {
     Router::new()
-        .route("/api/config", get(sole_get_config))
-        .route("/api/tasks", get(sole_list_tasks).post(sole_create_task))
-        .route("/api/board", get(sole_get_board))
+        .route("/api/config", get(default_get_config))
+        .route(
+            "/api/tasks",
+            get(default_list_tasks).post(default_create_task),
+        )
+        .route("/api/board", get(default_get_board))
         .route(
             "/api/tasks/{id}",
-            get(sole_get_task)
-                .patch(sole_patch_task)
-                .delete(sole_delete_task),
+            get(default_get_task)
+                .patch(default_patch_task)
+                .delete(default_delete_task),
         )
 }
 
@@ -234,25 +254,10 @@ fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, ApiError> {
     })
 }
 
-// A route with no project segment can only mean "the one project" while there is exactly one.
-fn sole_project(state: &AppState) -> Result<Arc<Project>, ApiError> {
-    let mut projects = state.projects();
-    match projects.len() {
-        1 => Ok(projects.remove(0)),
-        0 => Err(ApiError::new(
-            StatusCode::NOT_FOUND,
-            "no project is registered".to_owned(),
-        )),
-        _ => Err(ApiError::new(
-            StatusCode::CONFLICT,
-            format!(
-                "this route serves one project and {} are registered; name one under \
-                 /api/projects/{{project}}/ — {}",
-                projects.len(),
-                registered(state)
-            ),
-        )),
-    }
+fn default_project(state: &AppState) -> Result<Arc<Project>, ApiError> {
+    state
+        .default_project()
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "no project is registered".to_owned()))
 }
 
 fn registered(state: &AppState) -> String {
@@ -271,7 +276,7 @@ pub fn app(state: AppState) -> Router {
     let (router, api) = documented().split_for_parts();
     router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
-        .merge(sole_project_routes())
+        .merge(default_project_routes())
         .route("/api/events", get(events))
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
@@ -373,8 +378,8 @@ async fn get_config(
     config_of(project_of(&state, &project)?).await
 }
 
-async fn sole_get_config(State(state): State<AppState>) -> Result<Json<StoreConfig>, ApiError> {
-    config_of(sole_project(&state)?).await
+async fn default_get_config(State(state): State<AppState>) -> Result<Json<StoreConfig>, ApiError> {
+    config_of(default_project(&state)?).await
 }
 
 async fn config_of(project: Arc<Project>) -> Result<Json<StoreConfig>, ApiError> {
@@ -572,10 +577,10 @@ async fn list_tasks(
     list_tasks_of(project_of(&state, &project)?).await
 }
 
-async fn sole_list_tasks(
+async fn default_list_tasks(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TaskListItem>>, ApiError> {
-    list_tasks_of(sole_project(&state)?).await
+    list_tasks_of(default_project(&state)?).await
 }
 
 async fn list_tasks_of(project: Arc<Project>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
@@ -611,8 +616,8 @@ async fn get_board(
     board_of(project_of(&state, &project)?).await
 }
 
-async fn sole_get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
-    board_of(sole_project(&state)?).await
+async fn default_get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
+    board_of(default_project(&state)?).await
 }
 
 async fn board_of(project: Arc<Project>) -> Result<Json<Board>, ApiError> {
@@ -656,12 +661,12 @@ async fn create_task(
     create_task_in(&state, project_of(&state, &project)?, query, body).await
 }
 
-async fn sole_create_task(
+async fn default_create_task(
     State(state): State<AppState>,
     Query(query): Query<TaskQuery>,
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
-    create_task_in(&state, sole_project(&state)?, query, body).await
+    create_task_in(&state, default_project(&state)?, query, body).await
 }
 
 async fn create_task_in(
@@ -758,12 +763,12 @@ async fn get_task(
     get_task_of(project_of(&state, &project)?, id, query).await
 }
 
-async fn sole_get_task(
+async fn default_get_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    get_task_of(sole_project(&state)?, id, query).await
+    get_task_of(default_project(&state)?, id, query).await
 }
 
 async fn get_task_of(
@@ -862,13 +867,13 @@ async fn patch_task(
     patch_task_of(&state, project_of(&state, &project)?, id, query, patch).await
 }
 
-async fn sole_patch_task(
+async fn default_patch_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
     Json(patch): Json<TaskPatch>,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    patch_task_of(&state, sole_project(&state)?, id, query, patch).await
+    patch_task_of(&state, default_project(&state)?, id, query, patch).await
 }
 
 async fn patch_task_of(
@@ -973,12 +978,12 @@ async fn delete_task(
     delete_task_of(&state, project_of(&state, &project)?, id, query).await
 }
 
-async fn sole_delete_task(
+async fn default_delete_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
 ) -> Result<StatusCode, ApiError> {
-    delete_task_of(&state, sole_project(&state)?, id, query).await
+    delete_task_of(&state, default_project(&state)?, id, query).await
 }
 
 async fn delete_task_of(

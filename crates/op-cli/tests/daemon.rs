@@ -844,3 +844,101 @@ fn a_start_on_an_unregistered_root_adds_it() {
         "the second root is registered: {text}"
     );
 }
+
+// The unprefixed routes are all the CLI client and the SPA can spell, so registering a second
+// repository must not take them away. `--root` names which project they answer for.
+#[test]
+fn a_write_from_a_second_repository_works_after_a_restart_on_it() {
+    let daemon = Daemon::new();
+    assert!(
+        daemon
+            .cmd()
+            .args(["create", "First repo"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let second = task_repo(1_000_000_000);
+    let mut on_second = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    on_second
+        .env("OPLAN_HOME", daemon.home_path())
+        .env("OPLAN_PORT", "0")
+        .arg("--root")
+        .arg(second.path());
+    assert!(
+        on_second
+            .args(["server", "restart", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let mut write = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let out = write
+        .env("OPLAN_HOME", daemon.home_path())
+        .env("OPLAN_PORT", "0")
+        .arg("--root")
+        .arg(second.path())
+        .args(["create", "Second repo"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let list = std::fs::read_dir(second.path().join(".plan/tasks"))
+        .unwrap()
+        .count();
+    assert_eq!(list, 2, "the write lands in the repository --root names");
+}
+
+// `Store::discover` walks past the git root, so a `.plan` above the checkout makes the store root and
+// the serve root two different directories. The registry has to record the one that holds the repo.
+#[test]
+fn a_store_above_the_git_root_still_starts() {
+    let home = tempfile::tempdir().unwrap();
+    let outer = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(outer.path().join(".plan/tasks")).unwrap();
+    std::fs::write(
+        outer.path().join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\n",
+    )
+    .unwrap();
+    let inner = outer.path().join("repo");
+    std::fs::create_dir_all(&inner).unwrap();
+    git(&inner, &["init", "-q", "-b", "main"]);
+    git(&inner, &["config", "user.email", "t@example.com"]);
+    git(&inner, &["config", "user.name", "Test"]);
+    git(&inner, &["commit", "-q", "--allow-empty", "-m", "init"]);
+
+    let mut start = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let out = start
+        .env("OPLAN_HOME", home.path())
+        .env("OPLAN_PORT", "0")
+        .arg("--root")
+        .arg(&inner)
+        .args(["server", "start", "--port", "0"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let text = std::fs::read_to_string(home.path().join("registry.toml")).unwrap();
+    assert!(
+        text.contains(inner.canonicalize().unwrap().to_str().unwrap()),
+        "the entry names the checkout, not the .plan parent: {text}"
+    );
+
+    let mut stop = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let _ = stop
+        .env("OPLAN_HOME", home.path())
+        .args(["server", "stop"])
+        .output();
+}

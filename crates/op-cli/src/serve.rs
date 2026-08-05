@@ -45,7 +45,7 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     // half-started.
     // A store with no valid abbreviation has no id space above its files, so there is nothing to
     // degrade into: the daemon refuses to start rather than serve keys the store does not claim.
-    let store = Store::discover(root).map_err(|err| match err {
+    Store::discover(root).map_err(|err| match err {
         StoreError::StoreMissing => {
             anyhow!("no {STORE_DIR} task store found at {}", root.display())
         }
@@ -69,8 +69,20 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
 
     // Behind the lifetime lock, so the registration cannot race a second starter.
     let registry_path = home.dir().join(REGISTRY_FILE);
-    let (registry, root_project) = register_root(&registry_path, store.root())?;
-    let projects = open_projects(registry.entries());
+    let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+    let (root_project, unregistered) = name_root(&mut registry, root);
+    let mut projects = open_projects(registry.entries());
+    // `--root` is the project the daemon was pointed at, so a start that cannot serve it has not
+    // done what it was asked, whatever else the registry holds.
+    let Some(at) = projects
+        .iter()
+        .position(|project| project.name == root_project)
+    else {
+        bail!("the project at {} could not be opened", root.display());
+    };
+    // First place answers the routes that carry no project segment — the ones the SPA and the CLI
+    // client still call. They must follow `--root`, not the alphabet.
+    projects.swap(0, at);
 
     // 127.0.0.1 keeps /admin/shutdown and every other route reachable only from this machine.
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -79,28 +91,18 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
         .with_context(|| format!("binding {addr}"))?;
     let bound = listener.local_addr()?.port();
 
+    // Last, so a start that fails to open its root or to bind its port leaves no entry behind that
+    // every later start would have to skip.
+    if unregistered {
+        registry.write(&registry_path)?;
+        tracing::info!(project = %root_project, root = %root.display(), "project registered");
+    }
+
     let state = AppState::new(projects);
     // One watcher, one root watchdog, and one `DaemonInfo.repo` still describe a single project, so
     // `--root` names which one that is. The next task makes each of them per project.
-    let served = state
-        .project(&root_project)
-        .or_else(|| state.projects().into_iter().next());
-    let Some(served) = served else {
-        bail!(
-            "no registered project could be opened; see {}",
-            registry_path.display()
-        );
-    };
-    for project in state.projects() {
-        if let Err(err) = project
-            .index
-            .lock()
-            .expect("index mutex poisoned")
-            .rebuild(project.repo(), project.store())
-        {
-            tracing::warn!(project = %project.name, %err, "initial matrix build failed");
-        }
-    }
+    let served = state.project(&root_project).expect("opened above");
+    warm_indexes(&state);
 
     let info = DaemonInfo {
         pid: std::process::id(),
@@ -156,23 +158,37 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
 }
 
 // The registry is the daemon's list of projects, and `--root` is how a start names one. An already
-// registered root leaves the file untouched; an unregistered one is added, which is also what seeds
-// the file on the first start of all. It gives a user pointing the daemon at a second repository a
-// way in that does not need the registry to be edited by hand.
-fn register_root(path: &Path, root: &Path) -> Result<(ProjectRegistry, String)> {
-    let mut registry = ProjectRegistry::read(path)?.unwrap_or_default();
+// registered root keeps its name; an unregistered one is added in memory, which is also what seeds
+// the file on the first start of all. It gives a user who points the daemon at a second repository a
+// way in that does not need the registry to be edited by hand. The caller persists the file.
+fn name_root(registry: &mut ProjectRegistry, root: &Path) -> (String, bool) {
     let known = registry
         .entries()
         .iter()
         .find(|entry| same_path(&entry.path, root))
         .map(|entry| entry.name.clone());
-    if let Some(name) = known {
-        return Ok((registry, name));
+    match known {
+        Some(name) => (name, false),
+        None => (registry.add(root.to_path_buf()).name.clone(), true),
     }
-    let name = registry.add(root.to_path_buf()).name.clone();
-    tracing::info!(project = %name, root = %root.display(), "registering project");
-    registry.write(path)?;
-    Ok((registry, name))
+}
+
+// A warm index only saves the first read the work it would do anyway, so it must not delay the port
+// answering — with N projects it is N branch walks over the object DB.
+fn warm_indexes(state: &AppState) {
+    let projects = state.projects();
+    tokio::task::spawn_blocking(move || {
+        for project in projects {
+            if let Err(err) = project
+                .index
+                .lock()
+                .expect("index mutex poisoned")
+                .rebuild(project.repo(), project.store())
+            {
+                tracing::warn!(project = %project.name, %err, "initial matrix build failed");
+            }
+        }
+    });
 }
 
 // A registered path whose store or repository cannot be opened is skipped, not fatal: one broken
