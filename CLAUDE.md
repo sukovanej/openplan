@@ -14,6 +14,13 @@ worktree (in it, `git rev-parse --git-dir` equals `--git-common-dir`); if you
 are, create a dedicated worktree and switch into it first. Create one worktree
 per unit of work and remove it once the change is merged.
 
+## Language: ASD-STE100 Simplified Technical English
+
+Write all prose in ASD-STE100 Simplified Technical English. This rule applies
+to task files, documentation, commit messages, pull requests, and replies to
+the user. Use the active voice. Write short sentences. Give one instruction in
+each sentence. Use one meaning for each word.
+
 ## Style: minimal comments, docs, and README
 
 Code must be self-describing. If a piece of code seems to need a comment, a doc
