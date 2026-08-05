@@ -180,7 +180,7 @@ pub fn is_key_shaped(text: &str) -> bool {
 // files can tell them apart. Neither is part of the id: the padding is a naming convention
 // and the slug is a snapshot of the title, free to be re-slugged by hand as long as the digits stay.
 pub fn task_filename(number: u64, title: &str) -> String {
-    format!("{number:0ID_DIGITS$}-{}.md", slug(title))
+    format!("{number:0ID_DIGITS$}-{}.md", slug(title, "task"))
 }
 
 pub fn file_id(stem: &str) -> Option<u64> {
@@ -192,10 +192,10 @@ pub fn file_id(stem: &str) -> Option<u64> {
     stem[..digits].parse().ok()
 }
 
-fn slug(title: &str) -> String {
+pub fn slug(text: &str, fallback: &str) -> String {
     let mut out = String::new();
     let mut pending_dash = false;
-    for ch in title.chars() {
+    for ch in text.chars() {
         if ch.is_ascii_alphanumeric() {
             if pending_dash && !out.is_empty() {
                 out.push('-');
@@ -210,7 +210,7 @@ fn slug(title: &str) -> String {
         }
     }
     if out.is_empty() {
-        out.push_str("task");
+        out.push_str(fallback);
     }
     out
 }

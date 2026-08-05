@@ -2,9 +2,20 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use axum::response::Response;
 use http_body_util::BodyExt;
-use op_server::{AppState, app};
+use op_server::{AppState, Project, app};
 use serde_json::{Value, json};
 use tower::ServiceExt;
+
+const PROJECT: &str = "test";
+
+fn project_state(
+    root: impl AsRef<std::path::Path>,
+    repo: op_git::Repo,
+    store: op_store::Store,
+) -> AppState {
+    let root = root.as_ref().to_path_buf();
+    AppState::new([Project::new(PROJECT, root, repo, store)])
+}
 
 async fn get(uri: &str) -> axum::response::Response {
     let (_dir, state) = store_state();
@@ -28,8 +39,8 @@ fn store_state() -> (tempfile::TempDir, AppState) {
     git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    (dir, AppState::new(repo, store, abbreviation))
+    let state = project_state(root, repo, store);
+    (dir, state)
 }
 
 async fn send(state: &AppState, method: &str, uri: &str, body: Option<Value>) -> Response {
@@ -147,7 +158,7 @@ async fn tasks_crud_roundtrip() {
     let created = send(
         &state,
         "POST",
-        "/api/tasks",
+        "/api/projects/test/tasks",
         Some(json!({ "title": "Wire the parser" })),
     )
     .await;
@@ -158,11 +169,17 @@ async fn tasks_crud_roundtrip() {
         "the id is the store's key for the allocated number"
     );
 
-    let list = send(&state, "GET", "/api/tasks", None).await;
+    let list = send(&state, "GET", "/api/projects/test/tasks", None).await;
     assert_eq!(list.status(), StatusCode::OK);
     assert_eq!(body_json(list).await.as_array().unwrap().len(), 1);
 
-    let got = send(&state, "GET", &format!("/api/tasks/{id}"), None).await;
+    let got = send(
+        &state,
+        "GET",
+        &format!("/api/projects/test/tasks/{id}"),
+        None,
+    )
+    .await;
     assert_eq!(got.status(), StatusCode::OK);
     let view = body_json(got).await;
     assert_eq!(view["title"], "Wire the parser");
@@ -172,7 +189,7 @@ async fn tasks_crud_roundtrip() {
     let patched = send(
         &state,
         "PATCH",
-        &format!("/api/tasks/{id}"),
+        &format!("/api/projects/test/tasks/{id}"),
         Some(json!({ "status": "in_progress" })),
     )
     .await;
@@ -182,10 +199,22 @@ async fn tasks_crud_roundtrip() {
         "in_progress"
     );
 
-    let deleted = send(&state, "DELETE", &format!("/api/tasks/{id}"), None).await;
+    let deleted = send(
+        &state,
+        "DELETE",
+        &format!("/api/projects/test/tasks/{id}"),
+        None,
+    )
+    .await;
     assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
 
-    let gone = send(&state, "GET", &format!("/api/tasks/{id}"), None).await;
+    let gone = send(
+        &state,
+        "GET",
+        &format!("/api/projects/test/tasks/{id}"),
+        None,
+    )
+    .await;
     assert_eq!(gone.status(), StatusCode::NOT_FOUND);
 }
 
@@ -199,7 +228,13 @@ async fn routes_naming_something_that_is_not_an_id_are_400() {
         ("PATCH", Some(json!({ "status": "done" }))),
         ("DELETE", None),
     ] {
-        let response = send(&state, method, "/api/tasks/ship-login-3d0c", body).await;
+        let response = send(
+            &state,
+            method,
+            "/api/projects/test/tasks/ship-login-3d0c",
+            body,
+        )
+        .await;
         assert_eq!(
             response.status(),
             StatusCode::BAD_REQUEST,
@@ -216,7 +251,7 @@ async fn missing_task_routes_are_404() {
         ("PATCH", Some(json!({ "status": "done" }))),
         ("DELETE", None),
     ] {
-        let response = send(&state, method, "/api/tasks/OPP-99", body).await;
+        let response = send(&state, method, "/api/projects/test/tasks/OPP-99", body).await;
         assert_eq!(
             response.status(),
             StatusCode::NOT_FOUND,
@@ -243,7 +278,7 @@ async fn patch_parent_null_clears_absent_leaves_id_sets() {
     let untouched = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-2",
+        "/api/projects/test/tasks/OPP-2",
         Some(json!({ "status": "in_progress" })),
     )
     .await;
@@ -254,7 +289,7 @@ async fn patch_parent_null_clears_absent_leaves_id_sets() {
     let cleared = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-2",
+        "/api/projects/test/tasks/OPP-2",
         Some(json!({ "parent": null })),
     )
     .await;
@@ -267,7 +302,7 @@ async fn patch_parent_null_clears_absent_leaves_id_sets() {
     let set = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-2",
+        "/api/projects/test/tasks/OPP-2",
         Some(json!({ "parent": "OPP-1" })),
     )
     .await;
@@ -295,7 +330,7 @@ async fn board_groups_by_status_and_nests_same_status_children() {
     )
     .unwrap();
 
-    let board = body_json(send(&state, "GET", "/api/board", None).await).await;
+    let board = body_json(send(&state, "GET", "/api/projects/test/board", None).await).await;
     let groups = board["groups"].as_array().unwrap();
     let order: Vec<&str> = groups
         .iter()
@@ -343,7 +378,7 @@ async fn task_detail_carries_parent_title_children_and_resolved_refs() {
     )
     .unwrap();
 
-    let detail = body_json(send(&state, "GET", "/api/tasks/OPP-2", None).await).await;
+    let detail = body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-2", None).await).await;
     assert_eq!(detail["parent_title"], "Epic");
 
     // Direct children arrive in rank order (a before b), each with title + status.
@@ -365,7 +400,7 @@ async fn task_detail_carries_parent_title_children_and_resolved_refs() {
     assert_eq!(refs[0]["title"], "Epic");
 
     // A top-level task reports no parent and no children.
-    let epic = body_json(send(&state, "GET", "/api/tasks/OPP-1", None).await).await;
+    let epic = body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await).await;
     assert!(epic.get("parent_title").is_none());
     assert_eq!(epic["children"][0]["id"], "OPP-2");
 }
@@ -382,7 +417,7 @@ async fn patch_preserves_unknown_frontmatter_keys() {
     let response = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-1",
+        "/api/projects/test/tasks/OPP-1",
         Some(json!({ "status": "done" })),
     )
     .await;
@@ -402,7 +437,7 @@ async fn create_with_unknown_parent_is_400() {
     let response = send(
         &state,
         "POST",
-        "/api/tasks",
+        "/api/projects/test/tasks",
         Some(json!({ "title": "Child", "parent": "ghost" })),
     )
     .await;
@@ -414,7 +449,7 @@ async fn malformed_json_body_is_400() {
     let (_dir, state) = store_state();
     let request = Request::builder()
         .method("POST")
-        .uri("/api/tasks")
+        .uri("/api/projects/test/tasks")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from("{ not json"))
         .unwrap();
@@ -460,7 +495,7 @@ async fn events_stream_delivers_published_changes() {
     let created = send(
         &state,
         "POST",
-        "/api/tasks",
+        "/api/projects/test/tasks",
         Some(json!({ "title": "Wire the SSE" })),
     )
     .await;
@@ -640,14 +675,14 @@ fn git_state() -> (tempfile::TempDir, AppState) {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    (dir, AppState::new(repo, store, abbreviation))
+    let state = project_state(root, repo, store);
+    (dir, state)
 }
 
 #[tokio::test]
 async fn list_tasks_is_branch_aware() {
     let (_dir, state) = git_state();
-    let response = send(&state, "GET", "/api/tasks", None).await;
+    let response = send(&state, "GET", "/api/projects/test/tasks", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_json(response).await;
     let items = body.as_array().unwrap();
@@ -678,30 +713,48 @@ async fn list_tasks_is_branch_aware() {
 #[tokio::test]
 async fn cross_branch_task_read_reflects_the_other_branch() {
     let (_dir, state) = git_state();
-    let response = send(&state, "GET", "/api/tasks/OPP-1?branch=feature", None).await;
+    let response = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-1?branch=feature",
+        None,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
     assert_eq!(view["metadata"]["status"], "done");
     assert_eq!(view["title"], "Alpha done");
 
     // Omitting the branch headlines the most recently changed version, which here is feature's.
-    let local = send(&state, "GET", "/api/tasks/OPP-1", None).await;
+    let local = send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await;
     assert_eq!(body_json(local).await["metadata"]["status"], "done");
 }
 
 #[tokio::test]
 async fn cross_branch_read_missing_id_or_branch_is_404() {
     let (_dir, state) = git_state();
-    let missing_branch = send(&state, "GET", "/api/tasks/OPP-1?branch=ghost", None).await;
+    let missing_branch = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-1?branch=ghost",
+        None,
+    )
+    .await;
     assert_eq!(missing_branch.status(), StatusCode::NOT_FOUND);
-    let missing_id = send(&state, "GET", "/api/tasks/OPP-99?branch=feature", None).await;
+    let missing_id = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-99?branch=feature",
+        None,
+    )
+    .await;
     assert_eq!(missing_id.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
 async fn branchless_get_carries_the_branch_set() {
     let (_dir, state) = git_state();
-    let response = send(&state, "GET", "/api/tasks/OPP-1", None).await;
+    let response = send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
     // Headline is the most recently changed version (feature), flattened alongside the branch set.
@@ -728,13 +781,19 @@ async fn write_to_a_branch_without_a_live_worktree_is_refused() {
     let patch = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-1?branch=feature",
+        "/api/projects/test/tasks/OPP-1?branch=feature",
         Some(json!({ "status": "done" })),
     )
     .await;
     assert_eq!(patch.status(), StatusCode::CONFLICT);
 
-    let delete = send(&state, "DELETE", "/api/tasks/OPP-1?branch=feature", None).await;
+    let delete = send(
+        &state,
+        "DELETE",
+        "/api/projects/test/tasks/OPP-1?branch=feature",
+        None,
+    )
+    .await;
     assert_eq!(delete.status(), StatusCode::CONFLICT);
 }
 
@@ -743,10 +802,10 @@ async fn delete_is_local_to_the_in_view_branch() {
     let (_dir, state) = git_state();
     // Delete on the current (main) worktree removes only main's copy; `feature` still carries it,
     // so the task survives in the list.
-    let deleted = send(&state, "DELETE", "/api/tasks/OPP-1", None).await;
+    let deleted = send(&state, "DELETE", "/api/projects/test/tasks/OPP-1", None).await;
     assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
 
-    let list = send(&state, "GET", "/api/tasks", None).await;
+    let list = send(&state, "GET", "/api/projects/test/tasks", None).await;
     let items = body_json(list).await;
     let alpha = items
         .as_array()
@@ -802,8 +861,8 @@ fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    (dir, AppState::new(repo, store, abbreviation))
+    let state = project_state(root, repo, store);
+    (dir, state)
 }
 
 #[tokio::test]
@@ -812,7 +871,7 @@ async fn create_lands_in_the_requested_branch_s_own_worktree() {
     let created = send(
         &state,
         "POST",
-        "/api/tasks?branch=feature",
+        "/api/projects/test/tasks?branch=feature",
         Some(json!({ "title": "Ship login" })),
     )
     .await;
@@ -837,7 +896,7 @@ async fn create_on_a_branch_without_a_live_worktree_is_refused() {
     let created = send(
         &state,
         "POST",
-        "/api/tasks?branch=feature",
+        "/api/projects/test/tasks?branch=feature",
         Some(json!({ "title": "Ship login" })),
     )
     .await;
@@ -881,14 +940,13 @@ async fn create_numbers_ids_above_every_local_branch() {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    let state = AppState::new(repo, store, abbreviation);
+    let state = project_state(root, repo, store);
 
     for expected in ["OPP-10", "OPP-11"] {
         let created = send(
             &state,
             "POST",
-            "/api/tasks",
+            "/api/projects/test/tasks",
             Some(json!({ "title": "Ship login" })),
         )
         .await;
@@ -921,13 +979,12 @@ async fn create_never_reuses_a_number_a_branch_still_holds() {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    let state = AppState::new(repo, store, abbreviation);
+    let state = project_state(root, repo, store);
 
     let created = send(
         &state,
         "POST",
-        "/api/tasks",
+        "/api/projects/test/tasks",
         Some(json!({ "title": "Beta" })),
     )
     .await;
@@ -951,7 +1008,7 @@ async fn concurrent_creates_never_share_an_id() {
             let created = send(
                 &state,
                 "POST",
-                "/api/tasks",
+                "/api/projects/test/tasks",
                 Some(json!({ "title": "Contended" })),
             )
             .await;
@@ -967,7 +1024,7 @@ async fn concurrent_creates_never_share_an_id() {
     let distinct: std::collections::HashSet<&String> = ids.iter().collect();
     assert_eq!(distinct.len(), ids.len(), "ids collided: {ids:?}");
 
-    let list = send(&state, "GET", "/api/tasks", None).await;
+    let list = send(&state, "GET", "/api/projects/test/tasks", None).await;
     assert_eq!(
         body_json(list).await.as_array().unwrap().len(),
         ids.len(),
@@ -989,7 +1046,7 @@ async fn create_takes_the_next_number_when_one_is_already_on_disk() {
     let created = send(
         &state,
         "POST",
-        "/api/tasks",
+        "/api/projects/test/tasks",
         Some(json!({ "title": "Contended" })),
     )
     .await;
@@ -1006,7 +1063,7 @@ async fn patch_reverting_a_branch_to_its_base_echoes_the_written_task() {
     let patch = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-1?branch=feature",
+        "/api/projects/test/tasks/OPP-1?branch=feature",
         Some(json!({ "status": "todo" })),
     )
     .await;
@@ -1043,10 +1100,9 @@ async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    let state = AppState::new(repo, store, abbreviation);
+    let state = project_state(root, repo, store);
 
-    let list = send(&state, "GET", "/api/tasks", None).await;
+    let list = send(&state, "GET", "/api/projects/test/tasks", None).await;
     let items = body_json(list).await;
     assert!(
         items.as_array().unwrap().iter().any(|i| i["id"] == "OPP-1"),
@@ -1055,7 +1111,7 @@ async fn branchless_get_of_a_task_dropped_everywhere_live_still_loads() {
 
     // A task the list still shows must open, not 404: the branchless headline falls back to the
     // deletion's last-known blob.
-    let response = send(&state, "GET", "/api/tasks/OPP-1", None).await;
+    let response = send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let view = body_json(response).await;
     assert_eq!(view["title"], "Alpha");
@@ -1109,10 +1165,9 @@ async fn headline_follows_the_most_recent_change_even_on_the_default_branch() {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    let state = AppState::new(repo, store, abbreviation);
+    let state = project_state(root, repo, store);
 
-    let list = send(&state, "GET", "/api/tasks", None).await;
+    let list = send(&state, "GET", "/api/projects/test/tasks", None).await;
     let alpha = body_json(list).await;
     let alpha = alpha
         .as_array()
@@ -1127,7 +1182,7 @@ async fn headline_follows_the_most_recent_change_even_on_the_default_branch() {
     );
     assert_eq!(alpha["title"], "Alpha done");
 
-    let detail = send(&state, "GET", "/api/tasks/OPP-1", None).await;
+    let detail = send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await;
     assert_eq!(body_json(detail).await["metadata"]["status"], "done");
 }
 
@@ -1137,8 +1192,12 @@ async fn openapi_spec_is_served_over_http() {
     assert_eq!(response.status(), StatusCode::OK);
     let spec = body_json(response).await;
     assert_eq!(spec["info"]["title"], "open-planner");
-    assert!(spec["paths"].get("/api/tasks").is_some());
-    assert!(spec["paths"].get("/api/tasks/{id}").is_some());
+    assert!(spec["paths"].get("/api/projects/{project}/tasks").is_some());
+    assert!(
+        spec["paths"]
+            .get("/api/projects/{project}/tasks/{id}")
+            .is_some()
+    );
 }
 
 #[tokio::test]
@@ -1170,7 +1229,7 @@ async fn patch_rejects_a_malformed_rank_with_its_reason() {
     let refused = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-1",
+        "/api/projects/test/tasks/OPP-1",
         Some(json!({ "rank": "NOT-BASE36" })),
     )
     .await;
@@ -1186,7 +1245,7 @@ async fn patch_rejects_a_malformed_rank_with_its_reason() {
     let accepted = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-1",
+        "/api/projects/test/tasks/OPP-1",
         Some(json!({ "rank": "a5" })),
     )
     .await;
@@ -1213,7 +1272,7 @@ async fn patching_a_parent_that_would_cycle_is_refused_with_its_reason() {
     let refused = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-1",
+        "/api/projects/test/tasks/OPP-1",
         Some(json!({ "parent": "OPP-2" })),
     )
     .await;
@@ -1225,11 +1284,175 @@ async fn patching_a_parent_that_would_cycle_is_refused_with_its_reason() {
     assert!(message.contains("descendant"), "message: {message}");
 }
 
+async fn body_bytes(response: Response) -> Vec<u8> {
+    response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec()
+}
+
+// The embedded SPA still calls the unprefixed spellings, so until it moves they must be the same
+// answer — not merely an equivalent one.
+#[tokio::test]
+async fn the_unprefixed_routes_answer_exactly_as_the_prefixed_ones() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(
+        tasks.join("00001-epic.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("00002-child.md"),
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: '1'\n---\n# Child\n",
+    )
+    .unwrap();
+
+    for (prefixed, unprefixed) in [
+        ("/api/projects/test/config", "/api/config"),
+        ("/api/projects/test/tasks", "/api/tasks"),
+        ("/api/projects/test/board", "/api/board"),
+        ("/api/projects/test/tasks/OPP-2", "/api/tasks/OPP-2"),
+        ("/api/projects/test/tasks/OPP-99", "/api/tasks/OPP-99"),
+    ] {
+        let left = send(&state, "GET", prefixed, None).await;
+        let right = send(&state, "GET", unprefixed, None).await;
+        assert_eq!(left.status(), right.status(), "{unprefixed}");
+        assert_eq!(
+            body_bytes(left).await,
+            body_bytes(right).await,
+            "{unprefixed} must answer byte for byte as {prefixed}"
+        );
+    }
+
+    // A write reaches the same store through either spelling.
+    let created = send(
+        &state,
+        "POST",
+        "/api/tasks",
+        Some(json!({ "title": "Legacy" })),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let id = body_json(created).await["id"].as_str().unwrap().to_owned();
+    let got = send(
+        &state,
+        "GET",
+        &format!("/api/projects/test/tasks/{id}"),
+        None,
+    )
+    .await;
+    assert_eq!(got.status(), StatusCode::OK);
+    assert_eq!(body_json(got).await["title"], "Legacy");
+}
+
+#[tokio::test]
+async fn an_unknown_project_is_404_that_names_the_registered_ones() {
+    let (_dir, state) = store_state();
+    for uri in [
+        "/api/projects/ghost/tasks",
+        "/api/projects/ghost/board",
+        "/api/projects/ghost/config",
+        "/api/projects/ghost/tasks/OPP-1",
+    ] {
+        let response = send(&state, "GET", uri, None).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+        let message = body_json(response).await["message"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(message.contains("ghost"), "{uri}: {message}");
+        assert!(message.contains(PROJECT), "{uri}: {message}");
+    }
+}
+
+fn two_project_state() -> (tempfile::TempDir, tempfile::TempDir, AppState) {
+    let (alpha_dir, alpha) = one_project("alpha");
+    let (beta_dir, beta) = one_project("beta");
+    (alpha_dir, beta_dir, AppState::new([alpha, beta]))
+}
+
+fn one_project(name: &str) -> (tempfile::TempDir, Project) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    let store = op_store::Store::discover(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let project = Project::new(name, root.to_path_buf(), repo, store);
+    (dir, project)
+}
+
+// Each project counts its own ids, so the same number naming a task in both is correct, not a
+// collision: a key is store-scoped and the project is the coordinate that tells them apart.
+#[tokio::test]
+async fn two_projects_write_to_their_own_store_under_their_own_numbers() {
+    let (alpha_dir, beta_dir, state) = two_project_state();
+
+    for (project, dir, title) in [
+        ("alpha", &alpha_dir, "Alpha one"),
+        ("beta", &beta_dir, "Beta one"),
+    ] {
+        let created = send(
+            &state,
+            "POST",
+            &format!("/api/projects/{project}/tasks"),
+            Some(json!({ "title": title })),
+        )
+        .await;
+        assert_eq!(created.status(), StatusCode::CREATED);
+        assert_eq!(body_json(created).await["id"], "OPP-1");
+
+        let detail = send(
+            &state,
+            "GET",
+            &format!("/api/projects/{project}/tasks/OPP-1"),
+            None,
+        )
+        .await;
+        assert_eq!(body_json(detail).await["title"], title);
+        assert_eq!(
+            std::fs::read_dir(dir.path().join(".plan/tasks"))
+                .unwrap()
+                .count(),
+            1,
+            "{project}: each write lands in its own store only"
+        );
+    }
+}
+
+// With more than one project the unprefixed spelling has no answer to give, so it must refuse and
+// say which names would work rather than pick one.
+#[tokio::test]
+async fn the_unprefixed_routes_refuse_once_a_second_project_is_registered() {
+    let (_alpha, _beta, state) = two_project_state();
+    let response = send(&state, "GET", "/api/tasks", None).await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let message = body_json(response).await["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(message.contains("alpha"), "{message}");
+    assert!(message.contains("beta"), "{message}");
+}
+
 #[test]
 fn the_openapi_spec_documents_every_json_api_route() {
     let spec = serde_json::to_value(op_server::openapi()).unwrap();
     let paths = spec["paths"].as_object().unwrap();
-    for route in ["/api/tasks", "/api/tasks/{id}", "/api/board", "/health"] {
+    for route in [
+        "/api/projects/{project}/tasks",
+        "/api/projects/{project}/tasks/{id}",
+        "/api/projects/{project}/board",
+        "/health",
+    ] {
         assert!(paths.contains_key(route), "{route} missing from the spec");
     }
     assert!(
@@ -1245,24 +1468,28 @@ fn the_openapi_spec_documents_every_json_api_route() {
 fn the_openapi_spec_documents_every_refusal_with_its_reason() {
     let spec = serde_json::to_value(op_server::openapi()).unwrap();
     for (method, route, status) in [
-        ("get", "/api/tasks", "400"),
-        ("get", "/api/tasks", "500"),
-        ("post", "/api/tasks", "400"),
-        ("post", "/api/tasks", "409"),
-        ("post", "/api/tasks", "500"),
-        ("get", "/api/board", "400"),
-        ("get", "/api/board", "500"),
-        ("get", "/api/tasks/{id}", "400"),
-        ("get", "/api/tasks/{id}", "404"),
-        ("get", "/api/tasks/{id}", "500"),
-        ("patch", "/api/tasks/{id}", "400"),
-        ("patch", "/api/tasks/{id}", "404"),
-        ("patch", "/api/tasks/{id}", "409"),
-        ("patch", "/api/tasks/{id}", "500"),
-        ("delete", "/api/tasks/{id}", "400"),
-        ("delete", "/api/tasks/{id}", "404"),
-        ("delete", "/api/tasks/{id}", "409"),
-        ("delete", "/api/tasks/{id}", "500"),
+        ("get", "/api/projects/{project}/config", "404"),
+        ("get", "/api/projects/{project}/tasks", "400"),
+        ("get", "/api/projects/{project}/tasks", "404"),
+        ("get", "/api/projects/{project}/tasks", "500"),
+        ("post", "/api/projects/{project}/tasks", "400"),
+        ("post", "/api/projects/{project}/tasks", "404"),
+        ("post", "/api/projects/{project}/tasks", "409"),
+        ("post", "/api/projects/{project}/tasks", "500"),
+        ("get", "/api/projects/{project}/board", "400"),
+        ("get", "/api/projects/{project}/board", "404"),
+        ("get", "/api/projects/{project}/board", "500"),
+        ("get", "/api/projects/{project}/tasks/{id}", "400"),
+        ("get", "/api/projects/{project}/tasks/{id}", "404"),
+        ("get", "/api/projects/{project}/tasks/{id}", "500"),
+        ("patch", "/api/projects/{project}/tasks/{id}", "400"),
+        ("patch", "/api/projects/{project}/tasks/{id}", "404"),
+        ("patch", "/api/projects/{project}/tasks/{id}", "409"),
+        ("patch", "/api/projects/{project}/tasks/{id}", "500"),
+        ("delete", "/api/projects/{project}/tasks/{id}", "400"),
+        ("delete", "/api/projects/{project}/tasks/{id}", "404"),
+        ("delete", "/api/projects/{project}/tasks/{id}", "409"),
+        ("delete", "/api/projects/{project}/tasks/{id}", "500"),
     ] {
         let schema = &spec["paths"][route][method]["responses"][status]["content"]["application/json"]
             ["schema"];
@@ -1305,13 +1532,12 @@ async fn a_restart_never_reissues_a_number_only_a_file_holds() {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    let state = AppState::new(repo.clone(), store.clone(), abbreviation);
+    let state = project_state(root, repo.clone(), store.clone());
     for title in ["Alpha", "Beta"] {
         let created = send(
             &state,
             "POST",
-            "/api/tasks",
+            "/api/projects/test/tasks",
             Some(json!({ "title": title })),
         )
         .await;
@@ -1319,11 +1545,11 @@ async fn a_restart_never_reissues_a_number_only_a_file_holds() {
     }
 
     // A fresh state is a restarted daemon: the counter is gone and the floor must come off disk.
-    let restarted = AppState::new(repo, store, abbreviation);
+    let restarted = project_state(root, repo, store);
     let created = send(
         &restarted,
         "POST",
-        "/api/tasks",
+        "/api/projects/test/tasks",
         Some(json!({ "title": "Gamma" })),
     )
     .await;
@@ -1346,7 +1572,7 @@ async fn create_refuses_once_the_highest_number_is_taken() {
     let created = send(
         &state,
         "POST",
-        "/api/tasks",
+        "/api/projects/test/tasks",
         Some(json!({ "title": "Beta" })),
     )
     .await;
@@ -1388,10 +1614,10 @@ async fn a_write_names_the_vanished_root_rather_than_the_branch() {
     );
 
     let feature_store = worktree_store(&feature);
-    let state = AppState::new(
+    let state = project_state(
+        &feature,
         op_git::Repo::discover(&feature).unwrap(),
-        feature_store.clone(),
-        feature_store.abbreviation(),
+        feature_store,
     );
     git(
         root,
@@ -1403,7 +1629,7 @@ async fn a_write_names_the_vanished_root_rather_than_the_branch() {
     let created = send(
         &state,
         "POST",
-        "/api/tasks?branch=main",
+        "/api/projects/test/tasks?branch=main",
         Some(json!({ "title": "Beta" })),
     )
     .await;
@@ -1428,7 +1654,7 @@ async fn a_patch_refused_for_a_bad_key_writes_nothing() {
     let refused = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-1",
+        "/api/projects/test/tasks/OPP-1",
         Some(json!({ "status": "done", "parent": "42" })),
     )
     .await;
@@ -1461,7 +1687,7 @@ async fn a_patch_echoes_the_parent_title() {
     let patched = send(
         &state,
         "PATCH",
-        "/api/tasks/OPP-2",
+        "/api/projects/test/tasks/OPP-2",
         Some(json!({ "status": "done" })),
     )
     .await;

@@ -755,3 +755,92 @@ fn a_daemon_indexing_another_repository_is_not_asked() {
     // one of them, and answering from it would date this read by a file it never read.
     assert_eq!(view["updated"], "2017-07-14T02:40:00Z");
 }
+
+#[test]
+fn the_first_start_seeds_the_registry_and_later_starts_keep_it() {
+    let daemon = Daemon::new();
+    let registry = daemon.home_path().join("registry.toml");
+    assert!(!registry.exists(), "a fresh OPLAN_HOME has no registry");
+
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "start", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    wait_until(|| registry.exists());
+
+    let seeded = std::fs::read_to_string(&registry).unwrap();
+    assert_eq!(
+        seeded.matches("[[project]]").count(),
+        1,
+        "one entry for --root: {seeded}"
+    );
+    let root = daemon.root.path().canonicalize().unwrap();
+    assert!(
+        seeded.contains(root.to_str().unwrap()),
+        "the entry names the serve root: {seeded}"
+    );
+
+    // A rename is the user's to make, and the entry is matched by its path, so a restart on the same
+    // root must read the file back rather than register it again.
+    let renamed = seeded.replace("name = ", "name = \"chosen\" # ");
+    std::fs::write(&registry, &renamed).unwrap();
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "restart", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&registry).unwrap(),
+        renamed,
+        "a restart on a registered root must not rewrite the registry"
+    );
+}
+
+// Pointing the daemon at a second repository must work without the registry being edited by hand.
+#[test]
+fn a_start_on_an_unregistered_root_adds_it() {
+    let daemon = Daemon::new();
+    let registry = daemon.home_path().join("registry.toml");
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "start", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    wait_until(|| registry.exists());
+
+    let second = task_repo(1_000_000_000);
+    let mut restart = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    restart
+        .env("OPLAN_HOME", daemon.home_path())
+        .env("OPLAN_PORT", "0")
+        .arg("--root")
+        .arg(second.path());
+    assert!(
+        restart
+            .args(["server", "restart", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let text = std::fs::read_to_string(&registry).unwrap();
+    assert_eq!(
+        text.matches("[[project]]").count(),
+        2,
+        "both roots are registered: {text}"
+    );
+    assert!(
+        text.contains(second.path().canonicalize().unwrap().to_str().unwrap()),
+        "the second root is registered: {text}"
+    );
+}
