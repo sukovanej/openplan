@@ -18,8 +18,15 @@ repo and pin the caller's branch. Replace the back half:
 
 - `ensure_daemon` no longer carries a root that shapes the daemon. The daemon
   starts from the registry. `spawn_detached` (`op-cli/src/daemon.rs`) drops
-  `--root <cwd>` from the spawn. `server start --root` stays as the explicit
-  "and register this" form.
+  `--root <cwd>` from the spawn.
+- `--root` stops registering. Delete `name_root` and the registry write from
+  `serve.rs`. `oplan project add` and the first write are the only ways to
+  register. `--root` keeps one meaning for every command: the directory the
+  command works in, as `git -C` does.
+- `--root` still names the default project — the project that answers the
+  routes with no project segment. The SPA cannot name a project until
+  [[./00084-spa-project-routes-switcher-merg.md]], so a definite default must
+  hold until then. That child deletes the default with the routes.
 - Resolve the project: match the caller's git common directory against
   `GET /api/projects`. On a miss, `POST /api/projects` with the serve root.
   Print one line that names the registered project. `serve_root` stays as the

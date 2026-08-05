@@ -52,6 +52,10 @@ dirty flag (see below). Registration starts a watcher. Removal stops it.
 - The daemon stops only on signals and `/admin/shutdown`. Zero registered
   projects is a served state, not an error. The UI shows the empty state.
 
+`serve.rs` refuses to start today when `--root` has no store or no repo, and
+when the registry entry for `--root` does not open. Delete both refusals with
+this change. A daemon that must serve zero projects cannot also demand one.
+
 ## Dirty-gated rebuild
 
 Each list, board, or detail read calls `Index::rebuild`. The rebuild walks
