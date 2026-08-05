@@ -51,7 +51,10 @@ view, the segment comes from the URL.
 
 Delete the daemon's unprefixed `/api/tasks`, `/api/tasks/{id}`, and
 `/api/config` delegations. The SPA was their last caller. The unprefixed
-`/api/board` stays as the merged board. Run `mise run generate-web-client`,
+`/api/board` stays as the merged board. Delete `AppState::default_project`
+(`op-server/src/lib.rs`) and the `serve.rs` wiring that passes the `--root`
+project first. `--root` then changes nothing for `server start`, exactly as it
+changes nothing for `server stop` today. Run `mise run generate-web-client`,
 then `mise run rebuild`. The embedded SPA and the daemon then move together.
 
 ## Acceptance

@@ -3,7 +3,7 @@ use std::thread::JoinHandle;
 
 use op_api::{CreateTask, DaemonInfo, Status, TaskPatch};
 use op_client::{Client, ClientError};
-use op_server::AppState;
+use op_server::{AppState, Project};
 
 fn git(dir: &std::path::Path, args: &[&str]) {
     let status = std::process::Command::new("git")
@@ -22,7 +22,9 @@ fn spawn_server(info: DaemonInfo) -> (SocketAddr, JoinHandle<()>) {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(&root).unwrap();
     let repo = op_git::Repo::discover(&root).unwrap();
-    let abbreviation = store.abbreviation();
+    // This client still calls the unprefixed routes, so the round trip also proves the sole-project
+    // delegation answers them.
+    let project = Project::new("test", root.clone(), repo, store);
 
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = std::thread::spawn(move || {
@@ -32,7 +34,7 @@ fn spawn_server(info: DaemonInfo) -> (SocketAddr, JoinHandle<()>) {
         runtime.block_on(async move {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             tx.send(listener.local_addr().unwrap()).unwrap();
-            let state = AppState::new(repo, store, abbreviation).with_health(info);
+            let state = AppState::new([project]).with_health(info);
             op_server::serve(listener, state, std::future::pending::<()>())
                 .await
                 .unwrap();

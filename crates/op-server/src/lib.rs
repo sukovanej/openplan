@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use axum::{
@@ -20,7 +22,7 @@ use op_api::{
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
-use op_presence::Registry;
+use op_presence::Registry as PresenceRegistry;
 use op_store::{Store, StoreError};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
@@ -34,6 +36,9 @@ use tracing::Span;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
+
+mod registry;
+pub use registry::{ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError};
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 const SLOW_REQUEST: Duration = Duration::from_millis(1000);
@@ -66,39 +71,38 @@ impl IdCounter {
     }
 }
 
-#[derive(Clone)]
-pub struct AppState {
+// Everything scoped to one repository. Each project keeps its own index mutex, so a rebuild in one —
+// object-DB reads and flock waits — never blocks a read in another. `IdCounter` is per project too,
+// which is what keeps "a number is issued at most once per repository" true across N of them.
+pub struct Project {
+    pub name: String,
+    pub path: PathBuf,
     pub index: Arc<Mutex<Index>>,
-    pub presence: Arc<Mutex<Registry>>,
+    pub presence: Arc<Mutex<PresenceRegistry>>,
     store: Store,
     repo: Repo,
     ids: Arc<IdCounter>,
-    shutdown: Arc<watch::Sender<bool>>,
-    health: Option<Arc<DaemonInfo>>,
-    events: broadcast::Sender<ChangeEvent>,
 }
 
-impl AppState {
-    pub fn new(repo: Repo, store: Store, abbreviation: Abbreviation) -> Self {
+impl Project {
+    pub fn new(name: impl Into<String>, path: PathBuf, repo: Repo, store: Store) -> Self {
         Self {
-            index: Arc::new(Mutex::new(Index::new(abbreviation))),
-            presence: Arc::new(Mutex::new(Registry::new())),
+            name: name.into(),
+            path,
+            index: Arc::new(Mutex::new(Index::new(store.abbreviation()))),
+            presence: Arc::new(Mutex::new(PresenceRegistry::new())),
             store,
             repo,
             ids: Arc::new(IdCounter::default()),
-            shutdown: Arc::new(watch::channel(false).0),
-            health: None,
-            events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
         }
     }
 
-    pub fn with_health(mut self, info: DaemonInfo) -> Self {
-        self.health = Some(Arc::new(info));
-        self
+    pub fn repo(&self) -> &Repo {
+        &self.repo
     }
 
-    pub fn event_sender(&self) -> broadcast::Sender<ChangeEvent> {
-        self.events.clone()
+    pub fn store(&self) -> &Store {
+        &self.store
     }
 
     // The index is the one holder of the store's abbreviation, so a live config change lands here and
@@ -117,9 +121,80 @@ impl AppState {
             .expect("index mutex poisoned")
             .set_abbreviation(abbreviation);
     }
+}
+
+impl std::fmt::Debug for Project {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Project")
+            .field("name", &self.name)
+            .field("path", &self.path)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    projects: Arc<RwLock<BTreeMap<String, Arc<Project>>>>,
+    // The project the routes that carry no project segment answer for. The map is ordered by name,
+    // which says nothing about which repository the daemon was pointed at, so the caller names it by
+    // passing that project first.
+    default_project: Option<String>,
+    shutdown: Arc<watch::Sender<bool>>,
+    health: Option<Arc<DaemonInfo>>,
+    events: broadcast::Sender<ChangeEvent>,
+}
+
+impl AppState {
+    // The first project answers the routes that carry no project segment. A repeated name keeps the
+    // first project of that name, so the default is never the entry that shadowed another.
+    pub fn new(projects: impl IntoIterator<Item = Project>) -> Self {
+        let mut map: BTreeMap<String, Arc<Project>> = BTreeMap::new();
+        let mut default_project = None;
+        for project in projects {
+            let name = project.name.clone();
+            if map.contains_key(&name) {
+                continue;
+            }
+            default_project.get_or_insert_with(|| name.clone());
+            map.insert(name, Arc::new(project));
+        }
+        Self {
+            projects: Arc::new(RwLock::new(map)),
+            default_project,
+            shutdown: Arc::new(watch::channel(false).0),
+            health: None,
+            events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
+        }
+    }
+
+    pub fn with_health(mut self, info: DaemonInfo) -> Self {
+        self.health = Some(Arc::new(info));
+        self
+    }
+
+    pub fn event_sender(&self) -> broadcast::Sender<ChangeEvent> {
+        self.events.clone()
+    }
+
+    // The read guard covers membership only, and is released before the caller touches the project.
+    pub fn project(&self, name: &str) -> Option<Arc<Project>> {
+        self.read_projects().get(name).cloned()
+    }
+
+    pub fn projects(&self) -> Vec<Arc<Project>> {
+        self.read_projects().values().cloned().collect()
+    }
+
+    pub fn default_project(&self) -> Option<Arc<Project>> {
+        self.project(self.default_project.as_deref()?)
+    }
 
     pub fn stop(&self) {
         let _ = self.shutdown.send(true);
+    }
+
+    fn read_projects(&self) -> std::sync::RwLockReadGuard<'_, BTreeMap<String, Arc<Project>>> {
+        self.projects.read().expect("projects lock poisoned")
     }
 }
 
@@ -150,10 +225,58 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     documented().split_for_parts().1
 }
 
+// The pre-project spellings the embedded SPA and the CLI client still call. They carry no project
+// segment, so they answer for the default project; the project-prefixed routes above are the
+// documented ones. Undocumented on purpose: the generated web client must not grow a second,
+// ambiguous way to reach a task.
+fn default_project_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/config", get(default_get_config))
+        .route(
+            "/api/tasks",
+            get(default_list_tasks).post(default_create_task),
+        )
+        .route("/api/board", get(default_get_board))
+        .route(
+            "/api/tasks/{id}",
+            get(default_get_task)
+                .patch(default_patch_task)
+                .delete(default_delete_task),
+        )
+}
+
+fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, ApiError> {
+    state.project(name).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("no such project: {name}; {}", registered(state)),
+        )
+    })
+}
+
+fn default_project(state: &AppState) -> Result<Arc<Project>, ApiError> {
+    state
+        .default_project()
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "no project is registered".to_owned()))
+}
+
+fn registered(state: &AppState) -> String {
+    let names: Vec<String> = state
+        .projects()
+        .iter()
+        .map(|project| project.name.clone())
+        .collect();
+    match names.is_empty() {
+        true => "no project is registered".to_owned(),
+        false => format!("registered projects: {}", names.join(", ")),
+    }
+}
+
 pub fn app(state: AppState) -> Router {
     let (router, api) = documented().split_for_parts();
     router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
+        .merge(default_project_routes())
         .route("/api/events", get(events))
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
@@ -241,11 +364,26 @@ async fn health(State(state): State<AppState>) -> Response {
 // `/api/events`.
 #[utoipa::path(
     get,
-    path = "/api/config",
-    responses((status = 200, description = "The served store's configuration", body = StoreConfig))
+    path = "/api/projects/{project}/config",
+    params(("project" = String, Path, description = "Project name")),
+    responses(
+        (status = 200, description = "The served store's configuration", body = StoreConfig),
+        (status = 404, description = "No such project", body = ApiErrorBody)
+    )
 )]
-async fn get_config(State(state): State<AppState>) -> Result<Json<StoreConfig>, ApiError> {
-    let abbreviation = tokio::task::spawn_blocking(move || state.abbreviation())
+async fn get_config(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+) -> Result<Json<StoreConfig>, ApiError> {
+    config_of(project_of(&state, &project)?).await
+}
+
+async fn default_get_config(State(state): State<AppState>) -> Result<Json<StoreConfig>, ApiError> {
+    config_of(default_project(&state)?).await
+}
+
+async fn config_of(project: Arc<Project>) -> Result<Json<StoreConfig>, ApiError> {
+    let abbreviation = tokio::task::spawn_blocking(move || project.abbreviation())
         .await
         .map_err(join_error)?;
     Ok(Json(StoreConfig {
@@ -423,20 +561,32 @@ fn join_error(err: tokio::task::JoinError) -> ApiError {
 // reads the object DB and the store waits on flocks, which must never stall an async worker thread.
 #[utoipa::path(
     get,
-    path = "/api/tasks",
+    path = "/api/projects/{project}/tasks",
+    params(("project" = String, Path, description = "Project name")),
     responses(
         (status = 200, description = "Every logical task, aggregated across branches", body = Vec<TaskListItem>),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
+        (status = 404, description = "No such project", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
-async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
-    let repo = state.repo.clone();
-    let store = state.store.clone();
-    let index = state.index.clone();
+async fn list_tasks(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+) -> Result<Json<Vec<TaskListItem>>, ApiError> {
+    list_tasks_of(project_of(&state, &project)?).await
+}
+
+async fn default_list_tasks(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<TaskListItem>>, ApiError> {
+    list_tasks_of(default_project(&state)?).await
+}
+
+async fn list_tasks_of(project: Arc<Project>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
     let items = tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, IndexError> {
-        let mut index = index.lock().expect("index mutex poisoned");
-        index.rebuild(&repo, &store)?;
+        let mut index = project.index.lock().expect("index mutex poisoned");
+        index.rebuild(&project.repo, &project.store)?;
         Ok(index.aggregated_tasks())
     })
     .await
@@ -450,20 +600,30 @@ async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<TaskListIt
 // reads stay "reads global"; the client consumes it verbatim.
 #[utoipa::path(
     get,
-    path = "/api/board",
+    path = "/api/projects/{project}/board",
+    params(("project" = String, Path, description = "Project name")),
     responses(
         (status = 200, description = "Every task grouped by status and flattened into render-ordered rows", body = Board),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
+        (status = 404, description = "No such project", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
-async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
-    let repo = state.repo.clone();
-    let store = state.store.clone();
-    let index = state.index.clone();
+async fn get_board(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+) -> Result<Json<Board>, ApiError> {
+    board_of(project_of(&state, &project)?).await
+}
+
+async fn default_get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
+    board_of(default_project(&state)?).await
+}
+
+async fn board_of(project: Arc<Project>) -> Result<Json<Board>, ApiError> {
     let board = tokio::task::spawn_blocking(move || -> Result<Board, IndexError> {
-        let mut index = index.lock().expect("index mutex poisoned");
-        index.rebuild(&repo, &store)?;
+        let mut index = project.index.lock().expect("index mutex poisoned");
+        index.rebuild(&project.repo, &project.store)?;
         Ok(Board::build(&index.aggregated_tasks()))
     })
     .await
@@ -478,25 +638,47 @@ async fn get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiErro
 // under one id.
 #[utoipa::path(
     post,
-    path = "/api/tasks",
-    params(("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")),
+    path = "/api/projects/{project}/tasks",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
+    ),
     request_body = CreateTask,
     responses(
         (status = 201, description = "Created", body = CreatedTask),
         (status = 400, description = "The task is invalid (unknown parent or dependency)", body = ApiErrorBody),
+        (status = 404, description = "No such project", body = ApiErrorBody),
         (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
 async fn create_task(
     State(state): State<AppState>,
+    Path(project): Path<String>,
     Query(query): Query<TaskQuery>,
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
-    let repo = state.repo.clone();
-    let serve_store = state.store.clone();
-    let index = state.index.clone();
-    let ids = state.ids.clone();
+    create_task_in(&state, project_of(&state, &project)?, query, body).await
+}
+
+async fn default_create_task(
+    State(state): State<AppState>,
+    Query(query): Query<TaskQuery>,
+    Json(body): Json<CreateTask>,
+) -> Result<Response, ApiError> {
+    create_task_in(&state, default_project(&state)?, query, body).await
+}
+
+async fn create_task_in(
+    state: &AppState,
+    project: Arc<Project>,
+    query: TaskQuery,
+    body: CreateTask,
+) -> Result<Response, ApiError> {
+    let repo = project.repo.clone();
+    let serve_store = project.store.clone();
+    let index = project.index.clone();
+    let ids = project.ids.clone();
     let created = op_task::now();
     let (branch, id) =
         tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
@@ -541,7 +723,7 @@ async fn create_task(
         .await
         .map_err(join_error)??;
     publish(
-        &state,
+        state,
         ChangeEvent::TaskChanged {
             id: id.clone(),
             branch,
@@ -560,26 +742,43 @@ struct TaskQuery {
 // index so a task absent from the serve-root checkout still loads.
 #[utoipa::path(
     get,
-    path = "/api/tasks/{id}",
+    path = "/api/projects/{project}/tasks/{id}",
     params(
+        ("project" = String, Path, description = "Project name"),
         ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
         ("branch" = Option<String>, Query, description = "Branch version to read; omit for the headline")
     ),
     responses(
         (status = 200, description = "The task on the requested branch", body = TaskDetail),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
-        (status = 404, description = "No such task", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
 async fn get_task(
     State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    Query(query): Query<TaskQuery>,
+) -> Result<Json<TaskDetail>, ApiError> {
+    get_task_of(project_of(&state, &project)?, id, query).await
+}
+
+async fn default_get_task(
+    State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    let repo = state.repo.clone();
-    let store = state.store.clone();
-    let index = state.index.clone();
+    get_task_of(default_project(&state)?, id, query).await
+}
+
+async fn get_task_of(
+    project: Arc<Project>,
+    id: String,
+    query: TaskQuery,
+) -> Result<Json<TaskDetail>, ApiError> {
+    let repo = project.repo.clone();
+    let store = project.store.clone();
+    let index = project.index.clone();
     let missing = id.clone();
     let detail = tokio::task::spawn_blocking(move || -> Result<Option<TaskDetail>, ApiError> {
         let mut index = index.lock().expect("index mutex poisoned");
@@ -644,8 +843,9 @@ fn write_target(
 
 #[utoipa::path(
     patch,
-    path = "/api/tasks/{id}",
+    path = "/api/projects/{project}/tasks/{id}",
     params(
+        ("project" = String, Path, description = "Project name"),
         ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
         ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
     ),
@@ -653,20 +853,39 @@ fn write_target(
     responses(
         (status = 200, description = "The updated task", body = TaskDetail),
         (status = 400, description = "The patch is invalid (unknown parent, or a parent cycle)", body = ApiErrorBody),
-        (status = 404, description = "No such task", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
         (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
 async fn patch_task(
     State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    Query(query): Query<TaskQuery>,
+    Json(patch): Json<TaskPatch>,
+) -> Result<Json<TaskDetail>, ApiError> {
+    patch_task_of(&state, project_of(&state, &project)?, id, query, patch).await
+}
+
+async fn default_patch_task(
+    State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
     Json(patch): Json<TaskPatch>,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    let repo = state.repo.clone();
-    let serve_store = state.store.clone();
-    let index = state.index.clone();
+    patch_task_of(&state, default_project(&state)?, id, query, patch).await
+}
+
+async fn patch_task_of(
+    state: &AppState,
+    project: Arc<Project>,
+    id: String,
+    query: TaskQuery,
+    patch: TaskPatch,
+) -> Result<Json<TaskDetail>, ApiError> {
+    let repo = project.repo.clone();
+    let serve_store = project.store.clone();
+    let index = project.index.clone();
     let (branch, detail) =
         tokio::task::spawn_blocking(move || -> Result<(String, TaskDetail), ApiError> {
             let (branch, store, abbreviation) = {
@@ -726,7 +945,7 @@ async fn patch_task(
         .await
         .map_err(join_error)??;
     publish(
-        &state,
+        state,
         ChangeEvent::TaskChanged {
             id: detail.id.clone(),
             branch,
@@ -737,27 +956,45 @@ async fn patch_task(
 
 #[utoipa::path(
     delete,
-    path = "/api/tasks/{id}",
+    path = "/api/projects/{project}/tasks/{id}",
     params(
+        ("project" = String, Path, description = "Project name"),
         ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
         ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
     ),
     responses(
         (status = 204, description = "Deleted"),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
-        (status = 404, description = "No such task", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
         (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
     )
 )]
 async fn delete_task(
     State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    Query(query): Query<TaskQuery>,
+) -> Result<StatusCode, ApiError> {
+    delete_task_of(&state, project_of(&state, &project)?, id, query).await
+}
+
+async fn default_delete_task(
+    State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<TaskQuery>,
 ) -> Result<StatusCode, ApiError> {
-    let repo = state.repo.clone();
-    let serve_store = state.store.clone();
-    let index = state.index.clone();
+    delete_task_of(&state, default_project(&state)?, id, query).await
+}
+
+async fn delete_task_of(
+    state: &AppState,
+    project: Arc<Project>,
+    id: String,
+    query: TaskQuery,
+) -> Result<StatusCode, ApiError> {
+    let repo = project.repo.clone();
+    let serve_store = project.store.clone();
+    let index = project.index.clone();
     let changed = id.clone();
     let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
         let (branch, store, abbreviation) = {
@@ -771,7 +1008,7 @@ async fn delete_task(
     .await
     .map_err(join_error)??;
     publish(
-        &state,
+        state,
         ChangeEvent::TaskChanged {
             id: changed,
             branch,

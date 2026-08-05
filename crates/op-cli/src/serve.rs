@@ -6,13 +6,13 @@ use anyhow::{Context, Result, anyhow, bail};
 use fs2::FileExt as _;
 use op_api::ChangeEvent;
 use op_git::Repo;
-use op_server::AppState;
+use op_server::{AppState, Project, ProjectEntry, ProjectRegistry, REGISTRY_FILE};
 use op_store::{Config, STORE_DIR, Store, StoreError};
 use op_watch::{Change, Watcher};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
-use crate::daemon::{DaemonInfo, Home, now_unix};
+use crate::daemon::{DaemonInfo, Home, now_unix, same_path};
 
 pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
     tracing_subscriber::fmt()
@@ -45,13 +45,13 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     // half-started.
     // A store with no valid abbreviation has no id space above its files, so there is nothing to
     // degrade into: the daemon refuses to start rather than serve keys the store does not claim.
-    let store = Store::discover(root).map_err(|err| match err {
+    Store::discover(root).map_err(|err| match err {
         StoreError::StoreMissing => {
             anyhow!("no {STORE_DIR} task store found at {}", root.display())
         }
         other => other.into(),
     })?;
-    let repo = Repo::discover(root).with_context(|| {
+    Repo::discover(root).with_context(|| {
         format!(
             "oplan serve requires a git repository; none found at {}",
             root.display()
@@ -67,6 +67,23 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
         );
     }
 
+    // Behind the lifetime lock, so the registration cannot race a second starter.
+    let registry_path = home.dir().join(REGISTRY_FILE);
+    let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+    let (root_project, unregistered) = name_root(&mut registry, root);
+    let mut projects = open_projects(registry.entries());
+    // `--root` is the project the daemon was pointed at, so a start that cannot serve it has not
+    // done what it was asked, whatever else the registry holds.
+    let Some(at) = projects
+        .iter()
+        .position(|project| project.name == root_project)
+    else {
+        bail!("the project at {} could not be opened", root.display());
+    };
+    // First place answers the routes that carry no project segment — the ones the SPA and the CLI
+    // client still call. They must follow `--root`, not the alphabet.
+    projects.swap(0, at);
+
     // 127.0.0.1 keeps /admin/shutdown and every other route reachable only from this machine.
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr)
@@ -74,36 +91,34 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
         .with_context(|| format!("binding {addr}"))?;
     let bound = listener.local_addr()?.port();
 
+    // Last, so a start that fails to open its root or to bind its port leaves no entry behind that
+    // every later start would have to skip.
+    if unregistered {
+        registry.write(&registry_path)?;
+        tracing::info!(project = %root_project, root = %root.display(), "project registered");
+    }
+
+    let state = AppState::new(projects);
+    // One watcher, one root watchdog, and one `DaemonInfo.repo` still describe a single project, so
+    // `--root` names which one that is. The next task makes each of them per project.
+    let served = state.project(&root_project).expect("opened above");
+    warm_indexes(&state);
+
     let info = DaemonInfo {
         pid: std::process::id(),
         port: bound,
         version: env!("CARGO_PKG_VERSION").to_owned(),
         started_at: now_unix(),
-        repo: Some(
-            repo.git_common_dir()
-                .canonicalize()
-                .unwrap_or_else(|_| repo.git_common_dir())
-                .display()
-                .to_string(),
-        ),
+        repo: Some(git_common_dir(served.repo())),
     };
     home.write_info(&info)?;
+    let state = state.with_health(info.clone());
 
-    let state =
-        AppState::new(repo.clone(), store.clone(), store.abbreviation()).with_health(info.clone());
-    if let Err(err) = state
-        .index
-        .lock()
-        .expect("index mutex poisoned")
-        .rebuild(&repo, &store)
-    {
-        tracing::warn!(%err, "initial matrix build failed");
-    }
     let (tx, rx) = std::sync::mpsc::channel();
     // Watcher::start scans every branch and hashes each worktree's task files; keep that off the
     // async runtime thread.
-    let watch_repo = repo.clone();
-    let watch_store = store.clone();
+    let watch_repo = served.repo().clone();
+    let watch_store = served.store().clone();
     let _watcher = tokio::task::spawn_blocking(move || Watcher::start(watch_repo, watch_store, tx))
         .await
         .ok()
@@ -116,18 +131,18 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     // connected UI, alongside the writes the API handlers publish directly. The watcher reports a
     // task by number, the file layer's spelling; the key it renders as is the daemon's to decide.
     let bridged = state.clone();
-    let config_root = store.root().to_path_buf();
+    let watched = served.clone();
     std::thread::spawn(move || {
         for change in rx {
             tracing::debug!(?change, "watcher change forwarded");
             match change {
                 Change::Task { number, branch } => {
                     let _ = bridged.event_sender().send(ChangeEvent::TaskChanged {
-                        id: bridged.abbreviation().format_key(number),
+                        id: watched.abbreviation().format_key(number),
                         branch,
                     });
                 }
-                Change::Config => reload_config(&bridged, &config_root),
+                Change::Config => reload_config(&bridged, &watched),
             }
         }
     });
@@ -135,20 +150,111 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     ignore_sighup();
     tracing::info!(%addr, pid = info.pid, "oplan daemon serving");
 
-    let result = op_server::serve(listener, state, shutdown_signal(root.to_path_buf())).await;
+    let result = op_server::serve(listener, state, shutdown_signal(served.path.clone())).await;
 
     home.clear_info();
     fs2::FileExt::unlock(&lock).ok();
     result.map_err(Into::into)
 }
 
+// The registry is the daemon's list of projects, and `--root` is how a start names one. An already
+// registered root keeps its name; an unregistered one is added in memory, which is also what seeds
+// the file on the first start of all. It gives a user who points the daemon at a second repository a
+// way in that does not need the registry to be edited by hand. The caller persists the file.
+fn name_root(registry: &mut ProjectRegistry, root: &Path) -> (String, bool) {
+    let known = registry
+        .entries()
+        .iter()
+        .find(|entry| same_path(&entry.path, root))
+        .map(|entry| entry.name.clone());
+    match known {
+        Some(name) => (name, false),
+        None => (registry.add(root.to_path_buf()).name.clone(), true),
+    }
+}
+
+// A warm index only saves the first read the work it would do anyway, so it must not delay the port
+// answering — with N projects it is N branch walks over the object DB.
+fn warm_indexes(state: &AppState) {
+    let projects = state.projects();
+    tokio::task::spawn_blocking(move || {
+        for project in projects {
+            if let Err(err) = project
+                .index
+                .lock()
+                .expect("index mutex poisoned")
+                .rebuild(project.repo(), project.store())
+            {
+                tracing::warn!(project = %project.name, %err, "initial matrix build failed");
+            }
+        }
+    });
+}
+
+// A registered path whose store or repository cannot be opened is skipped, not fatal: one broken
+// checkout must not take the task UI away from every other project on the machine. A name is the
+// coordinate every route resolves through, so a hand-written duplicate is skipped for the same
+// reason — the second entry would otherwise silently shadow the first.
+fn open_projects(entries: &[ProjectEntry]) -> Vec<Project> {
+    let mut taken = std::collections::BTreeSet::new();
+    entries
+        .iter()
+        .filter(|entry| {
+            taken.insert(entry.name.clone()) || {
+                tracing::error!(project = %entry.name, "skipping project: the name is already taken");
+                false
+            }
+        })
+        .filter_map(|entry| match open_project(entry) {
+            Ok(project) => Some(project),
+            Err(err) => {
+                tracing::error!(
+                    project = %entry.name,
+                    path = %entry.path.display(),
+                    error = format!("{err:#}"),
+                    "skipping project"
+                );
+                None
+            }
+        })
+        .collect()
+}
+
+fn open_project(entry: &ProjectEntry) -> Result<Project> {
+    let store = Store::discover(&entry.path).map_err(|err| match err {
+        StoreError::StoreMissing => {
+            anyhow!(
+                "no {STORE_DIR} task store found at {}",
+                entry.path.display()
+            )
+        }
+        other => other.into(),
+    })?;
+    let repo = Repo::discover(&entry.path)
+        .with_context(|| format!("no git repository at {}", entry.path.display()))?;
+    Ok(Project::new(
+        entry.name.clone(),
+        entry.path.clone(),
+        repo,
+        store,
+    ))
+}
+
+fn git_common_dir(repo: &Repo) -> String {
+    repo.git_common_dir()
+        .canonicalize()
+        .unwrap_or_else(|_| repo.git_common_dir())
+        .display()
+        .to_string()
+}
+
 // A valid change applies live and every key re-renders. One that leaves the file missing or invalid
 // stops the daemon exactly as it would have refused to start, so no store is ever served without an
 // abbreviation — including after a checkout that removes the file.
-fn reload_config(state: &AppState, root: &std::path::Path) {
-    match Config::read(root) {
+fn reload_config(state: &AppState, project: &Project) {
+    match Config::read(project.store().root()) {
         Ok(config) => {
-            state.set_abbreviation(config.abbreviation);
+            project.set_abbreviation(config.abbreviation);
             let _ = state.event_sender().send(ChangeEvent::ConfigChanged);
             tracing::info!(abbreviation = %config.abbreviation, "store abbreviation reloaded");
         }

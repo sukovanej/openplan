@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
 use axum::http::Request;
-use op_server::{AppState, app};
+use op_server::{AppState, Project, app};
 use tower::ServiceExt as _;
 use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::EnvFilter;
@@ -46,9 +46,18 @@ fn git(dir: &Path, args: &[&str]) {
 
 // A git-backed serve root, the shape the daemon always serves. With `broken` true a task path in
 // the live worktree is a directory rather than a file, so reading its "raw" text during a
-// branch-aware index rebuild fails with an IO error and `GET /api/tasks` returns 500 — the shape
+// branch-aware index rebuild fails with an IO error and `GET /api/projects/{project}/tasks` returns 500 — the shape
 // the failure-logging tests need now that there is no degraded no-repo path to force an error
 // through.
+fn project_state(root: impl AsRef<Path>, repo: op_git::Repo, store: op_store::Store) -> AppState {
+    AppState::new([Project::new(
+        "test",
+        root.as_ref().to_path_buf(),
+        repo,
+        store,
+    )])
+}
+
 fn state(broken: bool) -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -63,8 +72,8 @@ fn state(broken: bool) -> (tempfile::TempDir, AppState) {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let abbreviation = store.abbreviation();
-    (dir, AppState::new(repo, store, abbreviation))
+    let state = project_state(root, repo, store);
+    (dir, state)
 }
 
 async fn capture(filter: &str, method: &str, uri: &str, broken: bool) -> String {
@@ -94,7 +103,7 @@ async fn capture(filter: &str, method: &str, uri: &str, broken: bool) -> String 
 // latency — no separate "handler failed" event.
 #[tokio::test]
 async fn failure_logs_one_error_line_with_full_context() {
-    let logs = capture("debug", "GET", "/api/tasks", true).await;
+    let logs = capture("debug", "GET", "/api/projects/test/tasks", true).await;
 
     assert_eq!(
         logs.matches("request failed").count(),
@@ -104,7 +113,7 @@ async fn failure_logs_one_error_line_with_full_context() {
     assert!(!logs.contains("request handler failed"), "logs:\n{logs}");
     assert!(!logs.contains("request served"), "logs:\n{logs}");
     for field in [
-        "route=/api/tasks",
+        "route=/api/projects/{project}/tasks",
         "request_id=",
         "method=GET",
         "error=",
@@ -119,11 +128,15 @@ async fn failure_logs_one_error_line_with_full_context() {
 // turned down to only show failures.
 #[tokio::test]
 async fn failure_context_survives_a_warn_filter() {
-    let logs = capture("warn", "GET", "/api/tasks", true).await;
+    let logs = capture("warn", "GET", "/api/projects/test/tasks", true).await;
 
     assert!(logs.contains("request failed"), "logs:\n{logs}");
     assert!(!logs.contains("request served"), "logs:\n{logs}");
-    for field in ["route=/api/tasks", "request_id=", "error="] {
+    for field in [
+        "route=/api/projects/{project}/tasks",
+        "request_id=",
+        "error=",
+    ] {
         assert!(logs.contains(field), "missing {field:?} in:\n{logs}");
     }
 }
