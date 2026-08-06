@@ -43,6 +43,8 @@ pub struct Index {
     // only ever added to, sparing the graph a walk per contested pair on every request.
     ancestry: HashMap<String, HashMap<String, bool>>,
     max_id: Option<u64>,
+    // What the dirty gate above is measured by: a read that skips the walk leaves this untouched.
+    rebuilds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +94,12 @@ impl Index {
             headlines: HashMap::new(),
             ancestry: HashMap::new(),
             max_id: None,
+            rebuilds: 0,
         }
+    }
+
+    pub fn rebuilds(&self) -> u64 {
+        self.rebuilds
     }
 
     // A cached version holds its parent and dependencies as keys, so a new abbreviation invalidates
@@ -140,6 +147,7 @@ impl Index {
     }
 
     pub fn rebuild(&mut self, repo: &Repo, store: &Store) -> Result<(), IndexError> {
+        self.rebuilds += 1;
         // The index's abbreviation is the store's, whatever handle the caller passed: a live config
         // change lands here, and every store this hands back out must speak the new keys.
         let store = &store.with_abbreviation(self.abbreviation);

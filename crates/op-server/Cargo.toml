@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 op-index.workspace = true
 op-presence.workspace = true
+op-watch.workspace = true
 op-api.workspace = true
 op-store.workspace = true
 op-git.workspace = true

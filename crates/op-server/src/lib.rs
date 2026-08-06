@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use axum::{
@@ -17,12 +17,12 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    Abbreviation, ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, KeyError, StoreConfig,
-    TaskDetail, TaskListItem, TaskPatch, TaskView,
+    Abbreviation, ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, KeyError,
+    ProjectStatus, ProjectView, RegisterProject, RenameProject, StoreConfig, TaskDetail,
+    TaskListItem, TaskPatch, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
-use op_presence::Registry as PresenceRegistry;
 use op_store::{Store, StoreError};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,9 @@ use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
+mod project;
 mod registry;
+pub use project::{OpenError, Project, serve_root};
 pub use registry::{ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError};
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
@@ -48,97 +50,32 @@ const ID_ATTEMPTS: usize = 16;
 #[folder = "../../web/packages/app/dist"]
 struct Assets;
 
-// The one place task ids are handed out. Handlers release the index mutex before their flock write,
-// so two concurrent creates would each compute the same `max + 1` from the matrix; this counter is
-// bumped atomically instead, and re-seeded from the floor on every call so a merge bringing in
-// higher ids — or a restart — advances it. Nothing is persisted: the ids on disk are the floor.
-#[derive(Debug, Default)]
-struct IdCounter(Mutex<u64>);
-
-impl IdCounter {
-    // `u64::MAX` is never issued, only used as the exhausted marker: any id already carrying it
-    // (hand-written, or merged in) would otherwise pin the counter there and hand the same number
-    // to every later create. Losing one number of 2^64 keeps "issued at most once" unconditional.
-    fn issue_above(&self, floor: u64) -> Option<u64> {
-        let mut next = self.0.lock().expect("id counter mutex poisoned");
-        let issued = (*next).max(floor.saturating_add(1));
-        if issued == u64::MAX {
-            *next = u64::MAX;
-            return None;
-        }
-        *next = issued + 1;
-        Some(issued)
-    }
-}
-
-// Everything scoped to one repository. Each project keeps its own index mutex, so a rebuild in one —
-// object-DB reads and flock waits — never blocks a read in another. `IdCounter` is per project too,
-// which is what keeps "a number is issued at most once per repository" true across N of them.
-pub struct Project {
-    pub name: String,
-    pub path: PathBuf,
-    pub index: Arc<Mutex<Index>>,
-    pub presence: Arc<Mutex<PresenceRegistry>>,
-    store: Store,
-    repo: Repo,
-    ids: Arc<IdCounter>,
-}
-
-impl Project {
-    pub fn new(name: impl Into<String>, path: PathBuf, repo: Repo, store: Store) -> Self {
-        Self {
-            name: name.into(),
-            path,
-            index: Arc::new(Mutex::new(Index::new(store.abbreviation()))),
-            presence: Arc::new(Mutex::new(PresenceRegistry::new())),
-            store,
-            repo,
-            ids: Arc::new(IdCounter::default()),
-        }
-    }
-
-    pub fn repo(&self) -> &Repo {
-        &self.repo
-    }
-
-    pub fn store(&self) -> &Store {
-        &self.store
-    }
-
-    // The index is the one holder of the store's abbreviation, so a live config change lands here and
-    // every later read renders the new keys. Blocking, like every other index access: the mutex is
-    // held across rebuilds, which read the object DB and wait on flocks.
-    pub fn abbreviation(&self) -> Abbreviation {
-        self.index
-            .lock()
-            .expect("index mutex poisoned")
-            .abbreviation()
-    }
-
-    pub fn set_abbreviation(&self, abbreviation: Abbreviation) {
-        self.index
-            .lock()
-            .expect("index mutex poisoned")
-            .set_abbreviation(abbreviation);
-    }
-}
-
-impl std::fmt::Debug for Project {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Project")
-            .field("name", &self.name)
-            .field("path", &self.path)
-            .finish_non_exhaustive()
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectsError {
+    #[error(transparent)]
+    Open(#[from] OpenError),
+    #[error(transparent)]
+    Registry(#[from] RegistryError),
+    #[error("this daemon serves a fixed set of projects; it has no registry to write")]
+    NoRegistry,
+    #[error("no such project: {0}")]
+    NoSuchProject(String),
+    #[error("the project name {0:?} is already taken")]
+    NameTaken(String),
+    #[error("not a usable project name: {0:?}; use lowercase letters, digits, and dashes")]
+    BadName(String),
 }
 
 #[derive(Clone)]
 pub struct AppState {
     projects: Arc<RwLock<BTreeMap<String, Arc<Project>>>>,
-    // The project the routes that carry no project segment answer for. The map is ordered by name,
-    // which says nothing about which repository the daemon was pointed at, so the caller names it by
-    // passing that project first.
-    default_project: Option<String>,
+    // The project the routes that carry no project segment answer for. Held by identity rather than
+    // by name, so a rename keeps the same repository answering them. The map is ordered by name,
+    // which says nothing about which repository the daemon was pointed at.
+    default_project: Arc<RwLock<Option<Arc<Project>>>>,
+    // Absent for a state built from a fixed project list, which has no file to keep in step: the
+    // project routes serve it, and the ones that change membership refuse.
+    registry: Option<Arc<PathBuf>>,
     shutdown: Arc<watch::Sender<bool>>,
     health: Option<Arc<DaemonInfo>>,
     events: broadcast::Sender<ChangeEvent>,
@@ -151,20 +88,27 @@ impl AppState {
         let mut map: BTreeMap<String, Arc<Project>> = BTreeMap::new();
         let mut default_project = None;
         for project in projects {
-            let name = project.name.clone();
+            let name = project.name();
             if map.contains_key(&name) {
                 continue;
             }
-            default_project.get_or_insert_with(|| name.clone());
-            map.insert(name, Arc::new(project));
+            let project = Arc::new(project);
+            default_project.get_or_insert_with(|| Arc::clone(&project));
+            map.insert(name, project);
         }
         Self {
             projects: Arc::new(RwLock::new(map)),
-            default_project,
+            default_project: Arc::new(RwLock::new(default_project)),
+            registry: None,
             shutdown: Arc::new(watch::channel(false).0),
             health: None,
             events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
         }
+    }
+
+    pub fn with_registry(mut self, path: PathBuf) -> Self {
+        self.registry = Some(Arc::new(path));
+        self
     }
 
     pub fn with_health(mut self, info: DaemonInfo) -> Self {
@@ -186,15 +130,148 @@ impl AppState {
     }
 
     pub fn default_project(&self) -> Option<Arc<Project>> {
-        self.project(self.default_project.as_deref()?)
+        self.default_project
+            .read()
+            .expect("default project lock poisoned")
+            .clone()
+    }
+
+    pub fn set_default_project(&self, name: &str) {
+        let project = self.project(name);
+        *self
+            .default_project
+            .write()
+            .expect("default project lock poisoned") = project;
+    }
+
+    // Blocking: each watcher scans every branch and hashes each worktree's task files.
+    pub fn start_watchers(&self) {
+        for project in self.projects() {
+            project::start_watch(&project, self.events.clone());
+        }
+    }
+
+    // Idempotent by repository, not by the path asked for: the CLI auto-registers on its first write
+    // and two of those can race, and a second worktree of a repository already served is that same
+    // project. The bool says whether this call is what added it.
+    pub fn register(&self, path: &std::path::Path) -> Result<(ProjectView, bool), ProjectsError> {
+        let registry_path = self.registry_path()?;
+        let repo = Repo::discover(path).map_err(|_| OpenError::NoRepo(path.to_path_buf()))?;
+        let root = registry::canonical(&serve_root(&repo, path));
+
+        let project = {
+            let mut projects = self.write_projects();
+            let common = project::git_common_dir(&repo);
+            if let Some(existing) = projects
+                .values()
+                .find(|project| project.git_common_dir() == common)
+            {
+                return Ok((existing.view(), false));
+            }
+            let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+            if let Some(entry) = registry.entry_at(&root) {
+                // Registered, but not opened: the entry was skipped at startup, or another daemon
+                // wrote it. Re-opening under the name it already carries keeps the file the one
+                // source of names.
+                let name = entry.name.clone();
+                let project = Arc::new(Project::open(name.clone(), root)?);
+                projects.insert(name, Arc::clone(&project));
+                project
+            } else {
+                let name = registry::unique_name(&root, |name| {
+                    registry.holds_name(name) || projects.contains_key(name)
+                });
+                // Open before the file is touched, so a path that cannot be served leaves no entry
+                // behind that every later start would have to skip.
+                let project = Arc::new(Project::open(name.clone(), root.clone())?);
+                registry.insert(ProjectEntry {
+                    name: name.clone(),
+                    path: root,
+                });
+                registry.write(&registry_path)?;
+                projects.insert(name, Arc::clone(&project));
+                project
+            }
+        };
+        tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
+        project::start_watch(&project, self.events.clone());
+        Ok((project.view(), true))
+    }
+
+    pub fn deregister(&self, name: &str) -> Result<(), ProjectsError> {
+        let registry_path = self.registry_path()?;
+        let project = {
+            let mut projects = self.write_projects();
+            let project = projects
+                .remove(name)
+                .ok_or_else(|| ProjectsError::NoSuchProject(name.to_owned()))?;
+            let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+            if registry.remove(name).is_some() {
+                registry.write(&registry_path)?;
+            }
+            let mut default = self
+                .default_project
+                .write()
+                .expect("default project lock poisoned");
+            if default
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &project))
+            {
+                *default = None;
+            }
+            project
+        };
+        // Outside the write lock: stopping joins the watcher's worker thread.
+        project.stop_watch();
+        tracing::info!(project = %name, "project removed");
+        Ok(())
+    }
+
+    pub fn rename_project(&self, from: &str, to: &str) -> Result<ProjectView, ProjectsError> {
+        let registry_path = self.registry_path()?;
+        if !registry::is_usable_name(to) {
+            return Err(ProjectsError::BadName(to.to_owned()));
+        }
+        let mut projects = self.write_projects();
+        if !projects.contains_key(from) {
+            return Err(ProjectsError::NoSuchProject(from.to_owned()));
+        }
+        if to != from && projects.contains_key(to) {
+            return Err(ProjectsError::NameTaken(to.to_owned()));
+        }
+        let project = projects.get(from).expect("checked above").clone();
+        let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+        if to != from && registry.holds_name(to) {
+            return Err(ProjectsError::NameTaken(to.to_owned()));
+        }
+        // Written as the entry the live project is, rather than patched in place: the file and the
+        // map can only disagree if one was edited by hand, and the served project is the truth.
+        registry.remove(from);
+        registry.insert(ProjectEntry {
+            name: to.to_owned(),
+            path: project.path.clone(),
+        });
+        registry.write(&registry_path)?;
+        projects.remove(from);
+        project.rename(to);
+        projects.insert(to.to_owned(), Arc::clone(&project));
+        Ok(project.view())
     }
 
     pub fn stop(&self) {
         let _ = self.shutdown.send(true);
     }
 
+    fn registry_path(&self) -> Result<Arc<PathBuf>, ProjectsError> {
+        self.registry.clone().ok_or(ProjectsError::NoRegistry)
+    }
+
     fn read_projects(&self) -> std::sync::RwLockReadGuard<'_, BTreeMap<String, Arc<Project>>> {
         self.projects.read().expect("projects lock poisoned")
+    }
+
+    fn write_projects(&self) -> std::sync::RwLockWriteGuard<'_, BTreeMap<String, Arc<Project>>> {
+        self.projects.write().expect("projects lock poisoned")
     }
 }
 
@@ -215,6 +292,8 @@ struct ApiDoc;
 fn documented() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
+        .routes(routes!(list_projects, register_project))
+        .routes(routes!(delete_project, rename_project))
         .routes(routes!(get_config))
         .routes(routes!(list_tasks, create_task))
         .routes(routes!(get_board))
@@ -246,25 +325,39 @@ fn default_project_routes() -> Router<AppState> {
 }
 
 fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, ApiError> {
-    state.project(name).ok_or_else(|| {
+    let project = state.project(name).ok_or_else(|| {
         ApiError::new(
             StatusCode::NOT_FOUND,
             format!("no such project: {name}; {}", registered(state)),
         )
-    })
+    })?;
+    servable(project)
 }
 
 fn default_project(state: &AppState) -> Result<Arc<Project>, ApiError> {
-    state
-        .default_project()
-        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "no project is registered".to_owned()))
+    let project = state.default_project().ok_or_else(|| {
+        ApiError::new(StatusCode::NOT_FOUND, "no project is registered".to_owned())
+    })?;
+    servable(project)
+}
+
+// A demoted project is still registered and still listed; it just cannot answer for its store. Its
+// own routes say why, and every other project keeps answering.
+fn servable(project: Arc<Project>) -> Result<Arc<Project>, ApiError> {
+    match project.status() {
+        ProjectStatus::Ok => Ok(project),
+        ProjectStatus::Error { reason } => Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("project {} is not being served: {reason}", project.name()),
+        )),
+    }
 }
 
 fn registered(state: &AppState) -> String {
     let names: Vec<String> = state
         .projects()
         .iter()
-        .map(|project| project.name.clone())
+        .map(|project| project.name())
         .collect();
     match names.is_empty() {
         true => "no project is registered".to_owned(),
@@ -333,7 +426,8 @@ pub async fn serve(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
     let stop = state.shutdown.clone();
-    axum::serve(listener, app(state))
+    let watchdog = tokio::spawn(watch_roots(state.clone()));
+    let result = axum::serve(listener, app(state))
         .with_graceful_shutdown(async move {
             let mut stopping = stop.subscribe();
             tokio::select! {
@@ -344,7 +438,33 @@ pub async fn serve(
             // streams observe the stop and end, instead of pinning graceful shutdown open.
             let _ = stop.send(true);
         })
+        .await;
+    watchdog.abort();
+    result
+}
+
+// A checkout deleted under a running daemon leaves that project serving a tree that no longer
+// exists: no write can land and its watch set is gone. It demotes that project alone — the daemon
+// stops only on a signal or `/admin/shutdown` — and a root that comes back promotes it again.
+async fn watch_roots(state: AppState) {
+    loop {
+        tokio::time::sleep(project::ROOT_POLL).await;
+        let projects = state.projects();
+        // `is_dir` on a dead network mount can block for as long as the mount's timeout. Every
+        // project is polled on every tick, so no short-circuit here.
+        let moved = tokio::task::spawn_blocking(move || {
+            let mut moved = false;
+            for project in &projects {
+                moved |= project.poll_root();
+            }
+            moved
+        })
         .await
+        .unwrap_or(false);
+        if moved {
+            publish(&state, ChangeEvent::ProjectsChanged);
+        }
+    }
 }
 
 #[utoipa::path(
@@ -357,6 +477,108 @@ async fn health(State(state): State<AppState>) -> Response {
         Some(info) => Json(info.as_ref()).into_response(),
         None => (StatusCode::OK, "ok").into_response(),
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/projects",
+    responses((status = 200, description = "Every registered project, servable or not", body = Vec<ProjectView>))
+)]
+async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<ProjectView>>, ApiError> {
+    // Each view reads its project's abbreviation under the index mutex, which a rebuild holds.
+    let views = tokio::task::spawn_blocking(move || {
+        state
+            .projects()
+            .iter()
+            .map(|project| project.view())
+            .collect()
+    })
+    .await
+    .map_err(join_error)?;
+    Ok(Json(views))
+}
+
+// Registration is by repository: the path is resolved to the checkout that can serve it, and a
+// repository already served answers with the entry it already has. That is what lets the CLI
+// register on its first write without coordinating with any other CLI doing the same.
+#[utoipa::path(
+    post,
+    path = "/api/projects",
+    request_body = RegisterProject,
+    responses(
+        (status = 201, description = "Registered", body = ProjectView),
+        (status = 200, description = "Already registered", body = ProjectView),
+        (status = 400, description = "The path has no task store, or no git repository", body = ApiErrorBody),
+        (status = 503, description = "This daemon serves a fixed set of projects", body = ApiErrorBody)
+    )
+)]
+async fn register_project(
+    State(state): State<AppState>,
+    Json(body): Json<RegisterProject>,
+) -> Result<Response, ApiError> {
+    let registering = state.clone();
+    let path = PathBuf::from(body.path);
+    let (view, created) = tokio::task::spawn_blocking(move || registering.register(&path))
+        .await
+        .map_err(join_error)??;
+    if created {
+        publish(&state, ChangeEvent::ProjectsChanged);
+    }
+    let status = match created {
+        true => StatusCode::CREATED,
+        false => StatusCode::OK,
+    };
+    Ok((status, Json(view)).into_response())
+}
+
+// Removal takes the project out of the registry and stops its watcher. The files on disk are left
+// exactly as they are: the daemon serves a repository, it does not own one.
+#[utoipa::path(
+    delete,
+    path = "/api/projects/{project}",
+    params(("project" = String, Path, description = "Project name")),
+    responses(
+        (status = 204, description = "Removed"),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 503, description = "This daemon serves a fixed set of projects", body = ApiErrorBody)
+    )
+)]
+async fn delete_project(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let removing = state.clone();
+    tokio::task::spawn_blocking(move || removing.deregister(&project))
+        .await
+        .map_err(join_error)??;
+    publish(&state, ChangeEvent::ProjectsChanged);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/projects/{project}",
+    params(("project" = String, Path, description = "Project name")),
+    request_body = RenameProject,
+    responses(
+        (status = 200, description = "Renamed", body = ProjectView),
+        (status = 400, description = "The new name cannot address a project", body = ApiErrorBody),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 409, description = "The new name is already taken", body = ApiErrorBody),
+        (status = 503, description = "This daemon serves a fixed set of projects", body = ApiErrorBody)
+    )
+)]
+async fn rename_project(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+    Json(body): Json<RenameProject>,
+) -> Result<Json<ProjectView>, ApiError> {
+    let renaming = state.clone();
+    let view = tokio::task::spawn_blocking(move || renaming.rename_project(&project, &body.name))
+        .await
+        .map_err(join_error)??;
+    publish(&state, ChangeEvent::ProjectsChanged);
+    Ok(Json(view))
 }
 
 // The abbreviation every key on the wire carries, so a client can tell this store's keys from any
@@ -424,10 +646,8 @@ async fn events(
                 }
                 message = changes.next() => match message {
                     Some(Ok(change)) => Ok(encode(&change)),
-                    // A lagging client dropped events; nudge it to refetch the whole list.
-                    Some(Err(BroadcastStreamRecvError::Lagged(_))) => Ok(encode(&ChangeEvent::RefMoved {
-                        branch: String::new(),
-                    })),
+                    // A lagging client dropped events, and nothing says which; it refetches all of it.
+                    Some(Err(BroadcastStreamRecvError::Lagged(_))) => Ok(encode(&ChangeEvent::Resync)),
                     None => return,
                 },
             };
@@ -535,6 +755,19 @@ impl From<KeyError> for ApiError {
     }
 }
 
+impl From<ProjectsError> for ApiError {
+    fn from(err: ProjectsError) -> Self {
+        let status = match &err {
+            ProjectsError::Open(_) | ProjectsError::BadName(_) => StatusCode::BAD_REQUEST,
+            ProjectsError::NoSuchProject(_) => StatusCode::NOT_FOUND,
+            ProjectsError::NameTaken(_) => StatusCode::CONFLICT,
+            ProjectsError::NoRegistry => StatusCode::SERVICE_UNAVAILABLE,
+            ProjectsError::Registry(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        Self::new(status, err.to_string())
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         // TraceLayer's failure line only sees the status code; record the cause onto the request
@@ -585,9 +818,7 @@ async fn default_list_tasks(
 
 async fn list_tasks_of(project: Arc<Project>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
     let items = tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, IndexError> {
-        let mut index = project.index.lock().expect("index mutex poisoned");
-        index.rebuild(&project.repo, &project.store)?;
-        Ok(index.aggregated_tasks())
+        Ok(project.read_index()?.aggregated_tasks())
     })
     .await
     .map_err(join_error)?
@@ -622,9 +853,7 @@ async fn default_get_board(State(state): State<AppState>) -> Result<Json<Board>,
 
 async fn board_of(project: Arc<Project>) -> Result<Json<Board>, ApiError> {
     let board = tokio::task::spawn_blocking(move || -> Result<Board, IndexError> {
-        let mut index = project.index.lock().expect("index mutex poisoned");
-        index.rebuild(&project.repo, &project.store)?;
-        Ok(Board::build(&index.aggregated_tasks()))
+        Ok(Board::build(&project.read_index()?.aggregated_tasks()))
     })
     .await
     .map_err(join_error)?
@@ -675,16 +904,13 @@ async fn create_task_in(
     query: TaskQuery,
     body: CreateTask,
 ) -> Result<Response, ApiError> {
-    let repo = project.repo.clone();
-    let serve_store = project.store.clone();
-    let index = project.index.clone();
-    let ids = project.ids.clone();
+    let writing = Arc::clone(&project);
     let created = op_task::now();
     let (branch, id) =
         tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
             let (branch, store, floor, abbreviation) = {
-                let mut index = index.lock().expect("index mutex poisoned");
-                let (branch, store) = write_target(&mut index, &repo, &serve_store, query.branch)?;
+                let index = writing.write_index().map_err(index_error)?;
+                let (branch, store) = write_target(&index, writing.store(), query.branch)?;
                 (
                     branch,
                     store,
@@ -695,7 +921,7 @@ async fn create_task_in(
             let task = body.into_task(created, abbreviation)?;
             let mut taken = 0;
             let number = loop {
-                let number = ids.issue_above(floor).ok_or_else(|| {
+                let number = writing.ids().issue_above(floor).ok_or_else(|| {
                     ApiError::no_id_available(
                         "the repository holds the highest task number there is; no number is left \
                          to issue",
@@ -718,6 +944,7 @@ async fn create_task_in(
                     Err(err) => return Err(err.into()),
                 }
             };
+            writing.mark_dirty();
             Ok((branch, abbreviation.format_key(number)))
         })
         .await
@@ -725,6 +952,7 @@ async fn create_task_in(
     publish(
         state,
         ChangeEvent::TaskChanged {
+            project: project.name(),
             id: id.clone(),
             branch,
         },
@@ -776,18 +1004,15 @@ async fn get_task_of(
     id: String,
     query: TaskQuery,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    let repo = project.repo.clone();
-    let store = project.store.clone();
-    let index = project.index.clone();
     let missing = id.clone();
     let detail = tokio::task::spawn_blocking(move || -> Result<Option<TaskDetail>, ApiError> {
-        let mut index = index.lock().expect("index mutex poisoned");
         // A read resolves through the index by matching cell ids, which would 404 a path segment no
         // key could ever be — where every write route answers 400. Refuse it here, once, for both.
-        reject_non_key(index.abbreviation(), &id)?;
-        index.rebuild(&repo, &store).map_err(index_error)?;
-        index
-            .task_detail(&repo, &id, query.branch.as_deref())
+        reject_non_key(project.abbreviation(), &id)?;
+        project
+            .read_index()
+            .map_err(index_error)?
+            .task_detail(project.repo(), &id, query.branch.as_deref())
             .map_err(index_error)
     })
     .await
@@ -822,14 +1047,13 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
 }
 
 // Callers hold the index mutex across this and release it before writing, so the store's flock wait
-// never blocks the reads that share the mutex.
+// never blocks the reads that share the mutex. The index they hold comes from `Project::write_index`,
+// which rebuilds in all conditions: the question here is which branch is writable right now.
 fn write_target(
-    index: &mut Index,
-    repo: &Repo,
+    index: &Index,
     serve_store: &Store,
     requested: Option<String>,
 ) -> Result<(String, Store), ApiError> {
-    index.rebuild(repo, serve_store).map_err(index_error)?;
     let branch = write_branch(index, requested)?;
     let store = index.live_store(&branch).ok_or_else(|| {
         if serve_store.root().is_dir() {
@@ -883,14 +1107,12 @@ async fn patch_task_of(
     query: TaskQuery,
     patch: TaskPatch,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    let repo = project.repo.clone();
-    let serve_store = project.store.clone();
-    let index = project.index.clone();
+    let writing = Arc::clone(&project);
     let (branch, detail) =
         tokio::task::spawn_blocking(move || -> Result<(String, TaskDetail), ApiError> {
             let (branch, store, abbreviation) = {
-                let mut index = index.lock().expect("index mutex poisoned");
-                let (branch, store) = write_target(&mut index, &repo, &serve_store, query.branch)?;
+                let index = writing.write_index().map_err(index_error)?;
+                let (branch, store) = write_target(&index, writing.store(), query.branch)?;
                 (branch, store, index.abbreviation())
             };
             let number = reject_non_key(abbreviation, &id)?;
@@ -902,13 +1124,13 @@ async fn patch_task_of(
                     .apply(task, abbreviation)
                     .map_err(|err| StoreError::Invalid(err.to_string()))
             })?;
+            writing.mark_dirty();
             // Echo the freshly written task rather than re-reading it from the matrix: a write that
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
             // would 404 a write that in fact succeeded — and its `updated` falls back to the
             // headline, the commit that already holds this exact content.
             let (headline, branches, parent_title, children, refs, updated) = {
-                let mut index = index.lock().expect("index mutex poisoned");
-                index.rebuild(&repo, &serve_store).map_err(index_error)?;
+                let index = writing.write_index().map_err(index_error)?;
                 // The index resolves a parent by key; the frontmatter holds the number the file
                 // layer names it by.
                 let parent = task
@@ -947,6 +1169,7 @@ async fn patch_task_of(
     publish(
         state,
         ChangeEvent::TaskChanged {
+            project: project.name(),
             id: detail.id.clone(),
             branch,
         },
@@ -992,17 +1215,16 @@ async fn delete_task_of(
     id: String,
     query: TaskQuery,
 ) -> Result<StatusCode, ApiError> {
-    let repo = project.repo.clone();
-    let serve_store = project.store.clone();
-    let index = project.index.clone();
+    let writing = Arc::clone(&project);
     let changed = id.clone();
     let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
         let (branch, store, abbreviation) = {
-            let mut index = index.lock().expect("index mutex poisoned");
-            let (branch, store) = write_target(&mut index, &repo, &serve_store, query.branch)?;
+            let index = writing.write_index().map_err(index_error)?;
+            let (branch, store) = write_target(&index, writing.store(), query.branch)?;
             (branch, store, index.abbreviation())
         };
         store.delete(reject_non_key(abbreviation, &id)?)?;
+        writing.mark_dirty();
         Ok(branch)
     })
     .await
@@ -1010,6 +1232,7 @@ async fn delete_task_of(
     publish(
         state,
         ChangeEvent::TaskChanged {
+            project: project.name(),
             id: changed,
             branch,
         },
