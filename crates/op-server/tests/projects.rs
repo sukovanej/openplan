@@ -391,6 +391,50 @@ async fn renaming_a_project_moves_its_routes() {
     assert_eq!(unusable.status(), StatusCode::BAD_REQUEST);
 }
 
+// A number is issued at most once per repository, and each project issues from its own counter.
+// Two worktrees of one repository served as two projects would each mint the same number into a
+// different `.plan` directory, and neither store could see the other's file.
+#[tokio::test]
+async fn two_worktrees_of_one_repository_are_one_project() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path(), "AAA");
+    let linked = dir.path().join("wt");
+    git(
+        dir.path(),
+        &["worktree", "add", "-q", "-b", "feature", "wt"],
+    );
+
+    let entries = [
+        op_server::ProjectEntry {
+            name: "main".to_owned(),
+            path: dir.path().to_path_buf(),
+        },
+        op_server::ProjectEntry {
+            name: "feature".to_owned(),
+            path: linked.clone(),
+        },
+    ];
+    let opened = op_server::open_projects(&entries);
+    assert_eq!(
+        opened.iter().map(Project::name).collect::<Vec<_>>(),
+        vec!["main"],
+        "a hand-written registry naming two worktrees of one repository serves the first"
+    );
+
+    // The route that adds one answers with the project the repository already has.
+    let state = AppState::new(opened).with_registry(home.path().join("registry.toml"));
+    let response = send(
+        &state,
+        "POST",
+        "/api/projects",
+        Some(json!({ "path": linked })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_json(response).await["name"], "main");
+}
+
 // Zero projects is a served state: the daemon answers, and says so, rather than refusing to run.
 #[tokio::test]
 async fn a_daemon_with_no_projects_still_serves() {

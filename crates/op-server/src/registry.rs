@@ -42,15 +42,23 @@ impl ProjectRegistry {
     }
 
     // Rename over a temporary in the same directory, so a reader never sees a half-written registry
-    // and a crash mid-write leaves the previous one intact.
+    // and a crash mid-write leaves the previous one intact. The contents reach the disk before the
+    // rename, and the rename before this returns: an empty file here parses as zero projects, which
+    // would drop every project but `--root` on the next start without reporting anything.
     pub fn write(&self, path: &Path) -> Result<(), RegistryError> {
         let text = toml::to_string_pretty(self).map_err(|err| RegistryError::Invalid {
             path: path.to_path_buf(),
             reason: err.to_string(),
         })?;
         let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
-        std::fs::write(&tmp, text)?;
+        let file = std::fs::File::create(&tmp)?;
+        std::io::Write::write_all(&mut &file, text.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
         std::fs::rename(&tmp, path)?;
+        if let Some(dir) = path.parent() {
+            std::fs::File::open(dir)?.sync_all()?;
+        }
         Ok(())
     }
 

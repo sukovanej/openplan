@@ -39,7 +39,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 mod project;
 mod registry;
-pub use project::{OpenError, Project, serve_root};
+pub use project::{OpenError, Project, open_projects, serve_root};
 pub use registry::{ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError};
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
@@ -308,6 +308,9 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 // segment, so they answer for the default project; the project-prefixed routes above are the
 // documented ones. Undocumented on purpose: the generated web client must not grow a second,
 // ambiguous way to reach a task.
+// TODO(OPP-84): the checked-in `web/packages/api-client` predates the project-prefixed routes and
+// still calls these. Re-running `mise run generate-web-client` before OPP-84 rewrites it to methods
+// that take a project the SPA cannot yet supply, and the web build stops compiling.
 fn default_project_routes() -> Router<AppState> {
     Router::new()
         .route("/api/config", get(default_get_config))

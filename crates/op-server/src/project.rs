@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
@@ -10,6 +11,8 @@ use op_presence::Registry as PresenceRegistry;
 use op_store::{Config, STORE_DIR, Store, StoreError};
 use op_watch::{Change, Watcher};
 use tokio::sync::broadcast;
+
+use crate::ProjectEntry;
 
 // How long a rebuild is trusted while nothing has invalidated it. The watcher is what clears the
 // gate, and [[OPP-52]] says it can miss a working-tree edit; without a ceiling a missed event would
@@ -61,6 +64,54 @@ pub fn serve_root(repo: &Repo, root: &Path) -> PathBuf {
     repo.main_worktree()
         .filter(|main| Store::discover(main).is_ok())
         .unwrap_or_else(|| root.to_path_buf())
+}
+
+// A registered path whose store or repository cannot be opened is skipped, not fatal: one broken
+// checkout must not take the task UI away from every other project on the machine. A name is the
+// coordinate every route resolves through, so a hand-written duplicate is skipped for the same
+// reason — the second entry would otherwise silently shadow the first.
+pub fn open_projects(entries: &[ProjectEntry]) -> Vec<Project> {
+    let mut names = BTreeSet::new();
+    let mut repos = BTreeSet::new();
+    entries
+        .iter()
+        .filter(|entry| {
+            names.insert(entry.name.clone()) || {
+                tracing::error!(project = %entry.name, "skipping project: the name is already taken");
+                false
+            }
+        })
+        .filter_map(
+            |entry| match Project::open(entry.name.clone(), entry.path.clone()) {
+                Ok(project) => Some(project),
+                Err(err) => {
+                    tracing::error!(
+                        project = %entry.name,
+                        path = %entry.path.display(),
+                        error = format!("{err:#}"),
+                        "skipping project"
+                    );
+                    None
+                }
+            },
+        )
+        // A task number is issued at most once per *repository*, and each project issues it from its
+        // own counter above its own floor. Two worktrees of one repository registered as two
+        // projects would each hand out the same number, into two different `.plan` directories, and
+        // the store's id-taken retry cannot see the clash: each write lands in a file the other
+        // never looks at. `AppState::register` refuses the second one, so a hand-written registry
+        // has to be refused here for the same reason.
+        .filter(|project| {
+            repos.insert(project.git_common_dir().to_owned()) || {
+                tracing::error!(
+                    project = %project.name(),
+                    path = %project.path.display(),
+                    "skipping project: another project already serves this repository"
+                );
+                false
+            }
+        })
+        .collect()
 }
 
 // What a rebuild is measured against. `generation` is what keeps an invalidation that lands *during*

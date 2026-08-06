@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
-use op_server::{AppState, Project, ProjectEntry, ProjectRegistry, REGISTRY_FILE};
+use op_server::{AppState, Project, ProjectRegistry, REGISTRY_FILE, open_projects};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
@@ -123,37 +123,6 @@ fn warm_indexes(state: &AppState) {
             tracing::warn!(project = %project.name(), %err, "initial matrix build failed");
         }
     }
-}
-
-// A registered path whose store or repository cannot be opened is skipped, not fatal: one broken
-// checkout must not take the task UI away from every other project on the machine. A name is the
-// coordinate every route resolves through, so a hand-written duplicate is skipped for the same
-// reason — the second entry would otherwise silently shadow the first.
-fn open_projects(entries: &[ProjectEntry]) -> Vec<Project> {
-    let mut taken = std::collections::BTreeSet::new();
-    entries
-        .iter()
-        .filter(|entry| {
-            taken.insert(entry.name.clone()) || {
-                tracing::error!(project = %entry.name, "skipping project: the name is already taken");
-                false
-            }
-        })
-        .filter_map(
-            |entry| match Project::open(entry.name.clone(), entry.path.clone()) {
-                Ok(project) => Some(project),
-                Err(err) => {
-                    tracing::error!(
-                        project = %entry.name,
-                        path = %entry.path.display(),
-                        error = format!("{err:#}"),
-                        "skipping project"
-                    );
-                    None
-                }
-            },
-        )
-        .collect()
 }
 
 fn ignore_sighup() {
