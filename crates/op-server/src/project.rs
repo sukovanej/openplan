@@ -75,6 +75,20 @@ pub fn open_projects(entries: &[ProjectEntry]) -> Vec<Project> {
     let mut repos = BTreeSet::new();
     entries
         .iter()
+        // The daemon only ever writes a name `slug` produced, so this is about a name written by
+        // hand. `team/alpha` and the empty name are not path segments any request can carry, so the
+        // project would be served but unreachable — a silent one, where this is a loud one.
+        .filter(|entry| {
+            crate::registry::is_usable_name(&entry.name) || {
+                tracing::error!(
+                    project = %entry.name,
+                    path = %entry.path.display(),
+                    "skipping project: the name cannot address a project; use lowercase letters, \
+                     digits, and dashes"
+                );
+                false
+            }
+        })
         .filter(|entry| {
             names.insert(entry.name.clone()) || {
                 tracing::error!(project = %entry.name, "skipping project: the name is already taken");

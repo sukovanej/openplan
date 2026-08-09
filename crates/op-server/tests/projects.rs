@@ -435,6 +435,25 @@ async fn two_worktrees_of_one_repository_are_one_project() {
     assert_eq!(body_json(response).await["name"], "main");
 }
 
+// The daemon only ever writes a name `slug` produced. A name written by hand can be one no request
+// can carry, and serving it would be serving a project nothing can reach.
+#[tokio::test]
+async fn a_hand_written_name_no_url_can_carry_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path(), "AAA");
+    let entries = [
+        op_server::ProjectEntry {
+            name: "team/alpha".to_owned(),
+            path: dir.path().to_path_buf(),
+        },
+        op_server::ProjectEntry {
+            name: String::new(),
+            path: dir.path().to_path_buf(),
+        },
+    ];
+    assert!(op_server::open_projects(&entries).is_empty());
+}
+
 // Zero projects is a served state: the daemon answers, and says so, rather than refusing to run.
 #[tokio::test]
 async fn a_daemon_with_no_projects_still_serves() {

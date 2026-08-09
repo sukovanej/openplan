@@ -172,8 +172,11 @@ impl AppState {
             if let Some(entry) = registry.entry_at(&root) {
                 // Registered, but not opened: the entry was skipped at startup, or another daemon
                 // wrote it. Re-opening under the name it already carries keeps the file the one
-                // source of names.
+                // source of names — so a name the file cannot address is the file's to fix.
                 let name = entry.name.clone();
+                if !registry::is_usable_name(&name) {
+                    return Err(ProjectsError::BadName(name));
+                }
                 let project = Arc::new(Project::open(name.clone(), root)?);
                 projects.insert(name, Arc::clone(&project));
                 project
