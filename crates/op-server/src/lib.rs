@@ -159,59 +159,81 @@ impl AppState {
         let repo = Repo::discover(path).map_err(|_| OpenError::NoRepo(path.to_path_buf()))?;
         let root = registry::canonical(&serve_root(&repo, path));
 
-        let project = {
+        // The guard covers membership only. `Project::view` reads the abbreviation under the index
+        // mutex, which a rebuild holds for a full branch walk, so it is taken after the guard drops:
+        // holding the map's write lock across another project's rebuild is the cross-project
+        // coupling every project having its own index mutex exists to avoid.
+        let (project, created) = {
             let mut projects = self.write_projects();
             let common = project::git_common_dir(&repo);
-            if let Some(existing) = projects
+            match projects
                 .values()
                 .find(|project| project.git_common_dir() == common)
             {
-                return Ok((existing.view(), false));
-            }
-            let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
-            if let Some(entry) = registry.entry_at(&root) {
-                // Registered, but not opened: the entry was skipped at startup, or another daemon
-                // wrote it. Re-opening under the name it already carries keeps the file the one
-                // source of names — so a name the file cannot address is the file's to fix.
-                let name = entry.name.clone();
-                if !registry::is_usable_name(&name) {
-                    return Err(ProjectsError::BadName(name));
+                Some(existing) => (Arc::clone(existing), false),
+                None => {
+                    let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+                    // A registered path that is not open was skipped at startup, or written by
+                    // another daemon. Re-opening under the name it already carries keeps the file
+                    // the one source of names — so a name the file cannot address is the file's to
+                    // fix, and so is a name it already gave to a project being served.
+                    let name = match registry.entry_at(&root) {
+                        Some(entry) => entry.name.clone(),
+                        None => registry::unique_name(&root, |name| {
+                            registry.holds_name(name) || projects.contains_key(name)
+                        }),
+                    };
+                    if !registry::is_usable_name(&name) {
+                        return Err(ProjectsError::BadName(name));
+                    }
+                    if projects.contains_key(&name) {
+                        return Err(ProjectsError::NameTaken(name));
+                    }
+                    // Open before the file is touched, so a path that cannot be served leaves no
+                    // entry behind that every later start would have to skip.
+                    let project = Arc::new(Project::open(name.clone(), root.clone())?);
+                    if !registry.holds_name(&name) {
+                        registry.insert(ProjectEntry {
+                            name: name.clone(),
+                            path: root,
+                        });
+                        registry.write(&registry_path)?;
+                    }
+                    projects.insert(name, Arc::clone(&project));
+                    (project, true)
                 }
-                let project = Arc::new(Project::open(name.clone(), root)?);
-                projects.insert(name, Arc::clone(&project));
-                project
-            } else {
-                let name = registry::unique_name(&root, |name| {
-                    registry.holds_name(name) || projects.contains_key(name)
-                });
-                // Open before the file is touched, so a path that cannot be served leaves no entry
-                // behind that every later start would have to skip.
-                let project = Arc::new(Project::open(name.clone(), root.clone())?);
-                registry.insert(ProjectEntry {
-                    name: name.clone(),
-                    path: root,
-                });
-                registry.write(&registry_path)?;
-                projects.insert(name, Arc::clone(&project));
-                project
             }
         };
-        tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
-        project::start_watch(&project, self.events.clone());
-        Ok((project.view(), true))
+        if created {
+            tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
+            project::start_watch(&project, self.events.clone());
+        }
+        // The routes that carry no project segment answer for the default. Without this a daemon
+        // that started with no servable `--root` would keep 404ing them for its whole life, however
+        // many projects were registered over HTTP afterwards.
+        self.adopt_default(&project);
+        Ok((project.view(), created))
     }
 
     pub fn deregister(&self, name: &str) -> Result<(), ProjectsError> {
         let registry_path = self.registry_path()?;
-        let project = {
+        let (project, fallback) = {
             let mut projects = self.write_projects();
-            let project = projects
-                .remove(name)
-                .ok_or_else(|| ProjectsError::NoSuchProject(name.to_owned()))?;
+            if !projects.contains_key(name) {
+                return Err(ProjectsError::NoSuchProject(name.to_owned()));
+            }
             let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
             if registry.remove(name).is_some() {
+                // Before the map, so a write that fails leaves the daemon exactly as it was rather
+                // than serving one membership while the file records another.
                 registry.write(&registry_path)?;
             }
+            let project = projects.remove(name).expect("checked above");
+            (project, projects.values().next().cloned())
+        };
+        // A default that was just removed hands the unprefixed routes to whatever is left; they
+        // answer for some project or none, and none is only right when none is registered.
+        {
             let mut default = self
                 .default_project
                 .write()
@@ -220,10 +242,9 @@ impl AppState {
                 .as_ref()
                 .is_some_and(|current| Arc::ptr_eq(current, &project))
             {
-                *default = None;
+                *default = fallback;
             }
-            project
-        };
+        }
         // Outside the write lock: stopping joins the watcher's worker thread.
         project.stop_watch();
         tracing::info!(project = %name, "project removed");
@@ -235,30 +256,42 @@ impl AppState {
         if !registry::is_usable_name(to) {
             return Err(ProjectsError::BadName(to.to_owned()));
         }
-        let mut projects = self.write_projects();
-        if !projects.contains_key(from) {
-            return Err(ProjectsError::NoSuchProject(from.to_owned()));
-        }
-        if to != from && projects.contains_key(to) {
-            return Err(ProjectsError::NameTaken(to.to_owned()));
-        }
-        let project = projects.get(from).expect("checked above").clone();
-        let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
-        if to != from && registry.holds_name(to) {
-            return Err(ProjectsError::NameTaken(to.to_owned()));
-        }
-        // Written as the entry the live project is, rather than patched in place: the file and the
-        // map can only disagree if one was edited by hand, and the served project is the truth.
-        registry.remove(from);
-        registry.insert(ProjectEntry {
-            name: to.to_owned(),
-            path: project.path.clone(),
-        });
-        registry.write(&registry_path)?;
-        projects.remove(from);
-        project.rename(to);
-        projects.insert(to.to_owned(), Arc::clone(&project));
+        let project = {
+            let mut projects = self.write_projects();
+            if !projects.contains_key(from) {
+                return Err(ProjectsError::NoSuchProject(from.to_owned()));
+            }
+            if to != from && projects.contains_key(to) {
+                return Err(ProjectsError::NameTaken(to.to_owned()));
+            }
+            let project = projects.get(from).expect("checked above").clone();
+            let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+            if to != from && registry.holds_name(to) {
+                return Err(ProjectsError::NameTaken(to.to_owned()));
+            }
+            // Written as the entry the live project is, rather than patched in place: the file and
+            // the map can only disagree if one was edited by hand, and the served project is the
+            // truth.
+            registry.remove(from);
+            registry.insert(ProjectEntry {
+                name: to.to_owned(),
+                path: project.path.clone(),
+            });
+            registry.write(&registry_path)?;
+            projects.remove(from);
+            project.rename(to);
+            projects.insert(to.to_owned(), Arc::clone(&project));
+            project
+        };
         Ok(project.view())
+    }
+
+    fn adopt_default(&self, project: &Arc<Project>) {
+        let mut default = self
+            .default_project
+            .write()
+            .expect("default project lock poisoned");
+        default.get_or_insert_with(|| Arc::clone(project));
     }
 
     pub fn stop(&self) {

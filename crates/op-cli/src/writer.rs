@@ -76,10 +76,14 @@ impl Writer {
 // repo must be refused rather than handed a branch name it would resolve against its own worktrees.
 fn ensure_same_repo(repo: &Repo, served: &DaemonInfo) -> Result<()> {
     let mine = repo.git_common_dir();
+    // Two daemons answer with no repository: one started before /health carried the field, and one
+    // whose `--root` named no task store or no repository, which is served rather than refused.
+    // Neither can be written to, and neither can be told from the other from here.
     let Some(theirs) = served.repo.as_deref() else {
         bail!(
-            "the running daemon (pid {}, port {}) predates repository identity in /health, so it \
-             may be indexing another repository; restart it with `oplan server restart`",
+            "the running daemon (pid {}, port {}) names no repository: its --root carried no task \
+             store or no git repository, or it predates repository identity in /health. Stop it \
+             (`oplan server stop`) and rerun here.",
             served.pid,
             served.port
         );

@@ -242,8 +242,13 @@ impl Project {
         self.lock_index().abbreviation()
     }
 
+    // Every id the matrix holds was formatted with the abbreviation it was built under, and
+    // `Index::set_abbreviation` only drops the parse cache — the matrix keeps the old spellings. A
+    // read that skipped the rebuild would hand one of them to `Index::number_of`, which panics on a
+    // key this abbreviation cannot parse and poisons the index for the project's whole life.
     pub fn set_abbreviation(&self, abbreviation: Abbreviation) {
         self.lock_index().set_abbreviation(abbreviation);
+        self.mark_dirty();
     }
 
     // A read's index. The rebuild walks every local branch, and the merged board multiplies that by N

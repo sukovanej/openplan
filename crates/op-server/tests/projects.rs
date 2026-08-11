@@ -454,6 +454,105 @@ async fn a_hand_written_name_no_url_can_carry_is_refused() {
     assert!(op_server::open_projects(&entries).is_empty());
 }
 
+// The matrix holds ids formatted with the abbreviation it was built under, and `Index::number_of`
+// panics on a key the current abbreviation cannot parse. The dirty gate is what makes a matrix
+// outlive its abbreviation, so changing one has to reopen the gate.
+#[tokio::test]
+async fn a_new_abbreviation_reopens_the_gate_rather_than_serving_the_old_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path(), "AAA");
+    let state = AppState::new([open("alpha", dir.path())]);
+    let project = state.project("alpha").unwrap();
+    state.start_watchers();
+    create(&state, "alpha", "one").await;
+
+    let listed = body_json(send(&state, "GET", "/api/projects/alpha/tasks", None).await).await;
+    assert_eq!(listed.as_array().unwrap()[0]["id"], "AAA-1");
+    let before = rebuilds(&project);
+
+    std::fs::write(
+        dir.path().join(".plan/config.toml"),
+        "abbreviation = \"ZZZ\"\n",
+    )
+    .unwrap();
+    project.reload_config();
+    assert!(
+        rebuilds(&project) == before,
+        "the reload itself does not walk the branches"
+    );
+
+    // Reading under the new abbreviation must rebuild, not render the matrix built under the old.
+    let listed = body_json(send(&state, "GET", "/api/projects/alpha/tasks", None).await).await;
+    assert!(
+        rebuilds(&project) > before,
+        "a new abbreviation is a change"
+    );
+    assert_eq!(listed.as_array().unwrap()[0]["id"], "ZZZ-1");
+    // The board reaches `Index::number_of`, which panics on a key the abbreviation cannot parse.
+    let board = send(&state, "GET", "/api/projects/alpha/board", None).await;
+    assert_eq!(
+        board.status(),
+        StatusCode::OK,
+        "the board renders rather than panicking on a key built under the old abbreviation"
+    );
+    assert!(
+        body_json(board).await.to_string().contains("ZZZ-1"),
+        "the board renders the new spelling"
+    );
+}
+
+// The routes that carry no project segment answer for the default project. A daemon that started
+// with no servable `--root` has none, and would keep 404ing them however many projects were
+// registered over HTTP afterwards.
+#[tokio::test]
+async fn a_daemon_with_no_default_adopts_the_first_project_registered() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path(), "AAA");
+    let state = AppState::new([]).with_registry(home.path().join("registry.toml"));
+    assert_eq!(
+        send(&state, "GET", "/api/tasks", None).await.status(),
+        StatusCode::NOT_FOUND
+    );
+
+    send(
+        &state,
+        "POST",
+        "/api/projects",
+        Some(json!({ "path": dir.path() })),
+    )
+    .await;
+    assert_eq!(
+        send(&state, "GET", "/api/tasks", None).await.status(),
+        StatusCode::OK,
+        "the registered project answers the routes that carry no project segment"
+    );
+}
+
+// Removing the default must not take the unprefixed routes down while other projects are served.
+#[tokio::test]
+async fn removing_the_default_hands_the_unprefixed_routes_to_what_is_left() {
+    let home = tempfile::tempdir().unwrap();
+    let alpha = tempfile::tempdir().unwrap();
+    let beta = tempfile::tempdir().unwrap();
+    repository(alpha.path(), "AAA");
+    repository(beta.path(), "BBB");
+    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())])
+        .with_registry(home.path().join("registry.toml"));
+    state.set_default_project("alpha");
+
+    send(&state, "DELETE", "/api/projects/alpha", None).await;
+    let config = body_json(send(&state, "GET", "/api/config", None).await).await;
+    assert_eq!(config["abbreviation"], "BBB");
+
+    send(&state, "DELETE", "/api/projects/beta", None).await;
+    assert_eq!(
+        send(&state, "GET", "/api/config", None).await.status(),
+        StatusCode::NOT_FOUND,
+        "no project is registered, so there is nothing to answer for"
+    );
+}
+
 // Zero projects is a served state: the daemon answers, and says so, rather than refusing to run.
 #[tokio::test]
 async fn a_daemon_with_no_projects_still_serves() {

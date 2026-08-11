@@ -108,10 +108,15 @@ pub fn unique_name(path: &Path, taken: impl Fn(&str) -> bool) -> String {
         .expect("the suffix range is unbounded")
 }
 
-// A name reaches the URL, so it has to survive the round trip unchanged rather than be quietly
-// rewritten into something the caller never asked for.
+// A name reaches the URL as one path segment, so it has to survive the round trip unchanged rather
+// than be quietly rewritten into something the caller never asked for. The character set is the
+// whole requirement: `slug` also caps its length, and measuring against it would reject the very
+// names `unique_name` mints, whose `-2` suffix can push a capped base past the cap.
 pub fn is_usable_name(name: &str) -> bool {
-    !name.is_empty() && name == op_task::slug(name, "")
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
 }
 
 pub fn canonical(path: &Path) -> PathBuf {
