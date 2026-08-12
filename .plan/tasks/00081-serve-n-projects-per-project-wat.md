@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-08-02T13:56:32Z
 parent: ./00079-multi-repo-daemon-one-daemon-and.md
 dependencies:
