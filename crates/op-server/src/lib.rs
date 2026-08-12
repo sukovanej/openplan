@@ -129,6 +129,16 @@ impl AppState {
         self.read_projects().values().cloned().collect()
     }
 
+    // The project serving a path's repository, whichever of its worktrees the path names.
+    pub fn project_at(&self, path: &std::path::Path) -> Option<Arc<Project>> {
+        let repo = Repo::discover(path).ok()?;
+        let common = project::git_common_dir(&repo);
+        self.read_projects()
+            .values()
+            .find(|project| project.git_common_dir() == common)
+            .cloned()
+    }
+
     pub fn default_project(&self) -> Option<Arc<Project>> {
         self.default_project
             .read()

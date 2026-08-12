@@ -22,8 +22,6 @@ fn spawn_server(info: DaemonInfo) -> (SocketAddr, JoinHandle<()>) {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(&root).unwrap();
     let repo = op_git::Repo::discover(&root).unwrap();
-    // This client still calls the unprefixed routes, so the round trip also proves the sole-project
-    // delegation answers them.
     let project = Project::new("test", root.clone(), repo, store);
 
     let (tx, rx) = std::sync::mpsc::channel();
@@ -49,7 +47,6 @@ fn info() -> DaemonInfo {
         port: 7,
         version: "1.2.3".to_owned(),
         started_at: 99,
-        repo: Some("/tmp/repo/.git".to_owned()),
     }
 }
 
@@ -94,7 +91,7 @@ fn crud_roundtrips_through_the_daemon() {
     let client = Client::default();
 
     let id = client
-        .create_task(&base, "main", &new_task("Ship login"))
+        .create_task(&base, "test", "main", &new_task("Ship login"))
         .unwrap();
     assert_eq!(
         id, "OPP-1",
@@ -104,6 +101,7 @@ fn crud_roundtrips_through_the_daemon() {
     let patched = client
         .patch_task(
             &base,
+            "test",
             "main",
             &id,
             &TaskPatch {
@@ -115,9 +113,9 @@ fn crud_roundtrips_through_the_daemon() {
     assert_eq!(patched.metadata.status(), Some(Status::InProgress));
     assert_eq!(patched.title, "Ship login");
 
-    client.delete_task(&base, "main", &id).unwrap();
+    client.delete_task(&base, "test", "main", &id).unwrap();
     let gone = client
-        .patch_task(&base, "main", &id, &TaskPatch::default())
+        .patch_task(&base, "test", "main", &id, &TaskPatch::default())
         .expect_err("the task is deleted");
     assert!(
         matches!(gone, ClientError::Refused { status: 404, .. }),
@@ -141,7 +139,7 @@ fn a_write_to_a_branch_with_no_live_worktree_is_refused() {
     // The branch a write names is the branch it lands on, or nothing: no worktree holds `ghost`, so
     // the daemon refuses instead of writing to whatever it happens to have checked out.
     let refused = client
-        .create_task(&base, "ghost", &new_task("Ship login"))
+        .create_task(&base, "test", "ghost", &new_task("Ship login"))
         .expect_err("no live worktree for ghost");
     assert!(
         matches!(refused, ClientError::Refused { status: 409, .. }),

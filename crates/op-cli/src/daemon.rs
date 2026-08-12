@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
 
 pub use op_api::DaemonInfo;
+use op_api::ProjectView;
 use op_task::{FieldResult, Timestamp};
 
 pub const DEFAULT_PORT: u16 = 7373;
@@ -146,8 +147,8 @@ impl Control {
         })
     }
 
-    pub fn start(&self, port: u16, root: &Path) -> Result<()> {
-        match self.ensure_daemon(port, root)? {
+    pub fn start(&self, port: u16) -> Result<()> {
+        match self.ensure_daemon(port)? {
             // port 0 means "any", so a differing bound port there is expected, not ignored.
             Started::Already(info) if port != 0 && info.port != port => {
                 println!(
@@ -170,7 +171,7 @@ impl Control {
         Ok(())
     }
 
-    pub fn restart(&self, port: u16, root: &Path) -> Result<()> {
+    pub fn restart(&self, port: u16) -> Result<()> {
         match self.stop_local()? {
             StopOutcome::NotRunning => {}
             StopOutcome::RemovedStale { pid } => {
@@ -178,7 +179,7 @@ impl Control {
             }
             StopOutcome::Stopped { pid, port } => println!("stopped (pid {pid}, port {port})"),
         }
-        self.start(port, root)
+        self.start(port)
     }
 
     pub fn ping(&self, override_url: Option<&str>) -> Result<bool> {
@@ -255,7 +256,7 @@ impl Control {
         })
     }
 
-    pub fn ensure_daemon(&self, port: u16, root: &Path) -> Result<Started> {
+    pub fn ensure_daemon(&self, port: u16) -> Result<Started> {
         if let Some(info) = self.healthy_info() {
             return Ok(Started::Already(info));
         }
@@ -292,7 +293,7 @@ impl Control {
             return Ok(Started::Already(info));
         }
 
-        self.spawn_detached(port, root)?;
+        self.spawn_detached(port)?;
 
         // Hold the start-lock across the readiness wait so a concurrent starter blocks until
         // this daemon is confirmed serving instead of racing to spawn a second one. The
@@ -323,20 +324,21 @@ impl Control {
         branch: Option<&str>,
     ) -> Option<FieldResult<Timestamp>> {
         let info = self.home.read_info()?;
-        // No recorded repository means a daemon older than the field: it may be indexing anything,
-        // so its answers cannot be trusted for this store.
-        if !same_path(Path::new(info.repo.as_deref()?), repo_dir) || !self.serves_identity(&info) {
+        if !self.serves_identity(&info) {
             return None;
         }
         let base = base_url(info.port);
-        let detail = self.client.task(&base, id, branch)?;
+        // A daemon that does not serve this repository — or one too old to list its projects — indexes
+        // other stores, whose task of this number is a different task.
+        let project = project_named(self.client.projects(&base).ok()?, repo_dir)?;
+        let detail = self.client.task(&base, &project, id, branch)?;
         let updated = detail.updated.into_result().map(|at| at.0);
         // A branch matching its merge-base has no cell there, so the daemon reports nothing for it;
         // the headline is what the local path falls back to as well.
         match (updated, branch) {
             (Err(op_task::FieldError::Missing), Some(_)) => Some(
                 self.client
-                    .task(&base, id, None)?
+                    .task(&base, &project, id, None)?
                     .updated
                     .into_result()
                     .map(|at| at.0),
@@ -384,7 +386,10 @@ impl Control {
         }
     }
 
-    fn spawn_detached(&self, port: u16, root: &Path) -> Result<()> {
+    // The daemon serves the registry, not the directory that happened to start it, so it carries no
+    // `--root`. Its working directory is `OPLAN_HOME`, which outlives every worktree the workflow
+    // creates and removes.
+    fn spawn_detached(&self, port: u16) -> Result<()> {
         self.home.ensure_dir()?;
         let log = OpenOptions::new()
             .create(true)
@@ -393,13 +398,10 @@ impl Control {
             .with_context(|| format!("opening {}", self.home.log_path().display()))?;
         let log_err = log.try_clone()?;
         let exe = std::env::current_exe().context("locating current executable")?;
-        let cwd = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
         let port_arg = port.to_string();
 
         Command::new(exe)
-            .current_dir(&cwd)
-            .arg("--root")
-            .arg(&cwd)
+            .current_dir(self.home.dir())
             .args(["server", "start", "--foreground", "--port", &port_arg])
             .stdin(Stdio::null())
             .stdout(Stdio::from(log))
@@ -435,6 +437,35 @@ fn signal_term(pid: u32) -> Result<()> {
         Ok(()) | Err(Errno::ESRCH) => Ok(()),
         Err(e) => Err(e).with_context(|| format!("sending SIGTERM to pid {pid}")),
     }
+}
+
+// The daemon a command that routes through one talks to: the URL the caller named, or the machine
+// daemon, started here if it is not up.
+pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> Result<String> {
+    match daemon_url {
+        Some(url) => {
+            let base = url.trim_end_matches('/').to_owned();
+            client
+                .health(&base)
+                .with_context(|| format!("no oplan daemon at {base}"))?;
+            Ok(base)
+        }
+        None => {
+            let info = Control::resolve()?
+                .ensure_daemon(default_port())?
+                .into_info();
+            Ok(base_url(info.port))
+        }
+    }
+}
+
+// Which project the daemon serves a repository as. Matched on the git common directory, so every
+// worktree of that repository resolves to the same project.
+pub fn project_named(views: Vec<ProjectView>, repo_dir: &Path) -> Option<String> {
+    views
+        .into_iter()
+        .find(|view| same_path(Path::new(&view.git_common_dir), repo_dir))
+        .map(|view| view.name)
 }
 
 pub fn same_path(a: &Path, b: &Path) -> bool {

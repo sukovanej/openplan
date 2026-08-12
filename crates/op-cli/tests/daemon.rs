@@ -97,6 +97,28 @@ fn parse_pid(text: &str) -> Option<u32> {
     rest[..end].parse().ok()
 }
 
+// `oplan project list` prints one line per project — name, abbreviation, root — and indents the
+// reason a demoted one is not served under it.
+fn projects(daemon: &Daemon) -> Vec<(String, String)> {
+    let out = daemon.cmd().args(["project", "list"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8(out.stdout).unwrap();
+    if text.starts_with("no projects registered") {
+        return Vec::new();
+    }
+    text.lines()
+        .filter(|line| !line.starts_with('!'))
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            Some((fields.next()?.to_owned(), fields.nth(1)?.to_owned()))
+        })
+        .collect()
+}
+
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -721,18 +743,18 @@ fn task_repo(seconds: i64) -> TempDir {
 }
 
 #[test]
-fn a_daemon_indexing_another_repository_is_not_asked() {
+fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
     let daemon = Daemon::new();
     let theirs = task_repo(1_000_000_000);
     let ours = task_repo(1_500_000_000);
 
-    let mut start = Command::new(env!("CARGO_BIN_EXE_oplan"));
-    start.env("OPLAN_HOME", daemon.home_path());
+    let mut add = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    add.env("OPLAN_HOME", daemon.home_path())
+        .env("OPLAN_PORT", "0");
     assert!(
-        start
-            .args(["--root"])
+        add.args(["--root"])
             .arg(theirs.path())
-            .args(["server", "start", "--port", "0"])
+            .args(["project", "add"])
             .output()
             .unwrap()
             .status
@@ -756,8 +778,10 @@ fn a_daemon_indexing_another_repository_is_not_asked() {
     assert_eq!(view["updated"], "2017-07-14T02:40:00Z");
 }
 
+// `--root` says which directory a command works in, as `git -C` does. It registers nothing: the
+// first write and `oplan project add` are the only ways into the registry.
 #[test]
-fn the_first_start_seeds_the_registry_and_later_starts_keep_it() {
+fn a_start_registers_nothing_and_the_first_write_registers() {
     let daemon = Daemon::new();
     let registry = daemon.home_path().join("registry.toml");
     assert!(!registry.exists(), "a fresh OPLAN_HOME has no registry");
@@ -770,13 +794,24 @@ fn the_first_start_seeds_the_registry_and_later_starts_keep_it() {
             .unwrap()
             .success()
     );
-    wait_until(|| registry.exists());
+    let ping = daemon.cmd().args(["server", "ping"]).output().unwrap();
+    assert!(ping.status.success(), "the daemon serves zero projects");
+    assert!(!registry.exists(), "starting is not registering");
+
+    assert!(
+        daemon
+            .cmd()
+            .args(["create", "First task"])
+            .status()
+            .unwrap()
+            .success()
+    );
 
     let seeded = std::fs::read_to_string(&registry).unwrap();
     assert_eq!(
         seeded.matches("[[project]]").count(),
         1,
-        "one entry for --root: {seeded}"
+        "one entry for the repository written to: {seeded}"
     );
     let root = daemon.root.path().canonicalize().unwrap();
     assert!(
@@ -784,72 +819,78 @@ fn the_first_start_seeds_the_registry_and_later_starts_keep_it() {
         "the entry names the serve root: {seeded}"
     );
 
-    // A rename is the user's to make, and the entry is matched by its path, so a restart on the same
-    // root must read the file back rather than register it again.
-    let renamed = seeded.replace("name = ", "name = \"chosen\" # ");
-    std::fs::write(&registry, &renamed).unwrap();
     assert!(
         daemon
             .cmd()
-            .args(["server", "restart", "--port", "0"])
+            .args(["create", "Second task"])
             .status()
             .unwrap()
             .success()
     );
     assert_eq!(
         std::fs::read_to_string(&registry).unwrap(),
-        renamed,
-        "a restart on a registered root must not rewrite the registry"
+        seeded,
+        "a repository already served must not be registered again"
     );
 }
 
-// Pointing the daemon at a second repository must work without the registry being edited by hand.
+// The entry is matched by its path, so a name the user chose survives a restart, and the CLI keeps
+// resolving the repository to it.
 #[test]
-fn a_start_on_an_unregistered_root_adds_it() {
+fn a_renamed_project_survives_a_restart() {
     let daemon = Daemon::new();
-    let registry = daemon.home_path().join("registry.toml");
     assert!(
         daemon
             .cmd()
-            .args(["server", "start", "--port", "0"])
+            .args(["create", "First task"])
             .status()
             .unwrap()
             .success()
     );
-    wait_until(|| registry.exists());
 
-    let second = task_repo(1_000_000_000);
-    let mut restart = Command::new(env!("CARGO_BIN_EXE_oplan"));
-    restart
-        .env("OPLAN_HOME", daemon.home_path())
-        .env("OPLAN_PORT", "0")
-        .arg("--root")
-        .arg(second.path());
+    let (name, root) = projects(&daemon).remove(0);
+    let renamed = daemon
+        .cmd()
+        .args(["project", "rename", &name, "chosen"])
+        .output()
+        .unwrap();
     assert!(
-        restart
+        renamed.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&renamed.stderr)
+    );
+
+    assert!(
+        daemon
+            .cmd()
             .args(["server", "restart", "--port", "0"])
             .status()
             .unwrap()
             .success()
     );
+    assert_eq!(projects(&daemon), vec![("chosen".to_owned(), root.clone())]);
 
-    let text = std::fs::read_to_string(&registry).unwrap();
-    assert_eq!(
-        text.matches("[[project]]").count(),
-        2,
-        "both roots are registered: {text}"
+    let write = daemon
+        .cmd()
+        .args(["create", "Second task"])
+        .output()
+        .unwrap();
+    assert!(
+        write.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&write.stderr)
     );
     assert!(
-        text.contains(second.path().canonicalize().unwrap().to_str().unwrap()),
-        "the second root is registered: {text}"
+        !String::from_utf8_lossy(&write.stderr).contains("registered"),
+        "the repository is still the same project, under its new name"
     );
+    assert_eq!(projects(&daemon), vec![("chosen".to_owned(), root)]);
 }
 
-// The unprefixed routes are all the CLI client and the SPA can spell, so registering a second
-// repository must not take them away. `--root` names which project they answer for.
 #[test]
-fn a_write_from_a_second_repository_works_after_a_restart_on_it() {
+fn project_add_registers_a_second_repository_and_remove_leaves_its_files() {
     let daemon = Daemon::new();
+    let second = task_repo(1_000_000_000);
     assert!(
         daemon
             .cmd()
@@ -859,47 +900,135 @@ fn a_write_from_a_second_repository_works_after_a_restart_on_it() {
             .success()
     );
 
-    let second = task_repo(1_000_000_000);
-    let mut on_second = Command::new(env!("CARGO_BIN_EXE_oplan"));
-    on_second
-        .env("OPLAN_HOME", daemon.home_path())
-        .env("OPLAN_PORT", "0")
-        .arg("--root")
-        .arg(second.path());
+    let added = daemon
+        .cmd()
+        .args(["project", "add"])
+        .arg(second.path())
+        .output()
+        .unwrap();
     assert!(
-        on_second
-            .args(["server", "restart", "--port", "0"])
+        added.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+
+    let listed = projects(&daemon);
+    let first_root = daemon.root.path().canonicalize().unwrap();
+    let second_root = second.path().canonicalize().unwrap();
+    assert!(
+        listed
+            .iter()
+            .any(|(_, root)| root == first_root.to_str().unwrap()),
+        "both repositories are listed: {listed:?}"
+    );
+    let (name, _) = listed
+        .iter()
+        .find(|(_, root)| root == second_root.to_str().unwrap())
+        .unwrap_or_else(|| panic!("the added repository is listed: {listed:?}"))
+        .clone();
+
+    let removed = daemon
+        .cmd()
+        .args(["project", "remove", &name])
+        .output()
+        .unwrap();
+    assert!(
+        removed.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&removed.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&removed.stdout).contains("files stay on disk"),
+        "removal says the checkout is untouched: {}",
+        String::from_utf8_lossy(&removed.stdout)
+    );
+    assert!(
+        second.path().join(".plan/tasks/00001-shared.md").exists(),
+        "removing a project must not touch its files"
+    );
+}
+
+// A demoted project stays registered and stays listed. Its reason is what answers the question "why
+// does my UI not show project X".
+#[test]
+fn project_list_marks_a_demoted_project_with_its_reason() {
+    let daemon = Daemon::new();
+    assert!(
+        daemon
+            .cmd()
+            .args(["create", "Anchor"])
             .status()
             .unwrap()
             .success()
     );
 
-    let mut write = Command::new(env!("CARGO_BIN_EXE_oplan"));
-    let out = write
-        .env("OPLAN_HOME", daemon.home_path())
-        .env("OPLAN_PORT", "0")
-        .arg("--root")
-        .arg(second.path())
-        .args(["create", "Second repo"])
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    std::fs::write(
+        daemon.root.path().join(".plan/config.toml"),
+        "abbreviation = \"not valid\"\n",
+    )
+    .unwrap();
 
-    let list = std::fs::read_dir(second.path().join(".plan/tasks"))
-        .unwrap()
-        .count();
-    assert_eq!(list, 2, "the write lands in the repository --root names");
+    let mut listed = String::new();
+    wait_until(|| {
+        let out = daemon.cmd().args(["project", "list"]).output().unwrap();
+        listed = String::from_utf8(out.stdout).unwrap();
+        listed.contains('!')
+    });
+    assert!(
+        listed.contains("three uppercase letters"),
+        "the reason names the broken config: {listed}"
+    );
+}
+
+// Two writes from one repository can be the first one. Registration is idempotent by repository, so
+// both land and the registry holds one entry.
+#[test]
+fn concurrent_first_writes_register_one_project() {
+    let daemon = Daemon::new();
+    let handles: Vec<_> = (0..4)
+        .map(|n| {
+            let home = daemon.home.path().to_path_buf();
+            let root = daemon.root.path().to_path_buf();
+            std::thread::spawn(move || {
+                Command::new(env!("CARGO_BIN_EXE_oplan"))
+                    .env("OPLAN_HOME", &home)
+                    .env("OPLAN_PORT", "0")
+                    .arg("--root")
+                    .arg(&root)
+                    .args(["create", &format!("Task {n}")])
+                    .output()
+                    .unwrap()
+            })
+        })
+        .collect();
+    for handle in handles {
+        let out = handle.join().unwrap();
+        assert!(
+            out.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let text = std::fs::read_to_string(daemon.home_path().join("registry.toml")).unwrap();
+    assert_eq!(
+        text.matches("[[project]]").count(),
+        1,
+        "one repository is one project: {text}"
+    );
+    assert_eq!(
+        std::fs::read_dir(daemon.root.path().join(".plan/tasks"))
+            .unwrap()
+            .count(),
+        4,
+        "every write landed, each under its own id"
+    );
 }
 
 // `Store::discover` walks past the git root, so a `.plan` above the checkout makes the store root and
 // the serve root two different directories. The registry has to record the one that holds the repo.
 #[test]
-fn a_store_above_the_git_root_still_starts() {
+fn a_store_above_the_git_root_registers_the_checkout() {
     let home = tempfile::tempdir().unwrap();
     let outer = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(outer.path().join(".plan/tasks")).unwrap();
@@ -915,13 +1044,13 @@ fn a_store_above_the_git_root_still_starts() {
     git(&inner, &["config", "user.name", "Test"]);
     git(&inner, &["commit", "-q", "--allow-empty", "-m", "init"]);
 
-    let mut start = Command::new(env!("CARGO_BIN_EXE_oplan"));
-    let out = start
+    let mut add = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let out = add
         .env("OPLAN_HOME", home.path())
         .env("OPLAN_PORT", "0")
         .arg("--root")
         .arg(&inner)
-        .args(["server", "start", "--port", "0"])
+        .args(["project", "add"])
         .output()
         .unwrap();
     assert!(

@@ -37,12 +37,14 @@ oplan list                       # tasks in ./.plan
 oplan server start               # background daemon: realtime API + web UI on 127.0.0.1:7373
 oplan server ping                # report daemon status
 oplan server stop                # stop the background daemon
+oplan project list               # repositories the daemon serves
 oplan merge-driver <O> <A> <B>   # git merge driver for .plan/**.md
 ```
 
 Reads work straight off the files; writes (`create`, `set`, `move`, `delete`) go through the daemon
-and start it if it is down. `OPLAN_HOME` picks the daemon's state directory (default `~/.plan`),
-`OPLAN_PORT` its port (default 7373).
+and start it if it is down. One daemon serves every repository on the machine: the first write from
+a repository registers it, and `oplan project` manages the registry. `OPLAN_HOME` picks the daemon's
+state directory (default `~/.plan`), `OPLAN_PORT` its port (default 7373).
 
 ## License
 

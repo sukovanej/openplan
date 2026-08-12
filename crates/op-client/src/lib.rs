@@ -1,6 +1,10 @@
+use std::path::Path;
 use std::time::Duration;
 
-use op_api::{ApiErrorBody, CreateTask, DaemonInfo, TaskDetail, TaskPatch};
+use op_api::{
+    ApiErrorBody, CreateTask, DaemonInfo, ProjectView, RegisterProject, RenameProject, TaskDetail,
+    TaskPatch,
+};
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
 use serde::Deserialize;
@@ -55,8 +59,14 @@ impl Client {
             .ok()
     }
 
-    pub fn task(&self, base_url: &str, id: &str, branch: Option<&str>) -> Option<TaskDetail> {
-        let mut url = reqwest::Url::parse(&format!("{base_url}/api/tasks/{id}")).ok()?;
+    pub fn task(
+        &self,
+        base_url: &str,
+        project: &str,
+        id: &str,
+        branch: Option<&str>,
+    ) -> Option<TaskDetail> {
+        let mut url = tasks_url(base_url, project, Some(id)).ok()?;
         if let Some(branch) = branch {
             url.query_pairs_mut().append_pair("branch", branch);
         }
@@ -65,6 +75,49 @@ impl Client {
             return None;
         }
         response.json::<TaskDetail>().ok()
+    }
+
+    pub fn projects(&self, base_url: &str) -> Result<Vec<ProjectView>, ClientError> {
+        self.json(self.http.get(format!("{base_url}/api/projects")))
+    }
+
+    // The bool says whether this call is what registered the repository; the daemon answers 200 for
+    // one it already serves, so two concurrent first writes both get the project and only one of
+    // them reports it.
+    pub fn register_project(
+        &self,
+        base_url: &str,
+        path: &Path,
+    ) -> Result<(ProjectView, bool), ClientError> {
+        let body = RegisterProject {
+            path: path.display().to_string(),
+        };
+        let response = accepted(send(
+            self.http
+                .post(format!("{base_url}/api/projects"))
+                .json(&body),
+        )?)?;
+        let created = response.status() == reqwest::StatusCode::CREATED;
+        let view = response
+            .json()
+            .map_err(|err| ClientError::Unreachable(err.to_string()))?;
+        Ok((view, created))
+    }
+
+    pub fn remove_project(&self, base_url: &str, name: &str) -> Result<(), ClientError> {
+        accepted(send(self.http.delete(projects_url(base_url, name)?))?).map(drop)
+    }
+
+    pub fn rename_project(
+        &self,
+        base_url: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<ProjectView, ClientError> {
+        let body = RenameProject {
+            name: to.to_owned(),
+        };
+        self.json(self.http.patch(projects_url(base_url, from)?).json(&body))
     }
 
     pub fn shutdown(&self, base_url: &str) -> bool {
@@ -82,10 +135,11 @@ impl Client {
     pub fn create_task(
         &self,
         base_url: &str,
+        project: &str,
         branch: &str,
         task: &CreateTask,
     ) -> Result<String, ClientError> {
-        let url = tasks_url(base_url, branch, None)?;
+        let url = write_url(base_url, project, branch, None)?;
         let created: CreatedTask = self.json(self.http.post(url).json(task))?;
         Ok(created.id)
     }
@@ -93,16 +147,23 @@ impl Client {
     pub fn patch_task(
         &self,
         base_url: &str,
+        project: &str,
         branch: &str,
         id: &str,
         patch: &TaskPatch,
     ) -> Result<TaskDetail, ClientError> {
-        let url = tasks_url(base_url, branch, Some(id))?;
+        let url = write_url(base_url, project, branch, Some(id))?;
         self.json(self.http.patch(url).json(patch))
     }
 
-    pub fn delete_task(&self, base_url: &str, branch: &str, id: &str) -> Result<(), ClientError> {
-        let url = tasks_url(base_url, branch, Some(id))?;
+    pub fn delete_task(
+        &self,
+        base_url: &str,
+        project: &str,
+        branch: &str,
+        id: &str,
+    ) -> Result<(), ClientError> {
+        let url = write_url(base_url, project, branch, Some(id))?;
         accepted(send(self.http.delete(url))?).map(drop)
     }
 
@@ -140,12 +201,38 @@ fn accepted(response: Response) -> Result<Response, ClientError> {
     })
 }
 
-fn tasks_url(base_url: &str, branch: &str, id: Option<&str>) -> Result<Url, ClientError> {
-    let unusable = || ClientError::Unreachable(format!("{base_url} is not a usable daemon URL"));
-    let mut url = Url::parse(&format!("{base_url}/api/tasks")).map_err(|_| unusable())?;
-    if let Some(id) = id {
-        url.path_segments_mut().map_err(|_| unusable())?.push(id);
+fn unusable(base_url: &str) -> ClientError {
+    ClientError::Unreachable(format!("{base_url} is not a usable daemon URL"))
+}
+
+fn projects_url(base_url: &str, project: &str) -> Result<Url, ClientError> {
+    let mut url =
+        Url::parse(&format!("{base_url}/api/projects")).map_err(|_| unusable(base_url))?;
+    url.path_segments_mut()
+        .map_err(|_| unusable(base_url))?
+        .push(project);
+    Ok(url)
+}
+
+fn tasks_url(base_url: &str, project: &str, id: Option<&str>) -> Result<Url, ClientError> {
+    let mut url = projects_url(base_url, project)?;
+    {
+        let mut segments = url.path_segments_mut().map_err(|_| unusable(base_url))?;
+        segments.push("tasks");
+        if let Some(id) = id {
+            segments.push(id);
+        }
     }
+    Ok(url)
+}
+
+fn write_url(
+    base_url: &str,
+    project: &str,
+    branch: &str,
+    id: Option<&str>,
+) -> Result<Url, ClientError> {
+    let mut url = tasks_url(base_url, project, id)?;
     url.query_pairs_mut().append_pair("branch", branch);
     Ok(url)
 }

@@ -1,20 +1,22 @@
 use std::path::Path;
 
-use anyhow::{Context as _, Result, bail};
-use op_api::{CreateTask, DaemonInfo, TaskDetail, TaskPatch};
+use anyhow::{Context as _, Result};
+use op_api::{CreateTask, TaskDetail, TaskPatch};
 use op_client::Client;
 use op_git::Repo;
 use op_server::serve_root;
 
-use crate::daemon::{Control, base_url, default_port, same_path};
+use crate::daemon::{daemon_base_url, project_named};
 
 // Writes go through the machine daemon, the single in-band writer: it allocates ids from one counter
 // with a view across every local branch, and resolves the target worktree from the branch at write
 // time. This carries the branch the caller is on, so a checkout underneath us can only ever refuse
-// the write, never redirect it to another branch.
+// the write, never redirect it to another branch. It carries the project too, because the one daemon
+// serves every repository on the machine and a branch name means nothing without one.
 pub struct Writer {
     client: Client,
     base_url: String,
+    project: String,
     branch: String,
 }
 
@@ -31,26 +33,13 @@ impl Writer {
         )?;
 
         let client = Client::default();
-        let (base_url, served) = match daemon_url {
-            Some(url) => {
-                let base = url.trim_end_matches('/').to_owned();
-                let info = client
-                    .health(&base)
-                    .with_context(|| format!("no oplan daemon at {base}"))?;
-                (base, info)
-            }
-            None => {
-                let info = Control::resolve()?
-                    .ensure_daemon(default_port(), &serve_root(&repo, root))?
-                    .into_info();
-                (base_url(info.port), info)
-            }
-        };
-        ensure_same_repo(&repo, &served)?;
+        let base_url = daemon_base_url(&client, daemon_url)?;
+        let project = resolve_project(&client, &base_url, &repo, root)?;
 
         Ok(Self {
             client,
             base_url,
+            project,
             branch,
         })
     }
@@ -58,44 +47,40 @@ impl Writer {
     pub fn create(&self, task: &CreateTask) -> Result<String> {
         Ok(self
             .client
-            .create_task(&self.base_url, &self.branch, task)?)
+            .create_task(&self.base_url, &self.project, &self.branch, task)?)
     }
 
     pub fn patch(&self, id: &str, patch: &TaskPatch) -> Result<TaskDetail> {
         Ok(self
             .client
-            .patch_task(&self.base_url, &self.branch, id, patch)?)
+            .patch_task(&self.base_url, &self.project, &self.branch, id, patch)?)
     }
 
     pub fn delete(&self, id: &str) -> Result<()> {
-        Ok(self.client.delete_task(&self.base_url, &self.branch, id)?)
+        Ok(self
+            .client
+            .delete_task(&self.base_url, &self.project, &self.branch, id)?)
     }
 }
 
-// A branch name identifies a worktree only within one repository, so a daemon serving a different
-// repo must be refused rather than handed a branch name it would resolve against its own worktrees.
-fn ensure_same_repo(repo: &Repo, served: &DaemonInfo) -> Result<()> {
-    let mine = repo.git_common_dir();
-    // Two daemons answer with no repository: one started before /health carried the field, and one
-    // whose `--root` named no task store or no repository, which is served rather than refused.
-    // Neither can be written to, and neither can be told from the other from here.
-    let Some(theirs) = served.repo.as_deref() else {
-        bail!(
-            "the running daemon (pid {}, port {}) names no repository: its --root carried no task \
-             store or no git repository, or it predates repository identity in /health. Stop it \
-             (`oplan server stop`) and rerun here.",
-            served.pid,
-            served.port
-        );
-    };
-    if !same_path(Path::new(theirs), &mine) {
-        bail!(
-            "the oplan daemon on port {} serves {theirs}, not {}; writes route through it, so stop \
-             it (`oplan server stop`) and rerun here, or point this command at the right daemon \
-             with `--daemon <url>`",
-            served.port,
-            mine.display()
-        );
+// The repository the caller stands in, as the daemon names it. A repository the daemon does not yet
+// serve is registered here, so the first write from a fresh checkout needs no setup step. The POST
+// is idempotent by repository, so two concurrent first writes both land and only one of them reports
+// a registration.
+fn resolve_project(client: &Client, base_url: &str, repo: &Repo, root: &Path) -> Result<String> {
+    let views = client.projects(base_url).with_context(|| {
+        format!(
+            "the oplan daemon at {base_url} did not list its projects; it can predate the project \
+             routes. Stop it (`oplan server stop`) and rerun here."
+        )
+    })?;
+    if let Some(name) = project_named(views, &repo.git_common_dir()) {
+        return Ok(name);
     }
-    Ok(())
+    let (view, created) = client.register_project(base_url, &serve_root(repo, root))?;
+    if created {
+        // stderr, because stdout carries the id `oplan create` prints and scripts read.
+        eprintln!("registered project {} at {}", view.name, view.root);
+    }
+    Ok(view.name)
 }

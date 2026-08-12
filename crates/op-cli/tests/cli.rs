@@ -406,42 +406,125 @@ fn a_write_outside_a_git_repository_is_refused() {
     );
 }
 
+// One daemon serves every repository on the machine. A write from a repository it does not yet know
+// registers that repository and lands, with no setup step and no restart.
 #[test]
-fn a_write_is_refused_by_a_daemon_serving_another_repository() {
-    let served = Project::new();
-    let other = Project::new();
-    // One daemon per OPLAN_HOME, and it serves one repository. A branch name means nothing outside
-    // that repository, so a write from another one must be refused rather than resolved there.
-    create(&served, "Anchor");
+fn writes_from_two_repositories_land_in_their_own_stores() {
+    let first = Project::new();
+    let second = Project::new();
+    create(&first, "Anchor");
 
     let out = oplan()
-        .env("OPLAN_HOME", served.home.path())
+        .env("OPLAN_HOME", first.home.path())
         .env("OPLAN_PORT", "0")
         .arg("--root")
-        .arg(other.path())
+        .arg(second.path())
         .args(["create", "Ship login"])
         .output()
         .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
-    assert!(
-        !out.status.success(),
-        "a foreign repository must be refused"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("serves"), "stderr: {stderr}");
-    assert!(
-        std::fs::read_dir(other.path().join(".plan/tasks"))
-            .unwrap()
-            .next()
-            .is_none(),
-        "nothing was written into either repository"
-    );
+    // Each repository has its own id counter, so both first tasks are number one.
+    assert_eq!(stdout(&out).trim(), "OPP-1");
     assert_eq!(
-        std::fs::read_dir(served.path().join(".plan/tasks"))
+        std::fs::read_dir(second.path().join(".plan/tasks"))
             .unwrap()
             .count(),
         1,
-        "and nothing leaked into the served one"
+        "the write lands in the repository --root names"
+    );
+    assert_eq!(
+        std::fs::read_dir(first.path().join(".plan/tasks"))
+            .unwrap()
+            .count(),
+        1,
+        "and nothing leaks into the other one"
+    );
+}
+
+// A daemon older than the project routes answers /health and falls every unknown path through to
+// the SPA. A write cannot learn which project it is talking to there, so it stops and says how to
+// fix it rather than write into whatever the daemon happens to serve.
+#[test]
+fn a_daemon_without_project_routes_asks_for_a_restart() {
+    let project = Project::new();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut head = [0u8; 1024];
+            let read = std::io::Read::read(&mut stream, &mut head).unwrap_or(0);
+            let (kind, body) = match head[..read].starts_with(b"GET /health") {
+                true => (
+                    "application/json",
+                    r#"{"pid":1,"port":1,"version":"0.0.1","started_at":0}"#,
+                ),
+                false => ("text/html", "<!doctype html>"),
+            };
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: \
+                 close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = std::io::Write::write_all(&mut stream, response.as_bytes());
+        }
+    });
+
+    let out = project
+        .cmd()
+        .arg("--root")
+        .arg(project.path())
+        .args([
+            "--daemon",
+            &format!("http://127.0.0.1:{port}"),
+            "create",
+            "Ship login",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!out.status.success(), "the write must not be attempted");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("did not list its projects") && stderr.contains("oplan server stop"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        std::fs::read_dir(project.path().join(".plan/tasks"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "nothing was written"
+    );
+}
+
+#[test]
+fn only_the_first_write_from_a_repository_reports_a_registration() {
+    let project = Project::new();
+
+    let first = run(&project, &["create", "Anchor"]);
+    assert!(first.status.success());
+    let reported = String::from_utf8_lossy(&first.stderr);
+    assert!(
+        reported.contains("registered project"),
+        "stderr: {reported}"
+    );
+
+    let second = run(&project, &["create", "Ship login"]);
+    assert!(second.status.success());
+    assert!(
+        !String::from_utf8_lossy(&second.stderr).contains("registered"),
+        "a repository already served is registered once, and said so once"
+    );
+    assert_eq!(
+        stdout(&first).trim(),
+        "OPP-1",
+        "the id stays the only thing on stdout"
     );
 }
 
