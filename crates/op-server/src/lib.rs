@@ -229,11 +229,20 @@ impl AppState {
         let registry_path = self.registry_path()?;
         let (project, fallback) = {
             let mut projects = self.write_projects();
-            if !projects.contains_key(name) {
-                return Err(ProjectsError::NoSuchProject(name.to_owned()));
-            }
             let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
-            if registry.remove(name).is_some() {
+            let listed = registry.remove(name).is_some();
+            if !projects.contains_key(name) {
+                // An entry the daemon could not open at startup — a deleted checkout, a duplicate
+                // name — has no live project to remove. Removing it here is the only way out that
+                // does not ask the user to edit the file the daemon says it owns.
+                if !listed {
+                    return Err(ProjectsError::NoSuchProject(name.to_owned()));
+                }
+                registry.write(&registry_path)?;
+                tracing::info!(project = %name, "registry entry removed; it was not being served");
+                return Ok(());
+            }
+            if listed {
                 // Before the map, so a write that fails leaves the daemon exactly as it was rather
                 // than serving one membership while the file records another.
                 registry.write(&registry_path)?;
@@ -281,12 +290,14 @@ impl AppState {
             }
             // Written as the entry the live project is, rather than patched in place: the file and
             // the map can only disagree if one was edited by hand, and the served project is the
-            // truth.
-            registry.remove(from);
-            registry.insert(ProjectEntry {
+            // truth. The entry keeps its position, so the default project does not move.
+            let entry = ProjectEntry {
                 name: to.to_owned(),
                 path: project.path.clone(),
-            });
+            };
+            if !registry.replace(from, entry.clone()) {
+                registry.insert(entry);
+            }
             registry.write(&registry_path)?;
             projects.remove(from);
             project.rename(to);

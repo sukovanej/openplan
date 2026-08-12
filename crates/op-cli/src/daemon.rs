@@ -147,8 +147,8 @@ impl Control {
         })
     }
 
-    pub fn start(&self, port: u16) -> Result<()> {
-        match self.ensure_daemon(port)? {
+    pub fn start(&self, port: u16, default_root: Option<&Path>) -> Result<()> {
+        match self.ensure_daemon(port, default_root)? {
             // port 0 means "any", so a differing bound port there is expected, not ignored.
             Started::Already(info) if port != 0 && info.port != port => {
                 println!(
@@ -171,7 +171,7 @@ impl Control {
         Ok(())
     }
 
-    pub fn restart(&self, port: u16) -> Result<()> {
+    pub fn restart(&self, port: u16, default_root: Option<&Path>) -> Result<()> {
         match self.stop_local()? {
             StopOutcome::NotRunning => {}
             StopOutcome::RemovedStale { pid } => {
@@ -179,7 +179,7 @@ impl Control {
             }
             StopOutcome::Stopped { pid, port } => println!("stopped (pid {pid}, port {port})"),
         }
-        self.start(port)
+        self.start(port, default_root)
     }
 
     pub fn ping(&self, override_url: Option<&str>) -> Result<bool> {
@@ -256,7 +256,7 @@ impl Control {
         })
     }
 
-    pub fn ensure_daemon(&self, port: u16) -> Result<Started> {
+    pub fn ensure_daemon(&self, port: u16, default_root: Option<&Path>) -> Result<Started> {
         if let Some(info) = self.healthy_info() {
             return Ok(Started::Already(info));
         }
@@ -293,7 +293,7 @@ impl Control {
             return Ok(Started::Already(info));
         }
 
-        self.spawn_detached(port)?;
+        self.spawn_detached(port, default_root)?;
 
         // Hold the start-lock across the readiness wait so a concurrent starter blocks until
         // this daemon is confirmed serving instead of racing to spawn a second one. The
@@ -329,8 +329,10 @@ impl Control {
         }
         let base = base_url(info.port);
         // A daemon that does not serve this repository — or one too old to list its projects — indexes
-        // other stores, whose task of this number is a different task.
-        let project = project_named(self.client.projects(&base).ok()?, repo_dir)?;
+        // other stores, whose task of this number is a different task. The read timeout keeps a busy
+        // daemon from holding a local read for the length of a write's wait.
+        let views = self.client.projects(&base, op_client::READ_TIMEOUT).ok()?;
+        let project = project_named(views, repo_dir)?;
         let detail = self.client.task(&base, &project, id, branch)?;
         let updated = detail.updated.into_result().map(|at| at.0);
         // A branch matching its merge-base has no cell there, so the daemon reports nothing for it;
@@ -386,10 +388,12 @@ impl Control {
         }
     }
 
-    // The daemon serves the registry, not the directory that happened to start it, so it carries no
-    // `--root`. Its working directory is `OPLAN_HOME`, which outlives every worktree the workflow
-    // creates and removes.
-    fn spawn_detached(&self, port: u16) -> Result<()> {
+    // The daemon serves the registry, not the directory that started it, so it works out of
+    // `OPLAN_HOME` — which outlives every worktree this workflow creates and removes. A `--root`
+    // reaches it only from `oplan server start`, where the user named a directory on purpose, and
+    // then only to pick the default project. A write brings the daemon up as a side effect, so it
+    // passes none: the repository it is about to register must not also reshape the daemon.
+    fn spawn_detached(&self, port: u16, default_root: Option<&Path>) -> Result<()> {
         self.home.ensure_dir()?;
         let log = OpenOptions::new()
             .create(true)
@@ -400,8 +404,13 @@ impl Control {
         let exe = std::env::current_exe().context("locating current executable")?;
         let port_arg = port.to_string();
 
-        Command::new(exe)
-            .current_dir(self.home.dir())
+        let mut command = Command::new(exe);
+        command.current_dir(self.home.dir());
+        if let Some(root) = default_root {
+            let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+            command.arg("--root").arg(root);
+        }
+        command
             .args(["server", "start", "--foreground", "--port", &port_arg])
             .stdin(Stdio::null())
             .stdout(Stdio::from(log))
@@ -452,7 +461,7 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
         }
         None => {
             let info = Control::resolve()?
-                .ensure_daemon(default_port())?
+                .ensure_daemon(default_port(), None)?
                 .into_info();
             Ok(base_url(info.port))
         }

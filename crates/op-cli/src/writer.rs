@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use op_api::{CreateTask, TaskDetail, TaskPatch};
 use op_client::Client;
 use op_git::Repo;
@@ -34,7 +34,7 @@ impl Writer {
 
         let client = Client::default();
         let base_url = daemon_base_url(&client, daemon_url)?;
-        let project = resolve_project(&client, &base_url, &repo, root)?;
+        let project = resolve_project(&client, &base_url, &repo, root, daemon_url.is_none())?;
 
         Ok(Self {
             client,
@@ -63,19 +63,39 @@ impl Writer {
     }
 }
 
-// The repository the caller stands in, as the daemon names it. A repository the daemon does not yet
-// serve is registered here, so the first write from a fresh checkout needs no setup step. The POST
-// is idempotent by repository, so two concurrent first writes both land and only one of them reports
-// a registration.
-fn resolve_project(client: &Client, base_url: &str, repo: &Repo, root: &Path) -> Result<String> {
-    let views = client.projects(base_url).with_context(|| {
-        format!(
-            "the oplan daemon at {base_url} did not list its projects; it can predate the project \
-             routes. Stop it (`oplan server stop`) and rerun here."
-        )
-    })?;
-    if let Some(name) = project_named(views, &repo.git_common_dir()) {
+// The repository the caller stands in, as the daemon names it. A repository the machine daemon does
+// not yet serve is registered here, so the first write from a fresh checkout needs no setup step.
+// The POST is idempotent by repository, so two concurrent first writes both land and only one of
+// them reports a registration.
+//
+// `may_register` is false when the caller named a daemon with `--daemon`. Registering there would
+// leave a repository indexed and watched by a daemon the caller only borrowed for one command, and
+// two daemons writing one checkout is exactly what the single-writer rule exists to prevent.
+fn resolve_project(
+    client: &Client,
+    base_url: &str,
+    repo: &Repo,
+    root: &Path,
+    may_register: bool,
+) -> Result<String> {
+    let views = client
+        .projects(base_url, op_client::WRITE_TIMEOUT)
+        .with_context(|| {
+            format!(
+                "the oplan daemon at {base_url} did not list its projects; it can predate the \
+                 project routes. Stop it (`oplan server stop`) and rerun here."
+            )
+        })?;
+    let mine = repo.git_common_dir();
+    if let Some(name) = project_named(views, &mine) {
         return Ok(name);
+    }
+    if !may_register {
+        bail!(
+            "the oplan daemon at {base_url} does not serve {}; register it there first with \
+             `oplan project add --daemon {base_url}`, or drop --daemon to use the machine daemon",
+            mine.display()
+        );
     }
     let (view, created) = client.register_project(base_url, &serve_root(repo, root))?;
     if created {

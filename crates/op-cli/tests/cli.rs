@@ -503,6 +503,54 @@ fn a_daemon_without_project_routes_asks_for_a_restart() {
     );
 }
 
+// `--daemon` borrows a daemon for one command. Registering there would leave it indexing and
+// watching a checkout the caller never asked it to serve, with two daemons then writing one store.
+#[test]
+fn a_named_daemon_is_not_registered_into_by_a_write() {
+    let served = Project::new();
+    let other = Project::new();
+    create(&served, "Anchor");
+    let port = std::fs::read_to_string(served.home.path().join("daemon.json"))
+        .map(|text| serde_json::from_str::<serde_json::Value>(&text).unwrap()["port"].as_u64())
+        .unwrap()
+        .unwrap();
+
+    let out = oplan()
+        .env("OPLAN_HOME", other.home.path())
+        .env("OPLAN_PORT", "0")
+        .arg("--root")
+        .arg(other.path())
+        .args([
+            "--daemon",
+            &format!("http://127.0.0.1:{port}"),
+            "create",
+            "Ship login",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!out.status.success(), "the write must be refused");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("oplan project add --daemon"),
+        "the refusal names the explicit way in: {stderr}"
+    );
+    let registry = served.home.path().join("registry.toml");
+    let text = std::fs::read_to_string(&registry).unwrap();
+    assert_eq!(
+        text.matches("[[project]]").count(),
+        1,
+        "the named daemon keeps the projects it had: {text}"
+    );
+    assert!(
+        std::fs::read_dir(other.path().join(".plan/tasks"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "and nothing was written"
+    );
+}
+
 #[test]
 fn only_the_first_write_from_a_repository_reports_a_registration() {
     let project = Project::new();

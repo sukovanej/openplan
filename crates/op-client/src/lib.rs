@@ -12,9 +12,10 @@ use serde::de::DeserializeOwned;
 
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
-const READ_TIMEOUT: Duration = Duration::from_secs(2);
+// A read has a local answer to fall back on, so it gives the daemon a short turn and moves on.
+pub const READ_TIMEOUT: Duration = Duration::from_secs(2);
 // A write waits for the target file's advisory lock, which another writer may hold for a while.
-const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -77,8 +78,17 @@ impl Client {
         response.json::<TaskDetail>().ok()
     }
 
-    pub fn projects(&self, base_url: &str) -> Result<Vec<ProjectView>, ClientError> {
-        self.json(self.http.get(format!("{base_url}/api/projects")))
+    // The caller names the wait it can afford: a write must know its project before it can start, a
+    // read falls back to its own index rather than hold the terminal.
+    pub fn projects(
+        &self,
+        base_url: &str,
+        timeout: Duration,
+    ) -> Result<Vec<ProjectView>, ClientError> {
+        let request = self.http.get(format!("{base_url}/api/projects"));
+        accepted(send_within(request, timeout)?)?
+            .json()
+            .map_err(|err| ClientError::Unreachable(err.to_string()))
     }
 
     // The bool says whether this call is what registered the repository; the daemon answers 200 for
@@ -175,7 +185,11 @@ impl Client {
 }
 
 fn send(request: RequestBuilder) -> Result<Response, ClientError> {
-    request.timeout(WRITE_TIMEOUT).send().map_err(|err| {
+    send_within(request, WRITE_TIMEOUT)
+}
+
+fn send_within(request: RequestBuilder, timeout: Duration) -> Result<Response, ClientError> {
+    request.timeout(timeout).send().map_err(|err| {
         if err.is_timeout() {
             ClientError::TimedOut
         } else {

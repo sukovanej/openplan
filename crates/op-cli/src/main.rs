@@ -283,7 +283,7 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
                     },
                 );
             }
-            Control::resolve()?.start(port)?;
+            Control::resolve()?.start(port, Some(root))?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Stop => {
@@ -292,7 +292,7 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
         }
         ServerCommand::Restart { port } => {
             reject_remote_override(daemon_url, "restart")?;
-            Control::resolve()?.restart(port)?;
+            Control::resolve()?.restart(port, Some(root))?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Ping => {

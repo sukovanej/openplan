@@ -119,6 +119,31 @@ fn projects(daemon: &Daemon) -> Vec<(String, String)> {
         .collect()
 }
 
+// The registry's own order, which decides the default project when no `--root` names one.
+fn registry_names(daemon: &Daemon) -> Vec<String> {
+    std::fs::read_to_string(daemon.home_path().join("registry.toml"))
+        .unwrap()
+        .lines()
+        .filter_map(|line| line.strip_prefix("name = "))
+        .map(|name| name.trim_matches('"').to_owned())
+        .collect()
+}
+
+// The routes that carry no project segment are all the SPA can spell, and no CLI command reports
+// which project answers them, so the test asks the daemon over HTTP.
+fn http_get(port: u16, path: &str) -> String {
+    use std::io::{Read as _, Write as _};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    response
+}
+
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -722,6 +747,10 @@ fn commit_at(dir: &Path, seconds: i64, message: &str) {
 }
 
 fn task_repo(seconds: i64) -> TempDir {
+    task_repo_keyed(seconds, "OPP")
+}
+
+fn task_repo_keyed(seconds: i64, abbreviation: &str) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     git(dir.path(), &["init", "-q", "-b", "main"]);
     git(dir.path(), &["config", "user.email", "t@example.com"]);
@@ -729,7 +758,7 @@ fn task_repo(seconds: i64) -> TempDir {
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
     std::fs::write(
         dir.path().join(".plan/config.toml"),
-        "abbreviation = \"OPP\"\n",
+        format!("abbreviation = \"{abbreviation}\"\n"),
     )
     .unwrap();
     // The number names the file, so both repos can hold the same id on purpose.
@@ -945,6 +974,167 @@ fn project_add_registers_a_second_repository_and_remove_leaves_its_files() {
     assert!(
         second.path().join(".plan/tasks/00001-shared.md").exists(),
         "removing a project must not touch its files"
+    );
+}
+
+// `--root` on an explicit `server start` names the project the routes with no project segment answer
+// for. Those routes are all the SPA can spell until OPP-84, so the UI would otherwise show whichever
+// repository happens to sit first in the registry.
+#[test]
+fn root_on_an_explicit_start_names_the_default_project() {
+    let daemon = Daemon::new();
+    let second = task_repo_keyed(1_000_000_000, "BBB");
+    assert!(
+        daemon
+            .cmd()
+            .args(["create", "First repo"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        daemon
+            .cmd()
+            .args(["project", "add"])
+            .arg(second.path())
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        http_get(daemon.info_port().unwrap(), "/api/config").contains("OPP"),
+        "the first registered repository answers to begin with"
+    );
+
+    let mut restart = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    assert!(
+        restart
+            .env("OPLAN_HOME", daemon.home_path())
+            .env("OPLAN_PORT", "0")
+            .arg("--root")
+            .arg(second.path())
+            .args(["server", "restart", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let answered = http_get(daemon.info_port().unwrap(), "/api/config");
+    assert!(
+        answered.contains("BBB"),
+        "--root names the default project: {answered}"
+    );
+}
+
+// The default project is the first entry of the registry when no `--root` names one, so a rename
+// must leave the entry where it is rather than move it to the end.
+#[test]
+fn a_rename_keeps_the_entry_in_place() {
+    let daemon = Daemon::new();
+    let second = task_repo(1_000_000_000);
+    assert!(
+        daemon
+            .cmd()
+            .args(["create", "First repo"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        daemon
+            .cmd()
+            .args(["project", "add"])
+            .arg(second.path())
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let before = registry_names(&daemon);
+    assert_eq!(before.len(), 2, "{before:?}");
+
+    assert!(
+        daemon
+            .cmd()
+            .args(["project", "rename", &before[0], "chosen"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    assert_eq!(
+        registry_names(&daemon),
+        vec!["chosen".to_owned(), before[1].clone()],
+        "the renamed entry keeps its place"
+    );
+    drop(second);
+}
+
+// An entry the daemon could not open at startup has no live project. Removing it must still work, or
+// the registry the daemon says it owns could only be repaired by hand.
+#[test]
+fn a_registry_entry_that_cannot_be_opened_can_still_be_removed() {
+    let daemon = Daemon::new();
+    let second = task_repo(1_000_000_000);
+    assert!(
+        daemon
+            .cmd()
+            .args(["create", "First repo"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        daemon
+            .cmd()
+            .args(["project", "add"])
+            .arg(second.path())
+            .status()
+            .unwrap()
+            .success()
+    );
+    let (gone, _) = projects(&daemon)
+        .into_iter()
+        .find(|(_, root)| root == second.path().canonicalize().unwrap().to_str().unwrap())
+        .expect("the added repository is listed");
+
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "stop"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::remove_dir_all(second.path()).unwrap();
+    assert!(
+        daemon
+            .cmd()
+            .args(["server", "start", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    assert!(
+        !projects(&daemon).iter().any(|(name, _)| name == &gone),
+        "an entry that cannot be opened is not served"
+    );
+    let removed = daemon
+        .cmd()
+        .args(["project", "remove", &gone])
+        .output()
+        .unwrap();
+    assert!(
+        removed.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&removed.stderr)
+    );
+    let text = std::fs::read_to_string(daemon.home_path().join("registry.toml")).unwrap();
+    assert_eq!(
+        text.matches("[[project]]").count(),
+        1,
+        "the entry is gone from the file: {text}"
     );
 }
 

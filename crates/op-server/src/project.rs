@@ -162,6 +162,10 @@ struct Health {
 pub struct Project {
     name: RwLock<String>,
     pub path: PathBuf,
+    // Held beside the index as well as in it. `/api/projects` renders one of these per project, and
+    // it is on the hot path of every write now that the CLI resolves its project there; reading it
+    // through the index would make each listing wait on every project's rebuild in turn.
+    abbreviation: RwLock<Abbreviation>,
     pub index: Arc<Mutex<Index>>,
     pub presence: Arc<Mutex<PresenceRegistry>>,
     git_common_dir: String,
@@ -179,6 +183,7 @@ impl Project {
         Self {
             name: RwLock::new(name.into()),
             path,
+            abbreviation: RwLock::new(store.abbreviation()),
             index: Arc::new(Mutex::new(Index::new(store.abbreviation()))),
             presence: Arc::new(Mutex::new(PresenceRegistry::new())),
             git_common_dir: git_common_dir(&repo),
@@ -235,19 +240,27 @@ impl Project {
         }
     }
 
-    // The index is the one holder of the store's abbreviation, so a live config change lands here and
-    // every later read renders the new keys. Blocking, like every other index access: the mutex is
-    // held across rebuilds, which read the object DB and wait on flocks.
     pub fn abbreviation(&self) -> Abbreviation {
-        self.lock_index().abbreviation()
+        *self
+            .abbreviation
+            .read()
+            .expect("abbreviation lock poisoned")
     }
 
     // Every id the matrix holds was formatted with the abbreviation it was built under, and
     // `Index::set_abbreviation` only drops the parse cache — the matrix keeps the old spellings. A
     // read that skipped the rebuild would hand one of them to `Index::number_of`, which panics on a
-    // key this abbreviation cannot parse and poisons the index for the project's whole life.
+    // key this abbreviation cannot parse and poisons the index for the project's whole life. So the
+    // index guard is held until the project is marked stale: releasing it between the two leaves a
+    // window where the index carries the new abbreviation, the matrix the old spellings, and nothing
+    // yet says a rebuild is due.
     pub fn set_abbreviation(&self, abbreviation: Abbreviation) {
-        self.lock_index().set_abbreviation(abbreviation);
+        let mut index = self.lock_index();
+        *self
+            .abbreviation
+            .write()
+            .expect("abbreviation lock poisoned") = abbreviation;
+        index.set_abbreviation(abbreviation);
         self.mark_dirty();
     }
 

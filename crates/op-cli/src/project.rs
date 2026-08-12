@@ -20,7 +20,7 @@ pub fn run(command: ProjectCommand, root: &Path, daemon_url: Option<&str>) -> Re
 }
 
 fn list(client: &Client, base_url: &str) -> Result<()> {
-    let views = client.projects(base_url)?;
+    let views = client.projects(base_url, op_client::WRITE_TIMEOUT)?;
     if views.is_empty() {
         println!("no projects registered");
         return Ok(());

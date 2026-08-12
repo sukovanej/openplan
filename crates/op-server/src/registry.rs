@@ -82,6 +82,19 @@ impl ProjectRegistry {
             .find(|entry| same_path(&entry.path, path))
     }
 
+    // A rename keeps the entry where it is. `AppState::new` takes the first entry it can open as the
+    // default project, so removing and re-appending would hand the routes that carry no project
+    // segment to another repository on the next start.
+    pub fn replace(&mut self, name: &str, entry: ProjectEntry) -> bool {
+        match self.entries.iter().position(|held| held.name == name) {
+            Some(at) => {
+                self.entries[at] = entry;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn remove(&mut self, name: &str) -> Option<ProjectEntry> {
         let at = self.entries.iter().position(|entry| entry.name == name)?;
         Some(self.entries.remove(at))
