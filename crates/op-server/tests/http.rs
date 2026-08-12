@@ -566,6 +566,7 @@ async fn events_stream_ends_on_shutdown_even_when_send_buffer_is_full() {
     // `tx.send().await` on the full, un-drained mpsc.
     for _ in 0..2048 {
         let _ = state.event_sender().send(op_api::ChangeEvent::RefMoved {
+            project: PROJECT.to_owned(),
             branch: String::new(),
         });
     }

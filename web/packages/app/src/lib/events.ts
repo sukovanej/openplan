@@ -3,19 +3,25 @@ import { Schema } from "effect"
 export const ChangeEvent = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("task_changed"),
+    project: Schema.String,
     id: Schema.String,
     branch: Schema.String,
   }),
   Schema.Struct({
     kind: Schema.Literal("ref_moved"),
+    project: Schema.String,
     branch: Schema.String,
   }),
   Schema.Struct({
     kind: Schema.Literal("presence_changed"),
+    project: Schema.String,
     task_id: Schema.String,
   }),
   Schema.Struct({
-    kind: Schema.Literal("config_changed"),
+    kind: Schema.Literal("projects_changed"),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("resync"),
   }),
   Schema.Struct({
     kind: Schema.Literal("daemon_stopping"),
@@ -47,9 +53,15 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
       inv.refreshList()
       return
     }
-    // The store's key prefix changed, so every id on screen is spelled differently: re-read the
-    // config, then everything showing an id.
-    case "config_changed": {
+    // Membership, a rename, a status change, or a new key prefix. The last of them spells every id
+    // on screen, so the config is re-read along with everything showing one.
+    case "projects_changed": {
+      inv.refreshConfig()
+      inv.refreshVisible()
+      return
+    }
+    // The stream dropped events and cannot say which, so nothing on screen can be trusted.
+    case "resync": {
       inv.refreshConfig()
       inv.refreshVisible()
       return

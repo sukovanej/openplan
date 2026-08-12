@@ -44,11 +44,6 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed");
 }
 
-// A git-backed serve root, the shape the daemon always serves. With `broken` true a task path in
-// the live worktree is a directory rather than a file, so reading its "raw" text during a
-// branch-aware index rebuild fails with an IO error and `GET /api/projects/{project}/tasks` returns 500 — the shape
-// the failure-logging tests need now that there is no degraded no-repo path to force an error
-// through.
 fn project_state(root: impl AsRef<Path>, repo: op_git::Repo, store: op_store::Store) -> AppState {
     AppState::new([Project::new(
         "test",
@@ -58,6 +53,11 @@ fn project_state(root: impl AsRef<Path>, repo: op_git::Repo, store: op_store::St
     )])
 }
 
+// A git-backed serve root, the shape the daemon always serves. With `broken` true a task path in
+// the live worktree is a directory rather than a file, so reading its "raw" text during a
+// branch-aware index rebuild fails with an IO error and `GET /api/projects/{project}/tasks` returns
+// 500 — the shape the failure-logging tests need now that there is no degraded no-repo path to
+// force an error through.
 fn state(broken: bool) -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

@@ -2245,6 +2245,7 @@ dependencies = [
  "op-presence",
  "op-store",
  "op-task",
+ "op-watch",
  "rust-embed",
  "serde",
  "serde_json",

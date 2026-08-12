@@ -42,15 +42,23 @@ impl ProjectRegistry {
     }
 
     // Rename over a temporary in the same directory, so a reader never sees a half-written registry
-    // and a crash mid-write leaves the previous one intact.
+    // and a crash mid-write leaves the previous one intact. The contents reach the disk before the
+    // rename, and the rename before this returns: an empty file here parses as zero projects, which
+    // would drop every project but `--root` on the next start without reporting anything.
     pub fn write(&self, path: &Path) -> Result<(), RegistryError> {
         let text = toml::to_string_pretty(self).map_err(|err| RegistryError::Invalid {
             path: path.to_path_buf(),
             reason: err.to_string(),
         })?;
         let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
-        std::fs::write(&tmp, text)?;
+        let file = std::fs::File::create(&tmp)?;
+        std::io::Write::write_all(&mut &file, text.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
         std::fs::rename(&tmp, path)?;
+        if let Some(dir) = path.parent() {
+            std::fs::File::open(dir)?.sync_all()?;
+        }
         Ok(())
     }
 
@@ -59,26 +67,65 @@ impl ProjectRegistry {
     }
 
     pub fn add(&mut self, path: PathBuf) -> &ProjectEntry {
-        let name = self.unique_name(&path);
-        self.entries.push(ProjectEntry { name, path });
+        let name = unique_name(&path, |name| self.holds_name(name));
+        self.insert(ProjectEntry { name, path })
+    }
+
+    pub fn insert(&mut self, entry: ProjectEntry) -> &ProjectEntry {
+        self.entries.push(entry);
         self.entries.last().expect("just pushed")
     }
 
-    fn unique_name(&self, path: &Path) -> String {
-        let base = op_task::slug(
-            &path.file_name().unwrap_or_default().to_string_lossy(),
-            NAME_FALLBACK,
-        );
-        if !self.holds_name(&base) {
-            return base;
-        }
-        (2u32..)
-            .map(|suffix| format!("{base}-{suffix}"))
-            .find(|candidate| !self.holds_name(candidate))
-            .expect("the suffix range is unbounded")
+    pub fn entry_at(&self, path: &Path) -> Option<&ProjectEntry> {
+        self.entries
+            .iter()
+            .find(|entry| same_path(&entry.path, path))
     }
 
-    fn holds_name(&self, name: &str) -> bool {
+    pub fn remove(&mut self, name: &str) -> Option<ProjectEntry> {
+        let at = self.entries.iter().position(|entry| entry.name == name)?;
+        Some(self.entries.remove(at))
+    }
+
+    pub fn holds_name(&self, name: &str) -> bool {
         self.entries.iter().any(|entry| entry.name == name)
+    }
+}
+
+// The registry file and the daemon's live map are two namespaces the name has to be free in: the
+// file holds entries this daemon skipped, and the map holds projects a test set up without a file.
+pub fn unique_name(path: &Path, taken: impl Fn(&str) -> bool) -> String {
+    let base = op_task::slug(
+        &path.file_name().unwrap_or_default().to_string_lossy(),
+        NAME_FALLBACK,
+    );
+    if !taken(&base) {
+        return base;
+    }
+    (2u32..)
+        .map(|suffix| format!("{base}-{suffix}"))
+        .find(|candidate| !taken(candidate))
+        .expect("the suffix range is unbounded")
+}
+
+// A name reaches the URL as one path segment, so it has to survive the round trip unchanged rather
+// than be quietly rewritten into something the caller never asked for. The character set is the
+// whole requirement: `slug` also caps its length, and measuring against it would reject the very
+// names `unique_name` mints, whose `-2` suffix can push a capped base past the cap.
+pub fn is_usable_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
+}
+
+pub fn canonical(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+pub fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
