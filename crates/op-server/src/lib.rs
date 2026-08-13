@@ -17,9 +17,8 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    Abbreviation, ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, KeyError,
-    ProjectStatus, ProjectView, RegisterProject, RenameProject, StoreConfig, TaskDetail,
-    TaskListItem, TaskPatch, TaskView,
+    Abbreviation, ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, KeyError, ProjectView,
+    RegisterProject, RenameProject, StoreConfig, TaskDetail, TaskListItem, TaskPatch, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -64,6 +63,11 @@ pub enum ProjectsError {
     NameTaken(String),
     #[error("not a usable project name: {0:?}; use lowercase letters, digits, and dashes")]
     BadName(String),
+    // The daemon runs in its own home directory. A relative path would resolve there rather than
+    // where the caller stands, and register whatever repository happens to sit at that spot — a
+    // write that lands in a repository nobody named. Refuse it; only the caller can resolve it.
+    #[error("a project path must be absolute, and {0} is not")]
+    RelativePath(PathBuf),
 }
 
 #[derive(Clone)]
@@ -165,6 +169,9 @@ impl AppState {
     // and two of those can race, and a second worktree of a repository already served is that same
     // project. The bool says whether this call is what added it.
     pub fn register(&self, path: &std::path::Path) -> Result<(ProjectView, bool), ProjectsError> {
+        if path.is_relative() {
+            return Err(ProjectsError::RelativePath(path.to_path_buf()));
+        }
         let registry_path = self.registry_path()?;
         let repo = Repo::discover(path).map_err(|_| OpenError::NoRepo(path.to_path_buf()))?;
         let root = registry::canonical(&serve_root(&repo, path));
@@ -354,6 +361,7 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(get_config))
         .routes(routes!(list_tasks, create_task))
         .routes(routes!(get_board))
+        .routes(routes!(get_merged_board))
         .routes(routes!(get_task, patch_task, delete_task))
 }
 
@@ -361,13 +369,17 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     documented().split_for_parts().1
 }
 
-// The pre-project spellings the embedded SPA and the CLI client still call. They carry no project
-// segment, so they answer for the default project; the project-prefixed routes above are the
-// documented ones. Undocumented on purpose: the generated web client must not grow a second,
-// ambiguous way to reach a task.
+// The pre-project spellings the embedded SPA still calls. They carry no project segment, so they
+// answer for the default project; the project-prefixed routes above are the documented ones.
+// Undocumented on purpose: the generated web client must not grow a second, ambiguous way to reach
+// a task. `/api/board` is not among them — it answers over every project, so it is a route of its
+// own rather than a delegation.
 // TODO(OPP-84): the checked-in `web/packages/api-client` predates the project-prefixed routes and
 // still calls these. Re-running `mise run generate-web-client` before OPP-84 rewrites it to methods
-// that take a project the SPA cannot yet supply, and the web build stops compiling.
+// that take a project the SPA cannot yet supply, and the web build stops compiling. Until then the
+// embedded SPA is correct for one project only: the merged board can show a row of a project these
+// routes do not answer for, and a key that exists in two stores resolves here to the default
+// project's task — the wrong task, not a refusal. OPP-84 deletes these routes and the hazard.
 fn default_project_routes() -> Router<AppState> {
     Router::new()
         .route("/api/config", get(default_get_config))
@@ -375,7 +387,6 @@ fn default_project_routes() -> Router<AppState> {
             "/api/tasks",
             get(default_list_tasks).post(default_create_task),
         )
-        .route("/api/board", get(default_get_board))
         .route(
             "/api/tasks/{id}",
             get(default_get_task)
@@ -404,9 +415,9 @@ fn default_project(state: &AppState) -> Result<Arc<Project>, ApiError> {
 // A demoted project is still registered and still listed; it just cannot answer for its store. Its
 // own routes say why, and every other project keeps answering.
 fn servable(project: Arc<Project>) -> Result<Arc<Project>, ApiError> {
-    match project.status() {
-        ProjectStatus::Ok => Ok(project),
-        ProjectStatus::Error { reason } => Err(ApiError::new(
+    match project.blocked() {
+        None => Ok(project),
+        Some(reason) => Err(ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("project {} is not being served: {reason}", project.name()),
         )),
@@ -818,7 +829,9 @@ impl From<KeyError> for ApiError {
 impl From<ProjectsError> for ApiError {
     fn from(err: ProjectsError) -> Self {
         let status = match &err {
-            ProjectsError::Open(_) | ProjectsError::BadName(_) => StatusCode::BAD_REQUEST,
+            ProjectsError::Open(_) | ProjectsError::BadName(_) | ProjectsError::RelativePath(_) => {
+                StatusCode::BAD_REQUEST
+            }
             ProjectsError::NoSuchProject(_) => StatusCode::NOT_FOUND,
             ProjectsError::NameTaken(_) => StatusCode::CONFLICT,
             ProjectsError::NoRegistry => StatusCode::SERVICE_UNAVAILABLE,
@@ -878,7 +891,7 @@ async fn default_list_tasks(
 
 async fn list_tasks_of(project: Arc<Project>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
     let items = tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, IndexError> {
-        Ok(project.read_index()?.aggregated_tasks())
+        Ok(project.read_index()?.aggregated_tasks(&project.name()))
     })
     .await
     .map_err(join_error)?
@@ -907,17 +920,53 @@ async fn get_board(
     board_of(project_of(&state, &project)?).await
 }
 
-async fn default_get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
-    board_of(default_project(&state)?).await
-}
-
 async fn board_of(project: Arc<Project>) -> Result<Json<Board>, ApiError> {
     let board = tokio::task::spawn_blocking(move || -> Result<Board, IndexError> {
-        Ok(Board::build(&project.read_index()?.aggregated_tasks()))
+        let tasks = project.read_index()?.aggregated_tasks(&project.name());
+        Ok(Board::build(&tasks))
     })
     .await
     .map_err(join_error)?
     .map_err(index_error)?;
+    Ok(Json(board))
+}
+
+// The board of every project at once, which is what the UI opens on. Each row carries its project,
+// and `Board::build` keys on it, so two stores that commit the same abbreviation stay distinct here.
+// A project that cannot answer contributes nothing and demotes itself, so the client learns why
+// from `/api/projects` rather than reading a half-built board as the whole truth.
+#[utoipa::path(
+    get,
+    path = "/api/board",
+    responses(
+        (status = 200, description = "Every task of every servable project, grouped by status and flattened into render-ordered rows", body = Board),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+    )
+)]
+async fn get_merged_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
+    let board = tokio::task::spawn_blocking(move || {
+        let mut tasks = Vec::new();
+        for project in state.projects() {
+            if let Some(reason) = project.blocked() {
+                tracing::debug!(project = %project.name(), %reason, "project left off the merged board");
+                continue;
+            }
+            // One project's index mutex at a time, never two: a rebuild holds it for a full branch
+            // walk, and a board that nested them would make each project wait on all the others.
+            // A project whose repository cannot be read right now drops off this board rather than
+            // taking every other project's rows down with it. `read_index` records the failure, so
+            // the project reports it on `/api/projects` instead of reading as empty.
+            if let Ok(mut items) = project
+                .read_index()
+                .map(|index| index.aggregated_tasks(&project.name()))
+            {
+                tasks.append(&mut items);
+            }
+        }
+        Board::build(&tasks)
+    })
+    .await
+    .map_err(join_error)?;
     Ok(Json(board))
 }
 
@@ -1072,7 +1121,12 @@ async fn get_task_of(
         project
             .read_index()
             .map_err(index_error)?
-            .task_detail(project.repo(), &id, query.branch.as_deref())
+            .task_detail(
+                project.repo(),
+                &project.name(),
+                &id,
+                query.branch.as_deref(),
+            )
             .map_err(index_error)
     })
     .await
@@ -1199,7 +1253,7 @@ async fn patch_task_of(
                     .as_deref()
                     .and_then(|parent| abbreviation.format_ref(parent));
                 let (parent_title, children, refs) =
-                    index.hierarchy_context(&id, parent.as_deref(), &task.body);
+                    index.hierarchy_context(&writing.name(), &id, parent.as_deref(), &task.body);
                 (
                     index.headline_branch(&id).unwrap_or_default(),
                     index.task_branch_states(&id),
@@ -1211,6 +1265,7 @@ async fn patch_task_of(
             };
             let view = TaskView::from_task(id, &task, updated, abbreviation);
             let detail = TaskDetail {
+                project: writing.name(),
                 id: view.id,
                 title: view.title,
                 metadata: view.metadata,

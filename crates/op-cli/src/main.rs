@@ -26,9 +26,9 @@ use writer::Writer;
 #[derive(Parser)]
 #[command(name = "oplan", version, about = "open-planner — local-first task CLI")]
 struct Cli {
-    /// Directory the command works in
-    #[arg(long, global = true, default_value = ".")]
-    root: PathBuf,
+    /// Directory the command works in [default: the current directory]
+    #[arg(long, global = true)]
+    root: Option<PathBuf>,
     /// Connect to this daemon URL instead of the machine daemon
     #[arg(long, global = true)]
     daemon: Option<String>,
@@ -197,6 +197,11 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
     let daemon_url = cli.daemon.as_deref();
+    // Every command works in the current directory unless told otherwise. Only the daemon needs to
+    // tell "no `--root`" from "`--root .`": it runs in its own home, where `.` is a directory the
+    // caller never named, so it must not adopt whatever repository happens to sit there.
+    let named_root = cli.root.as_deref();
+    let root = named_root.unwrap_or_else(|| Path::new("."));
     match cli.command {
         Command::Create {
             title,
@@ -207,16 +212,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             body_file,
         } => {
             let body = resolve_body(body, body_file)?;
-            create(
-                &cli.root,
-                daemon_url,
-                title,
-                parent,
-                status,
-                dependencies,
-                body,
-            )
-            .map(|()| ExitCode::SUCCESS)
+            create(root, daemon_url, title, parent, status, dependencies, body)
+                .map(|()| ExitCode::SUCCESS)
         }
         Command::List {
             status,
@@ -225,7 +222,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             all_branches,
             branch,
         } => list(
-            &cli.root,
+            root,
             status,
             parent.as_deref(),
             json,
@@ -234,32 +231,28 @@ fn run(cli: Cli) -> Result<ExitCode> {
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Get { id, json, branch } => {
-            get(&cli.root, &id, json, branch.as_deref()).map(|()| ExitCode::SUCCESS)
+            get(root, &id, json, branch.as_deref()).map(|()| ExitCode::SUCCESS)
         }
-        Command::Show { id, branches } => {
-            show(&cli.root, &id, branches).map(|()| ExitCode::SUCCESS)
-        }
+        Command::Show { id, branches } => show(root, &id, branches).map(|()| ExitCode::SUCCESS),
         Command::Tree { id, depth, json } => {
-            tree(&cli.root, &id, depth, json).map(|()| ExitCode::SUCCESS)
+            tree(root, &id, depth, json).map(|()| ExitCode::SUCCESS)
         }
         Command::Move {
             id,
             parent,
             before,
             after,
-        } => {
-            move_task(&cli.root, daemon_url, &id, parent, before, after).map(|()| ExitCode::SUCCESS)
-        }
+        } => move_task(root, daemon_url, &id, parent, before, after).map(|()| ExitCode::SUCCESS),
         Command::Set { id, field, value } => {
-            set(&cli.root, daemon_url, &id, &field, &value).map(|()| ExitCode::SUCCESS)
+            set(root, daemon_url, &id, &field, &value).map(|()| ExitCode::SUCCESS)
         }
-        Command::Delete { id, yes } => delete(&cli.root, daemon_url, &id, yes),
-        Command::Branches => branches(&cli.root).map(|()| ExitCode::SUCCESS),
-        Command::Lint { targets, json, fix } => lint(&cli.root, &targets, json, fix),
+        Command::Delete { id, yes } => delete(root, daemon_url, &id, yes),
+        Command::Branches => branches(root).map(|()| ExitCode::SUCCESS),
+        Command::Lint { targets, json, fix } => lint(root, &targets, json, fix),
         Command::Project { command } => {
-            project::run(command, &cli.root, daemon_url).map(|()| ExitCode::SUCCESS)
+            project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
-        Command::Server { command } => server(command, &cli.root, daemon_url),
+        Command::Server { command } => server(command, named_root, daemon_url),
         Command::MergeDriver {
             ancestor,
             current,
@@ -268,7 +261,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
 }
 
-fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Result<ExitCode> {
+fn server(
+    command: ServerCommand,
+    root: Option<&Path>,
+    daemon_url: Option<&str>,
+) -> Result<ExitCode> {
     match command {
         ServerCommand::Start { port, foreground } => {
             reject_remote_override(daemon_url, "start")?;
@@ -283,7 +280,7 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
                     },
                 );
             }
-            Control::resolve()?.start(port, Some(root))?;
+            Control::resolve()?.start(port, root)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Stop => {
@@ -292,7 +289,7 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
         }
         ServerCommand::Restart { port } => {
             reject_remote_override(daemon_url, "restart")?;
-            Control::resolve()?.restart(port, Some(root))?;
+            Control::resolve()?.restart(port, root)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Ping => {

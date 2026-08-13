@@ -382,7 +382,7 @@ fn without_a_default_branch_headline_prefers_the_checked_out_branch() {
     // Serve root stays on `zeta`, which sorts after `alpha`.
 
     let index = built(root);
-    let items = index.aggregated_tasks();
+    let items = index.aggregated_tasks("test");
     let item = items.iter().find(|i| i.id == key(1)).expect("task t");
     // The headline reflects the checked-out branch (zeta), not the alphabetically-first (alpha).
     assert_eq!(item.metadata.status(), Some(Status::Done));
@@ -632,7 +632,7 @@ fn an_uncommitted_edit_dates_the_task_the_list_shows() {
     touch(&task_path(root, 1), 1_000_500_000);
 
     let listed = built(root)
-        .aggregated_tasks()
+        .aggregated_tasks("test")
         .into_iter()
         .find(|item| item.id == key(1))
         .unwrap();
@@ -697,7 +697,7 @@ fn the_aggregated_list_dates_a_task_like_its_detail_does() {
 
     let index = built(root);
     let listed = index
-        .aggregated_tasks()
+        .aggregated_tasks("test")
         .into_iter()
         .find(|item| item.id == key(1))
         .unwrap();
@@ -725,7 +725,7 @@ fn the_aggregated_list_clamps_updated_up_to_created() {
     commit_at(root, 1_000_000_000, "add t");
 
     let listed = built(root)
-        .aggregated_tasks()
+        .aggregated_tasks("test")
         .into_iter()
         .find(|item| item.id == key(1))
         .unwrap();
@@ -786,7 +786,7 @@ fn a_file_with_no_readable_metadata_reports_that_instead_of_a_status() {
     assert_eq!(cell.task.title, "Broken", "best-effort title still shows");
 
     // The board gives it its own group rather than filing it under a status it never had.
-    let board = op_api::Board::build(&index.aggregated_tasks());
+    let board = op_api::Board::build(&index.aggregated_tasks("test"));
     assert_eq!(board.groups[0].status, None);
     assert_eq!(board.groups[0].rows[0].task.id, key(1));
 }
@@ -817,7 +817,7 @@ fn a_replayed_branch_does_not_outrank_newer_work_elsewhere() {
     );
 
     let listed = built(root)
-        .aggregated_tasks()
+        .aggregated_tasks("test")
         .into_iter()
         .find(|item| item.id == key(1))
         .unwrap();
@@ -851,7 +851,7 @@ fn a_rebased_branch_headlines_over_the_branch_it_was_rebased_onto() {
     rebase_resolving(root, "main", 1, &dated("in_progress"), 1_000_900_000);
 
     let listed = built(root)
-        .aggregated_tasks()
+        .aggregated_tasks("test")
         .into_iter()
         .find(|item| item.id == key(1))
         .unwrap();
@@ -886,7 +886,7 @@ fn a_superseded_version_stays_beaten_when_a_third_branch_is_newer() {
     rebase_resolving(root, "main", 1, &dated("in_progress"), 1_000_900_000);
 
     let listed = built(root)
-        .aggregated_tasks()
+        .aggregated_tasks("test")
         .into_iter()
         .find(|item| item.id == key(1))
         .unwrap();
@@ -993,7 +993,7 @@ fn ids_are_ordered_as_numbers_not_as_text() {
     let expected: Vec<String> = [1, 2, 9, 10, 11, 100].map(key).to_vec();
     assert_eq!(
         index
-            .aggregated_tasks()
+            .aggregated_tasks("test")
             .iter()
             .map(|item| item.id.clone())
             .collect::<Vec<_>>(),
@@ -1026,7 +1026,7 @@ fn two_files_of_one_number_resolve_to_the_lowest_name() {
     );
     commit(root, "add both names");
 
-    let items = built(root).aggregated_tasks();
+    let items = built(root).aggregated_tasks("test");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].id, key(7));
     assert_eq!(items[0].title, "Alpha");

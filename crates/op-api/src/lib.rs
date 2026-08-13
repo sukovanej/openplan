@@ -476,6 +476,7 @@ pub struct TaskRef {
 // `children`, and `refs` carry the immediate hierarchy so the page renders from this one read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskDetail {
+    pub project: String,
     pub id: String,
     pub title: String,
     pub metadata: Metadata,
@@ -494,9 +495,12 @@ pub struct TaskDetail {
 
 // One logical task aggregated across every branch it lives on: `metadata` and `title` come from the
 // `headline` branch (the most recently changed one), plus one `branches` entry per branch so a
-// client can render badges, mark the headline, and spot divergence.
+// client can render badges, mark the headline, and spot divergence. `project` is the coordinate the
+// key alone cannot carry: two stores can commit the same abbreviation, so `id` names a task only
+// within its project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskListItem {
+    pub project: String,
     pub id: String,
     pub title: String,
     pub metadata: Metadata,
@@ -694,10 +698,16 @@ pub fn list_item_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
 }
 
 // The board leads with the work touched most recently, so what someone just changed is at hand
-// without scrolling for it.
+// without scrolling for it. A merged board holds tasks from several projects, so the project name
+// breaks a tie before the id does: two stores can issue the same key, and the order must not depend
+// on which project was read first. It only breaks a tie. Each store ranks its own tasks, so ranked
+// tasks from two projects interleave, and every ranked task still leads every unranked one — a
+// merged board is ordered, not grouped by project.
 pub fn board_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
     rank_cmp(a.metadata.rank(), b.metadata.rank(), || {
-        newest_first(a.updated.as_value(), b.updated.as_value()).then_with(|| id_cmp(&a.id, &b.id))
+        newest_first(a.updated.as_value(), b.updated.as_value())
+            .then_with(|| a.project.cmp(&b.project))
+            .then_with(|| id_cmp(&a.id, &b.id))
     })
 }
 
@@ -820,11 +830,24 @@ pub struct BoardRow {
     pub parent_title: Option<String>,
 }
 
+// Where a task sits. Two stores can commit the same abbreviation, so every map in the merged board
+// keys on this rather than on the id alone; a parent reference then resolves in the task's own
+// project, which is the only project it can name.
+type Coordinate<'a> = (&'a str, &'a str);
+
+fn coordinate(task: &TaskListItem) -> Coordinate<'_> {
+    (task.project.as_str(), task.id.as_str())
+}
+
+fn parent_coordinate(task: &TaskListItem) -> Option<Coordinate<'_>> {
+    Some((task.project.as_str(), task.metadata.parent()?))
+}
+
 impl Board {
     pub fn build(tasks: &[TaskListItem]) -> Board {
-        let title_of: std::collections::HashMap<&str, &str> = tasks
+        let title_of: std::collections::HashMap<Coordinate<'_>, &str> = tasks
             .iter()
-            .map(|t| (t.id.as_str(), t.title.as_str()))
+            .map(|t| (coordinate(t), t.title.as_str()))
             .collect();
         let mut by_status: std::collections::HashMap<Option<Status>, Vec<&TaskListItem>> =
             std::collections::HashMap::new();
@@ -840,14 +863,14 @@ impl Board {
             let Some(members) = by_status.get(&status) else {
                 continue;
             };
-            let member_ids: std::collections::HashSet<&str> =
-                members.iter().map(|m| m.id.as_str()).collect();
-            let mut children_of: std::collections::HashMap<&str, Vec<&TaskListItem>> =
+            let member_ids: std::collections::HashSet<Coordinate<'_>> =
+                members.iter().map(|m| coordinate(m)).collect();
+            let mut children_of: std::collections::HashMap<Coordinate<'_>, Vec<&TaskListItem>> =
                 std::collections::HashMap::new();
             let mut roots: Vec<&TaskListItem> = Vec::new();
             for member in members {
-                match member.metadata.parent() {
-                    Some(parent) if member_ids.contains(parent) => {
+                match parent_coordinate(member) {
+                    Some(parent) if member_ids.contains(&parent) => {
                         children_of.entry(parent).or_default().push(member);
                     }
                     _ => roots.push(member),
@@ -874,7 +897,7 @@ impl Board {
             // A member trapped in a corrupt parent cycle (unreachable from any root) still appears
             // once, as a group-local root, rather than vanishing.
             for member in members {
-                if !emitted.contains(member.id.as_str()) {
+                if !emitted.contains(&coordinate(member)) {
                     emit_row(
                         member,
                         0,
@@ -896,19 +919,17 @@ fn emit_row<'a>(
     node: &'a TaskListItem,
     depth: usize,
     is_root: bool,
-    children_of: &std::collections::HashMap<&'a str, Vec<&'a TaskListItem>>,
-    title_of: &std::collections::HashMap<&'a str, &'a str>,
-    emitted: &mut std::collections::HashSet<&'a str>,
+    children_of: &std::collections::HashMap<Coordinate<'a>, Vec<&'a TaskListItem>>,
+    title_of: &std::collections::HashMap<Coordinate<'a>, &'a str>,
+    emitted: &mut std::collections::HashSet<Coordinate<'a>>,
     rows: &mut Vec<BoardRow>,
 ) {
-    if !emitted.insert(node.id.as_str()) {
+    if !emitted.insert(coordinate(node)) {
         return;
     }
-    let kids = children_of.get(node.id.as_str());
+    let kids = children_of.get(&coordinate(node));
     let parent_title = if is_root {
-        node.metadata
-            .parent()
-            .and_then(|p| title_of.get(p).map(|t| t.to_string()))
+        parent_coordinate(node).and_then(|p| title_of.get(&p).map(|t| t.to_string()))
     } else {
         None
     };

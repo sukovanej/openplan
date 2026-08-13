@@ -9,7 +9,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::daemon::{DaemonInfo, Home, now_unix};
 
-pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
+pub async fn run(home: Home, port: u16, root: Option<&Path>) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -29,7 +29,7 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
     })
 }
 
-async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
+async fn serve(home: Home, port: u16, root: Option<&Path>) -> Result<()> {
     home.ensure_dir()?;
     let lock = home.open_lock()?;
     if lock.try_lock_exclusive().is_err() {
@@ -83,7 +83,14 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
 // `--root` names the project the routes that carry no project segment answer for. It registers
 // nothing: `oplan project add` and the first write from a repository are the only ways in. A root
 // that names no registered project leaves the first one of the registry answering them.
-fn name_default(state: &AppState, root: &Path) {
+//
+// Without `--root` the daemon names no default. It must not fall back to its own working directory:
+// that is `OPLAN_HOME`, which the caller never named, and a home inside a git repository would hand
+// that repository every unprefixed route.
+fn name_default(state: &AppState, root: Option<&Path>) {
+    let Some(root) = root else {
+        return;
+    };
     match state.project_at(root) {
         Some(project) => state.set_default_project(&project.name()),
         None => tracing::debug!(root = %root.display(), "--root names no registered project"),

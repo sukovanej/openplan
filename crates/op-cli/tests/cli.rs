@@ -491,7 +491,7 @@ fn a_daemon_without_project_routes_asks_for_a_restart() {
     assert!(!out.status.success(), "the write must not be attempted");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("did not list its projects") && stderr.contains("oplan server stop"),
+        stderr.contains("predates") && stderr.contains("oplan server stop"),
         "stderr: {stderr}"
     );
     assert!(
@@ -1573,4 +1573,80 @@ fn lint_lints_this_repos_own_plan_cleanly() {
         "the binary CI and `mise run lint` run must lint the real store clean; output: {}",
         combined(&out)
     );
+}
+
+// The documented way to use oplan is to stand in a repository and type `oplan create`. `--root`
+// then defaults to `.`, and the daemon runs in its own home, so a `.` that reaches the daemon names
+// a directory the caller never chose. Every other test passes an absolute `--root`, which is why
+// this one exists.
+#[test]
+fn a_write_from_inside_the_repository_needs_no_root_flag() {
+    let project = Project::new();
+    let out = project
+        .cmd()
+        .current_dir(project.path())
+        .args(["create", "Ship login page"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = stdout(&out).trim().to_owned();
+    assert_eq!(id, "OPP-1");
+    assert!(task_file(project.path(), &id).is_file());
+}
+
+// A daemon whose home sits inside a git repository must not answer for that repository. Before this
+// was refused, a write from another checkout registered the home's repository and landed the task
+// there, reporting success — the wrong repository, silently.
+#[test]
+fn a_home_inside_a_repository_never_becomes_the_project_written_to() {
+    let project = Project::new();
+    let elsewhere = tempfile::tempdir().unwrap();
+    git(elsewhere.path(), &["init", "-q", "-b", "main"]);
+    git(elsewhere.path(), &["config", "user.email", "t@example.com"]);
+    git(elsewhere.path(), &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(elsewhere.path().join(".plan/tasks")).unwrap();
+    write(
+        &elsewhere.path().join(".plan/config.toml"),
+        "abbreviation = \"ELS\"\n",
+    );
+    // The daemon's home is a directory of that second repository, so its own `.` is a servable
+    // checkout.
+    let home = elsewhere.path().join("oplanhome");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_oplan"))
+        .env("OPLAN_HOME", &home)
+        .env("OPLAN_PORT", "0")
+        .current_dir(project.path())
+        .args(["create", "Ship login page"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        stdout(&out).trim(),
+        "OPP-1",
+        "the key of the repo we stand in"
+    );
+    assert!(task_file(project.path(), "OPP-1").is_file());
+    assert_eq!(
+        std::fs::read_dir(elsewhere.path().join(".plan/tasks"))
+            .unwrap()
+            .count(),
+        0,
+        "nothing may be written to the repository the daemon's home happens to sit in"
+    );
+
+    let _ = Command::new(env!("CARGO_BIN_EXE_oplan"))
+        .env("OPLAN_HOME", &home)
+        .env("OPLAN_PORT", "0")
+        .args(["server", "stop"])
+        .output();
 }

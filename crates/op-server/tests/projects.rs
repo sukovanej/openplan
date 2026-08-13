@@ -51,15 +51,37 @@ async fn body_json(response: Response) -> Value {
 }
 
 async fn create(state: &AppState, project: &str, title: &str) -> String {
+    create_task(state, project, json!({ "title": title })).await
+}
+
+async fn create_task(state: &AppState, project: &str, body: Value) -> String {
     let response = send(
         state,
         "POST",
         &format!("/api/projects/{project}/tasks"),
-        Some(json!({ "title": title })),
+        Some(body),
     )
     .await;
     assert_eq!(response.status(), StatusCode::CREATED);
     body_json(response).await["id"].as_str().unwrap().to_owned()
+}
+
+async fn board_rows(state: &AppState, uri: &str) -> Vec<(String, String, u64)> {
+    let response = send(state, "GET", uri, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    body_json(response).await["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|group| group["rows"].as_array().unwrap())
+        .map(|row| {
+            (
+                row["task"]["project"].as_str().unwrap().to_owned(),
+                row["task"]["id"].as_str().unwrap().to_owned(),
+                row["depth"].as_u64().unwrap(),
+            )
+        })
+        .collect()
 }
 
 // Two repositories, one daemon. They share nothing: not the id space, not the abbreviation, and not
@@ -101,6 +123,153 @@ async fn two_projects_interleave_and_allocate_ids_independently() {
         StatusCode::BAD_REQUEST,
         "AAA is not a key beta's store issues"
     );
+}
+
+// Two stores can commit the same abbreviation, so a merged board keyed on the id alone would fold
+// their tasks into one row, and nest a child under a parent from the other project.
+#[tokio::test]
+async fn the_merged_board_keeps_two_stores_that_share_an_abbreviation_apart() {
+    let alpha = tempfile::tempdir().unwrap();
+    let beta = tempfile::tempdir().unwrap();
+    repository(alpha.path(), "APP");
+    repository(beta.path(), "APP");
+    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+
+    assert_eq!(create(&state, "alpha", "alpha one").await, "APP-1");
+    assert_eq!(create(&state, "beta", "beta one").await, "APP-1");
+    let child = create_task(
+        &state,
+        "beta",
+        json!({ "title": "beta two", "parent": "APP-1" }),
+    )
+    .await;
+    assert_eq!(child, "APP-2");
+
+    let board = body_json(send(&state, "GET", "/api/board", None).await).await;
+    let groups = board["groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 1, "every task here is backlog");
+    let rows = groups[0]["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 3, "the shared key is two tasks, not one");
+
+    let alpha_row = rows
+        .iter()
+        .find(|row| row["task"]["project"] == "alpha")
+        .unwrap();
+    assert_eq!(alpha_row["task"]["id"], "APP-1");
+    assert_eq!(alpha_row["depth"], 0);
+    assert_eq!(
+        alpha_row["has_children"], false,
+        "beta's child must not nest under alpha's task of the same key"
+    );
+
+    let nested: Vec<(&str, &str, u64)> = rows
+        .iter()
+        .filter(|row| row["task"]["project"] == "beta")
+        .map(|row| {
+            (
+                row["task"]["id"].as_str().unwrap(),
+                row["task"]["title"].as_str().unwrap(),
+                row["depth"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        nested,
+        vec![("APP-1", "beta one", 0), ("APP-2", "beta two", 1)]
+    );
+}
+
+#[tokio::test]
+async fn a_demoted_project_drops_out_of_the_merged_board() {
+    let alpha = tempfile::tempdir().unwrap();
+    let beta = tempfile::tempdir().unwrap();
+    repository(alpha.path(), "AAA");
+    repository(beta.path(), "BBB");
+    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+    create(&state, "alpha", "alpha one").await;
+    create(&state, "beta", "beta one").await;
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
+
+    std::fs::write(alpha.path().join(".plan/config.toml"), "abbreviation = 7\n").unwrap();
+    state.project("alpha").unwrap().reload_config();
+
+    assert_eq!(
+        board_rows(&state, "/api/board").await,
+        vec![("beta".to_owned(), "BBB-1".to_owned(), 0)],
+        "a project that cannot answer for its store leaves the board without failing it"
+    );
+}
+
+// The merged board answers over every project, so "no project has rows" is an empty board rather
+// than a refusal. The per-project board still 404s and 503s: it was asked about one project, and
+// that project is the answer it cannot give.
+#[tokio::test]
+async fn the_merged_board_is_empty_rather_than_a_refusal_when_no_project_answers() {
+    let empty = AppState::new([]);
+    let response = send(&empty, "GET", "/api/board", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_json(response).await, json!({ "groups": [] }));
+
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path(), "AAA");
+    let state = AppState::new([open("alpha", dir.path())]);
+    create(&state, "alpha", "alpha one").await;
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 1);
+
+    std::fs::write(dir.path().join(".plan/config.toml"), "abbreviation = 7\n").unwrap();
+    state.project("alpha").unwrap().reload_config();
+    let response = send(&state, "GET", "/api/board", None).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "the only project is demoted, and the merged board still answers"
+    );
+    assert_eq!(body_json(response).await, json!({ "groups": [] }));
+    assert_eq!(
+        send(&state, "GET", "/api/projects/alpha/board", None)
+            .await
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "asked about that one project, the answer is still why it cannot serve"
+    );
+}
+
+// A repository that cannot be read is not a project with no tasks. It leaves the merged board, and
+// it says why on `/api/projects` — otherwise the UI would show it as healthy and empty, which is
+// the one thing the board must never claim about work somebody has.
+#[tokio::test]
+async fn a_project_whose_index_cannot_be_rebuilt_says_so_instead_of_reading_as_empty() {
+    let alpha = tempfile::tempdir().unwrap();
+    let beta = tempfile::tempdir().unwrap();
+    repository(alpha.path(), "AAA");
+    repository(beta.path(), "BBB");
+    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+    create(&state, "alpha", "alpha one").await;
+    create(&state, "beta", "beta one").await;
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
+
+    let git = alpha.path().join(".git/objects");
+    let moved = alpha.path().join(".git/objects-moved-away");
+    std::fs::rename(&git, &moved).unwrap();
+
+    assert_eq!(
+        board_rows(&state, "/api/board").await,
+        vec![("beta".to_owned(), "BBB-1".to_owned(), 0)],
+        "one unreadable repository must not take the other project's rows down"
+    );
+    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
+    let entry = &listed.as_array().unwrap()[0];
+    assert_eq!(entry["name"], "alpha");
+    assert_eq!(
+        entry["status"]["state"], "error",
+        "a project that could not be read must not report as healthy"
+    );
+
+    // Nothing latches: the next read is what finds the repository readable again.
+    std::fs::rename(&moved, &git).unwrap();
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
+    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
+    assert_eq!(listed.as_array().unwrap()[0]["status"]["state"], "ok");
 }
 
 #[tokio::test]
