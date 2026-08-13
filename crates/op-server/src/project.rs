@@ -148,12 +148,16 @@ impl Default for Freshness {
     }
 }
 
-// The two independent ways a project stops being servable. They are tracked apart so the watchdog
+// The independent ways a project stops being servable. They are tracked apart so the watchdog
 // promoting a returned root cannot also clear a broken `config.toml`, and the other way round.
 #[derive(Debug, Default)]
 struct Health {
     root_gone: bool,
     config_error: Option<String>,
+    // The last rebuild's failure, if it failed. Without it a repository that cannot be read would
+    // leave the merged board quietly — that board skips what cannot answer — while `/api/projects`
+    // still reported the project healthy with no tasks.
+    index_error: Option<String>,
 }
 
 // Everything scoped to one repository. Each project keeps its own index mutex, so a rebuild in one —
@@ -271,9 +275,20 @@ impl Project {
         let Some(generation) = self.stale_at() else {
             return Ok(index);
         };
-        index.rebuild(&self.repo, &self.store)?;
+        self.record_rebuild(index.rebuild(&self.repo, &self.store))?;
         self.mark_fresh(generation);
         Ok(index)
+    }
+
+    // A failed rebuild leaves the project dirty, so the next read tries again and a repository that
+    // becomes readable clears this by itself.
+    fn record_rebuild(&self, result: Result<(), IndexError>) -> Result<(), IndexError> {
+        let reason = result.as_ref().err().map(|err| err.to_string());
+        if let Some(reason) = &reason {
+            tracing::error!(project = %self.name(), %reason, "the project index could not be rebuilt");
+        }
+        self.lock_health().index_error = reason;
+        result
     }
 
     // A write's index. It rebuilds in all conditions: the gate answers "has anything changed since
@@ -281,7 +296,7 @@ impl Project {
     pub fn write_index(&self) -> Result<MutexGuard<'_, Index>, IndexError> {
         let generation = self.generation();
         let mut index = self.lock_index();
-        index.rebuild(&self.repo, &self.store)?;
+        self.record_rebuild(index.rebuild(&self.repo, &self.store))?;
         self.mark_fresh(generation);
         Ok(index)
     }
@@ -292,20 +307,26 @@ impl Project {
         freshness.generation = freshness.generation.wrapping_add(1);
     }
 
-    pub fn status(&self) -> ProjectStatus {
-        let health = self.health.lock().expect("health mutex poisoned");
+    // What stops this project from answering at all. A rebuild that failed is deliberately not among
+    // them: trying again is the only thing that can find the repository readable, so every route
+    // keeps trying and reports the failure it gets, rather than refusing forever from a latched flag.
+    pub fn blocked(&self) -> Option<String> {
+        let health = self.lock_health();
         if health.root_gone {
-            return ProjectStatus::Error {
-                reason: format!(
-                    "the project root {} no longer exists, so no branch resolves",
-                    self.path.display()
-                ),
-            };
+            return Some(format!(
+                "the project root {} no longer exists, so no branch resolves",
+                self.path.display()
+            ));
         }
-        match &health.config_error {
-            Some(reason) => ProjectStatus::Error {
-                reason: reason.clone(),
-            },
+        health.config_error.clone()
+    }
+
+    pub fn status(&self) -> ProjectStatus {
+        let reason = self
+            .blocked()
+            .or_else(|| self.lock_health().index_error.clone());
+        match reason {
+            Some(reason) => ProjectStatus::Error { reason },
             None => ProjectStatus::Ok,
         }
     }

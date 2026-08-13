@@ -699,8 +699,10 @@ pub fn list_item_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
 
 // The board leads with the work touched most recently, so what someone just changed is at hand
 // without scrolling for it. A merged board holds tasks from several projects, so the project name
-// breaks a tie before the id does: two stores can issue the same key, and same-project tasks stay
-// adjacent.
+// breaks a tie before the id does: two stores can issue the same key, and the order must not depend
+// on which project was read first. It only breaks a tie. Each store ranks its own tasks, so ranked
+// tasks from two projects interleave, and every ranked task still leads every unranked one — a
+// merged board is ordered, not grouped by project.
 pub fn board_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
     rank_cmp(a.metadata.rank(), b.metadata.rank(), || {
         newest_first(a.updated.as_value(), b.updated.as_value())

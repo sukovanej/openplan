@@ -17,9 +17,8 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    Abbreviation, ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, KeyError,
-    ProjectStatus, ProjectView, RegisterProject, RenameProject, StoreConfig, TaskDetail,
-    TaskListItem, TaskPatch, TaskView,
+    Abbreviation, ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, KeyError, ProjectView,
+    RegisterProject, RenameProject, StoreConfig, TaskDetail, TaskListItem, TaskPatch, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -369,7 +368,10 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 // own rather than a delegation.
 // TODO(OPP-84): the checked-in `web/packages/api-client` predates the project-prefixed routes and
 // still calls these. Re-running `mise run generate-web-client` before OPP-84 rewrites it to methods
-// that take a project the SPA cannot yet supply, and the web build stops compiling.
+// that take a project the SPA cannot yet supply, and the web build stops compiling. Until then the
+// embedded SPA is correct for one project only: the merged board can show a row of a project these
+// routes do not answer for, and a key that exists in two stores resolves here to the default
+// project's task — the wrong task, not a refusal. OPP-84 deletes these routes and the hazard.
 fn default_project_routes() -> Router<AppState> {
     Router::new()
         .route("/api/config", get(default_get_config))
@@ -405,9 +407,9 @@ fn default_project(state: &AppState) -> Result<Arc<Project>, ApiError> {
 // A demoted project is still registered and still listed; it just cannot answer for its store. Its
 // own routes say why, and every other project keeps answering.
 fn servable(project: Arc<Project>) -> Result<Arc<Project>, ApiError> {
-    match project.status() {
-        ProjectStatus::Ok => Ok(project),
-        ProjectStatus::Error { reason } => Err(ApiError::new(
+    match project.blocked() {
+        None => Ok(project),
+        Some(reason) => Err(ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("project {} is not being served: {reason}", project.name()),
         )),
@@ -921,8 +923,8 @@ async fn board_of(project: Arc<Project>) -> Result<Json<Board>, ApiError> {
 
 // The board of every project at once, which is what the UI opens on. Each row carries its project,
 // and `Board::build` keys on it, so two stores that commit the same abbreviation stay distinct here.
-// A demoted project contributes nothing: the client learns why from `/api/projects` rather than
-// from a half-built board.
+// A project that cannot answer contributes nothing and demotes itself, so the client learns why
+// from `/api/projects` rather than reading a half-built board as the whole truth.
 #[utoipa::path(
     get,
     path = "/api/board",
@@ -935,22 +937,20 @@ async fn get_merged_board(State(state): State<AppState>) -> Result<Json<Board>, 
     let board = tokio::task::spawn_blocking(move || {
         let mut tasks = Vec::new();
         for project in state.projects() {
-            if let ProjectStatus::Error { reason } = project.status() {
+            if let Some(reason) = project.blocked() {
                 tracing::debug!(project = %project.name(), %reason, "project left off the merged board");
                 continue;
             }
             // One project's index mutex at a time, never two: a rebuild holds it for a full branch
             // walk, and a board that nested them would make each project wait on all the others.
-            let read = project.read_index().map(|index| index.aggregated_tasks(&project.name()));
-            match read {
-                Ok(mut items) => tasks.append(&mut items),
-                // A project whose repository cannot be read right now drops off this board rather
-                // than taking every other project's rows down with it.
-                Err(err) => tracing::error!(
-                    project = %project.name(),
-                    error = format!("{err:#}"),
-                    "project left off the merged board: its index could not be rebuilt"
-                ),
+            // A project whose repository cannot be read right now drops off this board rather than
+            // taking every other project's rows down with it. `read_index` records the failure, so
+            // the project reports it on `/api/projects` instead of reading as empty.
+            if let Ok(mut items) = project
+                .read_index()
+                .map(|index| index.aggregated_tasks(&project.name()))
+            {
+                tasks.append(&mut items);
             }
         }
         Board::build(&tasks)

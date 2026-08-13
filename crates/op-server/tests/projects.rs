@@ -200,6 +200,78 @@ async fn a_demoted_project_drops_out_of_the_merged_board() {
     );
 }
 
+// The merged board answers over every project, so "no project has rows" is an empty board rather
+// than a refusal. The per-project board still 404s and 503s: it was asked about one project, and
+// that project is the answer it cannot give.
+#[tokio::test]
+async fn the_merged_board_is_empty_rather_than_a_refusal_when_no_project_answers() {
+    let empty = AppState::new([]);
+    let response = send(&empty, "GET", "/api/board", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_json(response).await, json!({ "groups": [] }));
+
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path(), "AAA");
+    let state = AppState::new([open("alpha", dir.path())]);
+    create(&state, "alpha", "alpha one").await;
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 1);
+
+    std::fs::write(dir.path().join(".plan/config.toml"), "abbreviation = 7\n").unwrap();
+    state.project("alpha").unwrap().reload_config();
+    let response = send(&state, "GET", "/api/board", None).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "the only project is demoted, and the merged board still answers"
+    );
+    assert_eq!(body_json(response).await, json!({ "groups": [] }));
+    assert_eq!(
+        send(&state, "GET", "/api/projects/alpha/board", None)
+            .await
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "asked about that one project, the answer is still why it cannot serve"
+    );
+}
+
+// A repository that cannot be read is not a project with no tasks. It leaves the merged board, and
+// it says why on `/api/projects` — otherwise the UI would show it as healthy and empty, which is
+// the one thing the board must never claim about work somebody has.
+#[tokio::test]
+async fn a_project_whose_index_cannot_be_rebuilt_says_so_instead_of_reading_as_empty() {
+    let alpha = tempfile::tempdir().unwrap();
+    let beta = tempfile::tempdir().unwrap();
+    repository(alpha.path(), "AAA");
+    repository(beta.path(), "BBB");
+    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+    create(&state, "alpha", "alpha one").await;
+    create(&state, "beta", "beta one").await;
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
+
+    let git = alpha.path().join(".git/objects");
+    let moved = alpha.path().join(".git/objects-moved-away");
+    std::fs::rename(&git, &moved).unwrap();
+
+    assert_eq!(
+        board_rows(&state, "/api/board").await,
+        vec![("beta".to_owned(), "BBB-1".to_owned(), 0)],
+        "one unreadable repository must not take the other project's rows down"
+    );
+    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
+    let entry = &listed.as_array().unwrap()[0];
+    assert_eq!(entry["name"], "alpha");
+    assert_eq!(
+        entry["status"]["state"], "error",
+        "a project that could not be read must not report as healthy"
+    );
+
+    // Nothing latches: the next read is what finds the repository readable again.
+    std::fs::rename(&moved, &git).unwrap();
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
+    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
+    assert_eq!(listed.as_array().unwrap()[0]["status"]["state"], "ok");
+}
+
 #[tokio::test]
 async fn a_broken_config_demotes_one_project_and_leaves_the_other_serving() {
     let alpha = tempfile::tempdir().unwrap();
