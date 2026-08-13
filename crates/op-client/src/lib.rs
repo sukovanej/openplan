@@ -30,6 +30,11 @@ pub enum ClientError {
     TimedOut,
     #[error("{message}")]
     Refused { status: u16, message: String },
+    // The daemon answered, and the answer is not what this route returns. A daemon that predates a
+    // route serves the web UI's index page from its fallback instead of 404-ing, so this is what an
+    // out-of-date daemon looks like from here — not a transport failure.
+    #[error("the oplan daemon answered {route} with a body this client cannot read: {message}")]
+    Unreadable { route: String, message: String },
 }
 
 pub struct Client {
@@ -88,7 +93,10 @@ impl Client {
         let request = self.http.get(format!("{base_url}/api/projects"));
         accepted(send_within(request, timeout)?)?
             .json()
-            .map_err(|err| ClientError::Unreachable(err.to_string()))
+            .map_err(|err| ClientError::Unreadable {
+                route: "/api/projects".to_owned(),
+                message: err.to_string(),
+            })
     }
 
     // The bool says whether this call is what registered the repository; the daemon answers 200 for

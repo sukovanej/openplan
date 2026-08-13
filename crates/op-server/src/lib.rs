@@ -63,6 +63,11 @@ pub enum ProjectsError {
     NameTaken(String),
     #[error("not a usable project name: {0:?}; use lowercase letters, digits, and dashes")]
     BadName(String),
+    // The daemon runs in its own home directory. A relative path would resolve there rather than
+    // where the caller stands, and register whatever repository happens to sit at that spot — a
+    // write that lands in a repository nobody named. Refuse it; only the caller can resolve it.
+    #[error("a project path must be absolute, and {0} is not")]
+    RelativePath(PathBuf),
 }
 
 #[derive(Clone)]
@@ -164,6 +169,9 @@ impl AppState {
     // and two of those can race, and a second worktree of a repository already served is that same
     // project. The bool says whether this call is what added it.
     pub fn register(&self, path: &std::path::Path) -> Result<(ProjectView, bool), ProjectsError> {
+        if path.is_relative() {
+            return Err(ProjectsError::RelativePath(path.to_path_buf()));
+        }
         let registry_path = self.registry_path()?;
         let repo = Repo::discover(path).map_err(|_| OpenError::NoRepo(path.to_path_buf()))?;
         let root = registry::canonical(&serve_root(&repo, path));
@@ -821,7 +829,9 @@ impl From<KeyError> for ApiError {
 impl From<ProjectsError> for ApiError {
     fn from(err: ProjectsError) -> Self {
         let status = match &err {
-            ProjectsError::Open(_) | ProjectsError::BadName(_) => StatusCode::BAD_REQUEST,
+            ProjectsError::Open(_) | ProjectsError::BadName(_) | ProjectsError::RelativePath(_) => {
+                StatusCode::BAD_REQUEST
+            }
             ProjectsError::NoSuchProject(_) => StatusCode::NOT_FOUND,
             ProjectsError::NameTaken(_) => StatusCode::CONFLICT,
             ProjectsError::NoRegistry => StatusCode::SERVICE_UNAVAILABLE,

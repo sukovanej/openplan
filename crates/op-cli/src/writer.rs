@@ -78,13 +78,19 @@ fn resolve_project(
     root: &Path,
     may_register: bool,
 ) -> Result<String> {
+    // Only a daemon that answered with something this client cannot read is an out-of-date one; a
+    // daemon that is merely busy or unreachable says so itself, and telling that user to restart it
+    // would send them after the wrong thing.
     let views = client
         .projects(base_url, op_client::WRITE_TIMEOUT)
-        .with_context(|| {
-            format!(
-                "the oplan daemon at {base_url} did not list its projects; it can predate the \
-                 project routes. Stop it (`oplan server stop`) and rerun here."
-            )
+        .map_err(|err| match err {
+            op_client::ClientError::Unreadable { .. } => anyhow::anyhow!(
+                "the oplan daemon at {base_url} does not serve the project routes; it predates \
+                 them. Stop it (`oplan server stop`) and rerun here."
+            ),
+            other => anyhow::Error::new(other).context(format!(
+                "the oplan daemon at {base_url} did not list its projects"
+            )),
         })?;
     let mine = repo.git_common_dir();
     if let Some(name) = project_named(views, &mine) {
@@ -97,7 +103,13 @@ fn resolve_project(
             mine.display()
         );
     }
-    let (view, created) = client.register_project(base_url, &serve_root(repo, root))?;
+    // The daemon's working directory is its own home, not the caller's, so a relative path would
+    // resolve against the wrong directory there — and register whatever repository happens to sit
+    // at that spot. `--root` defaults to `.`, so this is the ordinary case, not the exotic one.
+    let serve = serve_root(repo, root);
+    let serve = std::fs::canonicalize(&serve)
+        .with_context(|| format!("no such directory: {}", serve.display()))?;
+    let (view, created) = client.register_project(base_url, &serve)?;
     if created {
         // stderr, because stdout carries the id `oplan create` prints and scripts read.
         eprintln!("registered project {} at {}", view.name, view.root);
