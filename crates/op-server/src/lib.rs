@@ -354,6 +354,7 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(get_config))
         .routes(routes!(list_tasks, create_task))
         .routes(routes!(get_board))
+        .routes(routes!(get_merged_board))
         .routes(routes!(get_task, patch_task, delete_task))
 }
 
@@ -361,10 +362,11 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     documented().split_for_parts().1
 }
 
-// The pre-project spellings the embedded SPA and the CLI client still call. They carry no project
-// segment, so they answer for the default project; the project-prefixed routes above are the
-// documented ones. Undocumented on purpose: the generated web client must not grow a second,
-// ambiguous way to reach a task.
+// The pre-project spellings the embedded SPA still calls. They carry no project segment, so they
+// answer for the default project; the project-prefixed routes above are the documented ones.
+// Undocumented on purpose: the generated web client must not grow a second, ambiguous way to reach
+// a task. `/api/board` is not among them — it answers over every project, so it is a route of its
+// own rather than a delegation.
 // TODO(OPP-84): the checked-in `web/packages/api-client` predates the project-prefixed routes and
 // still calls these. Re-running `mise run generate-web-client` before OPP-84 rewrites it to methods
 // that take a project the SPA cannot yet supply, and the web build stops compiling.
@@ -375,7 +377,6 @@ fn default_project_routes() -> Router<AppState> {
             "/api/tasks",
             get(default_list_tasks).post(default_create_task),
         )
-        .route("/api/board", get(default_get_board))
         .route(
             "/api/tasks/{id}",
             get(default_get_task)
@@ -878,7 +879,7 @@ async fn default_list_tasks(
 
 async fn list_tasks_of(project: Arc<Project>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
     let items = tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, IndexError> {
-        Ok(project.read_index()?.aggregated_tasks())
+        Ok(project.read_index()?.aggregated_tasks(&project.name()))
     })
     .await
     .map_err(join_error)?
@@ -907,17 +908,55 @@ async fn get_board(
     board_of(project_of(&state, &project)?).await
 }
 
-async fn default_get_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
-    board_of(default_project(&state)?).await
-}
-
 async fn board_of(project: Arc<Project>) -> Result<Json<Board>, ApiError> {
     let board = tokio::task::spawn_blocking(move || -> Result<Board, IndexError> {
-        Ok(Board::build(&project.read_index()?.aggregated_tasks()))
+        let tasks = project.read_index()?.aggregated_tasks(&project.name());
+        Ok(Board::build(&tasks))
     })
     .await
     .map_err(join_error)?
     .map_err(index_error)?;
+    Ok(Json(board))
+}
+
+// The board of every project at once, which is what the UI opens on. Each row carries its project,
+// and `Board::build` keys on it, so two stores that commit the same abbreviation stay distinct here.
+// A demoted project contributes nothing: the client learns why from `/api/projects` rather than
+// from a half-built board.
+#[utoipa::path(
+    get,
+    path = "/api/board",
+    responses(
+        (status = 200, description = "Every task of every servable project, grouped by status and flattened into render-ordered rows", body = Board),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+    )
+)]
+async fn get_merged_board(State(state): State<AppState>) -> Result<Json<Board>, ApiError> {
+    let board = tokio::task::spawn_blocking(move || {
+        let mut tasks = Vec::new();
+        for project in state.projects() {
+            if let ProjectStatus::Error { reason } = project.status() {
+                tracing::debug!(project = %project.name(), %reason, "project left off the merged board");
+                continue;
+            }
+            // One project's index mutex at a time, never two: a rebuild holds it for a full branch
+            // walk, and a board that nested them would make each project wait on all the others.
+            let read = project.read_index().map(|index| index.aggregated_tasks(&project.name()));
+            match read {
+                Ok(mut items) => tasks.append(&mut items),
+                // A project whose repository cannot be read right now drops off this board rather
+                // than taking every other project's rows down with it.
+                Err(err) => tracing::error!(
+                    project = %project.name(),
+                    error = format!("{err:#}"),
+                    "project left off the merged board: its index could not be rebuilt"
+                ),
+            }
+        }
+        Board::build(&tasks)
+    })
+    .await
+    .map_err(join_error)?;
     Ok(Json(board))
 }
 
@@ -1072,7 +1111,12 @@ async fn get_task_of(
         project
             .read_index()
             .map_err(index_error)?
-            .task_detail(project.repo(), &id, query.branch.as_deref())
+            .task_detail(
+                project.repo(),
+                &project.name(),
+                &id,
+                query.branch.as_deref(),
+            )
             .map_err(index_error)
     })
     .await
@@ -1199,7 +1243,7 @@ async fn patch_task_of(
                     .as_deref()
                     .and_then(|parent| abbreviation.format_ref(parent));
                 let (parent_title, children, refs) =
-                    index.hierarchy_context(&id, parent.as_deref(), &task.body);
+                    index.hierarchy_context(&writing.name(), &id, parent.as_deref(), &task.body);
                 (
                     index.headline_branch(&id).unwrap_or_default(),
                     index.task_branch_states(&id),
@@ -1211,6 +1255,7 @@ async fn patch_task_of(
             };
             let view = TaskView::from_task(id, &task, updated, abbreviation);
             let detail = TaskDetail {
+                project: writing.name(),
                 id: view.id,
                 title: view.title,
                 metadata: view.metadata,

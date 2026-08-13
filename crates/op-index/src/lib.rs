@@ -558,8 +558,9 @@ impl Index {
     }
 
     // One row per logical task across all branches, headlined by the branch whose version
-    // supersedes the rest (see `compute_headlines`).
-    pub fn aggregated_tasks(&self) -> Vec<TaskListItem> {
+    // supersedes the rest (see `compute_headlines`). The index serves one store and holds no name
+    // for it, so the project each row is stamped with is the caller's to name.
+    pub fn aggregated_tasks(&self, project: &str) -> Vec<TaskListItem> {
         // The cells are ordered by id already, so grouping the runs keeps that order — collecting
         // into a map keyed by the id would re-sort it as text, filing 10 between 1 and 2.
         self.matrix
@@ -569,6 +570,7 @@ impl Index {
                 let cells: Vec<&MatrixCell> = group.iter().collect();
                 let headline = self.headline_cell(&cells);
                 TaskListItem {
+                    project: project.to_owned(),
                     id: headline.task.id.clone(),
                     title: headline.task.title.clone(),
                     metadata: headline.task.metadata.clone(),
@@ -617,6 +619,7 @@ impl Index {
     pub fn task_detail(
         &self,
         repo: &Repo,
+        project: &str,
         id: &str,
         branch: Option<&str>,
     ) -> Result<Option<TaskDetail>, IndexError> {
@@ -640,8 +643,9 @@ impl Index {
         };
         let view = view_from_raw(id, &raw, updated, self.abbreviation);
         let (parent_title, children, refs) =
-            self.hierarchy_context(id, view.metadata.parent(), &view.body);
+            self.hierarchy_context(project, id, view.metadata.parent(), &view.body);
         Ok(Some(TaskDetail {
+            project: project.to_owned(),
             id: view.id,
             title: view.title,
             metadata: view.metadata,
@@ -660,11 +664,12 @@ impl Index {
     // title/status. Lets the detail read stand alone without shipping the whole task list.
     pub fn hierarchy_context(
         &self,
+        project: &str,
         id: &str,
         parent: Option<&str>,
         body: &str,
     ) -> (Option<String>, Vec<TaskChild>, Vec<TaskRef>) {
-        let aggregated = self.aggregated_tasks();
+        let aggregated = self.aggregated_tasks(project);
         let by_id: HashMap<&str, &TaskListItem> =
             aggregated.iter().map(|t| (t.id.as_str(), t)).collect();
         let parent_title = parent.and_then(|p| by_id.get(p)).map(|t| t.title.clone());

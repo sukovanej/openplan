@@ -51,15 +51,37 @@ async fn body_json(response: Response) -> Value {
 }
 
 async fn create(state: &AppState, project: &str, title: &str) -> String {
+    create_task(state, project, json!({ "title": title })).await
+}
+
+async fn create_task(state: &AppState, project: &str, body: Value) -> String {
     let response = send(
         state,
         "POST",
         &format!("/api/projects/{project}/tasks"),
-        Some(json!({ "title": title })),
+        Some(body),
     )
     .await;
     assert_eq!(response.status(), StatusCode::CREATED);
     body_json(response).await["id"].as_str().unwrap().to_owned()
+}
+
+async fn board_rows(state: &AppState, uri: &str) -> Vec<(String, String, u64)> {
+    let response = send(state, "GET", uri, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    body_json(response).await["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|group| group["rows"].as_array().unwrap())
+        .map(|row| {
+            (
+                row["task"]["project"].as_str().unwrap().to_owned(),
+                row["task"]["id"].as_str().unwrap().to_owned(),
+                row["depth"].as_u64().unwrap(),
+            )
+        })
+        .collect()
 }
 
 // Two repositories, one daemon. They share nothing: not the id space, not the abbreviation, and not
@@ -100,6 +122,81 @@ async fn two_projects_interleave_and_allocate_ids_independently() {
             .status(),
         StatusCode::BAD_REQUEST,
         "AAA is not a key beta's store issues"
+    );
+}
+
+// Two stores can commit the same abbreviation, so a merged board keyed on the id alone would fold
+// their tasks into one row, and nest a child under a parent from the other project.
+#[tokio::test]
+async fn the_merged_board_keeps_two_stores_that_share_an_abbreviation_apart() {
+    let alpha = tempfile::tempdir().unwrap();
+    let beta = tempfile::tempdir().unwrap();
+    repository(alpha.path(), "APP");
+    repository(beta.path(), "APP");
+    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+
+    assert_eq!(create(&state, "alpha", "alpha one").await, "APP-1");
+    assert_eq!(create(&state, "beta", "beta one").await, "APP-1");
+    let child = create_task(
+        &state,
+        "beta",
+        json!({ "title": "beta two", "parent": "APP-1" }),
+    )
+    .await;
+    assert_eq!(child, "APP-2");
+
+    let board = body_json(send(&state, "GET", "/api/board", None).await).await;
+    let groups = board["groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 1, "every task here is backlog");
+    let rows = groups[0]["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 3, "the shared key is two tasks, not one");
+
+    let alpha_row = rows
+        .iter()
+        .find(|row| row["task"]["project"] == "alpha")
+        .unwrap();
+    assert_eq!(alpha_row["task"]["id"], "APP-1");
+    assert_eq!(alpha_row["depth"], 0);
+    assert_eq!(
+        alpha_row["has_children"], false,
+        "beta's child must not nest under alpha's task of the same key"
+    );
+
+    let nested: Vec<(&str, &str, u64)> = rows
+        .iter()
+        .filter(|row| row["task"]["project"] == "beta")
+        .map(|row| {
+            (
+                row["task"]["id"].as_str().unwrap(),
+                row["task"]["title"].as_str().unwrap(),
+                row["depth"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        nested,
+        vec![("APP-1", "beta one", 0), ("APP-2", "beta two", 1)]
+    );
+}
+
+#[tokio::test]
+async fn a_demoted_project_drops_out_of_the_merged_board() {
+    let alpha = tempfile::tempdir().unwrap();
+    let beta = tempfile::tempdir().unwrap();
+    repository(alpha.path(), "AAA");
+    repository(beta.path(), "BBB");
+    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+    create(&state, "alpha", "alpha one").await;
+    create(&state, "beta", "beta one").await;
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
+
+    std::fs::write(alpha.path().join(".plan/config.toml"), "abbreviation = 7\n").unwrap();
+    state.project("alpha").unwrap().reload_config();
+
+    assert_eq!(
+        board_rows(&state, "/api/board").await,
+        vec![("beta".to_owned(), "BBB-1".to_owned(), 0)],
+        "a project that cannot answer for its store leaves the board without failing it"
     );
 }
 

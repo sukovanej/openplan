@@ -1475,6 +1475,7 @@ fn the_openapi_spec_documents_every_json_api_route() {
         "/api/projects/{project}/tasks",
         "/api/projects/{project}/tasks/{id}",
         "/api/projects/{project}/board",
+        "/api/board",
         "/health",
     ] {
         assert!(paths.contains_key(route), "{route} missing from the spec");
@@ -1500,6 +1501,7 @@ fn the_openapi_spec_documents_every_refusal_with_its_reason() {
         ("post", "/api/projects/{project}/tasks", "404"),
         ("post", "/api/projects/{project}/tasks", "409"),
         ("post", "/api/projects/{project}/tasks", "500"),
+        ("get", "/api/board", "500"),
         ("get", "/api/projects/{project}/board", "400"),
         ("get", "/api/projects/{project}/board", "404"),
         ("get", "/api/projects/{project}/board", "500"),
@@ -1520,6 +1522,37 @@ fn the_openapi_spec_documents_every_refusal_with_its_reason() {
         assert_eq!(
             schema["$ref"], "#/components/schemas/ApiErrorBody",
             "{method} {route} -> {status} must document its reason body"
+        );
+    }
+}
+
+// The merged board carries no project segment because it answers over every project at once, so
+// every row has to name its own. A client reading it deep-links a task from the row alone.
+#[test]
+fn the_spec_documents_the_merged_board_and_the_project_every_task_names() {
+    let spec = serde_json::to_value(op_server::openapi()).unwrap();
+    assert_eq!(
+        spec["paths"]["/api/board"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+            ["$ref"],
+        "#/components/schemas/Board"
+    );
+    assert!(
+        spec["paths"]["/api/board"]["get"]["parameters"].is_null(),
+        "the merged board takes no project"
+    );
+    let schemas = &spec["components"]["schemas"];
+    for schema in ["TaskListItem", "TaskDetail"] {
+        assert_eq!(
+            schemas[schema]["properties"]["project"]["type"], "string",
+            "{schema}.project must be a plain string"
+        );
+        assert!(
+            schemas[schema]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field == "project"),
+            "{schema}.project must always be present"
         );
     }
 }
