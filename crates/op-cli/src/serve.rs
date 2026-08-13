@@ -1,10 +1,9 @@
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
-use op_server::{AppState, Project, ProjectRegistry, REGISTRY_FILE, open_projects};
+use op_server::{AppState, ProjectRegistry, REGISTRY_FILE, open_projects};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
@@ -31,11 +30,6 @@ pub async fn run(home: Home, port: u16, root: &Path) -> Result<()> {
 }
 
 async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
-    // `--root` defaults to `.`, and a relative path keeps testing as present after the directory it
-    // names is deleted — `Path::new(".").is_dir()` stays true once the cwd is unlinked — which would
-    // hide a vanished root from the daemon's per-project watchdog.
-    let root = &root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-
     home.ensure_dir()?;
     let lock = home.open_lock()?;
     if lock.try_lock_exclusive().is_err() {
@@ -45,7 +39,7 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
         );
     }
 
-    // Behind the lifetime lock, so registration cannot race a second starter.
+    // Behind the lifetime lock, so this read cannot race the registration writes of a second daemon.
     let registry_path = home.dir().join(REGISTRY_FILE);
     let registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
     let state = AppState::new(open_projects(registry.entries())).with_registry(registry_path);
@@ -57,31 +51,19 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
         .with_context(|| format!("binding {addr}"))?;
     let bound = listener.local_addr()?.port();
 
-    // `--root` names the project the routes that carry no project segment answer for, and adds it
-    // when it is new. It is not a precondition: a root that cannot be served is one degraded
-    // project, and the daemon keeps serving every other one — zero of them included. Registering
-    // starts a watcher, which scans every branch, so it belongs off the async runtime thread.
-    let registering = state.clone();
-    let at = root.clone();
-    let served = tokio::task::spawn_blocking(move || register_root(&registering, &at))
-        .await
-        .ok()
-        .flatten();
+    name_default(&state, root);
 
     let info = DaemonInfo {
         pid: std::process::id(),
         port: bound,
         version: env!("CARGO_PKG_VERSION").to_owned(),
         started_at: now_unix(),
-        repo: served
-            .as_ref()
-            .map(|project| project.git_common_dir().to_owned()),
     };
     home.write_info(&info)?;
     let state = state.with_health(info.clone());
 
     // Watchers scan every branch and hash each worktree's task files; keep that off the async
-    // runtime thread. `--root` already started its own during registration.
+    // runtime thread.
     let starting = state.clone();
     tokio::task::spawn_blocking(move || {
         starting.start_watchers();
@@ -98,20 +80,13 @@ async fn serve(home: Home, port: u16, root: &Path) -> Result<()> {
     result.map_err(Into::into)
 }
 
-fn register_root(state: &AppState, root: &Path) -> Option<Arc<Project>> {
-    match state.register(root) {
-        Ok((view, _)) => {
-            state.set_default_project(&view.name);
-            state.project(&view.name)
-        }
-        Err(err) => {
-            tracing::error!(
-                root = %root.display(),
-                error = format!("{err:#}"),
-                "--root is not being served"
-            );
-            None
-        }
+// `--root` names the project the routes that carry no project segment answer for. It registers
+// nothing: `oplan project add` and the first write from a repository are the only ways in. A root
+// that names no registered project leaves the first one of the registry answering them.
+fn name_default(state: &AppState, root: &Path) {
+    match state.project_at(root) {
+        Some(project) => state.set_default_project(&project.name()),
+        None => tracing::debug!(root = %root.display(), "--root names no registered project"),
     }
 }
 

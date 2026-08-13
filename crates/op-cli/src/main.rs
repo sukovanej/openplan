@@ -1,5 +1,6 @@
 mod daemon;
 mod mergedriver;
+mod project;
 mod serve;
 mod writer;
 
@@ -25,6 +26,7 @@ use writer::Writer;
 #[derive(Parser)]
 #[command(name = "oplan", version, about = "open-planner — local-first task CLI")]
 struct Cli {
+    /// Directory the command works in
     #[arg(long, global = true, default_value = ".")]
     root: PathBuf,
     /// Connect to this daemon URL instead of the machine daemon
@@ -129,6 +131,11 @@ enum Command {
         #[arg(long)]
         fix: bool,
     },
+    /// Manage the repositories the daemon serves
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommand,
+    },
     /// Manage the background daemon and web UI
     Server {
         #[command(subcommand)]
@@ -140,6 +147,18 @@ enum Command {
         current: String,
         other: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ProjectCommand {
+    /// List every registered project, with the reason a demoted one is not served
+    List,
+    /// Register a repository; defaults to --root
+    Add { path: Option<PathBuf> },
+    /// Drop a project from the registry; its files stay on disk
+    Remove { name: String },
+    /// Give a project a new name; its URLs change with it
+    Rename { from: String, to: String },
 }
 
 #[derive(Subcommand)]
@@ -237,6 +256,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Delete { id, yes } => delete(&cli.root, daemon_url, &id, yes),
         Command::Branches => branches(&cli.root).map(|()| ExitCode::SUCCESS),
         Command::Lint { targets, json, fix } => lint(&cli.root, &targets, json, fix),
+        Command::Project { command } => {
+            project::run(command, &cli.root, daemon_url).map(|()| ExitCode::SUCCESS)
+        }
         Command::Server { command } => server(command, &cli.root, daemon_url),
         Command::MergeDriver {
             ancestor,
@@ -261,7 +283,7 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
                     },
                 );
             }
-            Control::resolve()?.start(port, root)?;
+            Control::resolve()?.start(port, Some(root))?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Stop => {
@@ -270,7 +292,7 @@ fn server(command: ServerCommand, root: &Path, daemon_url: Option<&str>) -> Resu
         }
         ServerCommand::Restart { port } => {
             reject_remote_override(daemon_url, "restart")?;
-            Control::resolve()?.restart(port, root)?;
+            Control::resolve()?.restart(port, Some(root))?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Ping => {

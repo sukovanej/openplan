@@ -75,18 +75,13 @@ pub struct StoreConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+// The daemon serves every registered repository, so it names none of them here. A client asks
+// `/api/projects` which repository it is talking to.
 pub struct DaemonInfo {
     pub pid: u32,
     pub port: u16,
     pub version: String,
     pub started_at: u64,
-    // The git common directory of the repository it indexes — the same for every worktree of that
-    // repository, so a client can tell whether this daemon's answers are about its own store, and a
-    // write routed here cannot land in a same-named branch of another repository. Optional because
-    // this file outlives the binary that wrote it: a newer CLI must still be able to read, and stop,
-    // a daemon started before the field existed.
-    #[serde(default)]
-    pub repo: Option<String>,
 }
 
 // One repository the daemon serves. `git_common_dir` is what a client matches its own checkout
