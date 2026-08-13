@@ -119,7 +119,7 @@ fn projects(daemon: &Daemon) -> Vec<(String, String)> {
         .collect()
 }
 
-// The registry's own order, which decides the default project when no `--root` names one.
+// The registry's own order, which is the order the projects were registered in.
 fn registry_names(daemon: &Daemon) -> Vec<String> {
     std::fs::read_to_string(daemon.home_path().join("registry.toml"))
         .unwrap()
@@ -129,8 +129,7 @@ fn registry_names(daemon: &Daemon) -> Vec<String> {
         .collect()
 }
 
-// The routes that carry no project segment are all the SPA can spell, and no CLI command reports
-// which project answers them, so the test asks the daemon over HTTP.
+// No CLI command reports which routes the daemon answers, so the test asks it over HTTP.
 fn http_get(port: u16, path: &str) -> String {
     use std::io::{Read as _, Write as _};
     let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
@@ -977,11 +976,11 @@ fn project_add_registers_a_second_repository_and_remove_leaves_its_files() {
     );
 }
 
-// `--root` on an explicit `server start` names the project the routes with no project segment answer
-// for. Those routes are all the SPA can spell until OPP-84, so the UI would otherwise show whichever
-// repository happens to sit first in the registry.
+// `--root` says which directory a command works in. `server start` runs in the daemon's own home
+// and serves the whole registry, so the flag decides nothing there: every project keeps answering
+// through its own prefix, and none of them captures a route.
 #[test]
-fn root_on_an_explicit_start_names_the_default_project() {
+fn root_on_an_explicit_start_names_no_favoured_project() {
     let daemon = Daemon::new();
     let second = task_repo_keyed(1_000_000_000, "BBB");
     assert!(
@@ -1001,10 +1000,6 @@ fn root_on_an_explicit_start_names_the_default_project() {
             .unwrap()
             .success()
     );
-    assert!(
-        http_get(daemon.info_port().unwrap(), "/api/config").contains("OPP"),
-        "the first registered repository answers to begin with"
-    );
 
     let mut restart = Command::new(env!("CARGO_BIN_EXE_oplan"));
     assert!(
@@ -1019,15 +1014,23 @@ fn root_on_an_explicit_start_names_the_default_project() {
             .success()
     );
 
-    let answered = http_get(daemon.info_port().unwrap(), "/api/config");
+    let port = daemon.info_port().unwrap();
+    for name in registry_names(&daemon) {
+        let answered = http_get(port, &format!("/api/projects/{name}/config"));
+        assert!(
+            answered.contains("200 OK"),
+            "{name} answers its own routes: {answered}"
+        );
+    }
+    let dropped = http_get(port, "/api/config");
     assert!(
-        answered.contains("BBB"),
-        "--root names the default project: {answered}"
+        dropped.contains("404 Not Found"),
+        "no project answers an unprefixed spelling: {dropped}"
     );
 }
 
-// The default project is the first entry of the registry when no `--root` names one, so a rename
-// must leave the entry where it is rather than move it to the end.
+// The registry's order is the order the projects were registered in, so a rename must leave the
+// entry where it is rather than move it to the end.
 #[test]
 fn a_rename_keeps_the_entry_in_place() {
     let daemon = Daemon::new();

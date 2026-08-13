@@ -73,10 +73,6 @@ pub enum ProjectsError {
 #[derive(Clone)]
 pub struct AppState {
     projects: Arc<RwLock<BTreeMap<String, Arc<Project>>>>,
-    // The project the routes that carry no project segment answer for. Held by identity rather than
-    // by name, so a rename keeps the same repository answering them. The map is ordered by name,
-    // which says nothing about which repository the daemon was pointed at.
-    default_project: Arc<RwLock<Option<Arc<Project>>>>,
     // Absent for a state built from a fixed project list, which has no file to keep in step: the
     // project routes serve it, and the ones that change membership refuse.
     registry: Option<Arc<PathBuf>>,
@@ -86,23 +82,18 @@ pub struct AppState {
 }
 
 impl AppState {
-    // The first project answers the routes that carry no project segment. A repeated name keeps the
-    // first project of that name, so the default is never the entry that shadowed another.
+    // A repeated name keeps the first project of that name.
     pub fn new(projects: impl IntoIterator<Item = Project>) -> Self {
         let mut map: BTreeMap<String, Arc<Project>> = BTreeMap::new();
-        let mut default_project = None;
         for project in projects {
             let name = project.name();
             if map.contains_key(&name) {
                 continue;
             }
-            let project = Arc::new(project);
-            default_project.get_or_insert_with(|| Arc::clone(&project));
-            map.insert(name, project);
+            map.insert(name, Arc::new(project));
         }
         Self {
             projects: Arc::new(RwLock::new(map)),
-            default_project: Arc::new(RwLock::new(default_project)),
             registry: None,
             shutdown: Arc::new(watch::channel(false).0),
             health: None,
@@ -141,21 +132,6 @@ impl AppState {
             .values()
             .find(|project| project.git_common_dir() == common)
             .cloned()
-    }
-
-    pub fn default_project(&self) -> Option<Arc<Project>> {
-        self.default_project
-            .read()
-            .expect("default project lock poisoned")
-            .clone()
-    }
-
-    pub fn set_default_project(&self, name: &str) {
-        let project = self.project(name);
-        *self
-            .default_project
-            .write()
-            .expect("default project lock poisoned") = project;
     }
 
     // Blocking: each watcher scans every branch and hashes each worktree's task files.
@@ -225,16 +201,12 @@ impl AppState {
             tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
             project::start_watch(&project, self.events.clone());
         }
-        // The routes that carry no project segment answer for the default. Without this a daemon
-        // that started with no servable `--root` would keep 404ing them for its whole life, however
-        // many projects were registered over HTTP afterwards.
-        self.adopt_default(&project);
         Ok((project.view(), created))
     }
 
     pub fn deregister(&self, name: &str) -> Result<(), ProjectsError> {
         let registry_path = self.registry_path()?;
-        let (project, fallback) = {
+        let project = {
             let mut projects = self.write_projects();
             let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
             let listed = registry.remove(name).is_some();
@@ -254,23 +226,8 @@ impl AppState {
                 // than serving one membership while the file records another.
                 registry.write(&registry_path)?;
             }
-            let project = projects.remove(name).expect("checked above");
-            (project, projects.values().next().cloned())
+            projects.remove(name).expect("checked above")
         };
-        // A default that was just removed hands the unprefixed routes to whatever is left; they
-        // answer for some project or none, and none is only right when none is registered.
-        {
-            let mut default = self
-                .default_project
-                .write()
-                .expect("default project lock poisoned");
-            if default
-                .as_ref()
-                .is_some_and(|current| Arc::ptr_eq(current, &project))
-            {
-                *default = fallback;
-            }
-        }
         // Outside the write lock: stopping joins the watcher's worker thread.
         project.stop_watch();
         tracing::info!(project = %name, "project removed");
@@ -297,7 +254,7 @@ impl AppState {
             }
             // Written as the entry the live project is, rather than patched in place: the file and
             // the map can only disagree if one was edited by hand, and the served project is the
-            // truth. The entry keeps its position, so the default project does not move.
+            // truth.
             let entry = ProjectEntry {
                 name: to.to_owned(),
                 path: project.path.clone(),
@@ -312,14 +269,6 @@ impl AppState {
             project
         };
         Ok(project.view())
-    }
-
-    fn adopt_default(&self, project: &Arc<Project>) {
-        let mut default = self
-            .default_project
-            .write()
-            .expect("default project lock poisoned");
-        default.get_or_insert_with(|| Arc::clone(project));
     }
 
     pub fn stop(&self) {
@@ -369,45 +318,12 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     documented().split_for_parts().1
 }
 
-// The pre-project spellings the embedded SPA still calls. They carry no project segment, so they
-// answer for the default project; the project-prefixed routes above are the documented ones.
-// Undocumented on purpose: the generated web client must not grow a second, ambiguous way to reach
-// a task. `/api/board` is not among them — it answers over every project, so it is a route of its
-// own rather than a delegation.
-// TODO(OPP-84): the checked-in `web/packages/api-client` predates the project-prefixed routes and
-// still calls these. Re-running `mise run generate-web-client` before OPP-84 rewrites it to methods
-// that take a project the SPA cannot yet supply, and the web build stops compiling. Until then the
-// embedded SPA is correct for one project only: the merged board can show a row of a project these
-// routes do not answer for, and a key that exists in two stores resolves here to the default
-// project's task — the wrong task, not a refusal. OPP-84 deletes these routes and the hazard.
-fn default_project_routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/config", get(default_get_config))
-        .route(
-            "/api/tasks",
-            get(default_list_tasks).post(default_create_task),
-        )
-        .route(
-            "/api/tasks/{id}",
-            get(default_get_task)
-                .patch(default_patch_task)
-                .delete(default_delete_task),
-        )
-}
-
 fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, ApiError> {
     let project = state.project(name).ok_or_else(|| {
         ApiError::new(
             StatusCode::NOT_FOUND,
             format!("no such project: {name}; {}", registered(state)),
         )
-    })?;
-    servable(project)
-}
-
-fn default_project(state: &AppState) -> Result<Arc<Project>, ApiError> {
-    let project = state.default_project().ok_or_else(|| {
-        ApiError::new(StatusCode::NOT_FOUND, "no project is registered".to_owned())
     })?;
     servable(project)
 }
@@ -440,7 +356,6 @@ pub fn app(state: AppState) -> Router {
     let (router, api) = documented().split_for_parts();
     router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
-        .merge(default_project_routes())
         .route("/api/events", get(events))
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
@@ -661,7 +576,8 @@ async fn rename_project(
     params(("project" = String, Path, description = "Project name")),
     responses(
         (status = 200, description = "The served store's configuration", body = StoreConfig),
-        (status = 404, description = "No such project", body = ApiErrorBody)
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 async fn get_config(
@@ -669,10 +585,6 @@ async fn get_config(
     Path(project): Path<String>,
 ) -> Result<Json<StoreConfig>, ApiError> {
     config_of(project_of(&state, &project)?).await
-}
-
-async fn default_get_config(State(state): State<AppState>) -> Result<Json<StoreConfig>, ApiError> {
-    config_of(default_project(&state)?).await
 }
 
 async fn config_of(project: Arc<Project>) -> Result<Json<StoreConfig>, ApiError> {
@@ -873,7 +785,8 @@ fn join_error(err: tokio::task::JoinError) -> ApiError {
         (status = 200, description = "Every logical task, aggregated across branches", body = Vec<TaskListItem>),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
         (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 async fn list_tasks(
@@ -881,12 +794,6 @@ async fn list_tasks(
     Path(project): Path<String>,
 ) -> Result<Json<Vec<TaskListItem>>, ApiError> {
     list_tasks_of(project_of(&state, &project)?).await
-}
-
-async fn default_list_tasks(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<TaskListItem>>, ApiError> {
-    list_tasks_of(default_project(&state)?).await
 }
 
 async fn list_tasks_of(project: Arc<Project>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
@@ -910,7 +817,8 @@ async fn list_tasks_of(project: Arc<Project>) -> Result<Json<Vec<TaskListItem>>,
         (status = 200, description = "Every task grouped by status and flattened into render-ordered rows", body = Board),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
         (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 async fn get_board(
@@ -987,7 +895,8 @@ async fn get_merged_board(State(state): State<AppState>) -> Result<Json<Board>, 
         (status = 400, description = "The task is invalid (unknown parent or dependency)", body = ApiErrorBody),
         (status = 404, description = "No such project", body = ApiErrorBody),
         (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
-        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 async fn create_task(
@@ -997,14 +906,6 @@ async fn create_task(
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
     create_task_in(&state, project_of(&state, &project)?, query, body).await
-}
-
-async fn default_create_task(
-    State(state): State<AppState>,
-    Query(query): Query<TaskQuery>,
-    Json(body): Json<CreateTask>,
-) -> Result<Response, ApiError> {
-    create_task_in(&state, default_project(&state)?, query, body).await
 }
 
 async fn create_task_in(
@@ -1089,7 +990,8 @@ struct TaskQuery {
         (status = 200, description = "The task on the requested branch", body = TaskDetail),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
         (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
-        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 async fn get_task(
@@ -1098,14 +1000,6 @@ async fn get_task(
     Query(query): Query<TaskQuery>,
 ) -> Result<Json<TaskDetail>, ApiError> {
     get_task_of(project_of(&state, &project)?, id, query).await
-}
-
-async fn default_get_task(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Query(query): Query<TaskQuery>,
-) -> Result<Json<TaskDetail>, ApiError> {
-    get_task_of(default_project(&state)?, id, query).await
 }
 
 async fn get_task_of(
@@ -1193,7 +1087,8 @@ fn write_target(
         (status = 400, description = "The patch is invalid (unknown parent, or a parent cycle)", body = ApiErrorBody),
         (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
         (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
-        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 async fn patch_task(
@@ -1203,15 +1098,6 @@ async fn patch_task(
     Json(patch): Json<TaskPatch>,
 ) -> Result<Json<TaskDetail>, ApiError> {
     patch_task_of(&state, project_of(&state, &project)?, id, query, patch).await
-}
-
-async fn default_patch_task(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Query(query): Query<TaskQuery>,
-    Json(patch): Json<TaskPatch>,
-) -> Result<Json<TaskDetail>, ApiError> {
-    patch_task_of(&state, default_project(&state)?, id, query, patch).await
 }
 
 async fn patch_task_of(
@@ -1305,7 +1191,8 @@ async fn patch_task_of(
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
         (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
         (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
-        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 async fn delete_task(
@@ -1314,14 +1201,6 @@ async fn delete_task(
     Query(query): Query<TaskQuery>,
 ) -> Result<StatusCode, ApiError> {
     delete_task_of(&state, project_of(&state, &project)?, id, query).await
-}
-
-async fn default_delete_task(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Query(query): Query<TaskQuery>,
-) -> Result<StatusCode, ApiError> {
-    delete_task_of(&state, default_project(&state)?, id, query).await
 }
 
 async fn delete_task_of(
@@ -1356,6 +1235,16 @@ async fn delete_task_of(
 }
 
 async fn static_handler(uri: Uri) -> Response {
+    // Everything the SPA routes to falls back to index.html, so an API path no route matched would
+    // otherwise be answered with the page rather than with a refusal — a 200 of HTML where the
+    // caller asked for JSON. A spelling this daemon has dropped has to say so.
+    if uri.path().starts_with("/api/") {
+        return ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("no such route: {}", uri.path()),
+        )
+        .into_response();
+    }
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
 

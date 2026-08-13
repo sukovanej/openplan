@@ -7,7 +7,7 @@ import { mutationError, runMutation } from "../src/lib/store"
 describe("mutationError", () => {
   it("holds the reason a write was refused until it is dismissed", async () => {
     const refusal = new TaskRejected({ status: 400, message: "cannot reparent epic under child" })
-    await runMutation(Effect.fail(refusal))
+    await runMutation("open-plan", Effect.fail(refusal))
     expect(mutationError.getSnapshot()).toBe(refusal)
 
     mutationError.clear()
@@ -15,15 +15,15 @@ describe("mutationError", () => {
   })
 
   it("clears once a later write succeeds", async () => {
-    await runMutation(Effect.fail(new TaskRejected({ status: 400, message: "nope" })))
+    await runMutation("open-plan", Effect.fail(new TaskRejected({ status: 400, message: "nope" })))
     expect(mutationError.getSnapshot()).toBeDefined()
 
-    await runMutation(Effect.succeed("ok"))
+    await runMutation("open-plan", Effect.succeed("ok"))
     expect(mutationError.getSnapshot()).toBeUndefined()
   })
 
   it("resolves rather than rejecting, so a caller never needs its own catch", async () => {
-    await expect(runMutation(Effect.fail(new Error("boom")))).resolves.toBeUndefined()
+    await expect(runMutation("open-plan", Effect.fail(new Error("boom")))).resolves.toBeUndefined()
     mutationError.clear()
   })
 
@@ -33,7 +33,7 @@ describe("mutationError", () => {
       notifications++
     })
 
-    await runMutation(Effect.fail(new Error("first")))
+    await runMutation("open-plan", Effect.fail(new Error("first")))
     expect(notifications).toBe(1)
 
     mutationError.clear()
@@ -43,7 +43,7 @@ describe("mutationError", () => {
     expect(notifications).toBe(2)
 
     unsubscribe()
-    await runMutation(Effect.fail(new Error("second")))
+    await runMutation("open-plan", Effect.fail(new Error("second")))
     expect(notifications).toBe(2)
     mutationError.clear()
   })

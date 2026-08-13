@@ -1284,69 +1284,30 @@ async fn patching_a_parent_that_would_cycle_is_refused_with_its_reason() {
     assert!(message.contains("descendant"), "message: {message}");
 }
 
-async fn body_bytes(response: Response) -> Vec<u8> {
-    response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes()
-        .to_vec()
+// The unprefixed task spellings are gone with the SPA that called them. A caller that still uses
+// one must be told so, rather than handed the SPA's index.html by the static fallback.
+#[tokio::test]
+async fn the_unprefixed_task_spellings_are_gone() {
+    let (_dir, state) = store_state();
+    for uri in ["/api/config", "/api/tasks", "/api/tasks/OPP-1"] {
+        let response = send(&state, "GET", uri, None).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+        let message = body_json(response).await["message"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(message.contains(uri), "{uri} must name itself: {message}");
+    }
 }
 
-// The embedded SPA still calls the unprefixed spellings, so until it moves they must be the same
-// answer — not merely an equivalent one.
+// The merged board is a route of its own rather than a delegation, so it outlives them.
 #[tokio::test]
-async fn the_unprefixed_routes_answer_exactly_as_the_prefixed_ones() {
-    let (dir, state) = store_state();
-    let tasks = dir.path().join(".plan/tasks");
-    std::fs::write(
-        tasks.join("00001-epic.md"),
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Epic\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tasks.join("00002-child.md"),
-        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\nparent: '1'\n---\n# Child\n",
-    )
-    .unwrap();
-
-    for (prefixed, unprefixed) in [
-        ("/api/projects/test/config", "/api/config"),
-        ("/api/projects/test/tasks", "/api/tasks"),
-        ("/api/projects/test/board", "/api/board"),
-        ("/api/projects/test/tasks/OPP-2", "/api/tasks/OPP-2"),
-        ("/api/projects/test/tasks/OPP-99", "/api/tasks/OPP-99"),
-    ] {
-        let left = send(&state, "GET", prefixed, None).await;
-        let right = send(&state, "GET", unprefixed, None).await;
-        assert_eq!(left.status(), right.status(), "{unprefixed}");
-        assert_eq!(
-            body_bytes(left).await,
-            body_bytes(right).await,
-            "{unprefixed} must answer byte for byte as {prefixed}"
-        );
-    }
-
-    // A write reaches the same store through either spelling.
-    let created = send(
-        &state,
-        "POST",
-        "/api/tasks",
-        Some(json!({ "title": "Legacy" })),
-    )
-    .await;
-    assert_eq!(created.status(), StatusCode::CREATED);
-    let id = body_json(created).await["id"].as_str().unwrap().to_owned();
-    let got = send(
-        &state,
-        "GET",
-        &format!("/api/projects/test/tasks/{id}"),
-        None,
-    )
-    .await;
-    assert_eq!(got.status(), StatusCode::OK);
-    assert_eq!(body_json(got).await["title"], "Legacy");
+async fn the_unprefixed_board_still_answers() {
+    let (_dir, state) = store_state();
+    assert_eq!(
+        send(&state, "GET", "/api/board", None).await.status(),
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]
@@ -1426,45 +1387,6 @@ async fn two_projects_write_to_their_own_store_under_their_own_numbers() {
             "{project}: each write lands in its own store only"
         );
     }
-}
-
-// A second project must not take the unprefixed routes away from the SPA and the CLI client, which
-// have no project to name yet. They keep answering for the default — the project passed first, which
-// the daemon takes from `--root` — never for whichever name sorts first.
-#[tokio::test]
-async fn the_unprefixed_routes_keep_answering_for_the_default_project() {
-    let (alpha_dir, alpha) = one_project("alpha");
-    let (beta_dir, beta) = one_project("beta");
-    // `beta` is passed first, so it is the default even though `alpha` sorts before it.
-    let state = AppState::new([beta, alpha]);
-
-    let created = send(
-        &state,
-        "POST",
-        "/api/tasks",
-        Some(json!({ "title": "Default" })),
-    )
-    .await;
-    assert_eq!(created.status(), StatusCode::CREATED);
-
-    let listed = body_json(send(&state, "GET", "/api/tasks", None).await).await;
-    assert_eq!(listed.as_array().unwrap().len(), 1);
-    assert_eq!(listed[0]["title"], "Default");
-
-    assert_eq!(
-        std::fs::read_dir(beta_dir.path().join(".plan/tasks"))
-            .unwrap()
-            .count(),
-        1,
-        "the write lands in the default project"
-    );
-    assert_eq!(
-        std::fs::read_dir(alpha_dir.path().join(".plan/tasks"))
-            .unwrap()
-            .count(),
-        0,
-        "the name that sorts first must not capture the unprefixed routes"
-    );
 }
 
 #[test]

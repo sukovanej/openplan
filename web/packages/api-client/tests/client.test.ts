@@ -15,12 +15,13 @@ const json = (body: unknown, status = 200): Response =>
     headers: { "content-type": "application/json" },
   })
 
-it.effect("decodes GET /api/tasks through the generated client", () =>
+it.effect("decodes GET /api/projects/:project/tasks through the generated client", () =>
   Effect.gen(function* () {
     const tasks = make(
       clientReturning(() =>
         json([
           {
+            project: "open-plan",
             id: "a-1",
             title: "First",
             metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
@@ -31,13 +32,13 @@ it.effect("decodes GET /api/tasks through the generated client", () =>
         ]),
       ),
     )
-    const result = yield* tasks.listTasks(undefined)
+    const result = yield* tasks.listTasks("open-plan", undefined)
     expect(result.map((t) => t.id)).toEqual(["a-1"])
     expect(result[0].branches[0].kind).toBe("base")
   }),
 )
 
-it.effect("decodes the grouped, flattened board from GET /api/board", () =>
+it.effect("decodes the grouped, flattened board from GET /api/projects/:project/board", () =>
   Effect.gen(function* () {
     const tasks = make(
       clientReturning(() =>
@@ -48,6 +49,7 @@ it.effect("decodes the grouped, flattened board from GET /api/board", () =>
               rows: [
                 {
                   task: {
+                    project: "open-plan",
                     id: "epic-1",
                     title: "Epic",
                     metadata: {
@@ -66,6 +68,7 @@ it.effect("decodes the grouped, flattened board from GET /api/board", () =>
                 },
                 {
                   task: {
+                    project: "open-plan",
                     id: "kid-1",
                     title: "Kid",
                     metadata: {
@@ -88,18 +91,19 @@ it.effect("decodes the grouped, flattened board from GET /api/board", () =>
         }),
       ),
     )
-    const board = yield* tasks.getBoard(undefined)
+    const board = yield* tasks.getBoard("open-plan", undefined)
     expect(board.groups.map((group) => group.status)).toEqual(["todo"])
     expect(board.groups[0].rows.map((row) => row.depth)).toEqual([0, 1])
     expect(board.groups[0].rows[1].task.metadata).toMatchObject({ parent: "epic-1" })
   }),
 )
 
-it.effect("decodes a branch-aware TaskDetail from GET /api/tasks/:id", () =>
+it.effect("decodes a branch-aware TaskDetail from GET /api/projects/:project/tasks/:id", () =>
   Effect.gen(function* () {
     const tasks = make(
       clientReturning(() =>
         json({
+          project: "open-plan",
           id: "a-1",
           title: "First",
           metadata: {
@@ -119,7 +123,7 @@ it.effect("decodes a branch-aware TaskDetail from GET /api/tasks/:id", () =>
         }),
       ),
     )
-    const detail = yield* tasks.getTask("a-1", { params: { branch: "feature" } })
+    const detail = yield* tasks.getTask("open-plan", "a-1", { params: { branch: "feature" } })
     expect(detail.headline).toBe("feature")
     expect(detail.metadata).toMatchObject({ dependencies: ["2"] })
     expect(detail.branches.map((b) => b.branch)).toEqual(["main", "feature"])

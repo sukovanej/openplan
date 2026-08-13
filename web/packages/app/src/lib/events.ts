@@ -30,39 +30,42 @@ export const ChangeEvent = Schema.Union([
 export type ChangeEvent = typeof ChangeEvent.Type
 
 export interface Invalidator {
-  readonly refreshConfig: () => void
-  readonly refreshList: () => void
-  readonly refreshTask: (id: string) => void
-  readonly refreshVisible: () => void
+  readonly refreshProjects: () => void
+  readonly refreshList: (project: string) => void
+  readonly refreshTask: (project: string, id: string) => void
+  // Everything on screen that a change in `project` can have changed, or — with no project — every
+  // read there is.
+  readonly refreshVisible: (project?: string) => void
 }
 
 export function applyChange(inv: Invalidator, event: ChangeEvent): void {
   switch (event.kind) {
     case "task_changed": {
-      inv.refreshTask(event.id)
-      inv.refreshList()
+      inv.refreshTask(event.project, event.id)
+      inv.refreshList(event.project)
       return
     }
     // A ref move (e.g. `oplan set`) carries no task id, so refetch everything on screen —
     // the open task detail as well as the list.
     case "ref_moved": {
-      inv.refreshVisible()
+      inv.refreshVisible(event.project)
       return
     }
     case "presence_changed": {
-      inv.refreshList()
+      inv.refreshList(event.project)
       return
     }
     // Membership, a rename, a status change, or a new key prefix. The last of them spells every id
-    // on screen, so the config is re-read along with everything showing one.
+    // on screen, and the event names no project, so the list is re-read along with every read there
+    // is.
     case "projects_changed": {
-      inv.refreshConfig()
+      inv.refreshProjects()
       inv.refreshVisible()
       return
     }
     // The stream dropped events and cannot say which, so nothing on screen can be trusted.
     case "resync": {
-      inv.refreshConfig()
+      inv.refreshProjects()
       inv.refreshVisible()
       return
     }

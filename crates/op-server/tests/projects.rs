@@ -670,37 +670,36 @@ async fn a_new_abbreviation_reopens_the_gate_rather_than_serving_the_old_keys() 
     );
 }
 
-// The routes that carry no project segment answer for the default project. A daemon that started
-// with no servable `--root` has none, and would keep 404ing them however many projects were
-// registered over HTTP afterwards.
+// A project registered over HTTP starts answering its own routes at once, without a restart.
 #[tokio::test]
-async fn a_daemon_with_no_default_adopts_the_first_project_registered() {
+async fn a_project_registered_over_http_answers_its_own_routes() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
     repository(dir.path(), "AAA");
     let state = AppState::new([]).with_registry(home.path().join("registry.toml"));
-    assert_eq!(
-        send(&state, "GET", "/api/tasks", None).await.status(),
-        StatusCode::NOT_FOUND
-    );
 
-    send(
-        &state,
-        "POST",
-        "/api/projects",
-        Some(json!({ "path": dir.path() })),
+    let registered = body_json(
+        send(
+            &state,
+            "POST",
+            "/api/projects",
+            Some(json!({ "path": dir.path() })),
+        )
+        .await,
     )
     .await;
+    let name = registered["name"].as_str().unwrap().to_owned();
     assert_eq!(
-        send(&state, "GET", "/api/tasks", None).await.status(),
-        StatusCode::OK,
-        "the registered project answers the routes that carry no project segment"
+        send(&state, "GET", &format!("/api/projects/{name}/tasks"), None)
+            .await
+            .status(),
+        StatusCode::OK
     );
 }
 
-// Removing the default must not take the unprefixed routes down while other projects are served.
+// Removing one project must not take the others down with it.
 #[tokio::test]
-async fn removing_the_default_hands_the_unprefixed_routes_to_what_is_left() {
+async fn removing_a_project_leaves_the_others_serving() {
     let home = tempfile::tempdir().unwrap();
     let alpha = tempfile::tempdir().unwrap();
     let beta = tempfile::tempdir().unwrap();
@@ -708,18 +707,16 @@ async fn removing_the_default_hands_the_unprefixed_routes_to_what_is_left() {
     repository(beta.path(), "BBB");
     let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())])
         .with_registry(home.path().join("registry.toml"));
-    state.set_default_project("alpha");
 
     send(&state, "DELETE", "/api/projects/alpha", None).await;
-    let config = body_json(send(&state, "GET", "/api/config", None).await).await;
-    assert_eq!(config["abbreviation"], "BBB");
-
-    send(&state, "DELETE", "/api/projects/beta", None).await;
     assert_eq!(
-        send(&state, "GET", "/api/config", None).await.status(),
-        StatusCode::NOT_FOUND,
-        "no project is registered, so there is nothing to answer for"
+        send(&state, "GET", "/api/projects/alpha/config", None)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
     );
+    let config = body_json(send(&state, "GET", "/api/projects/beta/config", None).await).await;
+    assert_eq!(config["abbreviation"], "BBB");
 }
 
 // Zero projects is a served state: the daemon answers, and says so, rather than refusing to run.
@@ -732,10 +729,8 @@ async fn a_daemon_with_no_projects_still_serves() {
     );
     let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
     assert_eq!(listed, json!([]));
-    assert_eq!(
-        send(&state, "GET", "/api/tasks", None).await.status(),
-        StatusCode::NOT_FOUND
-    );
+    let merged = body_json(send(&state, "GET", "/api/board", None).await).await;
+    assert_eq!(merged, json!({ "groups": [] }));
 }
 
 // Membership changes are the daemon's own writes, so a state built from a fixed list has no file to

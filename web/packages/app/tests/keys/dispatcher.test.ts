@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { taskIdOf } from "@open-planner/task-ui"
+import { taskPath, taskRouteOf } from "@open-planner/task-ui"
 
-import { copyTargetId, hoveredRow } from "../../src/lib/copy-target"
+import { copyTargetRow, hoveredRow } from "../../src/lib/copy-target"
 import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
 import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
 import type { Binding, RouteScope, RunContext } from "../../src/lib/keys/types"
-import { focusedId, rowCursor } from "../../src/lib/row-cursor"
+import { focusedRow, rowCursor } from "../../src/lib/row-cursor"
+
+const PROJECT = "open-plan"
 
 interface Harness {
   readonly navigations: Array<string>
@@ -38,19 +40,20 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     },
     cursor: {
       moveBy: (delta) => {
-        const hovered = hoveredRow.among(rowCursor.getSnapshot().ids)
+        const hovered = hoveredRow.among(rowCursor.getSnapshot().rows)
         hoveredRow.clear()
         rowCursor.moveBy(delta, hovered)
       },
-      focusedId: () => {
+      focusedRow: () => {
         const cursor = rowCursor.getSnapshot()
-        return focusedId(cursor) ?? hoveredRow.among(cursor.ids)
+        return focusedRow(cursor) ?? hoveredRow.among(cursor.rows)
       },
     },
     copy: {
       taskId: () => {
         const cursor = rowCursor.getSnapshot()
-        copied.push(copyTargetId(hoveredRow.among(cursor.ids), focusedId(cursor), taskIdOf(pathname)))
+        const row = copyTargetRow(hoveredRow.among(cursor.rows), focusedRow(cursor), pathname)
+        copied.push(row === undefined ? undefined : taskRouteOf(row)?.id)
       },
     },
     detail: {
@@ -79,6 +82,11 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     detach,
   }
 }
+
+// A row is named by its task's path, which is what the cursor holds and what opening it navigates
+// to.
+const path = (id: string) => taskPath(PROJECT, id)
+const paths = (...ids: ReadonlyArray<string>) => ids.map(path)
 
 function press(key: string, target: EventTarget = window, init: KeyboardEventInit = {}) {
   target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }))
@@ -133,7 +141,7 @@ describe("chord buffering", () => {
 describe("input scoping", () => {
   it("ignores single-key bindings while focus is in an editable element", () => {
     const h = mount()
-    rowCursor.setRows(["a", "b", "c"])
+    rowCursor.setRows(paths("a", "b", "c"))
     const input = document.createElement("input")
     document.body.append(input)
     input.focus()
@@ -148,7 +156,7 @@ describe("input scoping", () => {
 
   it("yields Enter to a focused button or link instead of hijacking its native activation", () => {
     const h = mount()
-    rowCursor.setRows(["a", "b", "c"])
+    rowCursor.setRows(paths("a", "b", "c"))
     rowCursor.moveBy(1)
     const button = document.createElement("button")
     document.body.append(button)
@@ -158,7 +166,7 @@ describe("input scoping", () => {
     expect(h.navigations).toEqual([])
 
     press("Enter", document.body)
-    expect(h.navigations).toEqual(["/task/a"])
+    expect(h.navigations).toEqual([path("a")])
     h.detach()
   })
 
@@ -181,7 +189,7 @@ describe("input scoping", () => {
 describe("cursor clamping", () => {
   it("k at the first row and j at the last row are no-ops", () => {
     const h = mount()
-    rowCursor.setRows(["a", "b", "c"])
+    rowCursor.setRows(paths("a", "b", "c"))
 
     press("k")
     expect(rowCursor.getSnapshot().index).toBe(0)
@@ -201,14 +209,14 @@ describe("row cursor is live on both the list and detail routes", () => {
   it("moves and opens from j/k/Enter while on a task detail page", () => {
     const h = mount()
     h.setScope("detail")
-    rowCursor.setRows(["a", "b", "c"])
+    rowCursor.setRows(paths("a", "b", "c"))
 
     press("j")
     press("j")
     expect(rowCursor.getSnapshot().index).toBe(1)
 
     press("Enter")
-    expect(h.navigations).toEqual(["/task/b"])
+    expect(h.navigations).toEqual([path("b")])
     h.detach()
   })
 })
@@ -253,7 +261,7 @@ describe("scope resolution", () => {
 
   it("suppresses route and global bindings while the overlay is open", () => {
     const h = mount()
-    rowCursor.setRows(["a", "b", "c"])
+    rowCursor.setRows(paths("a", "b", "c"))
     h.setOverlayOpen(true)
 
     press("j")
@@ -271,13 +279,13 @@ describe("scope resolution", () => {
 
   it("copies an id from either route, and not while the overlay is open", () => {
     const h = mount()
-    rowCursor.setRows(["12", "13"])
+    rowCursor.setRows(paths("12", "13"))
     rowCursor.moveBy(1)
     press(".", window, { metaKey: true })
     expect(h.copied).toEqual(["12"])
 
     h.setScope("detail")
-    h.setPath("/task/28")
+    h.setPath(path("28"))
     rowCursor.setRows([])
     press(".", window, { metaKey: true })
     expect(h.copied).toEqual(["12", "28"])
@@ -290,9 +298,9 @@ describe("scope resolution", () => {
 
   it("copies the hovered row ahead of the keyboard selection, from Ctrl as well as Cmd", () => {
     const h = mount()
-    rowCursor.setRows(["12", "13"])
+    rowCursor.setRows(paths("12", "13"))
     rowCursor.moveBy(1)
-    hoveredRow.enter("13")
+    hoveredRow.enter(path("13"))
 
     press(".", window, { metaKey: true })
     press(".", window, { ctrlKey: true })
@@ -302,8 +310,8 @@ describe("scope resolution", () => {
 
   it("copies the row j moved to, not the one the pointer was left resting on", () => {
     const h = mount()
-    rowCursor.setRows(["12", "13", "14"])
-    hoveredRow.enter("13")
+    rowCursor.setRows(paths("12", "13", "14"))
+    hoveredRow.enter(path("13"))
 
     press("j")
     press(".", window, { metaKey: true })
@@ -313,30 +321,30 @@ describe("scope resolution", () => {
 
   it("j resumes from the hovered row, and from the first row when nothing is hovered", () => {
     const h = mount()
-    rowCursor.setRows(["12", "13", "14"])
-    hoveredRow.enter("13")
+    rowCursor.setRows(paths("12", "13", "14"))
+    hoveredRow.enter(path("13"))
     press("j")
-    expect(focusedId(rowCursor.getSnapshot())).toBe("14")
+    expect(focusedRow(rowCursor.getSnapshot())).toBe(path("14"))
 
     rowCursor.clear()
     press("j")
-    expect(focusedId(rowCursor.getSnapshot())).toBe("12")
+    expect(focusedRow(rowCursor.getSnapshot())).toBe(path("12"))
     h.detach()
   })
 
   it("Enter opens the hovered row, which reads as the current one", () => {
     const h = mount()
-    rowCursor.setRows(["12", "13"])
-    hoveredRow.enter("13")
+    rowCursor.setRows(paths("12", "13"))
+    hoveredRow.enter(path("13"))
 
     press("Enter")
-    expect(h.navigations).toEqual(["/task/13"])
+    expect(h.navigations).toEqual([path("13")])
     h.detach()
   })
 
   it("copies while a picker input has focus, where bare keys are left to the field", () => {
     const h = mount()
-    rowCursor.setRows(["12"])
+    rowCursor.setRows(paths("12"))
     rowCursor.moveBy(1)
     const input = document.createElement("input")
     document.body.append(input)

@@ -4,9 +4,9 @@ import { useSyncExternalStore } from "react"
 
 import type { Board, TaskDetail, TaskListItem } from "@open-planner/api-client"
 
-import { abbreviationStore } from "./abbreviation"
-import { getBoard, getConfig, getTask, listTasks } from "./api"
+import { getBoard, getMergedBoard, getTask, listProjects, listTasks } from "./api"
 import type { Invalidator } from "./events"
+import { projectsStore } from "./projects"
 import { runtime } from "./runtime"
 
 export type QueryState<A> =
@@ -15,6 +15,10 @@ export type QueryState<A> =
   | { readonly _tag: "failure"; readonly error: unknown }
 
 interface Refreshable {
+  // The project a query reads, or `undefined` for one that reads across all of them. A change in
+  // one project must leave the queries of every other project alone, and the merged reads are the
+  // only ones every change touches.
+  readonly project: string | undefined
   readonly refresh: () => void
 }
 
@@ -28,6 +32,7 @@ export class Query<A> {
   private token = 0
 
   constructor(
+    readonly project: string | undefined,
     private readonly effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
     private readonly onIdle?: () => void,
   ) {}
@@ -89,45 +94,72 @@ export function useQuery<A>(query: Query<A>): QueryState<A> {
   return useSyncExternalStore(query.subscribe, query.getSnapshot)
 }
 
-// The store's abbreviation, which every id on screen is spelled with. Read on its own rather than
-// as a `Query` because nothing renders it directly: it decides how other data is read.
-export function loadAbbreviation(): void {
-  void runtime.runPromise(Effect.result(getConfig)).then((result) => {
-    if (Result.isSuccess(result)) abbreviationStore.set(result.success.abbreviation)
+// The projects the daemon serves, and the abbreviation each spells its keys with. Read on its own
+// rather than as a `Query` because nothing renders it directly: it decides how other data is read.
+export function loadProjects(): void {
+  void runtime.runPromise(Effect.result(listProjects)).then((result) => {
+    if (Result.isSuccess(result)) projectsStore.set(result.success)
   })
 }
 
-// The whole flat task set. Only the parent / add-subtask pickers need it, and only while open, so it
-// is fetched lazily on subscribe rather than on every detail view.
-export const tasksQuery = new Query(listTasks)
+// A per-project map rather than one query: two projects hold different task sets, and a change in
+// one must not refetch the other. Each map is keyed by project name and grows only as the UI asks
+// for a project.
+function keyed<A>(build: (project: string) => Query<A>): (project: string) => Query<A> {
+  const queries = new Map<string, Query<A>>()
+  return (project) => {
+    const existing = queries.get(project)
+    if (existing !== undefined) return existing
+    const query = build(project)
+    queries.set(project, query)
+    return query
+  }
+}
+
+// The whole flat task set of a project. Only the parent / add-subtask pickers need it, and only
+// while open, so it is fetched lazily on subscribe rather than on every detail view.
+export const tasksQuery = keyed((project) => new Query(project, listTasks(project)))
 
 // The list view's grouped/ordered/nested rows — the sole always-loaded task read; the detail page
 // gets its hierarchy from the per-task `taskQuery` instead.
-export const boardQuery: Query<Board> = new Query(getBoard)
+export const boardQuery = keyed((project) => new Query<Board>(project, getBoard(project)))
+
+// Every servable project at once, which is what `/` opens on. It reads across all of them, so every
+// project's changes refresh it.
+export const mergedBoardQuery: Query<Board> = new Query(undefined, getMergedBoard)
 
 export function boardTasks(board: Board): ReadonlyArray<TaskListItem> {
   return board.groups.flatMap((group) => group.rows.map((row) => row.task))
 }
 
-export function listItem(id: string): TaskListItem | undefined {
-  const snapshot = boardQuery.getSnapshot()
-  return snapshot._tag === "success" ? boardTasks(snapshot.value).find((task) => task.id === id) : undefined
+// The list row a detail view can render its header from at once. Either board can hold it: the
+// merged one when the detail was opened from `/`, that project's own when it was opened from
+// `/:project`.
+export function listItem(project: string, id: string): TaskListItem | undefined {
+  for (const query of [mergedBoardQuery, boardQuery(project)]) {
+    const snapshot = query.getSnapshot()
+    if (snapshot._tag !== "success") continue
+    const found = boardTasks(snapshot.value).find((task) => task.project === project && task.id === id)
+    if (found !== undefined) return found
+  }
+  return undefined
 }
 
 const MAX_TASK_QUERIES = 64
 const taskQueries = new Map<string, Query<TaskDetail>>()
 
-// A key holds no whitespace, so a space cleanly separates it from an optional branch — one query per
-// (id, branch) so the detail view can hold several branch versions at once.
-function taskKey(id: string, branch: string | undefined): string {
-  return branch === undefined ? id : `${id} ${branch}`
+// Neither a project name nor a key holds whitespace, so spaces cleanly separate the three parts —
+// one query per (project, id, branch) so the detail view can hold several branch versions at once.
+function taskKey(project: string, id: string, branch: string | undefined): string {
+  const key = `${project} ${id}`
+  return branch === undefined ? key : `${key} ${branch}`
 }
 
-export function taskQuery(id: string, branch?: string): Query<TaskDetail> {
-  const key = taskKey(id, branch)
+export function taskQuery(project: string, id: string, branch?: string): Query<TaskDetail> {
+  const key = taskKey(project, id, branch)
   const existing = taskQueries.get(key)
   if (existing !== undefined) return existing
-  const query = new Query(getTask(id, branch), () => taskQueries.delete(key))
+  const query = new Query(project, getTask(project, id, branch), () => taskQueries.delete(key))
   taskQueries.set(key, query)
   evictOrphanedTaskQueries(key)
   return query
@@ -143,10 +175,11 @@ function evictOrphanedTaskQueries(keep: string): void {
   }
 }
 
-function refreshTaskQueries(id: string): void {
-  const prefix = `${id} `
+function refreshTaskQueries(project: string, id: string): void {
+  const exact = taskKey(project, id, undefined)
+  const prefix = `${exact} `
   for (const [key, query] of taskQueries) {
-    if (key === id || key.startsWith(prefix)) query.refresh()
+    if (key === exact || key.startsWith(prefix)) query.refresh()
   }
 }
 
@@ -182,14 +215,19 @@ export function useMutationError(): unknown {
   return useSyncExternalStore(mutationError.subscribe, mutationError.getSnapshot)
 }
 
-// Run a write, then refresh the list and every open task detail so the change shows at once —
-// without waiting for the daemon's SSE echo (which also refreshes, and covers external edits). A
-// refused write refreshes too, so the view snaps back to what the server actually holds.
-export function runMutation<A>(effect: Effect.Effect<A, unknown, HttpClient.HttpClient>): Promise<void> {
+// Run a write, then refresh the written project's reads and every open task detail of it so the
+// change shows at once — without waiting for the daemon's SSE echo (which also refreshes, and
+// covers external edits). A refused write refreshes too, so the view snaps back to what the server
+// actually holds.
+export function runMutation<A>(
+  project: string,
+  effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
+): Promise<void> {
   const refresh = () => {
-    boardQuery.refresh()
-    if (tasksQuery.hasListeners()) tasksQuery.refresh()
-    for (const query of taskQueries.values()) query.refresh()
+    refreshBoards(project)
+    for (const query of taskQueries.values()) {
+      if (query.project === project) query.refresh()
+    }
   }
   return runtime.runPromise(effect).then(
     () => {
@@ -203,14 +241,22 @@ export function runMutation<A>(effect: Effect.Effect<A, unknown, HttpClient.Http
   )
 }
 
+function refreshBoards(project: string): void {
+  mergedBoardQuery.refresh()
+  boardQuery(project).refresh()
+  const tasks = tasksQuery(project)
+  if (tasks.hasListeners()) tasks.refresh()
+}
+
 export const storeInvalidator: Invalidator = {
-  refreshConfig: loadAbbreviation,
-  refreshList: () => {
-    boardQuery.refresh()
-    if (tasksQuery.hasListeners()) tasksQuery.refresh()
-  },
-  refreshTask: (id) => refreshTaskQueries(id),
-  refreshVisible: () => {
-    for (const query of mounted) query.refresh()
+  refreshProjects: loadProjects,
+  refreshList: refreshBoards,
+  refreshTask: refreshTaskQueries,
+  // A project's own reads plus the merged ones, which every project's changes touch. Without a
+  // project, everything on screen: nothing says which project the change was in.
+  refreshVisible: (project) => {
+    for (const query of mounted) {
+      if (project === undefined || query.project === undefined || query.project === project) query.refresh()
+    }
   },
 }

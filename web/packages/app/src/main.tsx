@@ -2,11 +2,11 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 
-import { TASK_ROUTE } from "@open-planner/task-ui"
+import { BOARD_ROUTE, TASK_ROUTE } from "@open-planner/task-ui"
 
 import { App } from "./App"
 import { startRealtime } from "./lib/realtime"
-import { loadAbbreviation } from "./lib/store"
+import { loadProjects } from "./lib/store"
 import { DetailRoute } from "./routes/detail"
 import { ListRoute } from "./routes/list"
 
@@ -18,7 +18,8 @@ const router = createBrowserRouter([
     element: <App />,
     children: [
       { path: "/", element: <ListRoute /> },
-      { path: `${TASK_ROUTE}:id`, element: <DetailRoute /> },
+      { path: BOARD_ROUTE, element: <ListRoute /> },
+      { path: TASK_ROUTE, element: <DetailRoute /> },
     ],
   },
 ])
@@ -26,7 +27,7 @@ const router = createBrowserRouter([
 const root = document.getElementById("root")
 if (root === null) throw new Error("missing #root element")
 
-loadAbbreviation()
+loadProjects()
 startRealtime()
 
 createRoot(root).render(

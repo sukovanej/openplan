@@ -147,8 +147,8 @@ impl Control {
         })
     }
 
-    pub fn start(&self, port: u16, default_root: Option<&Path>) -> Result<()> {
-        match self.ensure_daemon(port, default_root)? {
+    pub fn start(&self, port: u16) -> Result<()> {
+        match self.ensure_daemon(port)? {
             // port 0 means "any", so a differing bound port there is expected, not ignored.
             Started::Already(info) if port != 0 && info.port != port => {
                 println!(
@@ -171,7 +171,7 @@ impl Control {
         Ok(())
     }
 
-    pub fn restart(&self, port: u16, default_root: Option<&Path>) -> Result<()> {
+    pub fn restart(&self, port: u16) -> Result<()> {
         match self.stop_local()? {
             StopOutcome::NotRunning => {}
             StopOutcome::RemovedStale { pid } => {
@@ -179,7 +179,7 @@ impl Control {
             }
             StopOutcome::Stopped { pid, port } => println!("stopped (pid {pid}, port {port})"),
         }
-        self.start(port, default_root)
+        self.start(port)
     }
 
     pub fn ping(&self, override_url: Option<&str>) -> Result<bool> {
@@ -256,7 +256,7 @@ impl Control {
         })
     }
 
-    pub fn ensure_daemon(&self, port: u16, default_root: Option<&Path>) -> Result<Started> {
+    pub fn ensure_daemon(&self, port: u16) -> Result<Started> {
         if let Some(info) = self.healthy_info() {
             return Ok(Started::Already(info));
         }
@@ -293,7 +293,7 @@ impl Control {
             return Ok(Started::Already(info));
         }
 
-        self.spawn_detached(port, default_root)?;
+        self.spawn_detached(port)?;
 
         // Hold the start-lock across the readiness wait so a concurrent starter blocks until
         // this daemon is confirmed serving instead of racing to spawn a second one. The
@@ -389,11 +389,8 @@ impl Control {
     }
 
     // The daemon serves the registry, not the directory that started it, so it works out of
-    // `OPLAN_HOME` — which outlives every worktree this workflow creates and removes. A `--root`
-    // reaches it only from `oplan server start`, where the user named a directory on purpose, and
-    // then only to pick the default project. A write brings the daemon up as a side effect, so it
-    // passes none: the repository it is about to register must not also reshape the daemon.
-    fn spawn_detached(&self, port: u16, default_root: Option<&Path>) -> Result<()> {
+    // `OPLAN_HOME` — which outlives every worktree this workflow creates and removes.
+    fn spawn_detached(&self, port: u16) -> Result<()> {
         self.home.ensure_dir()?;
         let log = OpenOptions::new()
             .create(true)
@@ -406,10 +403,6 @@ impl Control {
 
         let mut command = Command::new(exe);
         command.current_dir(self.home.dir());
-        if let Some(root) = default_root {
-            let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-            command.arg("--root").arg(root);
-        }
         command
             .args(["server", "start", "--foreground", "--port", &port_arg])
             .stdin(Stdio::null())
@@ -461,7 +454,7 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
         }
         None => {
             let info = Control::resolve()?
-                .ensure_daemon(default_port(), None)?
+                .ensure_daemon(default_port())?
                 .into_info();
             Ok(base_url(info.port))
         }

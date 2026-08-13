@@ -1,13 +1,15 @@
+// Rows are named by their task's path throughout, so a key that repeats across projects still
+// names one row.
 let hovered: string | undefined
 
 export const hoveredRow = {
-  enter: (id: string): void => {
-    hovered = id
+  enter: (row: string): void => {
+    hovered = row
   },
   // Guards against a leave that names a row the store has already moved past, whatever order the
   // leaving and entering rows report in.
-  leave: (id: string): void => {
-    if (hovered === id) hovered = undefined
+  leave: (row: string): void => {
+    if (hovered === row) hovered = undefined
   },
   clear: (): void => {
     hovered = undefined
@@ -18,10 +20,10 @@ export const hoveredRow = {
     hovered !== undefined && rendered.includes(hovered) ? hovered : undefined,
 }
 
-export function copyTargetId(
-  hoveredId: string | undefined,
-  focusedId: string | undefined,
-  routeId: string | undefined,
+export function copyTargetRow(
+  hoveredRow: string | undefined,
+  focusedRow: string | undefined,
+  routeRow: string | undefined,
 ): string | undefined {
-  return hoveredId ?? focusedId ?? routeId
+  return hoveredRow ?? focusedRow ?? routeRow
 }

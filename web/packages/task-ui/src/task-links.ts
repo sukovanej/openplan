@@ -12,6 +12,12 @@ const TASK_REF = /\[\[([^[\]\n]+)\]\]/g
 const TASK_FILE = /^(?:.*\/)?([0-9]+)(?:-[^/]*)?\.md$/
 const NUMBER = /^(?:0|[1-9][0-9]*)$/
 
+// A body's references name tasks of the store the body lives in, so they resolve in that project.
+export interface TaskLinkSource {
+  readonly project: string
+  readonly abbreviation: string | undefined
+}
+
 function refKey(target: string, abbreviation: string): string | null {
   const file = TASK_FILE.exec(target)
   if (file !== null) return `${abbreviation}-${Number(file[1])}`
@@ -29,7 +35,8 @@ function link(url: string, label: string): Link {
 
 // Without the store's abbreviation nothing can be told from another store's spelling, so every
 // reference stays literal until the config arrives — and re-renders once it has.
-export function splitTaskRefs(value: string, abbreviation: string | undefined): Array<Text | Link> | null {
+export function splitTaskRefs(value: string, source: TaskLinkSource): Array<Text | Link> | null {
+  const { project, abbreviation } = source
   if (abbreviation === undefined) return null
   const nodes: Array<Text | Link> = []
   let last = 0
@@ -41,7 +48,7 @@ export function splitTaskRefs(value: string, abbreviation: string | undefined): 
     if (id === null) continue
     const start = match.index
     if (start > last) nodes.push(text(value.slice(last, start)))
-    nodes.push(link(taskPath(id, section), inner))
+    nodes.push(link(taskPath(project, id, section), inner))
     last = start + match[0].length
   }
   if (nodes.length === 0) return null
@@ -53,29 +60,29 @@ export function splitTaskRefs(value: string, abbreviation: string | undefined): 
 // `[[id]]` inside code is quoted source, not a reference.
 const OPAQUE = new Set(["link", "linkReference", "inlineCode", "code"])
 
-function walk(node: Node, abbreviation: string | undefined): void {
+function walk(node: Node, source: TaskLinkSource): void {
   const children = node.children
   if (children === undefined) return
   for (let i = 0; i < children.length; i++) {
     const child = children[i]
     if (child.type === "text") {
-      const replaced = splitTaskRefs(child.value ?? "", abbreviation)
+      const replaced = splitTaskRefs(child.value ?? "", source)
       if (replaced !== null) {
         children.splice(i, 1, ...replaced)
         i += replaced.length - 1
       }
     } else if (!OPAQUE.has(child.type)) {
-      walk(child, abbreviation)
+      walk(child, source)
     }
   }
 }
 
 // A remark attacher: unified calls it with the options from the `[plugin, options]` entry to get the
-// transformer, so the abbreviation reaches `walk` without the plugin reading a store of its own.
-export function remarkTaskLinks(abbreviation: string | undefined) {
-  return (tree: Node): void => walk(tree, abbreviation)
+// transformer, so the source reaches `walk` without the plugin reading a store of its own.
+export function remarkTaskLinks(source: TaskLinkSource) {
+  return (tree: Node): void => walk(tree, source)
 }
 
-export function taskLinkPlugins(abbreviation: string | undefined): [typeof remarkTaskLinks, string | undefined] {
-  return [remarkTaskLinks, abbreviation]
+export function taskLinkPlugins(source: TaskLinkSource): [typeof remarkTaskLinks, TaskLinkSource] {
+  return [remarkTaskLinks, source]
 }
