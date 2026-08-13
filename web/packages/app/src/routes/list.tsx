@@ -73,9 +73,23 @@ function BoardState({ board, title, naming }: { board: QueryState<Board>; title:
 
 const rowDomId = (path: string) => `task-row-${path}`
 
-// A key names a task only inside its project, so a merged row shows both. The column is sized by the
-// widest label it holds, which is the whole of what a row spells there.
+// A key names a task only inside its project, so a merged row shows both.
 const rowLabel = (row: BoardRow, naming: boolean) => (naming ? `${row.task.project} ${row.task.id}` : row.task.id)
+
+// The labels the id column is sized by, laid under the real one so every cell is as wide as the
+// widest. Characters are not width — a project name and an abbreviation are proportional, and only
+// the digits are tabular — so the longest label cannot be picked by counting. Within one project the
+// count does decide it, because only the digits vary there; so one candidate per project sizes the
+// column exactly, and that is a handful of spans rather than one per row.
+function sizingLabels(rows: ReadonlyArray<BoardRow>, naming: boolean): ReadonlyArray<string> {
+  const widest = new Map<string, string>()
+  for (const row of rows) {
+    const label = rowLabel(row, naming)
+    const held = widest.get(row.task.project)
+    if (held === undefined || label.length > held.length) widest.set(row.task.project, label)
+  }
+  return [...widest.values()]
+}
 
 function TaskGrid({ board, title, naming }: { board: Board; title: string; naming: boolean }) {
   // The board arrives already grouped, ordered, and flattened; the cursor walks the concatenation of
@@ -83,11 +97,7 @@ function TaskGrid({ board, title, naming }: { board: Board; title: string; namin
   const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
   const paths = useMemo(() => rows.map((row) => taskPath(row.task.project, row.task.id)), [rows])
   const { index } = useRowCursor(paths)
-  const widestLabel = useMemo(
-    () =>
-      rows.reduce((widest, row) => (rowLabel(row, naming).length > widest.length ? rowLabel(row, naming) : widest), ""),
-    [rows, naming],
-  )
+  const sizers = useMemo(() => sizingLabels(rows, naming), [rows, naming])
   const activeId = index >= 0 && index < paths.length ? rowDomId(paths[index]) : undefined
 
   const activeRow = useRef<HTMLDivElement>(null)
@@ -126,7 +136,7 @@ function TaskGrid({ board, title, naming }: { board: Board; title: string; namin
                     row={row}
                     path={paths[i]}
                     naming={naming}
-                    widestLabel={widestLabel}
+                    sizers={sizers}
                     guides={guides[groupIndex][j]}
                     active={i === index}
                     // The pointer only marks the current row while the keyboard cursor is idle, so
@@ -181,7 +191,7 @@ function TaskRow({
   row,
   path,
   naming,
-  widestLabel,
+  sizers,
   guides,
   active,
   hoverable,
@@ -192,7 +202,7 @@ function TaskRow({
   row: BoardRow
   path: string
   naming: boolean
-  widestLabel: string
+  sizers: ReadonlyArray<string>
   guides: RowGuides
   active: boolean
   hoverable: boolean
@@ -249,13 +259,15 @@ function TaskRow({
         {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
       </div>
       <div role="gridcell" className="text-muted-foreground grid shrink-0 self-center pl-3 text-xs tabular-nums">
-        {/* Laying the widest label on the board under this one, in the same grid cell, makes every
-            such cell that wide — so the title clears the longest one without the shorter ones
-            leaving a gap. Sizing the cell by the row's own label instead would shift each title
-            separately. */}
-        <span aria-hidden className="invisible col-start-1 row-start-1">
-          {widestLabel}
-        </span>
+        {/* Laying the board's sizing labels under this one, in the same grid cell, makes every such
+            cell as wide as the widest of them — so the title clears the longest label without the
+            shorter ones leaving a gap. Sizing the cell by the row's own label instead would shift
+            each title separately. */}
+        {sizers.map((label) => (
+          <span key={label} aria-hidden className="invisible col-start-1 row-start-1">
+            {label}
+          </span>
+        ))}
         <span className="col-start-1 row-start-1">
           {naming && <span className="text-muted-foreground/60">{task.project} </span>}
           {task.id}

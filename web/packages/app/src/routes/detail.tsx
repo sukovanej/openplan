@@ -57,9 +57,11 @@ export function DetailRoute() {
 
   // Switching branch mints a fresh query that starts in `loading`. Keep the last loaded version on
   // screen while it resolves — a branch click updates the card in place instead of flashing the
-  // skeleton. Only a first load, or a different task, falls back to the skeleton.
-  const lastShown = useRef<{ id: string; value: TaskDetail } | null>(null)
-  if (task._tag === "success") lastShown.current = { id, value: task.value }
+  // skeleton. Only a first load, or a different task, falls back to the skeleton. The project is
+  // half of what names a task, and this route does not remount when only the project changes, so
+  // holding the id alone would show one project's task under another project's URL.
+  const lastShown = useRef<{ project: string; id: string; value: TaskDetail } | null>(null)
+  if (task._tag === "success") lastShown.current = { project, id, value: task.value }
 
   if (task._tag === "failure") {
     return task.error instanceof TaskNotFound ? (
@@ -68,7 +70,8 @@ export function DetailRoute() {
       <EmptyState title="Could not load task" detail={errorText(task.error)} />
     )
   }
-  const shown = task._tag === "success" ? task.value : lastShown.current?.id === id ? lastShown.current.value : null
+  const held = lastShown.current
+  const shown = task._tag === "success" ? task.value : held?.project === project && held.id === id ? held.value : null
   // The list cache already holds the header fields (title, status, branches); seed from it so the
   // header renders instantly and only the body and hierarchy stream in.
   const seed = shown ?? listItem(project, id)

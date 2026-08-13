@@ -124,16 +124,6 @@ impl AppState {
         self.read_projects().values().cloned().collect()
     }
 
-    // The project serving a path's repository, whichever of its worktrees the path names.
-    pub fn project_at(&self, path: &std::path::Path) -> Option<Arc<Project>> {
-        let repo = Repo::discover(path).ok()?;
-        let common = project::git_common_dir(&repo);
-        self.read_projects()
-            .values()
-            .find(|project| project.git_common_dir() == common)
-            .cloned()
-    }
-
     // Blocking: each watcher scans every branch and hashes each worktree's task files.
     pub fn start_watchers(&self) {
         for project in self.projects() {
