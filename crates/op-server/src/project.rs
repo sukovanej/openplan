@@ -349,17 +349,38 @@ impl Project {
                 // keys.
                 self.set_config(&config);
                 self.lock_health().config_error = None;
-                tracing::info!(
-                    project = %self.name(),
-                    abbreviation = %config.abbreviation,
-                    default_branch = config.default_branch.as_deref().unwrap_or("(autodetect)"),
-                    "store config reloaded"
-                );
+                self.report_config(&config);
             }
             Err(err) => {
                 let reason = err.to_string();
                 tracing::error!(project = %self.name(), %reason, "the store config can no longer be read");
                 self.lock_health().config_error = Some(reason);
+            }
+        }
+    }
+
+    // What the rebuild will make of the config, rather than what the file asks for. A
+    // `default_branch` no local branch carries is not an error — the task view falls back and keeps
+    // serving — so this log line is the only place it is ever mentioned.
+    fn report_config(&self, config: &Config) {
+        let resolved = self
+            .repo
+            .default_branch(config.default_branch.as_deref())
+            .ok()
+            .flatten();
+        tracing::info!(
+            project = %self.name(),
+            abbreviation = %config.abbreviation,
+            default_branch = %resolved.as_deref().unwrap_or("(none)"),
+            "store config reloaded"
+        );
+        if let Some(configured) = config.default_branch.as_deref() {
+            if resolved.as_deref() != Some(configured) {
+                tracing::warn!(
+                    project = %self.name(),
+                    %configured,
+                    "default_branch names no local branch; the task view falls back"
+                );
             }
         }
     }
