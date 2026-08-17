@@ -598,23 +598,44 @@ impl Index {
                         self.task_updated_or_headline(id, Some(branch)),
                     ),
                     headline: branch.to_owned(),
-                    branches: vec![BranchState {
-                        branch: branch.to_owned(),
-                        status: parsed.metadata.status_field(),
-                        blob_oid: version.blob_oid.clone(),
-                        dirty: version.dirty,
-                        // A task the branch agrees with its merge-base about has no cell to read a
-                        // kind from, and agreement is what `Base` says.
-                        kind: self
-                            .cell(id, branch)
-                            .map_or(ChangeKind::Base, |cell| cell.kind),
-                    }],
+                    branches: self.branch_state(id, branch).into_iter().collect(),
                     metadata: parsed.metadata.clone(),
                 })
             })
             .collect();
         items.sort_by(|a, b| id_cmp(&a.id, &b.id));
         items
+    }
+
+    // The branch set of a read that answered for one branch. A branch agreeing with its merge-base
+    // contributes no cell, so the matrix alone can leave out the very branch the version came from
+    // — a response describing that branch's task while never naming it.
+    fn states_naming(&self, cells: &[&MatrixCell], id: &str, branch: &str) -> Vec<BranchState> {
+        let mut states = branch_states(cells);
+        if !states.iter().any(|state| state.branch == branch)
+            && let Some(state) = self.branch_state(id, branch)
+        {
+            states.push(state);
+            states.sort_by(|a, b| a.branch.cmp(&b.branch));
+        }
+        states
+    }
+
+    // How one task stands on one branch — the same answer whether a caller asks about the task
+    // alone or reads it in the branch's list.
+    fn branch_state(&self, id: &str, branch: &str) -> Option<BranchState> {
+        let version = self.branch_versions.get(branch)?.get(id)?;
+        Some(BranchState {
+            branch: branch.to_owned(),
+            status: self.parsed(version)?.metadata.status_field(),
+            blob_oid: version.blob_oid.clone(),
+            dirty: version.dirty,
+            // A task the branch agrees with its merge-base about has no cell to read a kind from,
+            // and agreement is what `Base` says.
+            kind: self
+                .cell(id, branch)
+                .map_or(ChangeKind::Base, |cell| cell.kind),
+        })
     }
 
     fn branch_of(&self, branch: &str) -> impl Iterator<Item = (&String, &BranchVersion)> {
@@ -730,7 +751,10 @@ impl Index {
                 .headline_branch(id)
                 .or_else(|| branch.map(str::to_owned))
                 .unwrap_or_default(),
-            branches: branch_states(&cells),
+            branches: match branch {
+                Some(branch) => self.states_naming(&cells, id, branch),
+                None => branch_states(&cells),
+            },
             parent_title,
             children,
             refs,

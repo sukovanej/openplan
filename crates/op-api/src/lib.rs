@@ -447,6 +447,22 @@ pub fn updated_field(
         .into()
 }
 
+// A reference as a task file spells it. `Metadata` renders one as this store's key, which is the id
+// every surface above the store speaks — but the store reads a task file back, and there a
+// reference is the number the file layer allocates. A rendering the store cannot read would lose
+// the parent of any task written back from it. A reference that is not key-shaped came through
+// `key_of` unchanged and is already in the file spelling.
+// A plain reference is a number, and YAML writes a number unquoted; one aimed at a section carries
+// text the number cannot hold, so it stays a string.
+fn file_reference(reference: &str) -> serde_yaml::Value {
+    let target = op_task::ref_target(reference);
+    match (key_number(target), target == reference) {
+        (Some(number), true) => number.into(),
+        (Some(number), false) => reference.replacen(target, &number.to_string(), 1).into(),
+        (None, _) => reference.into(),
+    }
+}
+
 // A task file rebuilt from the state the daemon holds, for a caller that asked for markdown rather
 // than JSON. The daemon parses; nothing above it keeps the bytes, so this is a canonical rendering
 // and not the file: key order, spacing, and keys no field names are normalized away, and a field
@@ -464,7 +480,7 @@ pub fn render_task_file(metadata: &Metadata, body: &str) -> String {
             put("created", created.to_string().into());
         }
         if let Some(Some(parent)) = fields.parent.as_value() {
-            put("parent", parent.as_str().into());
+            put("parent", file_reference(parent));
         }
         if let Some(Some(rank)) = fields.rank.as_value() {
             put("rank", rank.as_str().into());
@@ -474,7 +490,7 @@ pub fn render_task_file(metadata: &Metadata, body: &str) -> String {
                 "dependencies",
                 dependencies
                     .iter()
-                    .map(|d| serde_yaml::Value::String(d.clone()))
+                    .map(|d| file_reference(d))
                     .collect::<Vec<_>>()
                     .into(),
             ),

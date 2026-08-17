@@ -1842,3 +1842,69 @@ async fn the_tree_route_reports_a_truncated_cycle() {
     let view = body_json(response).await;
     assert_eq!(view["cycles"], json!(["OPP-1"]));
 }
+
+// A task a branch agrees with its merge-base about has no matrix cell to describe it there. The
+// branch still carries it, so a read scoped to that branch must say so — and must not answer with
+// an empty branch set where the list route answers with one entry for the same task.
+#[tokio::test]
+async fn a_branch_scoped_read_always_names_the_branch_it_answered_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    write_alpha(root, "todo", "Alpha");
+    std::fs::write(
+        root.join(".plan/tasks/00002-shared.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Shared\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git_commit_at(root, 1_000_000_000, "init");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write_alpha(root, "done", "Alpha done");
+    git_commit_at(root, 1_000_000_100, "edit alpha only");
+    git(root, &["checkout", "-q", "main"]);
+    let store = op_store::Store::discover(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = project_state(root, repo, store);
+
+    let detail = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-2?branch=feature",
+        None,
+    )
+    .await;
+    assert_eq!(detail.status(), StatusCode::OK);
+    let detail = body_json(detail).await;
+    assert_eq!(detail["title"], "Shared");
+    let feature = detail["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|state| state["branch"] == "feature")
+        .unwrap_or_else(|| panic!("the branch it answered for is named: {detail}"));
+    assert_eq!(feature["kind"], "base", "it agrees with the merge-base");
+
+    // The list route asks a different question — this branch's task set — so it carries that one
+    // branch alone. Both must agree about how the task stands on the branch they were asked about.
+    let listed = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks?branch=feature",
+        None,
+    )
+    .await;
+    let listed = body_json(listed).await;
+    let shared = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["id"] == "OPP-2")
+        .expect("the branch lists it too")
+        .clone();
+    assert_eq!(shared["branches"], json!([feature]));
+}

@@ -105,21 +105,24 @@ impl Tasks {
     }
 }
 
-// A daemon older than the read routes answers them from the catch-all that refuses any unserved
-// `/api/` path. That reads as a 404 about a route where every other 404 here is about a task, and
-// the fix is to restart the daemon rather than to look for the task.
+// A daemon older than the read routes has two ways of saying so, and neither of them says it. One
+// that refuses unserved `/api/` paths answers 404 about a route, where every other 404 here is about
+// a task; an older one still falls those paths through to the SPA and answers the page, which
+// arrives as a body this client cannot read. Both mean the same thing: stop the daemon.
 fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
-    outcome.map_err(|err| match &err {
-        op_client::ClientError::Refused {
-            status: 404,
-            message,
-        } if message.starts_with("no such route") => {
-            anyhow::anyhow!(
-                "{message}; this oplan daemon predates the read routes. Stop it (`oplan server \
-                 stop`) and rerun here."
-            )
+    let predates = |err: &op_client::ClientError| match err {
+        op_client::ClientError::Unreadable { .. } => true,
+        op_client::ClientError::Refused { status, message } => {
+            *status == 404 && message.starts_with("no such route")
         }
-        _ => anyhow::Error::new(err),
+        _ => false,
+    };
+    outcome.map_err(|err| match predates(&err) {
+        true => anyhow::anyhow!(
+            "this openplan daemon does not serve the read routes; it predates them. Stop it (`openplan \
+             server stop`) and rerun here."
+        ),
+        false => anyhow::Error::new(err),
     })
 }
 

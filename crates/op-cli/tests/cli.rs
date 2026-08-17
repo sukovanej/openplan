@@ -884,6 +884,42 @@ fn get_renders_the_daemons_state_rather_than_the_file() {
     );
 }
 
+// The rendering looks like a task file, so it has to be one the store can read: a reference is the
+// number the file layer allocates there, where every surface above the store speaks the key.
+#[test]
+fn get_renders_a_task_file_the_store_can_read_back() {
+    let dir = Project::new();
+    let parent = create(&dir, "Parent");
+    let kid = child(&dir, "Kid", &parent);
+    let dependent = run(&dir, &["create", "Dependent", "--dependency", &kid]);
+    assert!(dependent.status.success());
+    let dependent = stdout(&dependent).trim().to_owned();
+
+    for id in [&kid, &dependent] {
+        let rendered = run(&dir, &["get", id]);
+        assert!(rendered.status.success());
+        write(&task_file(dir.path(), id), &stdout(&rendered));
+    }
+
+    let kid_again = run(&dir, &["show", &kid]);
+    assert!(
+        stdout(&kid_again).contains(&format!("parent: {parent}")),
+        "the parent survives a round-trip through `get`: {}",
+        stdout(&kid_again)
+    );
+    let dependent_again = run(&dir, &["show", &dependent]);
+    assert!(
+        stdout(&dependent_again).contains(&format!("dependencies: {kid}")),
+        "and so do the dependencies: {}",
+        stdout(&dependent_again)
+    );
+    assert!(
+        !stdout(&kid_again).contains('!'),
+        "no field may come back unreadable: {}",
+        stdout(&kid_again)
+    );
+}
+
 // A field the daemon could not parse has no canonical form to render, so it is named on stderr
 // instead of being dropped in silence.
 #[test]
