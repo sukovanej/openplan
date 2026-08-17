@@ -440,7 +440,7 @@ fn a_new_uncommitted_task_on_the_default_branch_appears() {
 }
 
 #[test]
-fn oplan_default_branch_config_overrides_autodetect() {
+fn openplan_default_branch_config_overrides_autodetect() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
@@ -458,7 +458,7 @@ fn oplan_default_branch_config_overrides_autodetect() {
     );
     commit(root, "edit a on dev");
     git(root, &["checkout", "-q", "main"]);
-    git(root, &["config", "oplan.defaultBranch", "dev"]);
+    git(root, &["config", "openplan.defaultBranch", "dev"]);
 
     let index = built(root);
 

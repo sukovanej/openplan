@@ -287,13 +287,13 @@ impl Repo {
         Ok(out)
     }
 
-    // The branch the task view treats as the merge target: the `oplan.defaultBranch` git-config
+    // The branch the task view treats as the merge target: the `openplan.defaultBranch` git-config
     // value when it names a real local branch, else `main`, else `master`, else none.
     pub fn default_branch(&self) -> Result<Option<String>, GitError> {
         let configured = self
             .repo()
             .config_snapshot()
-            .string("oplan.defaultBranch")
+            .string("openplan.defaultBranch")
             .map(|value| String::from_utf8_lossy(value.as_ref()).into_owned());
         if let Some(name) = configured {
             if self.branch_exists(&name)? {

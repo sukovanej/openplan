@@ -43,8 +43,8 @@ openplan merge-driver <O> <A> <B>   # git merge driver for .plan/**.md
 
 Reads work straight off the files; writes (`create`, `set`, `move`, `delete`) go through the daemon
 and start it if it is down. One daemon serves every repository on the machine: the first write from
-a repository registers it, and `openplan project` manages the registry. `OPLAN_HOME` picks the
-daemon's state directory (default `~/.plan`), `OPLAN_PORT` its port (default 7373).
+a repository registers it, and `openplan project` manages the registry. `OPENPLAN_HOME` picks the
+daemon's state directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
 
 ## License
 

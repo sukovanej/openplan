@@ -22,8 +22,8 @@ fn write(path: &Path, contents: &str) {
 }
 
 // A project every write can reach: a git repository (the daemon that owns writes resolves the target
-// worktree by branch, so it needs one) plus a private OPLAN_HOME so each test gets its own daemon,
-// auto-started on the first write. OPLAN_PORT=0 keeps those daemons off a shared port.
+// worktree by branch, so it needs one) plus a private OPENPLAN_HOME so each test gets its own daemon,
+// auto-started on the first write. OPENPLAN_PORT=0 keeps those daemons off a shared port.
 struct Project {
     home: tempfile::TempDir,
     root: tempfile::TempDir,
@@ -52,8 +52,8 @@ impl Project {
 
     fn cmd(&self) -> Command {
         let mut cmd = openplan();
-        cmd.env("OPLAN_HOME", self.home.path())
-            .env("OPLAN_PORT", "0");
+        cmd.env("OPENPLAN_HOME", self.home.path())
+            .env("OPENPLAN_PORT", "0");
         cmd
     }
 }
@@ -394,8 +394,8 @@ fn a_write_outside_a_git_repository_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
     let out = openplan()
-        .env("OPLAN_HOME", dir.path().join("home"))
-        .env("OPLAN_PORT", "0")
+        .env("OPENPLAN_HOME", dir.path().join("home"))
+        .env("OPENPLAN_PORT", "0")
         .arg("--root")
         .arg(dir.path())
         .args(["create", "Ship login"])
@@ -419,8 +419,8 @@ fn writes_from_two_repositories_land_in_their_own_stores() {
     create(&first, "Anchor");
 
     let out = openplan()
-        .env("OPLAN_HOME", first.home.path())
-        .env("OPLAN_PORT", "0")
+        .env("OPENPLAN_HOME", first.home.path())
+        .env("OPENPLAN_PORT", "0")
         .arg("--root")
         .arg(second.path())
         .args(["create", "Ship login"])
@@ -520,8 +520,8 @@ fn a_named_daemon_is_not_registered_into_by_a_write() {
         .unwrap();
 
     let out = openplan()
-        .env("OPLAN_HOME", other.home.path())
-        .env("OPLAN_PORT", "0")
+        .env("OPENPLAN_HOME", other.home.path())
+        .env("OPENPLAN_PORT", "0")
         .arg("--root")
         .arg(other.path())
         .args([
@@ -1623,8 +1623,8 @@ fn a_home_inside_a_repository_never_becomes_the_project_written_to() {
     std::fs::create_dir_all(&home).unwrap();
 
     let out = Command::new(env!("CARGO_BIN_EXE_openplan"))
-        .env("OPLAN_HOME", &home)
-        .env("OPLAN_PORT", "0")
+        .env("OPENPLAN_HOME", &home)
+        .env("OPENPLAN_PORT", "0")
         .current_dir(project.path())
         .args(["create", "Ship login page"])
         .output()
@@ -1649,8 +1649,8 @@ fn a_home_inside_a_repository_never_becomes_the_project_written_to() {
     );
 
     let _ = Command::new(env!("CARGO_BIN_EXE_openplan"))
-        .env("OPLAN_HOME", &home)
-        .env("OPLAN_PORT", "0")
+        .env("OPENPLAN_HOME", &home)
+        .env("OPENPLAN_PORT", "0")
         .args(["server", "stop"])
         .output();
 }
