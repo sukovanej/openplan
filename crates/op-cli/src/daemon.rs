@@ -188,7 +188,7 @@ impl Control {
             if up {
                 println!("running (daemon at {url})");
             } else {
-                println!("not running (no oplan daemon at {url})");
+                println!("not running (no openplan daemon at {url})");
             }
             return Ok(up);
         }
@@ -219,7 +219,7 @@ impl Control {
             if self.client.shutdown(base) {
                 println!("stopping (daemon at {url})");
             } else {
-                println!("not running (no oplan daemon at {url})");
+                println!("not running (no openplan daemon at {url})");
             }
             return Ok(());
         }
@@ -278,7 +278,7 @@ impl Control {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     if Instant::now() >= lock_deadline {
                         bail!(
-                            "another oplan instance is starting the daemon but it is not ready yet; see {}",
+                            "another openplan instance is starting the daemon but it is not ready yet; see {}",
                             self.home.log_path().display()
                         );
                     }
@@ -449,7 +449,7 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
             let base = url.trim_end_matches('/').to_owned();
             client
                 .health(&base)
-                .with_context(|| format!("no oplan daemon at {base}"))?;
+                .with_context(|| format!("no openplan daemon at {base}"))?;
             Ok(base)
         }
         None => {

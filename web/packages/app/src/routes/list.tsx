@@ -35,7 +35,7 @@ function MergedBoard() {
   const projects = useProjects()
   const board = useQuery(mergedBoardQuery)
   if (projects !== undefined && projects.length === 0) {
-    return <EmptyState title="No projects yet" detail="Register a repository with `oplan project add`." />
+    return <EmptyState title="No projects yet" detail="Register a repository with `openplan project add`." />
   }
   return <BoardState board={board} title="All projects" />
 }
@@ -64,7 +64,7 @@ function BoardState({ board, title }: { board: QueryState<Board>; title: string 
       return <EmptyState title="Could not load tasks" detail={errorText(board.error)} />
     case "success":
       return board.value.groups.length === 0 ? (
-        <EmptyState title="No tasks yet" detail="Create one with `oplan create`." />
+        <EmptyState title="No tasks yet" detail="Create one with `openplan create`." />
       ) : (
         <TaskGrid board={board.value} title={title} />
       )

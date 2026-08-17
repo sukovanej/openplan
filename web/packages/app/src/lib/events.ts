@@ -45,7 +45,7 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
       inv.refreshList(event.project)
       return
     }
-    // A ref move (e.g. `oplan set`) carries no task id, so refetch everything on screen —
+    // A ref move (e.g. `openplan set`) carries no task id, so refetch everything on screen —
     // the open task detail as well as the list.
     case "ref_moved": {
       inv.refreshVisible(event.project)

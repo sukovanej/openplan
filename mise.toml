@@ -1,5 +1,5 @@
 [tasks.lint]
-description = "Check the task store's .plan/ files with the oplan linter"
+description = "Check the task store's .plan/ files with the openplan linter"
 run = "cargo run --quiet -p op-cli -- lint"
 
 [tasks.rebuild]

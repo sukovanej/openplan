@@ -3,7 +3,7 @@
 Local-first, file-based task manager for humans and AI agents, in plain markdown.
 Design and work items in [.plan/tasks/](.plan/tasks/).
 
-> Compiling skeleton: crates, dependency edges, and the `oplan` binary are wired;
+> Compiling skeleton: crates, dependency edges, and the `openplan` binary are wired;
 > domain logic lands in child tasks.
 
 ## Build
@@ -30,21 +30,21 @@ the daemon on :7373).
 
 ## Run
 
-`oplan` is the single binary — run it via `cargo run -p op-cli -- <args>`:
+`openplan` is the single binary — run it via `cargo run -p op-cli -- <args>`:
 
 ```sh
-oplan list                       # tasks in ./.plan
-oplan server start               # background daemon: realtime API + web UI on 127.0.0.1:7373
-oplan server ping                # report daemon status
-oplan server stop                # stop the background daemon
-oplan project list               # repositories the daemon serves
-oplan merge-driver <O> <A> <B>   # git merge driver for .plan/**.md
+openplan list                       # tasks in ./.plan
+openplan server start               # background daemon: realtime API + web UI on 127.0.0.1:7373
+openplan server ping                # report daemon status
+openplan server stop                # stop the background daemon
+openplan project list               # repositories the daemon serves
+openplan merge-driver <O> <A> <B>   # git merge driver for .plan/**.md
 ```
 
 Reads work straight off the files; writes (`create`, `set`, `move`, `delete`) go through the daemon
 and start it if it is down. One daemon serves every repository on the machine: the first write from
-a repository registers it, and `oplan project` manages the registry. `OPLAN_HOME` picks the daemon's
-state directory (default `~/.plan`), `OPLAN_PORT` its port (default 7373).
+a repository registers it, and `openplan project` manages the registry. `OPLAN_HOME` picks the
+daemon's state directory (default `~/.plan`), `OPLAN_PORT` its port (default 7373).
 
 ## License
 

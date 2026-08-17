@@ -13,8 +13,8 @@ fn frontmatter_value(contents: &str, key: &str) -> String {
         .to_owned()
 }
 
-fn oplan() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_oplan"))
+fn openplan() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_openplan"))
 }
 
 fn write(path: &Path, contents: &str) {
@@ -51,7 +51,7 @@ impl Project {
     }
 
     fn cmd(&self) -> Command {
-        let mut cmd = oplan();
+        let mut cmd = openplan();
         cmd.env("OPLAN_HOME", self.home.path())
             .env("OPLAN_PORT", "0");
         cmd
@@ -135,7 +135,7 @@ fn list_reports_real_status_and_title() {
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
-    let out = oplan()
+    let out = openplan()
         .arg("--root")
         .arg(dir.path())
         .arg("list")
@@ -166,7 +166,11 @@ fn list_discovers_store_from_subdirectory() {
     let nested = dir.path().join("crates/thing/src");
     std::fs::create_dir_all(&nested).unwrap();
 
-    let out = oplan().current_dir(&nested).arg("list").output().unwrap();
+    let out = openplan()
+        .current_dir(&nested)
+        .arg("list")
+        .output()
+        .unwrap();
 
     assert!(
         out.status.success(),
@@ -187,7 +191,7 @@ fn merge_driver_clean_conflict_and_read_error() {
     write(&ours, content);
     write(&theirs, content);
 
-    let clean = oplan()
+    let clean = openplan()
         .arg("merge-driver")
         .args([&base, &ours, &theirs])
         .output()
@@ -201,7 +205,7 @@ fn merge_driver_clean_conflict_and_read_error() {
         &theirs,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\nBYE\n",
     );
-    let conflict = oplan()
+    let conflict = openplan()
         .arg("merge-driver")
         .args([&base, &ours, &theirs])
         .output()
@@ -212,7 +216,7 @@ fn merge_driver_clean_conflict_and_read_error() {
     );
 
     let missing = dir.path().join("nope.md");
-    let read_error = oplan()
+    let read_error = openplan()
         .arg("merge-driver")
         .args([&missing, &missing, &missing])
         .output()
@@ -378,7 +382,7 @@ fn a_write_with_no_reachable_daemon_fails_explicitly() {
     assert!(!out.status.success(), "an unreachable daemon must not pass");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("no oplan daemon at http://127.0.0.1:1"),
+        stderr.contains("no openplan daemon at http://127.0.0.1:1"),
         "stderr: {stderr}"
     );
     assert!(stdout(&run(&dir, &["list"])).contains("no tasks yet"));
@@ -389,7 +393,7 @@ fn a_write_outside_a_git_repository_is_refused() {
     // Writes resolve their target worktree by branch, so a store with no repository has none.
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
-    let out = oplan()
+    let out = openplan()
         .env("OPLAN_HOME", dir.path().join("home"))
         .env("OPLAN_PORT", "0")
         .arg("--root")
@@ -414,7 +418,7 @@ fn writes_from_two_repositories_land_in_their_own_stores() {
     let second = Project::new();
     create(&first, "Anchor");
 
-    let out = oplan()
+    let out = openplan()
         .env("OPLAN_HOME", first.home.path())
         .env("OPLAN_PORT", "0")
         .arg("--root")
@@ -491,7 +495,7 @@ fn a_daemon_without_project_routes_asks_for_a_restart() {
     assert!(!out.status.success(), "the write must not be attempted");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("predates") && stderr.contains("oplan server stop"),
+        stderr.contains("predates") && stderr.contains("openplan server stop"),
         "stderr: {stderr}"
     );
     assert!(
@@ -515,7 +519,7 @@ fn a_named_daemon_is_not_registered_into_by_a_write() {
         .unwrap()
         .unwrap();
 
-    let out = oplan()
+    let out = openplan()
         .env("OPLAN_HOME", other.home.path())
         .env("OPLAN_PORT", "0")
         .arg("--root")
@@ -532,7 +536,7 @@ fn a_named_daemon_is_not_registered_into_by_a_write() {
     assert!(!out.status.success(), "the write must be refused");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("oplan project add --daemon"),
+        stderr.contains("openplan project add --daemon"),
         "the refusal names the explicit way in: {stderr}"
     );
     let registry = served.home.path().join("registry.toml");
@@ -1398,7 +1402,7 @@ fn lint_store() -> tempfile::TempDir {
 }
 
 fn run_lint(root: &Path, args: &[&str]) -> Output {
-    oplan()
+    openplan()
         .arg("--root")
         .arg(root)
         .arg("lint")
@@ -1575,7 +1579,7 @@ fn lint_lints_this_repos_own_plan_cleanly() {
     );
 }
 
-// The documented way to use oplan is to stand in a repository and type `oplan create`. `--root`
+// The documented way to use openplan is to stand in a repository and type `openplan create`. `--root`
 // then defaults to `.`, and the daemon runs in its own home, so a `.` that reaches the daemon names
 // a directory the caller never chose. Every other test passes an absolute `--root`, which is why
 // this one exists.
@@ -1615,10 +1619,10 @@ fn a_home_inside_a_repository_never_becomes_the_project_written_to() {
     );
     // The daemon's home is a directory of that second repository, so its own `.` is a servable
     // checkout.
-    let home = elsewhere.path().join("oplanhome");
+    let home = elsewhere.path().join("openplanhome");
     std::fs::create_dir_all(&home).unwrap();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_oplan"))
+    let out = Command::new(env!("CARGO_BIN_EXE_openplan"))
         .env("OPLAN_HOME", &home)
         .env("OPLAN_PORT", "0")
         .current_dir(project.path())
@@ -1644,7 +1648,7 @@ fn a_home_inside_a_repository_never_becomes_the_project_written_to() {
         "nothing may be written to the repository the daemon's home happens to sit in"
     );
 
-    let _ = Command::new(env!("CARGO_BIN_EXE_oplan"))
+    let _ = Command::new(env!("CARGO_BIN_EXE_openplan"))
         .env("OPLAN_HOME", &home)
         .env("OPLAN_PORT", "0")
         .args(["server", "stop"])

@@ -33,7 +33,7 @@ async fn serve(home: Home, port: u16) -> Result<()> {
     let lock = home.open_lock()?;
     if lock.try_lock_exclusive().is_err() {
         bail!(
-            "another oplan daemon already holds {}",
+            "another openplan daemon already holds {}",
             home.lock_path().display()
         );
     }
@@ -68,7 +68,7 @@ async fn serve(home: Home, port: u16) -> Result<()> {
     });
 
     ignore_sighup();
-    tracing::info!(%addr, pid = info.pid, "oplan daemon serving");
+    tracing::info!(%addr, pid = info.pid, "openplan daemon serving");
 
     let result = op_server::serve(listener, state, terminate_signal()).await;
 

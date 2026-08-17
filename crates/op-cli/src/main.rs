@@ -24,7 +24,11 @@ use daemon::{Control, Home};
 use writer::Writer;
 
 #[derive(Parser)]
-#[command(name = "oplan", version, about = "open-planner — local-first task CLI")]
+#[command(
+    name = "openplan",
+    version,
+    about = "open-planner — local-first task CLI"
+)]
 struct Cli {
     /// Directory the command works in [default: the current directory]
     #[arg(long, global = true)]
@@ -763,7 +767,7 @@ fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCo
     })
 }
 
-// Writes go through the store so a concurrent daemon or `oplan set` on the same task serializes on
+// Writes go through the store so a concurrent daemon or `openplan set` on the same task serializes on
 // the advisory lock and never observes a torn file.
 fn apply_fixes(
     store: &Store,

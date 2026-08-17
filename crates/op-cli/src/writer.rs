@@ -24,7 +24,7 @@ impl Writer {
     pub fn resolve(root: &Path, daemon_url: Option<&str>) -> Result<Self> {
         let repo = Repo::discover(root).with_context(|| {
             format!(
-                "oplan writes require a git repository; none found at {}",
+                "openplan writes require a git repository; none found at {}",
                 root.display()
             )
         })?;
@@ -85,11 +85,11 @@ fn resolve_project(
         .projects(base_url, op_client::WRITE_TIMEOUT)
         .map_err(|err| match err {
             op_client::ClientError::Unreadable { .. } => anyhow::anyhow!(
-                "the oplan daemon at {base_url} does not serve the project routes; it predates \
-                 them. Stop it (`oplan server stop`) and rerun here."
+                "the openplan daemon at {base_url} does not serve the project routes; it predates \
+                 them. Stop it (`openplan server stop`) and rerun here."
             ),
             other => anyhow::Error::new(other).context(format!(
-                "the oplan daemon at {base_url} did not list its projects"
+                "the openplan daemon at {base_url} did not list its projects"
             )),
         })?;
     let mine = repo.git_common_dir();
@@ -98,8 +98,8 @@ fn resolve_project(
     }
     if !may_register {
         bail!(
-            "the oplan daemon at {base_url} does not serve {}; register it there first with \
-             `oplan project add --daemon {base_url}`, or drop --daemon to use the machine daemon",
+            "the openplan daemon at {base_url} does not serve {}; register it there first with \
+             `openplan project add --daemon {base_url}`, or drop --daemon to use the machine daemon",
             mine.display()
         );
     }
@@ -111,7 +111,7 @@ fn resolve_project(
         .with_context(|| format!("no such directory: {}", serve.display()))?;
     let (view, created) = client.register_project(base_url, &serve)?;
     if created {
-        // stderr, because stdout carries the id `oplan create` prints and scripts read.
+        // stderr, because stdout carries the id `openplan create` prints and scripts read.
         eprintln!("registered project {} at {}", view.name, view.root);
     }
     Ok(view.name)

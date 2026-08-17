@@ -117,7 +117,7 @@ impl fmt::Display for Position {
     }
 }
 
-const FIX_HINT: &str = "run `oplan lint --fix`";
+const FIX_HINT: &str = "run `openplan lint --fix`";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Diagnostic {

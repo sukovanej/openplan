@@ -13,7 +13,7 @@ impl Daemon {
     fn new() -> Self {
         let home = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
-        // `oplan serve` requires a git repository, so the daemon's root must be one.
+        // `openplan serve` requires a git repository, so the daemon's root must be one.
         git(root.path(), &["init", "-q", "-b", "main"]);
         git(root.path(), &["config", "user.email", "t@example.com"]);
         git(root.path(), &["config", "user.name", "Test"]);
@@ -31,7 +31,7 @@ impl Daemon {
     }
 
     fn cmd(&self) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_oplan"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_openplan"));
         // A write starts the daemon itself, with no `--port` to carry, so without this it would
         // reach for the real 7373 — the developer's own daemon, or another test's.
         cmd.env("OPLAN_HOME", self.home.path())
@@ -97,7 +97,7 @@ fn parse_pid(text: &str) -> Option<u32> {
     rest[..end].parse().ok()
 }
 
-// `oplan project list` prints one line per project — name, abbreviation, root — and indents the
+// `openplan project list` prints one line per project — name, abbreviation, root — and indents the
 // reason a demoted one is not served under it.
 fn projects(daemon: &Daemon) -> Vec<(String, String)> {
     let out = daemon.cmd().args(["project", "list"]).output().unwrap();
@@ -306,7 +306,7 @@ fn concurrent_starts_yield_single_pid() {
         let home = daemon.home.path().to_path_buf();
         let root = daemon.root.path().to_path_buf();
         handles.push(std::thread::spawn(move || {
-            let out = Command::new(env!("CARGO_BIN_EXE_oplan"))
+            let out = Command::new(env!("CARGO_BIN_EXE_openplan"))
                 .env("OPLAN_HOME", &home)
                 .arg("--root")
                 .arg(&root)
@@ -776,7 +776,7 @@ fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
     let theirs = task_repo(1_000_000_000);
     let ours = task_repo(1_500_000_000);
 
-    let mut add = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let mut add = Command::new(env!("CARGO_BIN_EXE_openplan"));
     add.env("OPLAN_HOME", daemon.home_path())
         .env("OPLAN_PORT", "0");
     assert!(
@@ -789,7 +789,7 @@ fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
             .success()
     );
 
-    let mut read = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let mut read = Command::new(env!("CARGO_BIN_EXE_openplan"));
     read.env("OPLAN_HOME", daemon.home_path())
         .arg("--root")
         .arg(ours.path());
@@ -807,7 +807,7 @@ fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
 }
 
 // `--root` says which directory a command works in, as `git -C` does. It registers nothing: the
-// first write and `oplan project add` are the only ways into the registry.
+// first write and `openplan project add` are the only ways into the registry.
 #[test]
 fn a_start_registers_nothing_and_the_first_write_registers() {
     let daemon = Daemon::new();
@@ -1001,7 +1001,7 @@ fn root_on_an_explicit_start_names_no_favoured_project() {
             .success()
     );
 
-    let mut restart = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let mut restart = Command::new(env!("CARGO_BIN_EXE_openplan"));
     assert!(
         restart
             .env("OPLAN_HOME", daemon.home_path())
@@ -1183,7 +1183,7 @@ fn concurrent_first_writes_register_one_project() {
             let home = daemon.home.path().to_path_buf();
             let root = daemon.root.path().to_path_buf();
             std::thread::spawn(move || {
-                Command::new(env!("CARGO_BIN_EXE_oplan"))
+                Command::new(env!("CARGO_BIN_EXE_openplan"))
                     .env("OPLAN_HOME", &home)
                     .env("OPLAN_PORT", "0")
                     .arg("--root")
@@ -1237,7 +1237,7 @@ fn a_store_above_the_git_root_registers_the_checkout() {
     git(&inner, &["config", "user.name", "Test"]);
     git(&inner, &["commit", "-q", "--allow-empty", "-m", "init"]);
 
-    let mut add = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let mut add = Command::new(env!("CARGO_BIN_EXE_openplan"));
     let out = add
         .env("OPLAN_HOME", home.path())
         .env("OPLAN_PORT", "0")
@@ -1258,7 +1258,7 @@ fn a_store_above_the_git_root_registers_the_checkout() {
         "the entry names the checkout, not the .plan parent: {text}"
     );
 
-    let mut stop = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let mut stop = Command::new(env!("CARGO_BIN_EXE_openplan"));
     let _ = stop
         .env("OPLAN_HOME", home.path())
         .args(["server", "stop"])

@@ -6,11 +6,11 @@ pub fn run(ancestor: &str, current: &str, other: &str) -> ExitCode {
         Ok(Outcome::Conflict) => {
             // TODO(skeleton): 3-way section merge. Until then, conflict rather than
             // drop a divergent edit.
-            eprintln!("oplan merge-driver: section merge not yet implemented — conflict");
+            eprintln!("openplan merge-driver: section merge not yet implemented — conflict");
             ExitCode::FAILURE
         }
         Err(err) => {
-            eprintln!("oplan merge-driver: {err}");
+            eprintln!("openplan merge-driver: {err}");
             ExitCode::FAILURE
         }
     }
@@ -32,7 +32,7 @@ fn merge(ancestor: &str, current: &str, other: &str) -> std::io::Result<Outcome>
             .iter()
             .filter(|h| h.level >= 2)
             .count();
-        eprintln!("oplan merge-driver: {current} has {sections} section(s)");
+        eprintln!("openplan merge-driver: {current} has {sections} section(s)");
     }
 
     Ok(if ours == theirs {

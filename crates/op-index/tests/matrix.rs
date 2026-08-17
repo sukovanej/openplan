@@ -251,7 +251,7 @@ fn an_uncommitted_edit_on_a_feature_worktree_is_modified_and_dirty() {
     );
     // The feature commit still matches main, but the working copy is edited. Divergence is judged
     // on the effective (working) state, so this surfaces as a dirty Modified — not hidden until
-    // commit (the app's `oplan set` edits are uncommitted by nature).
+    // commit (the app's `openplan set` edits are uncommitted by nature).
     task(
         &wt_path,
         1,

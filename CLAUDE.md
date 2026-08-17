@@ -6,7 +6,7 @@ Local-first task manager (Rust workspace). Design and work live in `.plan/tasks/
 
 Never write to the main checkout. Every change to a tracked file goes in a
 separate git worktree — source, docs, config, and `.plan/tasks/` task files
-alike, including writes made through the `oplan` CLI. "It's one line", "it's
+alike, including writes made through the `openplan` CLI. "It's one line", "it's
 just a task", and "it's only the tracker, not code" are not exceptions.
 
 Before the first write of any unit of work, confirm you are not in the primary

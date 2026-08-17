@@ -1618,7 +1618,7 @@ async fn a_write_names_the_vanished_root_rather_than_the_branch() {
         .unwrap()
         .to_owned();
     assert!(message.contains("no longer exists"), "{message}");
-    assert!(message.contains("oplan server restart"), "{message}");
+    assert!(message.contains("openplan server restart"), "{message}");
 }
 
 // A patch applies field by field and stops at the first bad key, so a write that reports 400 must
