@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 created: 2026-08-02T13:56:24Z
 ---
 # Multi-repo daemon: one daemon and one UI over N repositories

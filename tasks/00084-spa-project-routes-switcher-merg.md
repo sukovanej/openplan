@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 created: 2026-08-02T13:56:41Z
 parent: ./00079-multi-repo-daemon-one-daemon-and.md
 dependencies:
@@ -43,8 +43,10 @@ view, the segment comes from the URL.
 - A header switcher: the merged view, plus one entry per project. Mark a
   demoted project and make its reason available (from `/api/projects`). Do
   not hide it.
-- On the merged board, show the project name adjacent to the key on each
-  row. This is the display answer to two stores that share an abbreviation.
+- A row shows its key alone. The key's abbreviation says which store the task
+  is in, so the project name beside it only repeats that. Two stores that
+  share an abbreviation stay apart in the row's link and in the switcher, not
+  in the row's text.
 - With zero projects, show an empty state that points at `oplan project add`.
 
 ## Cleanup
