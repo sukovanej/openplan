@@ -71,41 +71,64 @@ const unexpected = (error: HttpClientError.HttpClientError) =>
       : error,
   )
 
-export const listTasks: Effect.Effect<
-  ReadonlyArray<Api.TaskListItem>,
+export const listProjects: Effect.Effect<
+  ReadonlyArray<Api.ProjectView>,
   ApiError,
   HttpClient.HttpClient
-> = Effect.flatMap(tasks, (client) => client.listTasks(undefined)).pipe(
-  Effect.catchTags({
-    ListTasks400: refusal,
-    ListTasks500: refusal,
-    HttpClientError: unexpected,
-  }),
+> = Effect.flatMap(tasks, (client) => client.listProjects(undefined)).pipe(
+  Effect.catchTags({ HttpClientError: unexpected }),
 )
 
-export const getConfig: Effect.Effect<Api.StoreConfig, ApiError, HttpClient.HttpClient> = Effect.flatMap(
-  tasks,
-  (client) => client.getConfig(undefined),
-).pipe(Effect.catchTags({ HttpClientError: unexpected }))
+export const listTasks = (
+  project: string,
+): Effect.Effect<ReadonlyArray<Api.TaskListItem>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.listTasks(project, undefined)).pipe(
+    Effect.catchTags({
+      ListTasks400: refusal,
+      ListTasks404: refusal,
+      ListTasks500: refusal,
+      ListTasks503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
 
-export const getBoard: Effect.Effect<Api.Board, ApiError, HttpClient.HttpClient> = Effect.flatMap(tasks, (client) =>
-  client.getBoard(undefined),
+// The board of one project, which its own route answers for.
+export const getBoard = (project: string): Effect.Effect<Api.Board, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.getBoard(project, undefined)).pipe(
+    Effect.catchTags({
+      GetBoard400: refusal,
+      GetBoard404: refusal,
+      GetBoard500: refusal,
+      GetBoard503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// Every servable project's board in one read, which the UI opens on. Each row carries its project,
+// so a key that exists in two stores stays two rows.
+export const getMergedBoard: Effect.Effect<Api.Board, ApiError, HttpClient.HttpClient> = Effect.flatMap(
+  tasks,
+  (client) => client.getMergedBoard(undefined),
 ).pipe(
   Effect.catchTags({
-    GetBoard400: refusal,
-    GetBoard500: refusal,
+    GetMergedBoard500: refusal,
     HttpClientError: unexpected,
   }),
 )
 
 // Omitting `branch` returns the headline (current-worktree) version; passing one returns that
 // branch's version. Either way the response carries every branch the task lives on.
-export const getTask = (id: string, branch?: string): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.getTask(encodeURIComponent(id), { params: { branch } })).pipe(
+export const getTask = (
+  project: string,
+  id: string,
+  branch?: string,
+): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.getTask(project, encodeURIComponent(id), { params: { branch } })).pipe(
     Effect.catchTags({
       GetTask400: refusal,
       GetTask404: () => Effect.fail(new TaskNotFound({ id })),
       GetTask500: refusal,
+      GetTask503: refusal,
       HttpClientError: unexpected,
     }),
   )
@@ -113,26 +136,33 @@ export const getTask = (id: string, branch?: string): Effect.Effect<Api.TaskDeta
 // `parent` is three-state to match the server: omit the key to leave it unchanged, JSON `null` to
 // clear it (top level), or an id to set it. `rank`, `status`, and `dependencies` are set-only.
 export const patchTask = (
+  project: string,
   id: string,
   patch: Api.TaskPatch,
 ): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.patchTask(encodeURIComponent(id), { payload: patch })).pipe(
+  Effect.flatMap(tasks, (client) => client.patchTask(project, encodeURIComponent(id), { payload: patch })).pipe(
     Effect.catchTags({
       PatchTask400: refusal,
       PatchTask404: () => Effect.fail(new TaskNotFound({ id })),
       PatchTask409: refusal,
       PatchTask500: refusal,
+      PatchTask503: refusal,
       HttpClientError: unexpected,
     }),
   )
 
-export const createTask = (input: Api.CreateTask): Effect.Effect<string, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.createTask({ payload: input })).pipe(
+export const createTask = (
+  project: string,
+  input: Api.CreateTask,
+): Effect.Effect<string, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.createTask(project, { payload: input })).pipe(
     Effect.map((created) => created.id),
     Effect.catchTags({
       CreateTask400: refusal,
+      CreateTask404: refusal,
       CreateTask409: refusal,
       CreateTask500: refusal,
+      CreateTask503: refusal,
       HttpClientError: unexpected,
     }),
   )

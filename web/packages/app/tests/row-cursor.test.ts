@@ -5,7 +5,7 @@ import {
   cleared,
   emptyCursor,
   focused,
-  focusedId,
+  focusedRow,
   moved,
   rowCursor,
   subtaskCursor,
@@ -66,7 +66,7 @@ it("the cursor clears when the task set changes", () => {
   expect(at2.index).toBe(2)
 
   const next = withRows(at2, ["a", "b", "c"])
-  expect(next.ids).toEqual(["a", "b", "c"])
+  expect(next.rows).toEqual(["a", "b", "c"])
   expect(next.index).toBe(-1)
 })
 
@@ -78,14 +78,14 @@ it("the cursor is preserved when the task set is unchanged", () => {
 it("an empty task set clears the cursor", () => {
   const empty = withRows(focused(withRows(emptyCursor, rows(5)), 2), [])
   expect(empty.index).toBe(-1)
-  expect(focusedId(empty)).toBeUndefined()
+  expect(focusedRow(empty)).toBeUndefined()
 })
 
-it("clear sets the index to -1 and preserves the ids", () => {
+it("clear sets the index to -1 and preserves the rows", () => {
   const at2 = focused(withRows(emptyCursor, rows(5)), 2)
   const empty = cleared(at2)
   expect(empty.index).toBe(-1)
-  expect(empty.ids).toBe(at2.ids)
+  expect(empty.rows).toBe(at2.rows)
 })
 
 it("clear on an already-cleared cursor returns the same state", () => {
@@ -94,7 +94,7 @@ it("clear on an already-cleared cursor returns the same state", () => {
 })
 
 it("focusedId reports the id under the cursor", () => {
-  expect(focusedId(focused(withRows(emptyCursor, rows(3)), 1))).toBe("t-1")
+  expect(focusedRow(focused(withRows(emptyCursor, rows(3)), 1))).toBe("t-1")
 })
 
 it("the store notifies subscribers and drives the cursor", () => {
@@ -134,13 +134,13 @@ it("the subtask cursor remembers each task's focused row across activations", ()
   subtaskCursor.activate("parent", ["p1", "p2", "p3"])
   subtaskCursor.moveBy(1)
   subtaskCursor.moveBy(1)
-  expect(focusedId(subtaskCursor.getSnapshot())).toBe("p2")
+  expect(focusedRow(subtaskCursor.getSnapshot())).toBe("p2")
 
   subtaskCursor.activate("child", ["c1", "c2"])
   expect(subtaskCursor.getSnapshot().index).toBe(-1)
 
   subtaskCursor.activate("parent", ["p1", "p2", "p3"])
-  expect(focusedId(subtaskCursor.getSnapshot())).toBe("p2")
+  expect(focusedRow(subtaskCursor.getSnapshot())).toBe("p2")
 })
 
 it("the subtask cursor clamps a remembered row when the task lost children", () => {

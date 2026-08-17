@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { copyTargetId, hoveredRow } from "../src/lib/copy-target"
+import { copyTargetRow, hoveredRow } from "../src/lib/copy-target"
 
 beforeEach(() => {
   hoveredRow.clear()
@@ -31,20 +31,20 @@ describe("hovered row", () => {
   })
 })
 
-describe("copyTargetId", () => {
+describe("copyTargetRow", () => {
   it("prefers the hovered row over both the cursor and the route", () => {
-    expect(copyTargetId("12", "13", "14")).toBe("12")
+    expect(copyTargetRow("12", "13", "14")).toBe("12")
   })
 
   it("falls back to the keyboard cursor when nothing is hovered", () => {
-    expect(copyTargetId(undefined, "13", "14")).toBe("13")
+    expect(copyTargetRow(undefined, "13", "14")).toBe("13")
   })
 
   it("falls back to the route's own task when neither hover nor cursor is set", () => {
-    expect(copyTargetId(undefined, undefined, "14")).toBe("14")
+    expect(copyTargetRow(undefined, undefined, "14")).toBe("14")
   })
 
   it("resolves to nothing when there is no candidate at all", () => {
-    expect(copyTargetId(undefined, undefined, undefined)).toBeUndefined()
+    expect(copyTargetRow(undefined, undefined, undefined)).toBeUndefined()
   })
 })

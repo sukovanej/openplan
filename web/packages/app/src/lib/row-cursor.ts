@@ -1,11 +1,13 @@
 import { useLayoutEffect, useSyncExternalStore } from "react"
 
+// A row is named by its task's path, which carries the project: a key alone repeats across stores,
+// and the path is also what opening the row navigates to.
 export interface CursorState {
-  readonly ids: ReadonlyArray<string>
+  readonly rows: ReadonlyArray<string>
   readonly index: number
 }
 
-export const emptyCursor: CursorState = { ids: [], index: -1 }
+export const emptyCursor: CursorState = { rows: [], index: -1 }
 
 export function clampIndex(index: number, count: number): number {
   if (count <= 0) return -1
@@ -14,7 +16,7 @@ export function clampIndex(index: number, count: number): number {
   return index
 }
 
-function sameIds(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
+function sameRows(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
   if (a === b) return true
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {
@@ -23,28 +25,28 @@ function sameIds(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
   return true
 }
 
-export function withRows(state: CursorState, ids: ReadonlyArray<string>): CursorState {
-  if (sameIds(state.ids, ids)) return state
-  return { ids, index: -1 }
+export function withRows(state: CursorState, rows: ReadonlyArray<string>): CursorState {
+  if (sameRows(state.rows, rows)) return state
+  return { rows, index: -1 }
 }
 
 export function moved(state: CursorState, delta: number, from?: string): CursorState {
-  const origin = state.index === -1 && from !== undefined ? state.ids.indexOf(from) : state.index
-  const index = clampIndex(origin + delta, state.ids.length)
-  return index === state.index ? state : { ids: state.ids, index }
+  const origin = state.index === -1 && from !== undefined ? state.rows.indexOf(from) : state.index
+  const index = clampIndex(origin + delta, state.rows.length)
+  return index === state.index ? state : { rows: state.rows, index }
 }
 
 export function focused(state: CursorState, index: number): CursorState {
-  const index_ = clampIndex(index, state.ids.length)
-  return index_ === state.index ? state : { ids: state.ids, index: index_ }
+  const index_ = clampIndex(index, state.rows.length)
+  return index_ === state.index ? state : { rows: state.rows, index: index_ }
 }
 
 export function cleared(state: CursorState): CursorState {
-  return state.index === -1 ? state : { ids: state.ids, index: -1 }
+  return state.index === -1 ? state : { rows: state.rows, index: -1 }
 }
 
-export function focusedId(state: CursorState): string | undefined {
-  return state.index < 0 ? undefined : state.ids[state.index]
+export function focusedRow(state: CursorState): string | undefined {
+  return state.index < 0 ? undefined : state.rows[state.index]
 }
 
 class RowCursorStore {
@@ -60,7 +62,7 @@ class RowCursorStore {
 
   readonly getSnapshot = (): CursorState => this.state
 
-  readonly setRows = (ids: ReadonlyArray<string>): void => this.commit(withRows(this.state, ids))
+  readonly setRows = (rows: ReadonlyArray<string>): void => this.commit(withRows(this.state, rows))
   readonly moveBy = (delta: number, from?: string): void => this.commit(moved(this.state, delta, from))
   readonly focus = (index: number): void => this.commit(focused(this.state, index))
   readonly clear = (): void => this.commit(cleared(this.state))
@@ -74,11 +76,11 @@ class RowCursorStore {
 
 export const rowCursor = new RowCursorStore()
 
-export function useRowCursor(ids: ReadonlyArray<string>): CursorState {
+export function useRowCursor(rows: ReadonlyArray<string>): CursorState {
   const state = useSyncExternalStore(rowCursor.subscribe, rowCursor.getSnapshot)
   useLayoutEffect(() => {
-    rowCursor.setRows(ids)
-  }, [ids])
+    rowCursor.setRows(rows)
+  }, [rows])
   return state
 }
 
@@ -99,11 +101,11 @@ class KeyedRowCursor {
 
   readonly getSnapshot = (): CursorState => this.state
 
-  readonly activate = (key: string, ids: ReadonlyArray<string>): void => {
+  readonly activate = (key: string, rows: ReadonlyArray<string>): void => {
     const prior = this.saved.get(key)
-    const index = prior === undefined || ids.length === 0 ? -1 : Math.min(prior, ids.length - 1)
+    const index = prior === undefined || rows.length === 0 ? -1 : Math.min(prior, rows.length - 1)
     this.activeKey = key
-    this.commit({ ids, index })
+    this.commit({ rows, index })
   }
 
   readonly moveBy = (delta: number, from?: string): void => this.commit(moved(this.state, delta, from))
@@ -120,10 +122,10 @@ class KeyedRowCursor {
 
 export const subtaskCursor = new KeyedRowCursor()
 
-export function useSubtaskCursor(key: string, ids: ReadonlyArray<string>): CursorState {
+export function useSubtaskCursor(key: string, rows: ReadonlyArray<string>): CursorState {
   const state = useSyncExternalStore(subtaskCursor.subscribe, subtaskCursor.getSnapshot)
   useLayoutEffect(() => {
-    subtaskCursor.activate(key, ids)
-  }, [key, ids])
+    subtaskCursor.activate(key, rows)
+  }, [key, rows])
   return state
 }

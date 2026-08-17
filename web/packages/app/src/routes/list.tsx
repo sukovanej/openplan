@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type MouseEvent, type Ref } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
 import type { Board, BoardRow } from "@open-planner/api-client"
 import {
@@ -19,12 +19,44 @@ import { cn, EmptyState, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Ro
 import { ListSkeleton } from "../components/states"
 import { hoveredRow } from "../lib/copy-target"
 import { errorText } from "../lib/format"
+import { demotedReason, useProject, useProjects } from "../lib/projects"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
-import { boardQuery, useQuery } from "../lib/store"
+import { boardQuery, mergedBoardQuery, useQuery, type QueryState } from "../lib/store"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
 
+// `/` is every project at once and `/:project` is one of them. They differ only in which board they
+// read; everything below the read is the same view.
 export function ListRoute() {
-  const board = useQuery(boardQuery)
+  const { project } = useParams()
+  return project === undefined ? <MergedBoard /> : <ProjectBoard project={project} />
+}
+
+function MergedBoard() {
+  const projects = useProjects()
+  const board = useQuery(mergedBoardQuery)
+  if (projects !== undefined && projects.length === 0) {
+    return <EmptyState title="No projects yet" detail="Register a repository with `oplan project add`." />
+  }
+  return <BoardState board={board} title="All projects" />
+}
+
+function ProjectBoard({ project }: { project: string }) {
+  const projects = useProjects()
+  const known = useProject(project)
+  const board = useQuery(boardQuery(project))
+  // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
+  // the daemon has answered.
+  if (projects !== undefined && known === undefined) {
+    return <EmptyState title="No such project" detail={project} />
+  }
+  const reason = demotedReason(known)
+  if (reason !== undefined) {
+    return <EmptyState title={`${project} is not being served`} detail={reason} />
+  }
+  return <BoardState board={board} title={project} />
+}
+
+function BoardState({ board, title }: { board: QueryState<Board>; title: string }) {
   switch (board._tag) {
     case "loading":
       return <ListSkeleton />
@@ -34,21 +66,35 @@ export function ListRoute() {
       return board.value.groups.length === 0 ? (
         <EmptyState title="No tasks yet" detail="Create one with `oplan create`." />
       ) : (
-        <TaskGrid board={board.value} />
+        <TaskGrid board={board.value} title={title} />
       )
   }
 }
 
-const rowDomId = (id: string) => `task-row-${id}`
+const rowDomId = (path: string) => `task-row-${path}`
 
-function TaskGrid({ board }: { board: Board }) {
+// The keys the id column is sized by, laid under the real one so every cell is as wide as the
+// widest. Characters are not width — an abbreviation is proportional, and only the digits are
+// tabular — and a merged board carries a key from every project. Within one project the count does
+// decide it, because only the digits vary there; so one candidate per project sizes the column
+// exactly, and that is a handful of spans rather than one per row.
+function sizingKeys(rows: ReadonlyArray<BoardRow>): ReadonlyArray<string> {
+  const widest = new Map<string, string>()
+  for (const row of rows) {
+    const held = widest.get(row.task.project)
+    if (held === undefined || row.task.id.length > held.length) widest.set(row.task.project, row.task.id)
+  }
+  return [...widest.values()]
+}
+
+function TaskGrid({ board, title }: { board: Board; title: string }) {
   // The board arrives already grouped, ordered, and flattened; the cursor walks the concatenation of
   // every group's rows in that same visible order.
   const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
-  const ids = useMemo(() => rows.map((row) => row.task.id), [rows])
-  const { index } = useRowCursor(ids)
-  const widestId = useMemo(() => ids.reduce((widest, id) => (id.length > widest.length ? id : widest), ""), [ids])
-  const activeId = index >= 0 && index < rows.length ? rowDomId(rows[index].task.id) : undefined
+  const paths = useMemo(() => rows.map((row) => taskPath(row.task.project, row.task.id)), [rows])
+  const { index } = useRowCursor(paths)
+  const sizers = useMemo(() => sizingKeys(rows), [rows])
+  const activeId = index >= 0 && index < paths.length ? rowDomId(paths[index]) : undefined
 
   const activeRow = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -69,7 +115,7 @@ function TaskGrid({ board }: { board: Board }) {
       className="text-sm focus:outline-none"
     >
       <PanelHeader>
-        <PanelTitle>Tasks</PanelTitle>
+        <PanelTitle>{title}</PanelTitle>
       </PanelHeader>
       <PanelBody onMouseLeave={hoveredRow.clear}>
         {board.groups.map((group, groupIndex) => {
@@ -81,10 +127,11 @@ function TaskGrid({ board }: { board: Board }) {
                 const i = base++
                 return (
                   <TaskRow
-                    key={row.task.id}
+                    key={paths[i]}
                     ref={i === index ? activeRow : undefined}
                     row={row}
-                    widestId={widestId}
+                    path={paths[i]}
+                    sizers={sizers}
                     guides={guides[groupIndex][j]}
                     active={i === index}
                     // The pointer only marks the current row while the keyboard cursor is idle, so
@@ -137,7 +184,8 @@ function TreeGuides({ columns }: { columns: ReadonlyArray<boolean> }) {
 function TaskRow({
   ref,
   row,
-  widestId,
+  path,
+  sizers,
   guides,
   active,
   hoverable,
@@ -146,7 +194,8 @@ function TaskRow({
 }: {
   ref?: Ref<HTMLDivElement>
   row: BoardRow
-  widestId: string
+  path: string
+  sizers: ReadonlyArray<string>
   guides: RowGuides
   active: boolean
   hoverable: boolean
@@ -166,13 +215,13 @@ function TaskRow({
     onFocus()
     const link = event.target instanceof Element && event.target.closest("a") !== null
     if (link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    navigate(taskPath(task.id))
+    navigate(path)
   }
 
   return (
     <Row
       ref={ref}
-      id={rowDomId(task.id)}
+      id={rowDomId(path)}
       role="row"
       aria-selected={active}
       active={active}
@@ -184,15 +233,15 @@ function TaskRow({
       // not count while the keyboard drives, or walking with `j` would hand rows it scrolls past
       // back to the pointer.
       onMouseEnter={() => {
-        if (hoverable) hoveredRow.enter(task.id)
+        if (hoverable) hoveredRow.enter(path)
       }}
       // Moving the pointer is what hands the current row back to it — and only over a row, so a
       // nudge across a group header or the scrollbar leaves the keyboard's row where it was.
       onMouseMove={() => {
-        hoveredRow.enter(task.id)
+        hoveredRow.enter(path)
         rowCursor.clear()
       }}
-      onMouseLeave={() => hoveredRow.leave(task.id)}
+      onMouseLeave={() => hoveredRow.leave(path)}
       // Wrapping lets the branches drop to a line of their own once the title has no room left
       // beside them, rather than the two columns overrunning each other.
       className="flex flex-wrap cursor-pointer items-start gap-y-2 py-3"
@@ -203,17 +252,20 @@ function TaskRow({
         {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
       </div>
       <div role="gridcell" className="text-muted-foreground grid shrink-0 self-center pl-3 text-xs tabular-nums">
-        {/* Laying the widest id on the board under this one, in the same grid cell, makes every id
-            cell that wide — so the title clears the longest id without the shorter ones leaving a
-            gap. Sizing the cell by the row's own id instead would shift each title separately. */}
-        <span aria-hidden className="invisible col-start-1 row-start-1">
-          {widestId}
-        </span>
+        {/* Laying the board's sizing keys under this one, in the same grid cell, makes every such
+            cell as wide as the widest of them — so the title clears the longest key without the
+            shorter ones leaving a gap. Sizing the cell by the row's own key instead would shift each
+            title separately. */}
+        {sizers.map((label) => (
+          <span key={label} aria-hidden className="invisible col-start-1 row-start-1">
+            {label}
+          </span>
+        ))}
         <span className="col-start-1 row-start-1">{task.id}</span>
       </div>
       <div className="min-w-0 grow basis-56 pr-4 pl-3 sm:pr-0" role="gridcell">
         <Link
-          to={taskPath(task.id)}
+          to={path}
           tabIndex={-1}
           // Narrow enough and the title takes the second line it needs; a wide row has the room to
           // keep every title on one.
@@ -222,7 +274,9 @@ function TaskRow({
           {task.title}
         </Link>
         <MetaLine>
-          {parent_title !== undefined && parent !== undefined && <ParentLink id={parent} title={parent_title} />}
+          {parent_title !== undefined && parent !== undefined && (
+            <ParentLink project={task.project} id={parent} title={parent_title} />
+          )}
           <TaskTimes created={created} updated={task.updated} problems={broken} />
         </MetaLine>
         {task.branches.length > 0 && (

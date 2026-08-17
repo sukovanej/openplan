@@ -23,9 +23,9 @@ function connect(): void {
     attempts = 0
     stopped = false
     connectionStore.set("live")
-    // Recover anything missed while disconnected: the config that spells every id, then everything
+    // Recover anything missed while disconnected: the projects that spell every id, then everything
     // currently on screen.
-    storeInvalidator.refreshConfig()
+    storeInvalidator.refreshProjects()
     storeInvalidator.refreshVisible()
   }
 

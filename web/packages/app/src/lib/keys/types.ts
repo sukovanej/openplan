@@ -11,7 +11,8 @@ export interface OverlayControls {
 
 export interface CursorControls {
   readonly moveBy: (delta: number) => void
-  readonly focusedId: () => string | undefined
+  // The path of the row the cursor is on, which is also where opening it goes.
+  readonly focusedRow: () => string | undefined
 }
 
 export interface CopyControls {

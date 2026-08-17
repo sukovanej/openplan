@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
@@ -9,7 +8,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::daemon::{DaemonInfo, Home, now_unix};
 
-pub async fn run(home: Home, port: u16, root: Option<&Path>) -> Result<()> {
+pub async fn run(home: Home, port: u16) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -17,7 +16,7 @@ pub async fn run(home: Home, port: u16, root: Option<&Path>) -> Result<()> {
         .try_init()
         .ok();
 
-    serve(home, port, root).await.inspect_err(|err| {
+    serve(home, port).await.inspect_err(|err| {
         // With the subscriber up, lifecycle failures go through tracing for consistent formatting
         // instead of the CLI's plain `error: ...` stderr line; fall back to stderr when ERROR is
         // filtered out (e.g. RUST_LOG=off) so a failed startup is never silent.
@@ -29,7 +28,7 @@ pub async fn run(home: Home, port: u16, root: Option<&Path>) -> Result<()> {
     })
 }
 
-async fn serve(home: Home, port: u16, root: Option<&Path>) -> Result<()> {
+async fn serve(home: Home, port: u16) -> Result<()> {
     home.ensure_dir()?;
     let lock = home.open_lock()?;
     if lock.try_lock_exclusive().is_err() {
@@ -50,8 +49,6 @@ async fn serve(home: Home, port: u16, root: Option<&Path>) -> Result<()> {
         .await
         .with_context(|| format!("binding {addr}"))?;
     let bound = listener.local_addr()?.port();
-
-    name_default(&state, root);
 
     let info = DaemonInfo {
         pid: std::process::id(),
@@ -78,23 +75,6 @@ async fn serve(home: Home, port: u16, root: Option<&Path>) -> Result<()> {
     home.clear_info();
     fs2::FileExt::unlock(&lock).ok();
     result.map_err(Into::into)
-}
-
-// `--root` names the project the routes that carry no project segment answer for. It registers
-// nothing: `oplan project add` and the first write from a repository are the only ways in. A root
-// that names no registered project leaves the first one of the registry answering them.
-//
-// Without `--root` the daemon names no default. It must not fall back to its own working directory:
-// that is `OPLAN_HOME`, which the caller never named, and a home inside a git repository would hand
-// that repository every unprefixed route.
-fn name_default(state: &AppState, root: Option<&Path>) {
-    let Some(root) = root else {
-        return;
-    };
-    match state.project_at(root) {
-        Some(project) => state.set_default_project(&project.name()),
-        None => tracing::debug!(root = %root.display(), "--root names no registered project"),
-    }
 }
 
 // A warm index only saves the first read the work it would do anyway, so it must not delay the port

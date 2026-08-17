@@ -197,11 +197,8 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
     let daemon_url = cli.daemon.as_deref();
-    // Every command works in the current directory unless told otherwise. Only the daemon needs to
-    // tell "no `--root`" from "`--root .`": it runs in its own home, where `.` is a directory the
-    // caller never named, so it must not adopt whatever repository happens to sit there.
-    let named_root = cli.root.as_deref();
-    let root = named_root.unwrap_or_else(|| Path::new("."));
+    // Every command works in the current directory unless told otherwise.
+    let root = cli.root.as_deref().unwrap_or_else(|| Path::new("."));
     match cli.command {
         Command::Create {
             title,
@@ -252,7 +249,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
-        Command::Server { command } => server(command, named_root, daemon_url),
+        Command::Server { command } => server(command, daemon_url),
         Command::MergeDriver {
             ancestor,
             current,
@@ -261,11 +258,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
 }
 
-fn server(
-    command: ServerCommand,
-    root: Option<&Path>,
-    daemon_url: Option<&str>,
-) -> Result<ExitCode> {
+fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> {
     match command {
         ServerCommand::Start { port, foreground } => {
             reject_remote_override(daemon_url, "start")?;
@@ -273,14 +266,12 @@ fn server(
                 let runtime = tokio::runtime::Runtime::new()?;
                 // serve::run reports its own failure through tracing; map it to an exit code
                 // rather than let main re-print the cause as a plain `error: ...` line.
-                return Ok(
-                    match runtime.block_on(serve::run(Home::resolve()?, port, root)) {
-                        Ok(()) => ExitCode::SUCCESS,
-                        Err(_) => ExitCode::FAILURE,
-                    },
-                );
+                return Ok(match runtime.block_on(serve::run(Home::resolve()?, port)) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(_) => ExitCode::FAILURE,
+                });
             }
-            Control::resolve()?.start(port, root)?;
+            Control::resolve()?.start(port)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Stop => {
@@ -289,7 +280,7 @@ fn server(
         }
         ServerCommand::Restart { port } => {
             reject_remote_override(daemon_url, "restart")?;
-            Control::resolve()?.restart(port, root)?;
+            Control::resolve()?.restart(port)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Ping => {

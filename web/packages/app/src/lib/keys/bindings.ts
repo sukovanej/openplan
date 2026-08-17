@@ -1,5 +1,3 @@
-import { taskPath } from "@open-planner/task-ui"
-
 import type { Binding } from "./types"
 
 export const bindings: ReadonlyArray<Binding> = [
@@ -26,8 +24,8 @@ export const bindings: ReadonlyArray<Binding> = [
     label: "Open task",
     group: "Navigation",
     run: (ctx) => {
-      const id = ctx.cursor.focusedId()
-      if (id !== undefined) ctx.navigate(taskPath(id))
+      const row = ctx.cursor.focusedRow()
+      if (row !== undefined) ctx.navigate(row)
     },
   },
   {

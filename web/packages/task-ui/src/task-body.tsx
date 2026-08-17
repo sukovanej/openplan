@@ -8,7 +8,7 @@ import type { TaskRef } from "@open-planner/api-client"
 import { cn, Prose } from "@open-planner/ui"
 
 import { taskLinkPlugins } from "./task-links"
-import { taskIdOf } from "./task-path"
+import { taskRouteOf } from "./task-path"
 import { TaskRefChip } from "./task-ref-chip"
 
 const RefsContext = createContext<ReadonlyMap<string, TaskRef>>(new Map())
@@ -23,9 +23,9 @@ function BodyTaskRef({ href, id }: { href: string; id: string }) {
 
 const components: Components = {
   a({ href, children }) {
-    const id = href === undefined ? undefined : taskIdOf(href)
-    if (href !== undefined && id !== undefined) {
-      return <BodyTaskRef href={href} id={id} />
+    const task = href === undefined ? undefined : taskRouteOf(href)
+    if (href !== undefined && task !== undefined) {
+      return <BodyTaskRef href={href} id={task.id} />
     }
     if (href !== undefined && href.startsWith("/")) {
       return (
@@ -64,17 +64,19 @@ const components: Components = {
 }
 
 export function TaskBody({
+  project,
   markdown,
   refs,
   abbreviation,
   ...props
 }: ComponentProps<typeof Prose> & {
+  project: string
   markdown: string
   refs?: ReadonlyArray<TaskRef>
   abbreviation: string | undefined
 }) {
   const refMap = useMemo(() => new Map((refs ?? []).map((ref) => [ref.id, ref])), [refs])
-  const plugins = useMemo(() => [remarkGfm, taskLinkPlugins(abbreviation)], [abbreviation])
+  const plugins = useMemo(() => [remarkGfm, taskLinkPlugins({ project, abbreviation })], [project, abbreviation])
   return (
     <RefsContext.Provider value={refMap}>
       <Prose {...props}>

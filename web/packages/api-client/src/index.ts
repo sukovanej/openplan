@@ -16,14 +16,12 @@ export const CreatedTask = Schema.Struct({ id: Schema.String })
 export type DaemonInfo = {
   readonly pid: number
   readonly port: number
-  readonly repo?: string | null
   readonly started_at: number
   readonly version: string
 }
 export const DaemonInfo = Schema.Struct({
   pid: Schema.Number.annotate({ format: "int32" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
   port: Schema.Number.annotate({ format: "int32" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
-  repo: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   started_at: Schema.Number.annotate({ format: "int64" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
   version: Schema.String,
 })
@@ -37,6 +35,18 @@ export const FieldError = Schema.Union(
 )
 export type MetadataErrorTag = "error"
 export const MetadataErrorTag = Schema.Literal("error")
+export type ProjectStatus = { readonly state: "ok" } | { readonly reason: string; readonly state: "error" }
+export const ProjectStatus = Schema.Union(
+  [
+    Schema.Struct({ state: Schema.Literal("ok") }),
+    Schema.Struct({ reason: Schema.String, state: Schema.Literal("error") }),
+  ],
+  { mode: "oneOf" },
+)
+export type RegisterProject = { readonly path: string }
+export const RegisterProject = Schema.Struct({ path: Schema.String })
+export type RenameProject = { readonly name: string }
+export const RenameProject = Schema.Struct({ name: Schema.String })
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
 export type StoreConfig = { readonly abbreviation: string }
@@ -59,6 +69,20 @@ export const Field_Status = Schema.Union(
 )
 export type Field_Vec_String = ReadonlyArray<string> | FieldError
 export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError], { mode: "oneOf" })
+export type ProjectView = {
+  readonly abbreviation: string
+  readonly git_common_dir: string
+  readonly name: string
+  readonly root: string
+  readonly status: ProjectStatus
+}
+export const ProjectView = Schema.Struct({
+  abbreviation: Schema.String,
+  git_common_dir: Schema.String,
+  name: Schema.String,
+  root: Schema.String,
+  status: ProjectStatus,
+})
 export type CreateTask = {
   readonly body?: string | null
   readonly dependencies?: ReadonlyArray<string>
@@ -140,6 +164,7 @@ export type TaskDetail = {
   readonly id: string
   readonly metadata: Metadata
   readonly parent_title?: string
+  readonly project: string
   readonly refs?: ReadonlyArray<TaskRef>
   readonly title: string
   readonly updated: Field_Rfc3339
@@ -152,6 +177,7 @@ export const TaskDetail = Schema.Struct({
   id: Schema.String,
   metadata: Metadata,
   parent_title: Schema.optionalKey(Schema.String),
+  project: Schema.String,
   refs: Schema.optionalKey(Schema.Array(TaskRef)),
   title: Schema.String,
   updated: Field_Rfc3339,
@@ -161,6 +187,7 @@ export type TaskListItem = {
   readonly headline: string
   readonly id: string
   readonly metadata: Metadata
+  readonly project: string
   readonly title: string
   readonly updated: Field_Rfc3339
 }
@@ -169,6 +196,7 @@ export const TaskListItem = Schema.Struct({
   headline: Schema.String,
   id: Schema.String,
   metadata: Metadata,
+  project: Schema.String,
   title: Schema.String,
   updated: Field_Rfc3339,
 })
@@ -189,20 +217,64 @@ export const BoardGroup = Schema.Struct({ rows: Schema.Array(BoardRow), status: 
 export type Board = { readonly groups: ReadonlyArray<BoardGroup> }
 export const Board = Schema.Struct({ groups: Schema.Array(BoardGroup) })
 // schemas
+export type GetMergedBoard200 = Board
+export const GetMergedBoard200 = Board
+export type GetMergedBoard500 = ApiErrorBody
+export const GetMergedBoard500 = ApiErrorBody
+export type ListProjects200 = ReadonlyArray<ProjectView>
+export const ListProjects200 = Schema.Array(ProjectView)
+export type RegisterProjectRequestJson = RegisterProject
+export const RegisterProjectRequestJson = RegisterProject
+export type RegisterProject200 = ProjectView
+export const RegisterProject200 = ProjectView
+export type RegisterProject201 = ProjectView
+export const RegisterProject201 = ProjectView
+export type RegisterProject400 = ApiErrorBody
+export const RegisterProject400 = ApiErrorBody
+export type RegisterProject503 = ApiErrorBody
+export const RegisterProject503 = ApiErrorBody
+export type DeleteProject404 = ApiErrorBody
+export const DeleteProject404 = ApiErrorBody
+export type DeleteProject503 = ApiErrorBody
+export const DeleteProject503 = ApiErrorBody
+export type RenameProjectRequestJson = RenameProject
+export const RenameProjectRequestJson = RenameProject
+export type RenameProject200 = ProjectView
+export const RenameProject200 = ProjectView
+export type RenameProject400 = ApiErrorBody
+export const RenameProject400 = ApiErrorBody
+export type RenameProject404 = ApiErrorBody
+export const RenameProject404 = ApiErrorBody
+export type RenameProject409 = ApiErrorBody
+export const RenameProject409 = ApiErrorBody
+export type RenameProject503 = ApiErrorBody
+export const RenameProject503 = ApiErrorBody
 export type GetBoard200 = Board
 export const GetBoard200 = Board
 export type GetBoard400 = ApiErrorBody
 export const GetBoard400 = ApiErrorBody
+export type GetBoard404 = ApiErrorBody
+export const GetBoard404 = ApiErrorBody
 export type GetBoard500 = ApiErrorBody
 export const GetBoard500 = ApiErrorBody
+export type GetBoard503 = ApiErrorBody
+export const GetBoard503 = ApiErrorBody
 export type GetConfig200 = StoreConfig
 export const GetConfig200 = StoreConfig
+export type GetConfig404 = ApiErrorBody
+export const GetConfig404 = ApiErrorBody
+export type GetConfig503 = ApiErrorBody
+export const GetConfig503 = ApiErrorBody
 export type ListTasks200 = ReadonlyArray<TaskListItem>
 export const ListTasks200 = Schema.Array(TaskListItem)
 export type ListTasks400 = ApiErrorBody
 export const ListTasks400 = ApiErrorBody
+export type ListTasks404 = ApiErrorBody
+export const ListTasks404 = ApiErrorBody
 export type ListTasks500 = ApiErrorBody
 export const ListTasks500 = ApiErrorBody
+export type ListTasks503 = ApiErrorBody
+export const ListTasks503 = ApiErrorBody
 export type CreateTaskParams = { readonly branch?: string }
 export const CreateTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type CreateTaskRequestJson = CreateTask
@@ -211,10 +283,14 @@ export type CreateTask201 = CreatedTask
 export const CreateTask201 = CreatedTask
 export type CreateTask400 = ApiErrorBody
 export const CreateTask400 = ApiErrorBody
+export type CreateTask404 = ApiErrorBody
+export const CreateTask404 = ApiErrorBody
 export type CreateTask409 = ApiErrorBody
 export const CreateTask409 = ApiErrorBody
 export type CreateTask500 = ApiErrorBody
 export const CreateTask500 = ApiErrorBody
+export type CreateTask503 = ApiErrorBody
+export const CreateTask503 = ApiErrorBody
 export type GetTaskParams = { readonly branch?: string }
 export const GetTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type GetTask200 = TaskDetail
@@ -225,6 +301,8 @@ export type GetTask404 = ApiErrorBody
 export const GetTask404 = ApiErrorBody
 export type GetTask500 = ApiErrorBody
 export const GetTask500 = ApiErrorBody
+export type GetTask503 = ApiErrorBody
+export const GetTask503 = ApiErrorBody
 export type DeleteTaskParams = { readonly branch?: string }
 export const DeleteTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type DeleteTask400 = ApiErrorBody
@@ -235,6 +313,8 @@ export type DeleteTask409 = ApiErrorBody
 export const DeleteTask409 = ApiErrorBody
 export type DeleteTask500 = ApiErrorBody
 export const DeleteTask500 = ApiErrorBody
+export type DeleteTask503 = ApiErrorBody
+export const DeleteTask503 = ApiErrorBody
 export type PatchTaskParams = { readonly branch?: string }
 export const PatchTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type PatchTaskRequestJson = TaskPatch
@@ -249,6 +329,8 @@ export type PatchTask409 = ApiErrorBody
 export const PatchTask409 = ApiErrorBody
 export type PatchTask500 = ApiErrorBody
 export const PatchTask500 = ApiErrorBody
+export type PatchTask503 = ApiErrorBody
+export const PatchTask503 = ApiErrorBody
 export type Health200 = DaemonInfo
 export const Health200 = DaemonInfo
 
@@ -326,53 +408,118 @@ export const make = (
       )
   return {
     httpClient,
-    getBoard: (options) =>
+    getMergedBoard: (options) =>
       HttpClientRequest.get(`/api/board`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetMergedBoard200),
+            "500": decodeError("GetMergedBoard500", GetMergedBoard500),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    listProjects: (options) =>
+      HttpClientRequest.get(`/api/projects`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(ListProjects200),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    registerProject: (options) =>
+      HttpClientRequest.post(`/api/projects`).pipe(
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "200": decodeSuccess(RegisterProject200),
+            "201": decodeSuccess(RegisterProject201),
+            "400": decodeError("RegisterProject400", RegisterProject400),
+            "503": decodeError("RegisterProject503", RegisterProject503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    deleteProject: (project, options) =>
+      HttpClientRequest.delete(`/api/projects/${project}`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "404": decodeError("DeleteProject404", DeleteProject404),
+            "503": decodeError("DeleteProject503", DeleteProject503),
+            "204": () => Effect.void,
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    renameProject: (project, options) =>
+      HttpClientRequest.patch(`/api/projects/${project}`).pipe(
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(RenameProject200),
+            "400": decodeError("RenameProject400", RenameProject400),
+            "404": decodeError("RenameProject404", RenameProject404),
+            "409": decodeError("RenameProject409", RenameProject409),
+            "503": decodeError("RenameProject503", RenameProject503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    getBoard: (project, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/board`).pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(GetBoard200),
             "400": decodeError("GetBoard400", GetBoard400),
+            "404": decodeError("GetBoard404", GetBoard404),
             "500": decodeError("GetBoard500", GetBoard500),
+            "503": decodeError("GetBoard503", GetBoard503),
             orElse: unexpectedStatus,
           }),
         ),
       ),
-    getConfig: (options) =>
-      HttpClientRequest.get(`/api/config`).pipe(
+    getConfig: (project, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/config`).pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(GetConfig200),
+            "404": decodeError("GetConfig404", GetConfig404),
+            "503": decodeError("GetConfig503", GetConfig503),
             orElse: unexpectedStatus,
           }),
         ),
       ),
-    listTasks: (options) =>
-      HttpClientRequest.get(`/api/tasks`).pipe(
+    listTasks: (project, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/tasks`).pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(ListTasks200),
             "400": decodeError("ListTasks400", ListTasks400),
+            "404": decodeError("ListTasks404", ListTasks404),
             "500": decodeError("ListTasks500", ListTasks500),
+            "503": decodeError("ListTasks503", ListTasks503),
             orElse: unexpectedStatus,
           }),
         ),
       ),
-    createTask: (options) =>
-      HttpClientRequest.post(`/api/tasks`).pipe(
+    createTask: (project, options) =>
+      HttpClientRequest.post(`/api/projects/${project}/tasks`).pipe(
         HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
         HttpClientRequest.bodyJsonUnsafe(options.payload),
         withResponse(options.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(CreateTask201),
             "400": decodeError("CreateTask400", CreateTask400),
+            "404": decodeError("CreateTask404", CreateTask404),
             "409": decodeError("CreateTask409", CreateTask409),
             "500": decodeError("CreateTask500", CreateTask500),
+            "503": decodeError("CreateTask503", CreateTask503),
             orElse: unexpectedStatus,
           }),
         ),
       ),
-    getTask: (id, options) =>
-      HttpClientRequest.get(`/api/tasks/${id}`).pipe(
+    getTask: (project, id, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}`).pipe(
         HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
@@ -380,12 +527,13 @@ export const make = (
             "400": decodeError("GetTask400", GetTask400),
             "404": decodeError("GetTask404", GetTask404),
             "500": decodeError("GetTask500", GetTask500),
+            "503": decodeError("GetTask503", GetTask503),
             orElse: unexpectedStatus,
           }),
         ),
       ),
-    deleteTask: (id, options) =>
-      HttpClientRequest.delete(`/api/tasks/${id}`).pipe(
+    deleteTask: (project, id, options) =>
+      HttpClientRequest.delete(`/api/projects/${project}/tasks/${id}`).pipe(
         HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
@@ -393,13 +541,14 @@ export const make = (
             "404": decodeError("DeleteTask404", DeleteTask404),
             "409": decodeError("DeleteTask409", DeleteTask409),
             "500": decodeError("DeleteTask500", DeleteTask500),
+            "503": decodeError("DeleteTask503", DeleteTask503),
             "204": () => Effect.void,
             orElse: unexpectedStatus,
           }),
         ),
       ),
-    patchTask: (id, options) =>
-      HttpClientRequest.patch(`/api/tasks/${id}`).pipe(
+    patchTask: (project, id, options) =>
+      HttpClientRequest.patch(`/api/projects/${project}/tasks/${id}`).pipe(
         HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
         HttpClientRequest.bodyJsonUnsafe(options.payload),
         withResponse(options.config)(
@@ -409,6 +558,7 @@ export const make = (
             "404": decodeError("PatchTask404", PatchTask404),
             "409": decodeError("PatchTask409", PatchTask409),
             "500": decodeError("PatchTask500", PatchTask500),
+            "503": decodeError("PatchTask503", PatchTask503),
             orElse: unexpectedStatus,
           }),
         ),
@@ -427,43 +577,103 @@ export const make = (
 
 export interface TasksClient {
   readonly httpClient: HttpClient.HttpClient
+  readonly getMergedBoard: <Config extends OperationConfig>(
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetMergedBoard200.Type, Config>,
+    HttpClientError.HttpClientError | SchemaError | TasksClientError<"GetMergedBoard500", typeof GetMergedBoard500.Type>
+  >
+  readonly listProjects: <Config extends OperationConfig>(
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListProjects200.Type, Config>,
+    HttpClientError.HttpClientError | SchemaError
+  >
+  readonly registerProject: <Config extends OperationConfig>(options: {
+    readonly payload: typeof RegisterProjectRequestJson.Encoded
+    readonly config?: Config | undefined
+  }) => Effect.Effect<
+    WithOptionalResponse<typeof RegisterProject200.Type | typeof RegisterProject201.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"RegisterProject400", typeof RegisterProject400.Type>
+    | TasksClientError<"RegisterProject503", typeof RegisterProject503.Type>
+  >
+  readonly deleteProject: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DeleteProject404", typeof DeleteProject404.Type>
+    | TasksClientError<"DeleteProject503", typeof DeleteProject503.Type>
+  >
+  readonly renameProject: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly payload: typeof RenameProjectRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof RenameProject200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"RenameProject400", typeof RenameProject400.Type>
+    | TasksClientError<"RenameProject404", typeof RenameProject404.Type>
+    | TasksClientError<"RenameProject409", typeof RenameProject409.Type>
+    | TasksClientError<"RenameProject503", typeof RenameProject503.Type>
+  >
   readonly getBoard: <Config extends OperationConfig>(
+    project: string,
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetBoard200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"GetBoard400", typeof GetBoard400.Type>
+    | TasksClientError<"GetBoard404", typeof GetBoard404.Type>
     | TasksClientError<"GetBoard500", typeof GetBoard500.Type>
+    | TasksClientError<"GetBoard503", typeof GetBoard503.Type>
   >
   readonly getConfig: <Config extends OperationConfig>(
+    project: string,
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetConfig200.Type, Config>,
-    HttpClientError.HttpClientError | SchemaError
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetConfig404", typeof GetConfig404.Type>
+    | TasksClientError<"GetConfig503", typeof GetConfig503.Type>
   >
   readonly listTasks: <Config extends OperationConfig>(
+    project: string,
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListTasks200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"ListTasks400", typeof ListTasks400.Type>
+    | TasksClientError<"ListTasks404", typeof ListTasks404.Type>
     | TasksClientError<"ListTasks500", typeof ListTasks500.Type>
+    | TasksClientError<"ListTasks503", typeof ListTasks503.Type>
   >
-  readonly createTask: <Config extends OperationConfig>(options: {
-    readonly params?: typeof CreateTaskParams.Encoded | undefined
-    readonly payload: typeof CreateTaskRequestJson.Encoded
-    readonly config?: Config | undefined
-  }) => Effect.Effect<
+  readonly createTask: <Config extends OperationConfig>(
+    project: string,
+    options: {
+      readonly params?: typeof CreateTaskParams.Encoded | undefined
+      readonly payload: typeof CreateTaskRequestJson.Encoded
+      readonly config?: Config | undefined
+    },
+  ) => Effect.Effect<
     WithOptionalResponse<typeof CreateTask201.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"CreateTask400", typeof CreateTask400.Type>
+    | TasksClientError<"CreateTask404", typeof CreateTask404.Type>
     | TasksClientError<"CreateTask409", typeof CreateTask409.Type>
     | TasksClientError<"CreateTask500", typeof CreateTask500.Type>
+    | TasksClientError<"CreateTask503", typeof CreateTask503.Type>
   >
   readonly getTask: <Config extends OperationConfig>(
+    project: string,
     id: string,
     options:
       | { readonly params?: typeof GetTaskParams.Encoded | undefined; readonly config?: Config | undefined }
@@ -475,8 +685,10 @@ export interface TasksClient {
     | TasksClientError<"GetTask400", typeof GetTask400.Type>
     | TasksClientError<"GetTask404", typeof GetTask404.Type>
     | TasksClientError<"GetTask500", typeof GetTask500.Type>
+    | TasksClientError<"GetTask503", typeof GetTask503.Type>
   >
   readonly deleteTask: <Config extends OperationConfig>(
+    project: string,
     id: string,
     options:
       | { readonly params?: typeof DeleteTaskParams.Encoded | undefined; readonly config?: Config | undefined }
@@ -489,8 +701,10 @@ export interface TasksClient {
     | TasksClientError<"DeleteTask404", typeof DeleteTask404.Type>
     | TasksClientError<"DeleteTask409", typeof DeleteTask409.Type>
     | TasksClientError<"DeleteTask500", typeof DeleteTask500.Type>
+    | TasksClientError<"DeleteTask503", typeof DeleteTask503.Type>
   >
   readonly patchTask: <Config extends OperationConfig>(
+    project: string,
     id: string,
     options: {
       readonly params?: typeof PatchTaskParams.Encoded | undefined
@@ -505,6 +719,7 @@ export interface TasksClient {
     | TasksClientError<"PatchTask404", typeof PatchTask404.Type>
     | TasksClientError<"PatchTask409", typeof PatchTask409.Type>
     | TasksClientError<"PatchTask500", typeof PatchTask500.Type>
+    | TasksClientError<"PatchTask503", typeof PatchTask503.Type>
   >
   readonly health: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,

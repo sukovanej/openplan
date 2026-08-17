@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
 import {
+  boardPath,
   BranchSwitcher,
   createdOf,
   parentOf,
@@ -30,11 +31,11 @@ import {
 } from "@open-planner/ui"
 
 import { BodySkeleton, DetailSkeleton } from "../components/states"
-import { useAbbreviation } from "../lib/abbreviation"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
 import { errorText } from "../lib/format"
+import { useAbbreviation } from "../lib/projects"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
 import { taskMatches } from "../lib/task-search"
@@ -43,7 +44,7 @@ const NO_TASKS: ReadonlyArray<TaskListItem> = []
 const NO_CHILDREN: ReadonlyArray<TaskChild> = []
 
 export function DetailRoute() {
-  const { id = "" } = useParams()
+  const { project = "", id = "" } = useParams()
   // The selected branch lives in the URL (`?branch=`), so it is shareable and resets to the
   // headline on navigation without a render lag; absent means the headline (current-worktree)
   // version.
@@ -52,43 +53,57 @@ export function DetailRoute() {
   const onSelect = (next: string | undefined) =>
     setParams(next === undefined ? {} : { branch: next }, { replace: true })
 
-  const task = useQuery(useMemo(() => taskQuery(id, branch), [id, branch]))
+  const task = useQuery(useMemo(() => taskQuery(project, id, branch), [project, id, branch]))
 
   // Switching branch mints a fresh query that starts in `loading`. Keep the last loaded version on
   // screen while it resolves — a branch click updates the card in place instead of flashing the
-  // skeleton. Only a first load, or a different task, falls back to the skeleton.
-  const lastShown = useRef<{ id: string; value: TaskDetail } | null>(null)
-  if (task._tag === "success") lastShown.current = { id, value: task.value }
+  // skeleton. Only a first load, or a different task, falls back to the skeleton. The project is
+  // half of what names a task, and this route does not remount when only the project changes, so
+  // holding the id alone would show one project's task under another project's URL.
+  const lastShown = useRef<{ project: string; id: string; value: TaskDetail } | null>(null)
+  if (task._tag === "success") lastShown.current = { project, id, value: task.value }
 
   if (task._tag === "failure") {
     return task.error instanceof TaskNotFound ? (
-      <NotFound id={task.error.id} />
+      <NotFound project={project} id={task.error.id} />
     ) : (
       <EmptyState title="Could not load task" detail={errorText(task.error)} />
     )
   }
-  const shown = task._tag === "success" ? task.value : lastShown.current?.id === id ? lastShown.current.value : null
+  const held = lastShown.current
+  const shown = task._tag === "success" ? task.value : held?.project === project && held.id === id ? held.value : null
   // The list cache already holds the header fields (title, status, branches); seed from it so the
   // header renders instantly and only the body and hierarchy stream in.
-  const seed = shown ?? listItem(id)
+  const seed = shown ?? listItem(project, id)
   if (seed === undefined) return <DetailSkeleton />
-  return <TaskDetailView task={seed} detail={shown} body={shown?.body} selected={branch} onSelect={onSelect} />
+  return (
+    <TaskDetailView
+      project={project}
+      task={seed}
+      detail={shown}
+      body={shown?.body}
+      selected={branch}
+      onSelect={onSelect}
+    />
+  )
 }
 
 function TaskDetailView({
+  project,
   task,
   detail,
   body,
   selected,
   onSelect,
 }: {
+  project: string
   task: TaskDetail | TaskListItem
   detail: TaskDetail | null
   body: string | undefined
   selected: string | undefined
   onSelect: (branch: string | undefined) => void
 }) {
-  const abbreviation = useAbbreviation()
+  const abbreviation = useAbbreviation(project)
   return (
     <Panel>
       <PanelHeader className="gap-2">
@@ -97,6 +112,7 @@ function TaskDetailView({
         </PanelTitle>
         <div className="ml-auto min-w-0">
           <HeaderParent
+            project={project}
             id={task.id}
             parent={detail === null ? undefined : parentOf(detail.metadata)}
             parentTitle={detail?.parent_title}
@@ -120,9 +136,20 @@ function TaskDetailView({
         {body === undefined ? (
           <BodySkeleton />
         ) : (
-          <TaskBody markdown={stripTitle(body)} refs={detail?.refs} abbreviation={abbreviation} data-keys-ignore />
+          <TaskBody
+            project={project}
+            markdown={stripTitle(body)}
+            refs={detail?.refs}
+            abbreviation={abbreviation}
+            data-keys-ignore
+          />
         )}
-        <SubtasksSection id={task.id} items={detail?.children ?? NO_CHILDREN} ready={detail !== null} />
+        <SubtasksSection
+          project={project}
+          id={task.id}
+          items={detail?.children ?? NO_CHILDREN}
+          ready={detail !== null}
+        />
       </PanelBody>
     </Panel>
   )
@@ -178,11 +205,13 @@ function ComboTaskRow({ task, indices }: { task: TaskListItem; indices: Readonly
 // The parent as a header-right "Subtask of <link>", retargetable in place. Clicking the pencil (or
 // pressing `p`) swaps the link for the shared search field; `g p` jumps to the parent.
 function HeaderParent({
+  project,
   id,
   parent,
   parentTitle,
   ready,
 }: {
+  project: string
   id: string
   parent: string | undefined
   parentTitle: string | undefined
@@ -192,11 +221,11 @@ function HeaderParent({
   const [editing, setEditing] = useState(false)
   useDetailAction("edit-parent", () => setEditing(true))
   useDetailAction("go-parent", () => {
-    if (parent !== undefined && parentTitle !== undefined) navigate(taskPath(parent))
+    if (parent !== undefined && parentTitle !== undefined) navigate(taskPath(project, parent))
   })
 
   if (editing) {
-    return <ParentPicker id={id} onClose={() => setEditing(false)} />
+    return <ParentPicker project={project} id={id} onClose={() => setEditing(false)} />
   }
   // The parent is unknown until the detail loads; show nothing rather than a misleading "Set parent".
   if (!ready) return null
@@ -205,7 +234,7 @@ function HeaderParent({
     <div className="flex min-w-0 items-center gap-1">
       {parentTitle !== undefined && parent !== undefined ? (
         <MetaLine>
-          <ParentLink id={parent} title={parentTitle} />
+          <ParentLink project={project} id={parent} title={parentTitle} />
         </MetaLine>
       ) : hasParent ? (
         <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
@@ -230,11 +259,11 @@ function HeaderParent({
 
 // The full task list is needed only to search for a new parent, so it is fetched here — when the
 // picker opens — rather than on every detail view. Excludes self + descendants so a pick can't cycle.
-function ParentPicker({ id, onClose }: { id: string; onClose: () => void }) {
-  const tasks = useQuery(tasksQuery)
+function ParentPicker({ project, id, onClose }: { project: string; id: string; onClose: () => void }) {
+  const tasks = useQuery(tasksQuery(project))
   useEffect(() => {
-    tasksQuery.refresh()
-  }, [])
+    tasksQuery(project).refresh()
+  }, [project])
   const all = tasks._tag === "success" ? tasks.value : NO_TASKS
 
   const buildOptions = useCallback(
@@ -252,19 +281,19 @@ function ParentPicker({ id, onClose }: { id: string; onClose: () => void }) {
               Top level (no parent)
             </span>
           ),
-          onSelect: () => void runMutation(patchTask(id, { parent: null })),
+          onSelect: () => void runMutation(project, patchTask(project, id, { parent: null })),
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
         options.push({
           key: task.id,
           content: <ComboTaskRow task={task} indices={indices} />,
-          onSelect: () => void runMutation(patchTask(id, { parent: task.id })),
+          onSelect: () => void runMutation(project, patchTask(project, id, { parent: task.id })),
         })
       }
       return options
     },
-    [all, id],
+    [all, project, id],
   )
 
   return (
@@ -280,12 +309,22 @@ function ParentPicker({ id, onClose }: { id: string; onClose: () => void }) {
 
 // The direct children below the task body, plus an inline add box that either pulls an existing task
 // in as a child or creates a fresh one.
-function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArray<TaskChild>; ready: boolean }) {
+function SubtasksSection({
+  project,
+  id,
+  items,
+  ready,
+}: {
+  project: string
+  id: string
+  items: ReadonlyArray<TaskChild>
+  ready: boolean
+}) {
   const [adding, setAdding] = useState(false)
   useDetailAction("add-subtask", () => setAdding(true))
 
-  const childIds = useMemo(() => items.map((child) => child.id), [items])
-  const { index } = useSubtaskCursor(id, childIds)
+  const childPaths = useMemo(() => items.map((child) => taskPath(project, child.id)), [project, items])
+  const { index } = useSubtaskCursor(taskPath(project, id), childPaths)
   const activeRow = useRef<HTMLLIElement>(null)
   useEffect(() => {
     activeRow.current?.scrollIntoView({ block: "nearest" })
@@ -304,7 +343,7 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
     >
       {adding && (
         <div className="mb-3">
-          <SubtaskPicker id={id} onClose={() => setAdding(false)} />
+          <SubtaskPicker project={project} id={id} onClose={() => setAdding(false)} />
         </div>
       )}
       {items.length === 0 ? (
@@ -324,15 +363,15 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
               key={child.id}
               ref={i === index ? activeRow : undefined}
               aria-selected={i === index}
-              onMouseMove={() => hoveredRow.enter(child.id)}
-              onMouseLeave={() => hoveredRow.leave(child.id)}
+              onMouseMove={() => hoveredRow.enter(childPaths[i])}
+              onMouseLeave={() => hoveredRow.leave(childPaths[i])}
             >
               <Row
                 as={Link}
                 variant="option"
                 active={i === index}
                 hoverable
-                to={taskPath(child.id)}
+                to={childPaths[i]}
                 onClick={() => subtaskCursor.focus(i)}
               >
                 <TaskIdentity status={child.status} id={child.id} title={child.title} />
@@ -348,11 +387,11 @@ function SubtasksSection({ id, items, ready }: { id: string; items: ReadonlyArra
 // Opened on demand, so the full task list it searches is fetched only when adding — not per detail
 // view. Making a task a child of `id` closes a cycle only when that task is an ancestor of `id`, so
 // exclude the ancestor chain (and self); descendants are valid re-parent targets.
-function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
-  const tasks = useQuery(tasksQuery)
+function SubtaskPicker({ project, id, onClose }: { project: string; id: string; onClose: () => void }) {
+  const tasks = useQuery(tasksQuery(project))
   useEffect(() => {
-    tasksQuery.refresh()
-  }, [])
+    tasksQuery(project).refresh()
+  }, [project])
   const all = tasks._tag === "success" ? tasks.value : NO_TASKS
 
   const buildOptions = useCallback(
@@ -371,7 +410,7 @@ function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
               </span>
             </span>
           ),
-          onSelect: () => void runMutation(createTask({ title: query, parent: id })),
+          onSelect: () => void runMutation(project, createTask(project, { title: query, parent: id })),
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
@@ -379,12 +418,12 @@ function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
         options.push({
           key: task.id,
           content: <ComboTaskRow task={task} indices={indices} />,
-          onSelect: () => void runMutation(patchTask(task.id, { parent: id })),
+          onSelect: () => void runMutation(project, patchTask(project, task.id, { parent: id })),
         })
       }
       return options
     },
-    [all, id],
+    [all, project, id],
   )
 
   return (
@@ -399,20 +438,14 @@ function SubtaskPicker({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
-function NotFound({ id }: { id: string }) {
+function NotFound({ project, id }: { project: string; id: string }) {
   return (
     <div className="space-y-4">
-      <BackLink />
+      <Link to={boardPath(project)} className="text-muted-foreground text-sm hover:underline">
+        ← {project}
+      </Link>
       <EmptyState title="Task not found" detail={id} />
     </div>
-  )
-}
-
-function BackLink() {
-  return (
-    <Link to="/" className="text-muted-foreground text-sm hover:underline">
-      ← All tasks
-    </Link>
   )
 }
 
