@@ -2128,6 +2128,7 @@ dependencies = [
  "op-task",
  "serde",
  "serde_json",
+ "serde_yaml",
  "thiserror",
  "utoipa",
 ]
@@ -2152,7 +2153,6 @@ dependencies = [
  "op-api",
  "op-client",
  "op-git",
- "op-index",
  "op-lint",
  "op-md",
  "op-server",

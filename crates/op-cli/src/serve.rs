@@ -81,7 +81,7 @@ async fn serve(home: Home, port: u16) -> Result<()> {
 // answering — with N projects it is N branch walks over the object DB.
 fn warm_indexes(state: &AppState) {
     for project in state.projects() {
-        if let Err(err) = project.write_index() {
+        if let Err(err) = project.rebuilt_index() {
             tracing::warn!(project = %project.name(), %err, "initial matrix build failed");
         }
     }

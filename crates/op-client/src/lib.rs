@@ -2,8 +2,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use op_api::{
-    ApiErrorBody, CreateTask, DaemonInfo, ProjectView, RegisterProject, RenameProject, TaskDetail,
-    TaskPatch,
+    ApiErrorBody, CreateTask, DaemonInfo, Matrix, ProjectView, RegisterProject, RenameProject,
+    TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -12,8 +12,9 @@ use serde::de::DeserializeOwned;
 
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
-// A read has a local answer to fall back on, so it gives the daemon a short turn and moves on.
-pub const READ_TIMEOUT: Duration = Duration::from_secs(2);
+// A read has no local answer to fall back on, and it asks the daemon to walk every branch before
+// answering, so it waits as long as a write does.
+pub const READ_TIMEOUT: Duration = Duration::from_secs(30);
 // A write waits for the target file's advisory lock, which another writer may hold for a while.
 pub const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -28,6 +29,11 @@ pub enum ClientError {
         WRITE_TIMEOUT.as_secs()
     )]
     TimedOut,
+    #[error(
+        "the openplan daemon did not answer a read within {}s; it may still be walking the repository",
+        READ_TIMEOUT.as_secs()
+    )]
+    ReadTimedOut,
     #[error("{message}")]
     Refused { status: u16, message: String },
     // The daemon answered, and the answer is not what this route returns. A daemon that predates a
@@ -65,22 +71,75 @@ impl Client {
             .ok()
     }
 
+    // Every read below is a one-shot question from a caller with no change stream, so each asks the
+    // daemon for a freshly walked index rather than one the watcher may not have invalidated yet.
+    pub fn tasks(
+        &self,
+        base_url: &str,
+        project: &str,
+        branch: Option<&str>,
+    ) -> Result<Vec<TaskListItem>, ClientError> {
+        self.read(read_url(base_url, project, None, branch)?)
+    }
+
+    pub fn matrix(&self, base_url: &str, project: &str) -> Result<Matrix, ClientError> {
+        let mut url = projects_url(base_url, project)?;
+        url.path_segments_mut()
+            .map_err(|_| unusable(base_url))?
+            .push("matrix");
+        self.read(fresh(url))
+    }
+
     pub fn task(
         &self,
         base_url: &str,
         project: &str,
         id: &str,
         branch: Option<&str>,
-    ) -> Option<TaskDetail> {
-        let mut url = tasks_url(base_url, project, Some(id)).ok()?;
-        if let Some(branch) = branch {
-            url.query_pairs_mut().append_pair("branch", branch);
+    ) -> Result<TaskDetail, ClientError> {
+        self.read(read_url(base_url, project, Some(id), branch)?)
+    }
+
+    pub fn task_tree(
+        &self,
+        base_url: &str,
+        project: &str,
+        id: &str,
+        branch: Option<&str>,
+        depth: Option<usize>,
+    ) -> Result<TaskTreeView, ClientError> {
+        let mut url = read_url(base_url, project, Some(id), branch)?;
+        url.path_segments_mut()
+            .map_err(|_| unusable(base_url))?
+            .push("tree");
+        if let Some(depth) = depth {
+            url.query_pairs_mut()
+                .append_pair("depth", &depth.to_string());
         }
-        let response = self.http.get(url).timeout(READ_TIMEOUT).send().ok()?;
-        if !response.status().is_success() {
-            return None;
-        }
-        response.json::<TaskDetail>().ok()
+        self.read(url)
+    }
+
+    pub fn task_branches(
+        &self,
+        base_url: &str,
+        project: &str,
+        id: &str,
+    ) -> Result<TaskBranches, ClientError> {
+        let mut url = read_url(base_url, project, Some(id), None)?;
+        url.path_segments_mut()
+            .map_err(|_| unusable(base_url))?
+            .push("branches");
+        self.read(url)
+    }
+
+    fn read<T: DeserializeOwned>(&self, url: Url) -> Result<T, ClientError> {
+        let route = url.path().to_owned();
+        accepted(send_read(self.http.get(url))?)?
+            .json()
+            .map_err(|err| ClientError::Unreadable {
+                route,
+                message: err.to_string(),
+            })
     }
 
     // The caller names the wait it can afford: a write must know its project before it can start, a
@@ -196,6 +255,15 @@ fn send(request: RequestBuilder) -> Result<Response, ClientError> {
     send_within(request, WRITE_TIMEOUT)
 }
 
+// A read that times out has changed nothing, so it says so plainly rather than warn about a write
+// that may have landed.
+fn send_read(request: RequestBuilder) -> Result<Response, ClientError> {
+    match send_within(request, READ_TIMEOUT) {
+        Err(ClientError::TimedOut) => Err(ClientError::ReadTimedOut),
+        other => other,
+    }
+}
+
 fn send_within(request: RequestBuilder, timeout: Duration) -> Result<Response, ClientError> {
     request.timeout(timeout).send().map_err(|err| {
         if err.is_timeout() {
@@ -257,4 +325,22 @@ fn write_url(
     let mut url = tasks_url(base_url, project, id)?;
     url.query_pairs_mut().append_pair("branch", branch);
     Ok(url)
+}
+
+fn read_url(
+    base_url: &str,
+    project: &str,
+    id: Option<&str>,
+    branch: Option<&str>,
+) -> Result<Url, ClientError> {
+    let mut url = tasks_url(base_url, project, id)?;
+    if let Some(branch) = branch {
+        url.query_pairs_mut().append_pair("branch", branch);
+    }
+    Ok(fresh(url))
+}
+
+fn fresh(mut url: Url) -> Url {
+    url.query_pairs_mut().append_pair("fresh", "true");
+    url
 }

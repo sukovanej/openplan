@@ -1067,3 +1067,77 @@ fn two_files_of_one_number_resolve_to_the_lowest_name() {
         Some("Alpha".to_owned())
     );
 }
+
+// The matrix records divergence, so a task a branch agrees with its merge-base about contributes no
+// cell there. A read scoped to that branch must still find it: the branch carries the task, it just
+// has nothing of its own to say about it.
+#[test]
+fn a_branch_read_finds_a_task_it_agrees_with_the_merge_base_about() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(
+        root,
+        1,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Shared\n",
+    );
+    task(
+        root,
+        2,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Moved\n",
+    );
+    commit(root, "two tasks");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    task(
+        root,
+        2,
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Moved\n",
+    );
+    commit(root, "feature edits the second one");
+    git(root, &["checkout", "-q", "main"]);
+
+    let index = built(root);
+    let repo = Repo::discover(root).unwrap();
+
+    assert!(
+        find(&index, "feature", 1).is_none(),
+        "the shared task diverges nowhere, so it has no cell"
+    );
+    let summaries = index.branch_summaries("feature");
+    let ids: Vec<&str> = summaries.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, vec![key(1), key(2)], "feature carries both");
+    assert_eq!(
+        index.branch_tasks("test", "feature").len(),
+        2,
+        "and lists both"
+    );
+    assert!(
+        index
+            .effective_raw(&repo, &key(1), "feature")
+            .unwrap()
+            .is_some_and(|raw| raw.contains("# Shared")),
+        "the merge-base version is feature's version"
+    );
+    assert!(
+        index
+            .task_detail(&repo, "test", &key(1), Some("feature"))
+            .unwrap()
+            .is_some(),
+        "a detail read on feature resolves it too"
+    );
+
+    // A branch really without the task still says so.
+    task(
+        root,
+        3,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Only on main\n",
+    );
+    commit(root, "main gains a third");
+    let index = built(root);
+    assert!(
+        index
+            .effective_raw(&repo, &key(3), "feature")
+            .unwrap()
+            .is_none()
+    );
+}

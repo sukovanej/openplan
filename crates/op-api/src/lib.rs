@@ -447,6 +447,47 @@ pub fn updated_field(
         .into()
 }
 
+// A task file rebuilt from the state the daemon holds, for a caller that asked for markdown rather
+// than JSON. The daemon parses; nothing above it keeps the bytes, so this is a canonical rendering
+// and not the file: key order, spacing, and keys no field names are normalized away, and a field
+// that did not parse is left out rather than guessed at (`Metadata::problems` names those).
+pub fn render_task_file(metadata: &Metadata, body: &str) -> String {
+    let mut frontmatter = serde_yaml::Mapping::new();
+    let mut put = |key: &str, value: serde_yaml::Value| {
+        frontmatter.insert(serde_yaml::Value::String(key.to_owned()), value);
+    };
+    if let Some(fields) = metadata.fields() {
+        if let Some(status) = fields.status.as_value() {
+            put("status", status.as_str().into());
+        }
+        if let Some(created) = fields.created.as_value() {
+            put("created", created.to_string().into());
+        }
+        if let Some(Some(parent)) = fields.parent.as_value() {
+            put("parent", parent.as_str().into());
+        }
+        if let Some(Some(rank)) = fields.rank.as_value() {
+            put("rank", rank.as_str().into());
+        }
+        match fields.dependencies.as_value() {
+            Some(dependencies) if !dependencies.is_empty() => put(
+                "dependencies",
+                dependencies
+                    .iter()
+                    .map(|d| serde_yaml::Value::String(d.clone()))
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            _ => {}
+        }
+    }
+    let yaml = match frontmatter.is_empty() {
+        true => String::new(),
+        false => serde_yaml::to_string(&frontmatter).unwrap_or_default(),
+    };
+    format!("---\n{yaml}---\n{body}")
+}
+
 // A direct child of a task, in sibling (`rank`) order — enough to render the subtasks list without
 // the whole task set in memory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -648,12 +689,24 @@ impl TaskPatch {
 
 // The subtree rooted at one task: siblings within `children` are ordered by `rank`, the tree
 // built by grouping the flat task set on `parent`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskTree {
     pub id: String,
     pub title: String,
     pub metadata: Metadata,
+    // A schema generator that expanded this in place would never stop.
+    #[schema(no_recursion)]
     pub children: Vec<TaskTree>,
+}
+
+// A subtree plus the tasks whose own subtree was left out because a parent cycle would have made
+// the descent endless. A client that only rendered `tree` would show a truncated hierarchy as a
+// complete one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct TaskTreeView {
+    pub tree: TaskTree,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycles: Vec<String>,
 }
 
 // A `rank` is an order somebody set on purpose, so ranked tasks hold the top of the list
@@ -946,7 +999,7 @@ fn emit_row<'a>(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct MatrixCell {
     pub branch: String,
     pub task: TaskSummary,
@@ -955,7 +1008,7 @@ pub struct MatrixCell {
     pub kind: ChangeKind,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Matrix {
     pub cells: Vec<MatrixCell>,
 }
@@ -963,20 +1016,20 @@ pub struct Matrix {
 // One task viewed across every branch it lives on, its cells grouped by blob OID so identical
 // versions collapse into a single row and divergent ones stand out. A `Deleted` mark carries
 // the pre-deletion blob, so a branch that removes the task groups under the version it removed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskBranches {
     pub id: String,
     pub versions: Vec<TaskVersion>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskVersion {
     pub blob_oid: String,
     pub summary: TaskSummary,
     pub branches: Vec<BranchMark>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct BranchMark {
     pub branch: String,
     pub kind: ChangeKind,

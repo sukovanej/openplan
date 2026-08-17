@@ -6,6 +6,14 @@ import type * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientError from "effect/unstable/http/HttpClientError"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+// recursive declarations
+export type TaskTree = {
+  readonly children: ReadonlyArray<TaskTree>
+  readonly id: string
+  readonly metadata: Metadata
+  readonly title: string
+}
+export const TaskTree = Schema.suspend((): Schema.Codec<TaskTree> => __recursive_TaskTree)
 // non-recursive definitions
 export type ApiErrorBody = { readonly message: string }
 export const ApiErrorBody = Schema.Struct({ message: Schema.String })
@@ -53,6 +61,10 @@ export type StoreConfig = { readonly abbreviation: string }
 export const StoreConfig = Schema.Struct({
   abbreviation: Schema.String.check(Schema.isPattern(new RegExp("^[A-Z]{3}$"))),
 })
+export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
+export const TaskTreeView = Schema.Struct({ cycles: Schema.optionalKey(Schema.Array(Schema.String)), tree: TaskTree })
+export type BranchMark = { readonly branch: string; readonly dirty: boolean; readonly kind: ChangeKind }
+export const BranchMark = Schema.Struct({ branch: Schema.String, dirty: Schema.Boolean, kind: ChangeKind })
 export type Field_Option_String = null | string | FieldError
 export const Field_Option_String = Schema.Union(
   [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError],
@@ -200,6 +212,8 @@ export const TaskListItem = Schema.Struct({
   title: Schema.String,
   updated: Field_Rfc3339,
 })
+export type TaskSummary = { readonly id: string; readonly metadata: Metadata; readonly title: string }
+export const TaskSummary = Schema.Struct({ id: Schema.String, metadata: Metadata, title: Schema.String })
 export type BoardRow = {
   readonly depth: number
   readonly has_children: boolean
@@ -212,10 +226,45 @@ export const BoardRow = Schema.Struct({
   parent_title: Schema.optionalKey(Schema.String),
   task: TaskListItem,
 })
+export type MatrixCell = {
+  readonly blob_oid: string
+  readonly branch: string
+  readonly dirty: boolean
+  readonly kind: ChangeKind
+  readonly task: TaskSummary
+}
+export const MatrixCell = Schema.Struct({
+  blob_oid: Schema.String,
+  branch: Schema.String,
+  dirty: Schema.Boolean,
+  kind: ChangeKind,
+  task: TaskSummary,
+})
+export type TaskVersion = {
+  readonly blob_oid: string
+  readonly branches: ReadonlyArray<BranchMark>
+  readonly summary: TaskSummary
+}
+export const TaskVersion = Schema.Struct({
+  blob_oid: Schema.String,
+  branches: Schema.Array(BranchMark),
+  summary: TaskSummary,
+})
 export type BoardGroup = { readonly rows: ReadonlyArray<BoardRow>; readonly status?: Status }
 export const BoardGroup = Schema.Struct({ rows: Schema.Array(BoardRow), status: Schema.optionalKey(Status) })
+export type Matrix = { readonly cells: ReadonlyArray<MatrixCell> }
+export const Matrix = Schema.Struct({ cells: Schema.Array(MatrixCell) })
+export type TaskBranches = { readonly id: string; readonly versions: ReadonlyArray<TaskVersion> }
+export const TaskBranches = Schema.Struct({ id: Schema.String, versions: Schema.Array(TaskVersion) })
 export type Board = { readonly groups: ReadonlyArray<BoardGroup> }
 export const Board = Schema.Struct({ groups: Schema.Array(BoardGroup) })
+// recursive definitions
+const __recursive_TaskTree = Schema.Struct({
+  children: Schema.Array(Schema.suspend((): Schema.Codec<TaskTree> => TaskTree)),
+  id: Schema.String,
+  metadata: Metadata,
+  title: Schema.String,
+})
 // schemas
 export type GetMergedBoard200 = Board
 export const GetMergedBoard200 = Board
@@ -265,6 +314,21 @@ export type GetConfig404 = ApiErrorBody
 export const GetConfig404 = ApiErrorBody
 export type GetConfig503 = ApiErrorBody
 export const GetConfig503 = ApiErrorBody
+export type GetMatrixParams = { readonly fresh?: boolean }
+export const GetMatrixParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
+export type GetMatrix200 = Matrix
+export const GetMatrix200 = Matrix
+export type GetMatrix404 = ApiErrorBody
+export const GetMatrix404 = ApiErrorBody
+export type GetMatrix500 = ApiErrorBody
+export const GetMatrix500 = ApiErrorBody
+export type GetMatrix503 = ApiErrorBody
+export const GetMatrix503 = ApiErrorBody
+export type ListTasksParams = { readonly branch?: string | null; readonly fresh?: boolean }
+export const ListTasksParams = Schema.Struct({
+  branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  fresh: Schema.optionalKey(Schema.Boolean),
+})
 export type ListTasks200 = ReadonlyArray<TaskListItem>
 export const ListTasks200 = Schema.Array(TaskListItem)
 export type ListTasks400 = ApiErrorBody
@@ -291,8 +355,11 @@ export type CreateTask500 = ApiErrorBody
 export const CreateTask500 = ApiErrorBody
 export type CreateTask503 = ApiErrorBody
 export const CreateTask503 = ApiErrorBody
-export type GetTaskParams = { readonly branch?: string }
-export const GetTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
+export type GetTaskParams = { readonly branch?: string | null; readonly fresh?: boolean }
+export const GetTaskParams = Schema.Struct({
+  branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  fresh: Schema.optionalKey(Schema.Boolean),
+})
 export type GetTask200 = TaskDetail
 export const GetTask200 = TaskDetail
 export type GetTask400 = ApiErrorBody
@@ -331,6 +398,38 @@ export type PatchTask500 = ApiErrorBody
 export const PatchTask500 = ApiErrorBody
 export type PatchTask503 = ApiErrorBody
 export const PatchTask503 = ApiErrorBody
+export type GetTaskBranchesParams = { readonly fresh?: boolean }
+export const GetTaskBranchesParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
+export type GetTaskBranches200 = TaskBranches
+export const GetTaskBranches200 = TaskBranches
+export type GetTaskBranches400 = ApiErrorBody
+export const GetTaskBranches400 = ApiErrorBody
+export type GetTaskBranches404 = ApiErrorBody
+export const GetTaskBranches404 = ApiErrorBody
+export type GetTaskBranches500 = ApiErrorBody
+export const GetTaskBranches500 = ApiErrorBody
+export type GetTaskBranches503 = ApiErrorBody
+export const GetTaskBranches503 = ApiErrorBody
+export type GetTaskTreeParams = { readonly branch?: string | null; readonly fresh?: boolean; readonly depth?: number }
+export const GetTaskTreeParams = Schema.Struct({
+  branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  fresh: Schema.optionalKey(Schema.Boolean),
+  depth: Schema.optionalKey(
+    Schema.Union([
+      Schema.Number.check(Schema.isInt()).check(Schema.isFinite()).check(Schema.isGreaterThanOrEqualTo(0)),
+    ]),
+  ),
+})
+export type GetTaskTree200 = TaskTreeView
+export const GetTaskTree200 = TaskTreeView
+export type GetTaskTree400 = ApiErrorBody
+export const GetTaskTree400 = ApiErrorBody
+export type GetTaskTree404 = ApiErrorBody
+export const GetTaskTree404 = ApiErrorBody
+export type GetTaskTree500 = ApiErrorBody
+export const GetTaskTree500 = ApiErrorBody
+export type GetTaskTree503 = ApiErrorBody
+export const GetTaskTree503 = ApiErrorBody
 export type Health200 = DaemonInfo
 export const Health200 = DaemonInfo
 
@@ -489,8 +588,25 @@ export const make = (
           }),
         ),
       ),
+    getMatrix: (project, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/matrix`).pipe(
+        HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetMatrix200),
+            "404": decodeError("GetMatrix404", GetMatrix404),
+            "500": decodeError("GetMatrix500", GetMatrix500),
+            "503": decodeError("GetMatrix503", GetMatrix503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     listTasks: (project, options) =>
       HttpClientRequest.get(`/api/projects/${project}/tasks`).pipe(
+        HttpClientRequest.setUrlParams({
+          branch: options?.params?.["branch"] as any,
+          fresh: options?.params?.["fresh"] as any,
+        }),
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(ListTasks200),
@@ -520,7 +636,10 @@ export const make = (
       ),
     getTask: (project, id, options) =>
       HttpClientRequest.get(`/api/projects/${project}/tasks/${id}`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
+        HttpClientRequest.setUrlParams({
+          branch: options?.params?.["branch"] as any,
+          fresh: options?.params?.["fresh"] as any,
+        }),
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(GetTask200),
@@ -559,6 +678,38 @@ export const make = (
             "409": decodeError("PatchTask409", PatchTask409),
             "500": decodeError("PatchTask500", PatchTask500),
             "503": decodeError("PatchTask503", PatchTask503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    getTaskBranches: (project, id, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/branches`).pipe(
+        HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetTaskBranches200),
+            "400": decodeError("GetTaskBranches400", GetTaskBranches400),
+            "404": decodeError("GetTaskBranches404", GetTaskBranches404),
+            "500": decodeError("GetTaskBranches500", GetTaskBranches500),
+            "503": decodeError("GetTaskBranches503", GetTaskBranches503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    getTaskTree: (project, id, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/tree`).pipe(
+        HttpClientRequest.setUrlParams({
+          branch: options?.params?.["branch"] as any,
+          fresh: options?.params?.["fresh"] as any,
+          depth: options?.params?.["depth"] as any,
+        }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetTaskTree200),
+            "400": decodeError("GetTaskTree400", GetTaskTree400),
+            "404": decodeError("GetTaskTree404", GetTaskTree404),
+            "500": decodeError("GetTaskTree500", GetTaskTree500),
+            "503": decodeError("GetTaskTree503", GetTaskTree503),
             orElse: unexpectedStatus,
           }),
         ),
@@ -643,9 +794,24 @@ export interface TasksClient {
     | TasksClientError<"GetConfig404", typeof GetConfig404.Type>
     | TasksClientError<"GetConfig503", typeof GetConfig503.Type>
   >
+  readonly getMatrix: <Config extends OperationConfig>(
+    project: string,
+    options:
+      | { readonly params?: typeof GetMatrixParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetMatrix200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetMatrix404", typeof GetMatrix404.Type>
+    | TasksClientError<"GetMatrix500", typeof GetMatrix500.Type>
+    | TasksClientError<"GetMatrix503", typeof GetMatrix503.Type>
+  >
   readonly listTasks: <Config extends OperationConfig>(
     project: string,
-    options: { readonly config?: Config | undefined } | undefined,
+    options:
+      | { readonly params?: typeof ListTasksParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListTasks200.Type, Config>,
     | HttpClientError.HttpClientError
@@ -720,6 +886,36 @@ export interface TasksClient {
     | TasksClientError<"PatchTask409", typeof PatchTask409.Type>
     | TasksClientError<"PatchTask500", typeof PatchTask500.Type>
     | TasksClientError<"PatchTask503", typeof PatchTask503.Type>
+  >
+  readonly getTaskBranches: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options:
+      | { readonly params?: typeof GetTaskBranchesParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetTaskBranches200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetTaskBranches400", typeof GetTaskBranches400.Type>
+    | TasksClientError<"GetTaskBranches404", typeof GetTaskBranches404.Type>
+    | TasksClientError<"GetTaskBranches500", typeof GetTaskBranches500.Type>
+    | TasksClientError<"GetTaskBranches503", typeof GetTaskBranches503.Type>
+  >
+  readonly getTaskTree: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options:
+      | { readonly params?: typeof GetTaskTreeParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetTaskTree200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetTaskTree400", typeof GetTaskTree400.Type>
+    | TasksClientError<"GetTaskTree404", typeof GetTaskTree404.Type>
+    | TasksClientError<"GetTaskTree500", typeof GetTaskTree500.Type>
+    | TasksClientError<"GetTaskTree503", typeof GetTaskTree503.Type>
   >
   readonly health: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,

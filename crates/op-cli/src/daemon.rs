@@ -10,7 +10,6 @@ use fs2::FileExt as _;
 
 pub use op_api::DaemonInfo;
 use op_api::ProjectView;
-use op_task::{FieldResult, Timestamp};
 
 pub const DEFAULT_PORT: u16 = 7373;
 
@@ -314,41 +313,6 @@ impl Control {
 
     // A live daemon answers /health with its own identity; requiring the pid to match
     // daemon.json rejects a stale record whose port was recycled by an unrelated service.
-    // The `updated` a running daemon already holds, for a task in the repository it indexes. Asked
-    // for the branch whose file the caller read, so the answer describes the bytes it will print.
-    // `None` means no daemon could answer — not that the task has no `updated`.
-    pub fn task_updated(
-        &self,
-        repo_dir: &Path,
-        id: &str,
-        branch: Option<&str>,
-    ) -> Option<FieldResult<Timestamp>> {
-        let info = self.home.read_info()?;
-        if !self.serves_identity(&info) {
-            return None;
-        }
-        let base = base_url(info.port);
-        // A daemon that does not serve this repository — or one too old to list its projects — indexes
-        // other stores, whose task of this number is a different task. The read timeout keeps a busy
-        // daemon from holding a local read for the length of a write's wait.
-        let views = self.client.projects(&base, op_client::READ_TIMEOUT).ok()?;
-        let project = project_named(views, repo_dir)?;
-        let detail = self.client.task(&base, &project, id, branch)?;
-        let updated = detail.updated.into_result().map(|at| at.0);
-        // A branch matching its merge-base has no cell there, so the daemon reports nothing for it;
-        // the headline is what the local path falls back to as well.
-        match (updated, branch) {
-            (Err(op_task::FieldError::Missing), Some(_)) => Some(
-                self.client
-                    .task(&base, &project, id, None)?
-                    .updated
-                    .into_result()
-                    .map(|at| at.0),
-            ),
-            (updated, _) => Some(updated),
-        }
-    }
-
     fn serves_identity(&self, info: &DaemonInfo) -> bool {
         self.client
             .health(&base_url(info.port))

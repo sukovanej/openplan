@@ -702,8 +702,10 @@ fn updated_of(daemon: &Daemon, id: &str) -> serde_json::Value {
     view["updated"].clone()
 }
 
+// A read is answered from the daemon's index whether the daemon was already up or the read itself
+// brought it up, so the two cannot disagree about a task's date.
 #[test]
-fn a_running_daemon_dates_a_task_exactly_as_the_local_index_does() {
+fn a_read_dates_a_task_the_same_whoever_started_the_daemon() {
     let daemon = Daemon::new();
     let created = daemon
         .cmd()
@@ -715,21 +717,44 @@ fn a_running_daemon_dates_a_task_exactly_as_the_local_index_does() {
     git(daemon.root.path(), &["add", "-A"]);
     git(daemon.root.path(), &["commit", "-qm", "add the task"]);
 
-    let alone = updated_of(&daemon, &id);
-    assert!(alone.is_string(), "{alone}");
+    let started_by_the_write = updated_of(&daemon, &id);
+    assert!(started_by_the_write.is_string(), "{started_by_the_write}");
 
     assert!(
         daemon
             .cmd()
-            .args(["server", "start", "--port", "0"])
+            .args(["server", "restart", "--port", "0"])
             .output()
             .unwrap()
             .status
             .success()
     );
 
-    // Same answer, from the daemon's warm index instead of one built and thrown away here.
-    assert_eq!(updated_of(&daemon, &id), alone);
+    assert_eq!(updated_of(&daemon, &id), started_by_the_write);
+}
+
+// Reads have no local fallback, so a daemon that cannot be reached stops the command instead of
+// answering from the files in front of it.
+#[test]
+fn a_read_with_no_reachable_daemon_fails_explicitly() {
+    let daemon = Daemon::new();
+    let out = daemon
+        .cmd()
+        .args(["--daemon", "http://127.0.0.1:1", "list"])
+        .output()
+        .unwrap();
+
+    assert!(!out.status.success(), "an unreachable daemon must not pass");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("no openplan daemon at http://127.0.0.1:1"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).is_empty(),
+        "no task data may be printed: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }
 
 fn commit_at(dir: &Path, seconds: i64, message: &str) {
@@ -770,8 +795,10 @@ fn task_repo_keyed(seconds: i64, abbreviation: &str) -> TempDir {
     dir
 }
 
+// One daemon serves every repository on the machine, so a read has to name which one it is asking
+// about. Two repositories can hold a task of the same number, and the answer must be the caller's.
 #[test]
-fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
+fn a_read_is_answered_for_the_repository_the_caller_stands_in() {
     let daemon = Daemon::new();
     let theirs = task_repo(1_000_000_000);
     let ours = task_repo(1_500_000_000);
@@ -801,8 +828,8 @@ fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
     );
     let view: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
 
-    // Both repositories hold task `1`, dated differently. The running daemon indexes only
-    // one of them, and answering from it would date this read by a file it never read.
+    // Both repositories hold task `1`, dated differently. The daemon was already serving the other
+    // one; answering from it would date this read by a file the caller never named.
     assert_eq!(view["updated"], "2017-07-14T02:40:00Z");
 }
 

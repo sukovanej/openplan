@@ -17,6 +17,12 @@ use op_task::{Abbreviation, FieldError, FieldResult, Timestamp};
 pub struct Index {
     abbreviation: Abbreviation,
     matrix: Matrix,
+    // branch -> every task that branch holds, keyed by id. The matrix records only divergence, so a
+    // task identical to its merge-base has no cell there; a read scoped to a branch still has to
+    // find it, and has to tell "the branch does not carry this task" from "the branch agrees with
+    // main about it". Present for every local branch, so an unknown branch is refused rather than
+    // answered with nothing.
+    branch_versions: HashMap<String, BTreeMap<String, BranchVersion>>,
     // Keyed by blob OID, which is content-addressed, so an entry never goes stale — the cache
     // grows across rebuilds and is only ever added to. Holds the id-independent parse (the id is
     // the filename, absent from the blob) so two tasks sharing a blob don't leak each other's id.
@@ -65,13 +71,27 @@ struct Version {
     metadata: Metadata,
 }
 
-struct DiffCtx<'a> {
+// How one task stands on one branch: the blob its effective text hashes to — the live working copy
+// when the branch is checked out, else the committed tip — and whether those two differ.
+#[derive(Debug, Clone)]
+struct BranchVersion {
+    blob_oid: String,
+    dirty: bool,
+}
+
+// One branch as a rebuild sees it: the ids it holds, the blob each is committed as, and the
+// worktree holding it when the branch is checked out.
+struct BranchScan<'a> {
     branch: &'a str,
     present: &'a BTreeSet<String>,
     committed: &'a HashMap<String, String>,
+    live: Option<&'a BTreeMap<String, RawTask>>,
+}
+
+struct DiffCtx<'a> {
+    scan: BranchScan<'a>,
     base: &'a HashMap<String, HashSet<String>>,
     default_blobs: &'a HashMap<String, String>,
-    live: Option<&'a BTreeMap<String, RawTask>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -87,6 +107,7 @@ impl Index {
         Self {
             abbreviation: config.abbreviation,
             matrix: Matrix::default(),
+            branch_versions: HashMap::new(),
             blob_cache: HashMap::new(),
             live: HashMap::new(),
             live_times: HashMap::new(),
@@ -186,6 +207,7 @@ impl Index {
         let no_base = HashMap::new();
 
         let mut cells = Vec::new();
+        self.branch_versions.clear();
         // Every worktree's files, not just those of the branches walked below: a task can hold a
         // number while no branch commits it — an unborn HEAD has no branch at all, and a worktree
         // mid-merge is excluded from `live`. The number is taken the moment the file exists.
@@ -205,26 +227,24 @@ impl Index {
             // Every id the branch holds, not just the cells it contributes: a task identical to its
             // merge base is skipped below, and its number would otherwise read as free.
             max_id = max_id.max(present.iter().map(|key| self.number_of(key)).max());
+            let scan = BranchScan {
+                branch,
+                present: &present,
+                committed: &committed,
+                live: live.as_ref(),
+            };
+            let mut versions = BTreeMap::new();
             if self.is_baseline(branch) {
-                self.baseline_cells(
-                    repo,
-                    branch,
-                    &present,
-                    &committed,
-                    live.as_ref(),
-                    &mut cells,
-                )?;
+                self.baseline_cells(repo, &scan, &mut versions, &mut cells)?;
             } else {
                 let ctx = DiffCtx {
-                    branch,
-                    present: &present,
-                    committed: &committed,
+                    scan,
                     base: base_blobs.get(branch).unwrap_or(&no_base),
                     default_blobs: &default_blobs,
-                    live: live.as_ref(),
                 };
-                self.diff_cells(repo, &ctx, &mut cells)?;
+                self.diff_cells(repo, &ctx, &mut versions, &mut cells)?;
             }
+            self.branch_versions.insert(branch.clone(), versions);
         }
         self.max_id = max_id;
         cells.sort_by(|a, b| id_cmp(&a.task.id, &b.task.id).then_with(|| a.branch.cmp(&b.branch)));
@@ -433,16 +453,13 @@ impl Index {
     fn baseline_cells(
         &mut self,
         repo: &Repo,
-        branch: &str,
-        present: &BTreeSet<String>,
-        committed: &HashMap<String, String>,
-        live: Option<&BTreeMap<String, RawTask>>,
+        scan: &BranchScan,
+        versions: &mut BTreeMap<String, BranchVersion>,
         cells: &mut Vec<MatrixCell>,
     ) -> Result<(), IndexError> {
-        for id in present {
-            if let Some(cell) =
-                self.present_cell(repo, branch, id, committed.get(id), ChangeKind::Base, live)?
-            {
+        for id in scan.present {
+            if let Some(cell) = self.present_cell(repo, scan, id, ChangeKind::Base)? {
+                versions.insert(id.clone(), branch_version(&cell));
                 cells.push(cell);
             }
         }
@@ -453,21 +470,18 @@ impl Index {
         &mut self,
         repo: &Repo,
         ctx: &DiffCtx,
+        versions: &mut BTreeMap<String, BranchVersion>,
         cells: &mut Vec<MatrixCell>,
     ) -> Result<(), IndexError> {
-        let ids: BTreeSet<&String> = ctx.present.iter().chain(ctx.base.keys()).collect();
+        let ids: BTreeSet<&String> = ctx.scan.present.iter().chain(ctx.base.keys()).collect();
         for id in ids {
             let base_oids = ctx.base.get(id);
-            let committed_oid = ctx.committed.get(id);
-            match self.present_cell(
-                repo,
-                ctx.branch,
-                id,
-                committed_oid,
-                ChangeKind::Base,
-                ctx.live,
-            )? {
+            let committed_oid = ctx.scan.committed.get(id);
+            match self.present_cell(repo, &ctx.scan, id, ChangeKind::Base)? {
                 Some(mut cell) => {
+                    // Recorded before the divergence test below: the branch carries the task either
+                    // way, and a version identical to the merge-base contributes no cell.
+                    versions.insert(id.clone(), branch_version(&cell));
                     // `cell.blob_oid` is the branch's effective version — the live working copy when
                     // it is checked out, else the committed tip — so uncommitted edits count as
                     // divergence too. A task unchanged against any merge-base is skipped.
@@ -489,7 +503,7 @@ impl Index {
                             let version = self.committed_version(repo, blob)?;
                             let dirty = committed_oid.is_some();
                             cells.push(cell(
-                                ctx.branch,
+                                ctx.scan.branch,
                                 id,
                                 blob,
                                 ChangeKind::Deleted,
@@ -510,13 +524,13 @@ impl Index {
     fn present_cell(
         &mut self,
         repo: &Repo,
-        branch: &str,
+        scan: &BranchScan,
         id: &str,
-        committed_oid: Option<&String>,
         kind: ChangeKind,
-        live: Option<&BTreeMap<String, RawTask>>,
     ) -> Result<Option<MatrixCell>, IndexError> {
-        if let Some(worktree) = live {
+        let branch = scan.branch;
+        let committed_oid = scan.committed.get(id);
+        if let Some(worktree) = scan.live {
             return match worktree.get(id) {
                 Some(task) => {
                     let bytes = task.text.as_bytes();
@@ -554,13 +568,63 @@ impl Index {
         version
     }
 
+    pub fn has_branch(&self, branch: &str) -> bool {
+        self.branch_versions.contains_key(branch)
+    }
+
     pub fn branch_summaries(&self, branch: &str) -> Vec<TaskSummary> {
-        self.matrix
-            .cells
-            .iter()
-            .filter(|cell| cell.branch == branch && cell.kind != ChangeKind::Deleted)
-            .map(|cell| cell.task.clone())
-            .collect()
+        let mut summaries: Vec<TaskSummary> = self
+            .branch_of(branch)
+            .filter_map(|(id, version)| Some(self.parsed(version)?.summary(id)))
+            .collect();
+        summaries.sort_by(|a, b| id_cmp(&a.id, &b.id));
+        summaries
+    }
+
+    // The branch's own task set as list rows, which is what a caller asking about one branch means
+    // by "the tasks": every task the branch carries, headlined by that branch because no other
+    // branch was asked about.
+    pub fn branch_tasks(&self, project: &str, branch: &str) -> Vec<TaskListItem> {
+        let mut items: Vec<TaskListItem> = self
+            .branch_of(branch)
+            .filter_map(|(id, version)| {
+                let parsed = self.parsed(version)?;
+                Some(TaskListItem {
+                    project: project.to_owned(),
+                    id: id.clone(),
+                    title: parsed.title.clone(),
+                    updated: updated_field(
+                        parsed.metadata.created(),
+                        self.task_updated_or_headline(id, Some(branch)),
+                    ),
+                    headline: branch.to_owned(),
+                    branches: vec![BranchState {
+                        branch: branch.to_owned(),
+                        status: parsed.metadata.status_field(),
+                        blob_oid: version.blob_oid.clone(),
+                        dirty: version.dirty,
+                        // A task the branch agrees with its merge-base about has no cell to read a
+                        // kind from, and agreement is what `Base` says.
+                        kind: self
+                            .cell(id, branch)
+                            .map_or(ChangeKind::Base, |cell| cell.kind),
+                    }],
+                    metadata: parsed.metadata.clone(),
+                })
+            })
+            .collect();
+        items.sort_by(|a, b| id_cmp(&a.id, &b.id));
+        items
+    }
+
+    fn branch_of(&self, branch: &str) -> impl Iterator<Item = (&String, &BranchVersion)> {
+        self.branch_versions.get(branch).into_iter().flatten()
+    }
+
+    // Every effective version a rebuild recorded was parsed and cached under its blob OID, so this
+    // resolves for anything `branch_versions` holds.
+    fn parsed(&self, version: &BranchVersion) -> Option<&Version> {
+        self.blob_cache.get(&version.blob_oid)
     }
 
     // One row per logical task across all branches, headlined by the branch whose version
@@ -630,19 +694,21 @@ impl Index {
         branch: Option<&str>,
     ) -> Result<Option<TaskDetail>, IndexError> {
         let cells = self.cells_of(id);
-        if cells.is_empty() {
-            return Ok(None);
-        }
-        let headline = self.headline_cell(&cells);
         let (raw, updated) = match branch {
             Some(branch) => (
                 self.effective_raw(repo, id, branch)?,
-                self.task_updated(id, Some(branch)),
+                self.task_updated_or_headline(id, Some(branch)),
             ),
-            None => (
-                Some(self.cell_raw(repo, headline)?),
-                self.cell_updated(headline),
-            ),
+            None => {
+                if cells.is_empty() {
+                    return Ok(None);
+                }
+                let headline = self.headline_cell(&cells);
+                (
+                    Some(self.cell_raw(repo, headline)?),
+                    self.cell_updated(headline),
+                )
+            }
         };
         let Some(raw) = raw else {
             return Ok(None);
@@ -657,7 +723,13 @@ impl Index {
             metadata: view.metadata,
             body: view.body,
             updated: view.updated,
-            headline: headline.branch.clone(),
+            // A task every branch agrees about contributes no cell at all, so a branch-scoped read
+            // can resolve one the matrix cannot headline; the branch asked for is then the only
+            // branch that has been named.
+            headline: self
+                .headline_branch(id)
+                .or_else(|| branch.map(str::to_owned))
+                .unwrap_or_default(),
             branches: branch_states(&cells),
             parent_title,
             children,
@@ -884,7 +956,7 @@ impl Index {
             view_from_raw(
                 id,
                 &raw,
-                self.task_updated(id, Some(branch)),
+                self.task_updated_or_headline(id, Some(branch)),
                 self.abbreviation,
             )
         }))
@@ -892,20 +964,21 @@ impl Index {
 
     // The raw file text of one task as it effectively stands on `branch`: the live working copy if
     // that branch is checked out with uncommitted edits, else the committed blob at its HEAD. A
-    // task the branch deletes has no effective text.
+    // task the branch does not carry has no effective text.
     pub fn effective_raw(
         &self,
         repo: &Repo,
         id: &str,
         branch: &str,
     ) -> Result<Option<String>, IndexError> {
-        let Some(cell) = self.cell(id, branch) else {
+        let Some(version) = self
+            .branch_versions
+            .get(branch)
+            .and_then(|held| held.get(id))
+        else {
             return Ok(None);
         };
-        if cell.kind == ChangeKind::Deleted {
-            return Ok(None);
-        }
-        if cell.dirty {
+        if version.dirty {
             let number = self.number_of(id);
             match self
                 .live
@@ -917,7 +990,7 @@ impl Index {
                 Some(Err(err)) => Err(err.into()),
             }
         } else {
-            let bytes = repo.read_blob(&cell.blob_oid)?;
+            let bytes = repo.read_blob(&version.blob_oid)?;
             Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
         }
     }
@@ -942,6 +1015,13 @@ fn deletion_blob<'a>(bases: &'a HashSet<String>, default_oid: Option<&'a String>
         .iter()
         .min()
         .expect("a deletion row is only built for a non-empty base set")
+}
+
+fn branch_version(cell: &MatrixCell) -> BranchVersion {
+    BranchVersion {
+        blob_oid: cell.blob_oid.clone(),
+        dirty: cell.dirty,
+    }
 }
 
 fn branch_states(cells: &[&MatrixCell]) -> Vec<BranchState> {

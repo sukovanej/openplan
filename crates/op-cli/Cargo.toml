@@ -15,7 +15,6 @@ path = "src/main.rs"
 op-store.workspace = true
 op-git.workspace = true
 op-lint.workspace = true
-op-index.workspace = true
 op-api.workspace = true
 op-client.workspace = true
 op-watch.workspace = true
