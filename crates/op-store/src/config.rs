@@ -62,4 +62,4 @@ impl Config {
 }
 
 const MUST_BE: &str = "'abbreviation' must be exactly three uppercase letters";
-const DEFAULT_BRANCH_MUST_BE: &str = "'default_branch' must be a branch name";
+const DEFAULT_BRANCH_MUST_BE: &str = "'default_branch' must be a string";

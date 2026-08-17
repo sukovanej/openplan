@@ -344,6 +344,10 @@ impl Project {
     pub fn reload_config(&self) {
         match Config::read(self.store.root()) {
             Ok(config) => {
+                // Applied before the project is unblocked. The other order leaves a window where a
+                // read passes the gate, finds the index fresh, and serves the old abbreviation's
+                // keys.
+                self.set_config(&config);
                 self.lock_health().config_error = None;
                 tracing::info!(
                     project = %self.name(),
@@ -351,7 +355,6 @@ impl Project {
                     default_branch = config.default_branch.as_deref().unwrap_or("(autodetect)"),
                     "store config reloaded"
                 );
-                self.set_config(&config);
             }
             Err(err) => {
                 let reason = err.to_string();

@@ -177,7 +177,7 @@ fn a_default_branch_that_is_not_a_string_is_refused() {
     let err = Config::read(dir.path()).expect_err("a non-string branch name cannot be read");
     assert_eq!(
         err.to_string(),
-        ".plan/config.toml: 'default_branch' must be a branch name"
+        ".plan/config.toml: 'default_branch' must be a string"
     );
 }
 

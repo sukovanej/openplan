@@ -477,23 +477,28 @@ fn default_branch_config_overrides_autodetect() {
     assert!(find(&index, "main", 1).is_none(), "main unchanged vs dev");
 }
 
+// A name no branch carries and a name no ref could carry are the same answer: the configured branch
+// is not there, so the autodetected one stands. The second must not fail the whole rebuild — a typo
+// in a tracked file would take the project down for everyone who pulled it.
 #[test]
 fn a_default_branch_no_local_branch_names_falls_back_to_autodetect() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    forked_task_on_dev(root);
-    write(
-        &root.join(".plan/config.toml"),
-        "abbreviation = \"OPP\"\ndefault_branch = \"trunk\"\n",
-    );
+    for configured in ["trunk", "release 2.0", "feat*", "x.lock", "a..b", "dev/"] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        forked_task_on_dev(root);
+        write(
+            &root.join(".plan/config.toml"),
+            &format!("abbreviation = \"OPP\"\ndefault_branch = \"{configured}\"\n"),
+        );
 
-    let index = built(root);
+        let index = built(root);
 
-    let main = find(&index, "main", 1).expect("main base row");
-    assert_eq!(main.kind, ChangeKind::Base);
-    assert_eq!(main.task.metadata.status(), Some(Status::Todo));
-    let dev = find(&index, "dev", 1).expect("dev row");
-    assert_eq!(dev.kind, ChangeKind::Modified);
+        let main = find(&index, "main", 1).expect("main base row");
+        assert_eq!(main.kind, ChangeKind::Base, "for {configured:?}");
+        assert_eq!(main.task.metadata.status(), Some(Status::Todo));
+        let dev = find(&index, "dev", 1).expect("dev row");
+        assert_eq!(dev.kind, ChangeKind::Modified, "for {configured:?}");
+    }
 }
 
 #[test]
