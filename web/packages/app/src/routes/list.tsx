@@ -24,8 +24,8 @@ import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { boardQuery, mergedBoardQuery, useQuery, type QueryState } from "../lib/store"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
 
-// `/` is every project at once and `/:project` is one of them. They differ in which board they read
-// and in whether a row has to name its project; everything below the read is the same view.
+// `/` is every project at once and `/:project` is one of them. They differ only in which board they
+// read; everything below the read is the same view.
 export function ListRoute() {
   const { project } = useParams()
   return project === undefined ? <MergedBoard /> : <ProjectBoard project={project} />
@@ -37,7 +37,7 @@ function MergedBoard() {
   if (projects !== undefined && projects.length === 0) {
     return <EmptyState title="No projects yet" detail="Register a repository with `oplan project add`." />
   }
-  return <BoardState board={board} title="All projects" naming />
+  return <BoardState board={board} title="All projects" />
 }
 
 function ProjectBoard({ project }: { project: string }) {
@@ -53,10 +53,10 @@ function ProjectBoard({ project }: { project: string }) {
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }
-  return <BoardState board={board} title={project} naming={false} />
+  return <BoardState board={board} title={project} />
 }
 
-function BoardState({ board, title, naming }: { board: QueryState<Board>; title: string; naming: boolean }) {
+function BoardState({ board, title }: { board: QueryState<Board>; title: string }) {
   switch (board._tag) {
     case "loading":
       return <ListSkeleton />
@@ -66,38 +66,34 @@ function BoardState({ board, title, naming }: { board: QueryState<Board>; title:
       return board.value.groups.length === 0 ? (
         <EmptyState title="No tasks yet" detail="Create one with `oplan create`." />
       ) : (
-        <TaskGrid board={board.value} title={title} naming={naming} />
+        <TaskGrid board={board.value} title={title} />
       )
   }
 }
 
 const rowDomId = (path: string) => `task-row-${path}`
 
-// A key names a task only inside its project, so a merged row shows both.
-const rowLabel = (row: BoardRow, naming: boolean) => (naming ? `${row.task.project} ${row.task.id}` : row.task.id)
-
-// The labels the id column is sized by, laid under the real one so every cell is as wide as the
-// widest. Characters are not width — a project name and an abbreviation are proportional, and only
-// the digits are tabular — so the longest label cannot be picked by counting. Within one project the
-// count does decide it, because only the digits vary there; so one candidate per project sizes the
-// column exactly, and that is a handful of spans rather than one per row.
-function sizingLabels(rows: ReadonlyArray<BoardRow>, naming: boolean): ReadonlyArray<string> {
+// The keys the id column is sized by, laid under the real one so every cell is as wide as the
+// widest. Characters are not width — an abbreviation is proportional, and only the digits are
+// tabular — and a merged board carries a key from every project. Within one project the count does
+// decide it, because only the digits vary there; so one candidate per project sizes the column
+// exactly, and that is a handful of spans rather than one per row.
+function sizingKeys(rows: ReadonlyArray<BoardRow>): ReadonlyArray<string> {
   const widest = new Map<string, string>()
   for (const row of rows) {
-    const label = rowLabel(row, naming)
     const held = widest.get(row.task.project)
-    if (held === undefined || label.length > held.length) widest.set(row.task.project, label)
+    if (held === undefined || row.task.id.length > held.length) widest.set(row.task.project, row.task.id)
   }
   return [...widest.values()]
 }
 
-function TaskGrid({ board, title, naming }: { board: Board; title: string; naming: boolean }) {
+function TaskGrid({ board, title }: { board: Board; title: string }) {
   // The board arrives already grouped, ordered, and flattened; the cursor walks the concatenation of
   // every group's rows in that same visible order.
   const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
   const paths = useMemo(() => rows.map((row) => taskPath(row.task.project, row.task.id)), [rows])
   const { index } = useRowCursor(paths)
-  const sizers = useMemo(() => sizingLabels(rows, naming), [rows, naming])
+  const sizers = useMemo(() => sizingKeys(rows), [rows])
   const activeId = index >= 0 && index < paths.length ? rowDomId(paths[index]) : undefined
 
   const activeRow = useRef<HTMLDivElement>(null)
@@ -135,7 +131,6 @@ function TaskGrid({ board, title, naming }: { board: Board; title: string; namin
                     ref={i === index ? activeRow : undefined}
                     row={row}
                     path={paths[i]}
-                    naming={naming}
                     sizers={sizers}
                     guides={guides[groupIndex][j]}
                     active={i === index}
@@ -190,7 +185,6 @@ function TaskRow({
   ref,
   row,
   path,
-  naming,
   sizers,
   guides,
   active,
@@ -201,7 +195,6 @@ function TaskRow({
   ref?: Ref<HTMLDivElement>
   row: BoardRow
   path: string
-  naming: boolean
   sizers: ReadonlyArray<string>
   guides: RowGuides
   active: boolean
@@ -259,19 +252,16 @@ function TaskRow({
         {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
       </div>
       <div role="gridcell" className="text-muted-foreground grid shrink-0 self-center pl-3 text-xs tabular-nums">
-        {/* Laying the board's sizing labels under this one, in the same grid cell, makes every such
-            cell as wide as the widest of them — so the title clears the longest label without the
-            shorter ones leaving a gap. Sizing the cell by the row's own label instead would shift
-            each title separately. */}
+        {/* Laying the board's sizing keys under this one, in the same grid cell, makes every such
+            cell as wide as the widest of them — so the title clears the longest key without the
+            shorter ones leaving a gap. Sizing the cell by the row's own key instead would shift each
+            title separately. */}
         {sizers.map((label) => (
           <span key={label} aria-hidden className="invisible col-start-1 row-start-1">
             {label}
           </span>
         ))}
-        <span className="col-start-1 row-start-1">
-          {naming && <span className="text-muted-foreground/60">{task.project} </span>}
-          {task.id}
-        </span>
+        <span className="col-start-1 row-start-1">{task.id}</span>
       </div>
       <div className="min-w-0 grow basis-56 pr-4 pl-3 sm:pr-0" role="gridcell">
         <Link
