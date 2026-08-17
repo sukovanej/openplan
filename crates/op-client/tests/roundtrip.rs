@@ -22,7 +22,8 @@ fn spawn_server(info: DaemonInfo) -> (SocketAddr, JoinHandle<()>) {
     std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     let store = op_store::Store::discover(&root).unwrap();
     let repo = op_git::Repo::discover(&root).unwrap();
-    let project = Project::new("test", root.clone(), repo, store);
+    let config = op_store::Config::read(&root).unwrap();
+    let project = Project::new("test", root.clone(), repo, store, &config);
 
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = std::thread::spawn(move || {

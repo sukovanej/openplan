@@ -4,7 +4,7 @@ use std::process::Command;
 use op_api::{ChangeKind, Field, Rfc3339, Status};
 use op_git::Repo;
 use op_index::Index;
-use op_store::Store;
+use op_store::{Config, Store};
 use op_task::Timestamp;
 
 fn git(dir: &Path, args: &[&str]) {
@@ -55,7 +55,7 @@ fn commit(root: &Path, message: &str) {
 fn built(root: &Path) -> Index {
     let repo = Repo::discover(root).unwrap();
     let store = Store::discover(root).unwrap();
-    let mut index = Index::new(store.abbreviation());
+    let mut index = Index::new(&Config::read(root).unwrap());
     index.rebuild(&repo, &store).unwrap();
     index
 }
@@ -439,10 +439,8 @@ fn a_new_uncommitted_task_on_the_default_branch_appears() {
     assert!(fresh.dirty);
 }
 
-#[test]
-fn openplan_default_branch_config_overrides_autodetect() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
+// The whole fixture below, minus the config: task 1 lands on main, then dev edits it.
+fn forked_task_on_dev(root: &Path) {
     init(root);
     task(
         root,
@@ -458,7 +456,17 @@ fn openplan_default_branch_config_overrides_autodetect() {
     );
     commit(root, "edit a on dev");
     git(root, &["checkout", "-q", "main"]);
-    git(root, &["config", "openplan.defaultBranch", "dev"]);
+}
+
+#[test]
+fn default_branch_config_overrides_autodetect() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    forked_task_on_dev(root);
+    write(
+        &root.join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\ndefault_branch = \"dev\"\n",
+    );
 
     let index = built(root);
 
@@ -467,6 +475,25 @@ fn openplan_default_branch_config_overrides_autodetect() {
     assert_eq!(dev.kind, ChangeKind::Base);
     assert_eq!(dev.task.metadata.status(), Some(Status::Done));
     assert!(find(&index, "main", 1).is_none(), "main unchanged vs dev");
+}
+
+#[test]
+fn a_default_branch_no_local_branch_names_falls_back_to_autodetect() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    forked_task_on_dev(root);
+    write(
+        &root.join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\ndefault_branch = \"trunk\"\n",
+    );
+
+    let index = built(root);
+
+    let main = find(&index, "main", 1).expect("main base row");
+    assert_eq!(main.kind, ChangeKind::Base);
+    assert_eq!(main.task.metadata.status(), Some(Status::Todo));
+    let dev = find(&index, "dev", 1).expect("dev row");
+    assert_eq!(dev.kind, ChangeKind::Modified);
 }
 
 #[test]

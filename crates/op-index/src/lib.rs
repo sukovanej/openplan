@@ -8,7 +8,7 @@ use op_api::{
     updated_field,
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
-use op_store::{RawTask, Store, StoreError};
+use op_store::{Config, RawTask, Store, StoreError};
 use op_task::{Abbreviation, FieldError, FieldResult, Timestamp};
 
 // Every id the index holds and hands out is a key; the numbers it reads from file names and
@@ -27,6 +27,9 @@ pub struct Index {
     live_times: HashMap<String, HashMap<String, Timestamp>>,
     // The branch checked out in the serve-root worktree; the headline of an aggregated task.
     current_branch: Option<String>,
+    // What `.plan/config.toml` asks for, and what the repository could give: a configured branch
+    // that no longer exists leaves the resolved one on the autodetected fallback.
+    configured_default_branch: Option<String>,
     default_branch: Option<String>,
     // (branch, number) -> the branch's last commit to touch the task, and when it was authored.
     // Absent for a task whose change lies deeper than the walk budget, and for one no commit holds
@@ -80,14 +83,15 @@ pub enum IndexError {
 }
 
 impl Index {
-    pub fn new(abbreviation: Abbreviation) -> Self {
+    pub fn new(config: &Config) -> Self {
         Self {
-            abbreviation,
+            abbreviation: config.abbreviation,
             matrix: Matrix::default(),
             blob_cache: HashMap::new(),
             live: HashMap::new(),
             live_times: HashMap::new(),
             current_branch: None,
+            configured_default_branch: config.default_branch.clone(),
             default_branch: None,
             changes: HashMap::new(),
             change_cache: HashMap::new(),
@@ -103,12 +107,14 @@ impl Index {
     }
 
     // A cached version holds its parent and dependencies as keys, so a new abbreviation invalidates
-    // every one of them; the next rebuild re-parses what it needs.
-    pub fn set_abbreviation(&mut self, abbreviation: Abbreviation) {
-        if self.abbreviation != abbreviation {
-            self.abbreviation = abbreviation;
+    // every one of them; the next rebuild re-parses what it needs. A new default branch only moves
+    // the baseline, which the rebuild recomputes anyway.
+    pub fn set_config(&mut self, config: &Config) {
+        if self.abbreviation != config.abbreviation {
+            self.abbreviation = config.abbreviation;
             self.blob_cache.clear();
         }
+        self.configured_default_branch = config.default_branch.clone();
     }
 
     pub fn abbreviation(&self) -> Abbreviation {
@@ -158,7 +164,7 @@ impl Index {
             .and_then(|worktree| worktree.branch.clone());
         self.live = live_worktrees(&worktrees, store);
         self.live_times.clear();
-        self.default_branch = repo.default_branch()?;
+        self.default_branch = repo.default_branch(self.configured_default_branch.as_deref())?;
 
         let default_commit = self
             .default_branch

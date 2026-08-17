@@ -17,7 +17,7 @@ use op_api::{
 use op_git::Repo;
 use op_index::Index;
 use op_lint::{CreatedSource, Diagnostic, Snapshot};
-use op_store::Store;
+use op_store::{Config, Store};
 use op_task::{FieldError, FieldResult, Status, Timestamp, rank};
 
 use daemon::{Control, Home};
@@ -577,7 +577,7 @@ fn local_updated(root: &Path, id: &str) -> FieldResult<Timestamp> {
 fn build_index(root: &Path) -> Result<(Repo, Index)> {
     let repo = Repo::discover(root)?;
     let store = Store::discover(root)?;
-    let mut index = Index::new(store.abbreviation());
+    let mut index = Index::new(&Config::read(store.root())?);
     index.rebuild(&repo, &store)?;
     Ok((repo, index))
 }

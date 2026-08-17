@@ -45,11 +45,13 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 fn project_state(root: impl AsRef<Path>, repo: op_git::Repo, store: op_store::Store) -> AppState {
+    let config = op_store::Config::read(store.root()).unwrap();
     AppState::new([Project::new(
         "test",
         root.as_ref().to_path_buf(),
         repo,
         store,
+        &config,
     )])
 }
 
