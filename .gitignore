@@ -1,4 +1,5 @@
 /target
+/.claude/worktrees/
 **/*.rs.bk
 .DS_Store
 web/**/node_modules/
