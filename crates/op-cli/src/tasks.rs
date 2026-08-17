@@ -58,31 +58,32 @@ impl Tasks {
     }
 
     pub fn list(&self, branch: &str) -> Result<Vec<TaskListItem>> {
-        Ok(self
-            .client
-            .tasks(&self.base_url, &self.project, Some(branch))?)
+        served(
+            self.client
+                .tasks(&self.base_url, &self.project, Some(branch)),
+        )
     }
 
     pub fn matrix(&self) -> Result<Matrix> {
-        Ok(self.client.matrix(&self.base_url, &self.project)?)
+        served(self.client.matrix(&self.base_url, &self.project))
     }
 
     pub fn get(&self, id: &str, branch: &str) -> Result<TaskDetail> {
-        Ok(self
-            .client
-            .task(&self.base_url, &self.project, id, Some(branch))?)
+        served(
+            self.client
+                .task(&self.base_url, &self.project, id, Some(branch)),
+        )
     }
 
     pub fn tree(&self, id: &str, branch: &str, depth: Option<usize>) -> Result<TaskTreeView> {
-        Ok(self
-            .client
-            .task_tree(&self.base_url, &self.project, id, Some(branch), depth)?)
+        served(
+            self.client
+                .task_tree(&self.base_url, &self.project, id, Some(branch), depth),
+        )
     }
 
     pub fn branches(&self, id: &str) -> Result<TaskBranches> {
-        Ok(self
-            .client
-            .task_branches(&self.base_url, &self.project, id)?)
+        served(self.client.task_branches(&self.base_url, &self.project, id))
     }
 
     pub fn create(&self, task: &CreateTask) -> Result<String> {
@@ -102,6 +103,24 @@ impl Tasks {
             .client
             .delete_task(&self.base_url, &self.project, &self.branch, id)?)
     }
+}
+
+// A daemon older than the read routes answers them from the catch-all that refuses any unserved
+// `/api/` path. That reads as a 404 about a route where every other 404 here is about a task, and
+// the fix is to restart the daemon rather than to look for the task.
+fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
+    outcome.map_err(|err| match &err {
+        op_client::ClientError::Refused {
+            status: 404,
+            message,
+        } if message.starts_with("no such route") => {
+            anyhow::anyhow!(
+                "{message}; this oplan daemon predates the read routes. Stop it (`oplan server \
+                 stop`) and rerun here."
+            )
+        }
+        _ => anyhow::Error::new(err),
+    })
 }
 
 // The repository the caller stands in, as the daemon names it. A repository the machine daemon does
