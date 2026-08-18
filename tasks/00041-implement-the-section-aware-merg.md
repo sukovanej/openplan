@@ -7,7 +7,7 @@ dependencies:
 ---
 # Implement the section-aware merge driver (replace stub)
 
-Replace the `oplan merge-driver` stub with the real 3-way merge.
+Replace the `openplan merge-driver` stub with the real 3-way merge.
 This is **Phase 0** of the rolling-updates plan
 ([[./00023-design-a-continuous-changes-accu.md]]) and gates the rest of it: refresh
 reconcile relies on the driver auto-merging non-overlapping edits and

@@ -35,7 +35,7 @@ of truth.
 Two entry points for v1, both write into the currently selected worktree and
 insert the markdown embed:
 
-- `oplan asset add <file> --task <id> [--section <name>]` — copies the file into
+- `openplan asset add <file> --task <id> [--section <name>]` — copies the file into
   `.plan/assets/`, computes the hash, appends/inserts the embed into the task
   body (at `--section` if given, else the body end). The path agents and scripts
   use.
@@ -44,7 +44,7 @@ insert the markdown embed:
 
 **Commit timing**: the blob is written to the working tree and folded into the
 next commit like any `.md` edit — no auto-commit. This matches how task edits
-flow today and keeps `oplan asset add` from injecting surprise commits.
+flow today and keeps `openplan asset add` from injecting surprise commits.
 
 **Size guardrail**: warn and require `--force` (UI: an explicit confirm) above a
 soft cap (~5MB); hard-refuse above a large ceiling (~100MB). Keeps the repo sane
@@ -64,7 +64,7 @@ without blocking legitimate large design artifacts.
 
 - Standalone doc primitive as an asset home (still deferred) — assets
   attach to tasks only.
-- `oplan asset gc` / orphan pruning.
+- `openplan asset gc` / orphan pruning.
 - git-lfs.
 
 ## Open / to confirm during the spike

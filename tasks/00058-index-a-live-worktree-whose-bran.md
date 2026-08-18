@@ -29,7 +29,7 @@ Reads do not.
 
 [[./00057-route-every-cli-query-through-th.md]] makes the daemon the only resolver
 for reads, which turns this from a latent index gap into user-visible behaviour:
-`oplan list` and `oplan get` in a just-initialized project report no tasks
+`openplan list` and `openplan get` in a just-initialized project report no tasks
 instead of reading the files. That task deliberately accepted the regression
 rather than widen into `op-index`, and gave its CLI test harness
 (`Project::new`, `op-cli/tests/cli.rs`) a commit so the suite runs against a
@@ -54,9 +54,9 @@ worktree's files rather than a blob. The pieces that need to agree:
 
 ## Verify
 
-- In a repository with `git init` and no commits, `oplan list` and `oplan get
+- In a repository with `git init` and no commits, `openplan list` and `openplan get
   <key>` return the worktree's tasks through the daemon.
-- `oplan list --all-branches` shows the unborn branch's tasks as living only in
+- `openplan list --all-branches` shows the unborn branch's tasks as living only in
   the working tree, not as committed on a branch.
 - After the first commit, the same task reports one branch and is no longer
   dirty — no duplicate row across the unborn and born states.

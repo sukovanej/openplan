@@ -8,7 +8,7 @@ Ship two things over one shared core:
 
 1. A **reusable ⌘K palette component** in the web UI — a generic overlay
    primitive that later commands (the general command interface) plug into.
-2. **Task search** as this palette's first consumer, plus an `oplan search`
+2. **Task search** as this palette's first consumer, plus an `openplan search`
    CLI that reuses the same matching core.
 
 ## Reusable palette component
@@ -47,9 +47,9 @@ content.
 - Result rows show status + title; **no match highlighting**.
 - Selecting a result navigates to / selects that task in the table.
 
-## CLI — `oplan search <query>`
+## CLI — `openplan search <query>`
 
-- Prints matching tasks as `id / status / title`, mirroring `oplan list`.
+- Prints matching tasks as `id / status / title`, mirroring `openplan list`.
 - `--json` emits `[{id,title,status,parent?,branch}]`.
 - Reuses the same matching core as the search consumer so behavior can't drift.
 

@@ -27,7 +27,7 @@ the CLI runs two unrelated resolvers side by side:
 Both CLI resolvers are local, so this is not a transport gap — the default query
 paths simply skip the branch-aware index the daemon and the UI share. The visible
 symptom: a task committed on no branch but live in another worktree is found by
-`oplan list --all-branches` and by the UI, while `oplan get <key>` reports `no such
+`openplan list --all-branches` and by the UI, while `openplan get <key>` reports `no such
 task` and says nothing about where the task actually lives.
 
 `op-cli/src/main.rs:777` already asserts the intended rule — "reads are global,
@@ -42,10 +42,10 @@ that failure — never a local read.
 
 Two exemptions, both because no daemon can be assumed to exist at all:
 
-- `oplan merge-driver`, which git invokes mid-merge. It is a pure text merge over
+- `openplan merge-driver`, which git invokes mid-merge. It is a pure text merge over
   the three paths git hands it and touches neither store nor index today
   (`op-cli/src/mergedriver.rs`); keep it that way.
-- `oplan server start|stop|restart|status`, which manage the daemon's lifetime and
+- `openplan server start|stop|restart|status`, which manage the daemon's lifetime and
   cannot presuppose it.
 
 `op-lint` ([[./00055-lint-task-files-op-lint-crate-an.md]]) is a filesystem check
@@ -57,13 +57,13 @@ reads the store directly when that command lands.
 A branchless read on the daemon resolves against the **serve root's** branch
 (`write_branch`, `op-server/src/lib.rs`), and the serve root is anchored at the
 main checkout so it survives worktree removal (`serve_root`, `op-cli/src/writer.rs`).
-A CLI that omits `?branch=` would therefore start answering `oplan get <key>` inside
+A CLI that omits `?branch=` would therefore start answering `openplan get <key>` inside
 a worktree with *main's* version of the task — a silent wrong-branch read, the
 mirror of the wrong-branch write that pinning the branch prevents. Every read sends
 `repo.current_branch()`, exactly as writes do.
 
 This deliberately does not make a branch-scoped query answer across branches:
-`oplan get <key>` from a branch that lacks the task still fails. Consistency here
+`openplan get <key>` from a branch that lacks the task still fails. Consistency here
 means one resolver, not one answer — `get` asks about a branch, the board
 aggregates. What changes is that the daemon knows every branch a task lives on
 (`Index::task_branch_states`), so the failure can name them instead of claiming the
@@ -101,7 +101,7 @@ the CLI bends to the daemon's answer, not the reverse:
   uses it.
 - **`GET /api/tasks/{id}/tree` needs a response type that does not exist yet.**
   `hierarchy_context` answers a different question (parent title, *direct*
-  children, body refs — what `TaskDetail` embeds for the UI). `oplan tree` prints a
+  children, body refs — what `TaskDetail` embeds for the UI). `openplan tree` prints a
   recursive, `--depth`-bounded `TaskTree` whose nodes carry full `Metadata`, plus
   one stderr warning per parent cycle it truncated. Add the response type to
   `op-api` carrying the `TaskTree` and the truncated ids, and build it from
@@ -183,7 +183,7 @@ of these needs a message that names the cause and the fix:
 - With the daemon stopped and auto-start sabotaged, every one of those commands
   exits non-zero with a message naming the daemon as the cause — none prints task
   data.
-- `oplan get <key>` for a task that exists only on another branch names that branch
+- `openplan get <key>` for a task that exists only on another branch names that branch
   and its dirty state; `--branch <other>` prints it.
 - A read from a linked worktree returns that worktree's branch's version, not the
   serve root's.

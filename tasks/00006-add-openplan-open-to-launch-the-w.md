@@ -2,9 +2,9 @@
 status: backlog
 created: 2026-07-14T10:31:08Z
 ---
-# Add `oplan open` to launch the web UI in a browser
+# Add `openplan open` to launch the web UI in a browser
 
-Top-level `oplan open` command that launches the realtime web UI in the
+Top-level `openplan open` command that launches the realtime web UI in the
 user's default browser.
 
 ## Behavior
@@ -19,7 +19,7 @@ user's default browser.
   auto-start.
 - Launch the default browser at `http://127.0.0.1:<port>/` (root URL only).
 - Decided: if the launcher fails (no browser / headless SSH / CI), exit non-zero
-  with a clear error — no URL-print fallback. Known cost: `oplan open` is a
+  with a clear error — no URL-print fallback. Known cost: `openplan open` is a
   dead-end in headless environments; revisit if that bites.
 
 ## Launcher
@@ -31,10 +31,10 @@ user's default browser.
 
 ## Out of scope (follow-ups)
 
-- Task deep-linking (`oplan open <id>`): the SPA has no client-side task routes
+- Task deep-linking (`openplan open <id>`): the SPA has no client-side task routes
   yet. Separate task once it does.
 - Store-mismatch warning: the daemon serves whichever store it was first started
-  in, so `oplan open` from a different project silently shows the daemon's store.
+  in, so `openplan open` from a different project silently shows the daemon's store.
   Detecting this needs the daemon to advertise its root (add to `DaemonInfo` /
   `/health`). Note only; out of scope here.
 

@@ -6,7 +6,7 @@ created: 2026-07-29T10:33:40Z
 
 ## Problem
 
-`oplan get <id> --json` prints the file in the caller's worktree and reports an
+`openplan get <id> --json` prints the file in the caller's worktree and reports an
 `updated` alongside it. When the checked-out branch has no cell for that task —
 its copy is unchanged from the merge-base, so the index records no divergence —
 there is no date to read there, and `Index::task_updated_or_headline` falls back
@@ -29,7 +29,7 @@ From the `mine` worktree:
 $ cat .plan/tasks/7.md
 status: todo
 
-$ oplan get 7 --json
+$ openplan get 7 --json
 status:  todo                     # main's content, from Feb 2025
 updated: 2026-05-28T20:26:40Z     # feat-x's commit
 ```

@@ -25,8 +25,8 @@ history. Per commit it calls `commit_task_map` for the commit and again for each
 parent, with no memoisation, so every tree is read twice — once as itself, once
 as its child's parent — and each read lists the whole `.plan/tasks/` directory.
 
-Measured on this repo (46 tasks, 138 commits, debug build): `oplan show` 0.007s,
-`oplan get --json` 0.087s — roughly 276 tree reads to fill one field. It is
+Measured on this repo (46 tasks, 138 commits, debug build): `openplan show` 0.007s,
+`openplan get --json` 0.087s — roughly 276 tree reads to fill one field. It is
 O(commits x tasks), so it grows with the history, and the daemon pays it again
 on the first request after any branch tip moves, holding the index mutex while
 every other read waits.
@@ -66,6 +66,6 @@ git could not date, and this is the same kind of "we could not find out".
 - A rebuild after one new commit does not re-read history the previous rebuild
   already read.
 - No tree is read twice within one walk.
-- `oplan get --json` on a repo with thousands of commits is not dominated by the
+- `openplan get --json` on a repo with thousands of commits is not dominated by the
   walk.
 - The budget is either gone, or reachable only in cases the field explains.
