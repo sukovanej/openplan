@@ -11,7 +11,7 @@ keeps showing the old state until an unrelated git operation forces a watcher pa
 
 Reproduced against the live daemon serving the main checkout:
 
-- `oplan set <id> status done` inside a worktree created ~1 min earlier — no SSE event in a 10s window.
+- `openplan set <id> status done` inside a worktree created ~1 min earlier — no SSE event in a 10s window.
 - `git commit` in that same worktree ~2 min later — event arrives at once, carrying the earlier edit.
 - Three freshly created worktrees afterwards — every edit reported immediately.
 

@@ -14,7 +14,12 @@ fn project_state(
     store: op_store::Store,
 ) -> AppState {
     let root = root.as_ref().to_path_buf();
-    AppState::new([Project::new(PROJECT, root, repo, store)])
+    // Some of these stores are opened by hand, past the `.plan/config.toml` a discovery would read.
+    let config = op_store::Config {
+        abbreviation: store.abbreviation(),
+        default_branch: None,
+    };
+    AppState::new([Project::new(PROJECT, root, repo, store, &config)])
 }
 
 async fn get(uri: &str) -> axum::response::Response {
@@ -1347,7 +1352,8 @@ fn one_project(name: &str) -> (tempfile::TempDir, Project) {
     git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
     let store = op_store::Store::discover(root).unwrap();
     let repo = op_git::Repo::discover(root).unwrap();
-    let project = Project::new(name, root.to_path_buf(), repo, store);
+    let config = op_store::Config::read(root).unwrap();
+    let project = Project::new(name, root.to_path_buf(), repo, store, &config);
     (dir, project)
 }
 
@@ -1618,7 +1624,7 @@ async fn a_write_names_the_vanished_root_rather_than_the_branch() {
         .unwrap()
         .to_owned();
     assert!(message.contains("no longer exists"), "{message}");
-    assert!(message.contains("oplan server restart"), "{message}");
+    assert!(message.contains("openplan server restart"), "{message}");
 }
 
 // A patch applies field by field and stops at the first bad key, so a write that reports 400 must

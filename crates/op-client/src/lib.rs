@@ -19,12 +19,12 @@ pub const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
-    #[error("cannot reach the oplan daemon: {0}")]
+    #[error("cannot reach the openplan daemon: {0}")]
     Unreachable(String),
     // Giving up on the response says nothing about the write: the daemon is still waiting on the
     // file's lock and will finish. Retrying is what duplicates a task, so say so.
     #[error(
-        "the oplan daemon did not answer within {}s (another writer may be holding the file); the write may still have completed — check before retrying",
+        "the openplan daemon did not answer within {}s (another writer may be holding the file); the write may still have completed — check before retrying",
         WRITE_TIMEOUT.as_secs()
     )]
     TimedOut,
@@ -33,7 +33,7 @@ pub enum ClientError {
     // The daemon answered, and the answer is not what this route returns. A daemon that predates a
     // route serves the web UI's index page from its fallback instead of 404-ing, so this is what an
     // out-of-date daemon looks like from here — not a transport failure.
-    #[error("the oplan daemon answered {route} with a body this client cannot read: {message}")]
+    #[error("the openplan daemon answered {route} with a body this client cannot read: {message}")]
     Unreadable { route: String, message: String },
 }
 

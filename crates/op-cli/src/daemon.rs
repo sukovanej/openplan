@@ -37,7 +37,7 @@ impl Started {
 // The port the daemon binds unless told otherwise. A write brings the daemon up itself, with no
 // `--port` to carry, so the override has to be reachable from the environment too.
 pub fn default_port() -> u16 {
-    std::env::var("OPLAN_PORT")
+    std::env::var("OPENPLAN_PORT")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(DEFAULT_PORT)
@@ -51,10 +51,10 @@ enum StopOutcome {
 
 impl Home {
     pub fn resolve() -> Result<Self> {
-        let dir = match std::env::var_os("OPLAN_HOME").filter(|v| !v.is_empty()) {
+        let dir = match std::env::var_os("OPENPLAN_HOME").filter(|v| !v.is_empty()) {
             Some(v) => PathBuf::from(v),
             None => home_dir()
-                .context("could not determine home directory; set OPLAN_HOME")?
+                .context("could not determine home directory; set OPENPLAN_HOME")?
                 .join(".plan"),
         };
         Ok(Self { dir })
@@ -161,7 +161,7 @@ impl Control {
             }
             Started::Fresh(info) => {
                 println!(
-                    "started (pid {}, port {}); singleton for OPLAN_HOME={}",
+                    "started (pid {}, port {}); singleton for OPENPLAN_HOME={}",
                     info.pid,
                     info.port,
                     self.home.dir().display()
@@ -188,7 +188,7 @@ impl Control {
             if up {
                 println!("running (daemon at {url})");
             } else {
-                println!("not running (no oplan daemon at {url})");
+                println!("not running (no openplan daemon at {url})");
             }
             return Ok(up);
         }
@@ -219,7 +219,7 @@ impl Control {
             if self.client.shutdown(base) {
                 println!("stopping (daemon at {url})");
             } else {
-                println!("not running (no oplan daemon at {url})");
+                println!("not running (no openplan daemon at {url})");
             }
             return Ok(());
         }
@@ -278,7 +278,7 @@ impl Control {
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     if Instant::now() >= lock_deadline {
                         bail!(
-                            "another oplan instance is starting the daemon but it is not ready yet; see {}",
+                            "another openplan instance is starting the daemon but it is not ready yet; see {}",
                             self.home.log_path().display()
                         );
                     }
@@ -389,7 +389,7 @@ impl Control {
     }
 
     // The daemon serves the registry, not the directory that started it, so it works out of
-    // `OPLAN_HOME` — which outlives every worktree this workflow creates and removes.
+    // `OPENPLAN_HOME` — which outlives every worktree this workflow creates and removes.
     fn spawn_detached(&self, port: u16) -> Result<()> {
         self.home.ensure_dir()?;
         let log = OpenOptions::new()
@@ -449,7 +449,7 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
             let base = url.trim_end_matches('/').to_owned();
             client
                 .health(&base)
-                .with_context(|| format!("no oplan daemon at {base}"))?;
+                .with_context(|| format!("no openplan daemon at {base}"))?;
             Ok(base)
         }
         None => {

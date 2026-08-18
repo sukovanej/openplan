@@ -176,7 +176,7 @@ fn created_valid(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
             "created is missing",
         )
         .with_help(format!(
-            "`oplan lint --fix` backfills it from the first commit that added the file; by hand: git log --diff-filter=A --format=%aI -1 -- {}",
+            "`openplan lint --fix` backfills it from the first commit that added the file; by hand: git log --diff-filter=A --format=%aI -1 -- {}",
             file.path.display()
         ))
         .mark_fixable(),

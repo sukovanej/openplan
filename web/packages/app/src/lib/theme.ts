@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react"
 export type ThemePreference = "light" | "dark" | "system"
 export type ResolvedTheme = "light" | "dark"
 
-export const THEME_STORAGE_KEY = "oplan.theme"
+export const THEME_STORAGE_KEY = "openplan.theme"
 
 const DARK_QUERY = "(prefers-color-scheme: dark)"
 const PREFERENCES: ReadonlyArray<ThemePreference> = ["light", "dark", "system"]

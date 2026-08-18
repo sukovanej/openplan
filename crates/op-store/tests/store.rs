@@ -148,6 +148,40 @@ fn a_valid_config_reads_back_its_abbreviation() {
 }
 
 #[test]
+fn a_config_reads_back_its_default_branch_and_lives_without_one() {
+    for (config, expected) in [
+        ("abbreviation = \"WEB\"\n", None),
+        (
+            "abbreviation = \"WEB\"\ndefault_branch = \"dev\"\n",
+            Some("dev".to_owned()),
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        plant_store(dir.path(), Some(config));
+        assert_eq!(
+            Config::read(dir.path()).unwrap().default_branch,
+            expected,
+            "for config {config:?}"
+        );
+    }
+}
+
+#[test]
+fn a_default_branch_that_is_not_a_string_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    plant_store(
+        dir.path(),
+        Some("abbreviation = \"WEB\"\ndefault_branch = 42\n"),
+    );
+
+    let err = Config::read(dir.path()).expect_err("a non-string branch name cannot be read");
+    assert_eq!(
+        err.to_string(),
+        ".plan/config.toml: 'default_branch' must be a string"
+    );
+}
+
+#[test]
 fn task_ids_are_numerically_sorted_and_skip_files_no_id_names() {
     let (_dir, store) = make_store();
     for id in [10, 2, 1] {

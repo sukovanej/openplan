@@ -101,7 +101,7 @@ impl Snapshot {
 
 // The anchor scheme GitHub, GitLab, and VS Code all resolve: lowercase, spaces to `-`, punctuation
 // dropped, duplicates suffixed `-1`, `-2`. Kept here so our own `#Section` links stay clickable
-// outside oplan.
+// outside openplan.
 pub fn github_slug(heading: &str) -> String {
     let mut slug = String::new();
     for ch in heading.chars() {

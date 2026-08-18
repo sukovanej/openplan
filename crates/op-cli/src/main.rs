@@ -17,14 +17,18 @@ use op_api::{
 use op_git::Repo;
 use op_index::Index;
 use op_lint::{CreatedSource, Diagnostic, Snapshot};
-use op_store::Store;
+use op_store::{Config, Store};
 use op_task::{FieldError, FieldResult, Status, Timestamp, rank};
 
 use daemon::{Control, Home};
 use writer::Writer;
 
 #[derive(Parser)]
-#[command(name = "oplan", version, about = "open-planner — local-first task CLI")]
+#[command(
+    name = "openplan",
+    version,
+    about = "open-planner — local-first task CLI"
+)]
 struct Cli {
     /// Directory the command works in [default: the current directory]
     #[arg(long, global = true)]
@@ -573,7 +577,7 @@ fn local_updated(root: &Path, id: &str) -> FieldResult<Timestamp> {
 fn build_index(root: &Path) -> Result<(Repo, Index)> {
     let repo = Repo::discover(root)?;
     let store = Store::discover(root)?;
-    let mut index = Index::new(store.abbreviation());
+    let mut index = Index::new(&Config::read(store.root())?);
     index.rebuild(&repo, &store)?;
     Ok((repo, index))
 }
@@ -763,7 +767,7 @@ fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCo
     })
 }
 
-// Writes go through the store so a concurrent daemon or `oplan set` on the same task serializes on
+// Writes go through the store so a concurrent daemon or `openplan set` on the same task serializes on
 // the advisory lock and never observes a torn file.
 fn apply_fixes(
     store: &Store,

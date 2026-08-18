@@ -1,6 +1,6 @@
 [package]
 name = "op-client"
-description = "Blocking HTTP client for talking to a running oplan daemon"
+description = "Blocking HTTP client for talking to a running openplan daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

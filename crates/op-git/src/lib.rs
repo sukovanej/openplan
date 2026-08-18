@@ -287,17 +287,15 @@ impl Repo {
         Ok(out)
     }
 
-    // The branch the task view treats as the merge target: the `oplan.defaultBranch` git-config
-    // value when it names a real local branch, else `main`, else `master`, else none.
-    pub fn default_branch(&self) -> Result<Option<String>, GitError> {
-        let configured = self
-            .repo()
-            .config_snapshot()
-            .string("oplan.defaultBranch")
-            .map(|value| String::from_utf8_lossy(value.as_ref()).into_owned());
+    // The branch the task view treats as the merge target: `configured` when it names a real local
+    // branch, else `main`, else `master`, else none.
+    pub fn default_branch(&self, configured: Option<&str>) -> Result<Option<String>, GitError> {
         if let Some(name) = configured {
-            if self.branch_exists(&name)? {
-                return Ok(Some(name));
+            // A configured name is typed by hand, and one that cannot spell a ref at all — a space,
+            // a `*`, a trailing `/` — makes the lookup itself fail rather than come back empty. It
+            // still names no branch, so it falls back like any other name no branch carries.
+            if self.branch_exists(name).unwrap_or(false) {
+                return Ok(Some(name.to_owned()));
             }
         }
         for candidate in ["main", "master"] {

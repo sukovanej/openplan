@@ -750,3 +750,63 @@ async fn a_state_with_no_registry_refuses_to_change_membership() {
     .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
+
+// The store's own config decides the merge target, so a change to it must move the baseline the
+// whole matrix is measured from — without a restart, and for a branch nobody has checked out.
+#[tokio::test]
+async fn a_new_default_branch_in_the_config_moves_the_baseline() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    repository(root, "AAA");
+    let task = root.join(".plan/tasks/00001-alpha.md");
+    std::fs::write(
+        &task,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "add a"]);
+    git(root, &["checkout", "-q", "-b", "dev"]);
+    std::fs::write(
+        &task,
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "edit a on dev"]);
+    git(root, &["checkout", "-q", "main"]);
+
+    let state = AppState::new([open("alpha", root)]);
+    assert_eq!(
+        branch_names(&state).await,
+        vec!["dev", "main"],
+        "main is the autodetected baseline, and dev differs from it"
+    );
+
+    std::fs::write(
+        root.join(".plan/config.toml"),
+        "abbreviation = \"AAA\"\ndefault_branch = \"dev\"\n",
+    )
+    .unwrap();
+    state.project("alpha").unwrap().reload_config();
+
+    assert_eq!(
+        branch_names(&state).await,
+        vec!["dev"],
+        "dev is the baseline now, so main carries nothing of its own"
+    );
+}
+
+async fn branch_names(state: &AppState) -> Vec<String> {
+    let response = send(state, "GET", "/api/projects/alpha/tasks", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let items = body_json(response).await;
+    let items = items.as_array().unwrap();
+    assert_eq!(items.len(), 1, "one row per logical task: {items:?}");
+    items[0]["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["branch"].as_str().unwrap().to_owned())
+        .collect()
+}

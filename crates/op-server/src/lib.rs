@@ -697,7 +697,7 @@ impl ApiError {
             StatusCode::CONFLICT,
             format!(
                 "the daemon's root {} no longer exists, so it can no longer resolve any branch; \
-                 restart it with `oplan server restart`",
+                 restart it with `openplan server restart`",
                 root.display()
             ),
         )

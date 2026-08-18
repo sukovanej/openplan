@@ -8,11 +8,12 @@ use crate::STORE_DIR;
 pub const CONFIG_FILE: &str = "config.toml";
 
 // The store's own settings, read from `.plan/config.toml`. A store with no abbreviation has no id
-// space above the file layer at all, so this is a hard stop rather than a per-field degradation:
-// there is nothing for a missing key to fall back to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// space above the file layer at all, so a missing `abbreviation` is a hard stop; `default_branch`
+// falls back to what the repository itself says, so a missing one is not.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub abbreviation: Abbreviation,
+    pub default_branch: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -43,13 +44,22 @@ impl Config {
             toml::from_str(&text).map_err(|err| ConfigError::new(err.message()))?;
         let abbreviation = match table.get("abbreviation") {
             None => return Err(ConfigError::new("'abbreviation' required")),
-            Some(toml::Value::String(text)) => text.parse(),
+            Some(toml::Value::String(text)) => {
+                text.parse().map_err(|_| ConfigError::new(MUST_BE))?
+            }
             Some(_) => return Err(ConfigError::new(MUST_BE)),
         };
-        abbreviation
-            .map(|abbreviation| Self { abbreviation })
-            .map_err(|_| ConfigError::new(MUST_BE))
+        let default_branch = match table.get("default_branch") {
+            None => None,
+            Some(toml::Value::String(text)) => Some(text.clone()),
+            Some(_) => return Err(ConfigError::new(DEFAULT_BRANCH_MUST_BE)),
+        };
+        Ok(Self {
+            abbreviation,
+            default_branch,
+        })
     }
 }
 
 const MUST_BE: &str = "'abbreviation' must be exactly three uppercase letters";
+const DEFAULT_BRANCH_MUST_BE: &str = "'default_branch' must be a string";

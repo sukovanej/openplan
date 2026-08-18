@@ -13,7 +13,7 @@ impl Daemon {
     fn new() -> Self {
         let home = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
-        // `oplan serve` requires a git repository, so the daemon's root must be one.
+        // `openplan serve` requires a git repository, so the daemon's root must be one.
         git(root.path(), &["init", "-q", "-b", "main"]);
         git(root.path(), &["config", "user.email", "t@example.com"]);
         git(root.path(), &["config", "user.name", "Test"]);
@@ -31,11 +31,11 @@ impl Daemon {
     }
 
     fn cmd(&self) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_oplan"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_openplan"));
         // A write starts the daemon itself, with no `--port` to carry, so without this it would
         // reach for the real 7373 — the developer's own daemon, or another test's.
-        cmd.env("OPLAN_HOME", self.home.path())
-            .env("OPLAN_PORT", "0")
+        cmd.env("OPENPLAN_HOME", self.home.path())
+            .env("OPENPLAN_PORT", "0")
             .arg("--root")
             .arg(self.root.path());
         cmd
@@ -97,7 +97,7 @@ fn parse_pid(text: &str) -> Option<u32> {
     rest[..end].parse().ok()
 }
 
-// `oplan project list` prints one line per project — name, abbreviation, root — and indents the
+// `openplan project list` prints one line per project — name, abbreviation, root — and indents the
 // reason a demoted one is not served under it.
 fn projects(daemon: &Daemon) -> Vec<(String, String)> {
     let out = daemon.cmd().args(["project", "list"]).output().unwrap();
@@ -306,8 +306,8 @@ fn concurrent_starts_yield_single_pid() {
         let home = daemon.home.path().to_path_buf();
         let root = daemon.root.path().to_path_buf();
         handles.push(std::thread::spawn(move || {
-            let out = Command::new(env!("CARGO_BIN_EXE_oplan"))
-                .env("OPLAN_HOME", &home)
+            let out = Command::new(env!("CARGO_BIN_EXE_openplan"))
+                .env("OPENPLAN_HOME", &home)
                 .arg("--root")
                 .arg(&root)
                 .args(["server", "start", "--port", "0"])
@@ -662,7 +662,7 @@ fn foreground_start_refuses_when_a_daemon_holds_the_lock() {
             .success()
     );
 
-    // A second foreground daemon on the same OPLAN_HOME must fail fast on the lifetime lock
+    // A second foreground daemon on the same OPENPLAN_HOME must fail fast on the lifetime lock
     // rather than start a rival server; if the fix regressed it would acquire the lock and
     // block forever, which the deadline below turns into a failure instead of a hang.
     let mut child = daemon
@@ -776,9 +776,9 @@ fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
     let theirs = task_repo(1_000_000_000);
     let ours = task_repo(1_500_000_000);
 
-    let mut add = Command::new(env!("CARGO_BIN_EXE_oplan"));
-    add.env("OPLAN_HOME", daemon.home_path())
-        .env("OPLAN_PORT", "0");
+    let mut add = Command::new(env!("CARGO_BIN_EXE_openplan"));
+    add.env("OPENPLAN_HOME", daemon.home_path())
+        .env("OPENPLAN_PORT", "0");
     assert!(
         add.args(["--root"])
             .arg(theirs.path())
@@ -789,8 +789,8 @@ fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
             .success()
     );
 
-    let mut read = Command::new(env!("CARGO_BIN_EXE_oplan"));
-    read.env("OPLAN_HOME", daemon.home_path())
+    let mut read = Command::new(env!("CARGO_BIN_EXE_openplan"));
+    read.env("OPENPLAN_HOME", daemon.home_path())
         .arg("--root")
         .arg(ours.path());
     let out = read.args(["get", "OPP-1", "--json"]).output().unwrap();
@@ -807,12 +807,12 @@ fn a_daemon_that_does_not_serve_a_repository_is_not_asked() {
 }
 
 // `--root` says which directory a command works in, as `git -C` does. It registers nothing: the
-// first write and `oplan project add` are the only ways into the registry.
+// first write and `openplan project add` are the only ways into the registry.
 #[test]
 fn a_start_registers_nothing_and_the_first_write_registers() {
     let daemon = Daemon::new();
     let registry = daemon.home_path().join("registry.toml");
-    assert!(!registry.exists(), "a fresh OPLAN_HOME has no registry");
+    assert!(!registry.exists(), "a fresh OPENPLAN_HOME has no registry");
 
     assert!(
         daemon
@@ -1001,11 +1001,11 @@ fn root_on_an_explicit_start_names_no_favoured_project() {
             .success()
     );
 
-    let mut restart = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let mut restart = Command::new(env!("CARGO_BIN_EXE_openplan"));
     assert!(
         restart
-            .env("OPLAN_HOME", daemon.home_path())
-            .env("OPLAN_PORT", "0")
+            .env("OPENPLAN_HOME", daemon.home_path())
+            .env("OPENPLAN_PORT", "0")
             .arg("--root")
             .arg(second.path())
             .args(["server", "restart", "--port", "0"])
@@ -1183,9 +1183,9 @@ fn concurrent_first_writes_register_one_project() {
             let home = daemon.home.path().to_path_buf();
             let root = daemon.root.path().to_path_buf();
             std::thread::spawn(move || {
-                Command::new(env!("CARGO_BIN_EXE_oplan"))
-                    .env("OPLAN_HOME", &home)
-                    .env("OPLAN_PORT", "0")
+                Command::new(env!("CARGO_BIN_EXE_openplan"))
+                    .env("OPENPLAN_HOME", &home)
+                    .env("OPENPLAN_PORT", "0")
                     .arg("--root")
                     .arg(&root)
                     .args(["create", &format!("Task {n}")])
@@ -1237,10 +1237,10 @@ fn a_store_above_the_git_root_registers_the_checkout() {
     git(&inner, &["config", "user.name", "Test"]);
     git(&inner, &["commit", "-q", "--allow-empty", "-m", "init"]);
 
-    let mut add = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let mut add = Command::new(env!("CARGO_BIN_EXE_openplan"));
     let out = add
-        .env("OPLAN_HOME", home.path())
-        .env("OPLAN_PORT", "0")
+        .env("OPENPLAN_HOME", home.path())
+        .env("OPENPLAN_PORT", "0")
         .arg("--root")
         .arg(&inner)
         .args(["project", "add"])
@@ -1258,9 +1258,9 @@ fn a_store_above_the_git_root_registers_the_checkout() {
         "the entry names the checkout, not the .plan parent: {text}"
     );
 
-    let mut stop = Command::new(env!("CARGO_BIN_EXE_oplan"));
+    let mut stop = Command::new(env!("CARGO_BIN_EXE_openplan"));
     let _ = stop
-        .env("OPLAN_HOME", home.path())
+        .env("OPENPLAN_HOME", home.path())
         .args(["server", "stop"])
         .output();
 }

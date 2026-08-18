@@ -45,11 +45,13 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 fn project_state(root: impl AsRef<Path>, repo: op_git::Repo, store: op_store::Store) -> AppState {
+    let config = op_store::Config::read(store.root()).unwrap();
     AppState::new([Project::new(
         "test",
         root.as_ref().to_path_buf(),
         repo,
         store,
+        &config,
     )])
 }
 
@@ -169,4 +171,74 @@ async fn info_filter_stays_quiet_for_a_fast_success() {
         logs.trim().is_empty(),
         "expected no per-request logs:\n{logs}"
     );
+}
+
+// A `default_branch` no local branch carries is not an error, so nothing refuses it and nothing
+// demotes the project. The reload line is the only place a reader can find out that the key it
+// committed does nothing, so it must report the branch the rebuild will use, not the one asked for.
+#[tokio::test]
+async fn a_reload_reports_the_resolved_default_branch_and_warns_when_it_is_not_the_configured_one()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    let project = Project::open("test", root.to_path_buf()).unwrap();
+
+    std::fs::write(
+        root.join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\ndefault_branch = \"develp\"\n",
+    )
+    .unwrap();
+    let logs = capture_reload(&project);
+
+    assert!(logs.contains("default_branch=main"), "logs:\n{logs}");
+    assert!(
+        logs.contains("default_branch names no local branch"),
+        "logs:\n{logs}"
+    );
+    assert!(logs.contains("configured=develp"), "logs:\n{logs}");
+}
+
+// A branch the repository does carry is applied, so there is nothing to warn about.
+#[tokio::test]
+async fn a_reload_that_resolves_the_configured_branch_warns_about_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    git(root, &["branch", "dev"]);
+    let project = Project::open("test", root.to_path_buf()).unwrap();
+
+    std::fs::write(
+        root.join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\ndefault_branch = \"dev\"\n",
+    )
+    .unwrap();
+    let logs = capture_reload(&project);
+
+    assert!(logs.contains("default_branch=dev"), "logs:\n{logs}");
+    assert!(
+        !logs.contains("names no local branch"),
+        "an applied branch is not worth a warning:\n{logs}"
+    );
+}
+
+fn capture_reload(project: &Project) -> String {
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::new("info"))
+        .with_writer(buffer.clone())
+        .with_ansi(false)
+        .finish();
+    tracing::subscriber::with_default(subscriber, || project.reload_config());
+    buffer.contents()
 }

@@ -20,9 +20,9 @@ where shelling was forbidden).
 
 ## Design
 
-**Opt-in config.** Git-config key `oplan.backupRemote` (remote name or URL), read
-like `default_branch` reads `oplan.defaultBranch` (`config_snapshot().string`).
-Unset -> backup disabled, clean no-op. No new config format.
+**Opt-in config.** Git-config key `openplan.backupRemote` (remote name or URL),
+read with `config_snapshot().string`. Unset -> backup disabled, clean no-op.
+No new config format.
 
 **`BackupPusher` — separate, non-blocking, coalescing.** NOT on the ref-owner
 actor's critical path ([[./00040-daemon-ambient-writer-accumulate.md]]); it must never
@@ -52,7 +52,7 @@ nicety). Refresh / publish / routing untouched.
 
 ## Verify
 
-- `oplan.backupRemote` set -> a ref advance pushes `refs/open-plan/rolling-updates`
+- `openplan.backupRemote` set -> a ref advance pushes `refs/open-plan/rolling-updates`
   to the mirror (assert against a local bare remote); unset -> no push.
 - a burst of advances coalesces to one push of the latest tip.
 - push failure (unreachable remote) logs `warn`, does not fail the edit, retries

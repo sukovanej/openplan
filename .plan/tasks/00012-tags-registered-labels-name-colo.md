@@ -8,7 +8,7 @@ created: 2026-07-14T11:16:24Z
 Introduce **tags** as a first-class, *registered* vocabulary that tasks reference. A tag is its
 own file in `.plan/tags/`, identified by its normalized name, carrying a palette color and an
 optional description. Tasks reference tags by name in a new `tags:` frontmatter field. Full-stack:
-`op-store` data model, the `oplan tag …` CLI, daemon HTTP, and web-UI chips + tag management.
+`op-store` data model, the `openplan tag …` CLI, daemon HTTP, and web-UI chips + tag management.
 **Filtering by tag is explicitly out of scope** (a follow-up).
 
 ## Decisions (locked)
@@ -50,7 +50,7 @@ optional description. Tasks reference tags by name in a new `tags:` frontmatter 
 
 ## Referential integrity (reads global, writes local)
 - Assignment is strict whole-set: every name in the written set must exist in the current
-  worktree's registry; unknown → non-zero exit with a hint to `oplan tag create`. A dangling ref
+  worktree's registry; unknown → non-zero exit with a hint to `openplan tag create`. A dangling ref
   the task already carries fails the write too — drop it in the same write.
 - `tag delete` refuses when tasks on the current branch reference it, unless `--force`; it **cannot**
   see or clean references on other branches — those become dangling by design.
@@ -62,18 +62,18 @@ optional description. Tasks reference tags by name in a new `tags:` frontmatter 
 
 ## CLI surface (this task)
 ```
-oplan tag create "<name>" [--color <c>] [--desc <text>]   # register a tag; prints its name
-oplan tag list [--json]                                    # registry: name · color · (desc)
-oplan tag show <name> [--json]
-oplan tag set  <name> color <c>                            # recolor (validated against palette)
-oplan tag set  <name> desc <text>                          # re-describe (parity with PATCH)
-oplan tag rename <name> <new-name>                         # rename file + rewrite refs on THIS branch
-oplan tag delete <name> [--force] [--yes]                  # refuse if referenced unless --force
-oplan tag colors                                           # print the palette names
+openplan tag create "<name>" [--color <c>] [--desc <text>]   # register a tag; prints its name
+openplan tag list [--json]                                    # registry: name · color · (desc)
+openplan tag show <name> [--json]
+openplan tag set  <name> color <c>                            # recolor (validated against palette)
+openplan tag set  <name> desc <text>                          # re-describe (parity with PATCH)
+openplan tag rename <name> <new-name>                         # rename file + rewrite refs on THIS branch
+openplan tag delete <name> [--force] [--yes]                  # refuse if referenced unless --force
+openplan tag colors                                           # print the palette names
 
 # assignment — replace-only for v1; the tag namespace stays purely registry ops
-oplan create "<title>" [--tag <name> ...]                  # each validated against the registry
-oplan set <id> tags "<a>, <b>"                             # replace the whole set (empty clears)
+openplan create "<title>" [--tag <name> ...]                  # each validated against the registry
+openplan set <id> tags "<a>, <b>"                             # replace the whole set (empty clears)
 ```
 - `--tag` / `set tags` validate every name in the set exists; reject with a clear message otherwise.
 
@@ -130,20 +130,20 @@ DELETE /api/tags/:name      # ?force= overrides the reference check
   tag-management surface.
 
 ## Acceptance criteria
-- [ ] `oplan tag create "Backend"` writes `.plan/tags/backend.md` (`# Backend`, `color:` always
+- [ ] `openplan tag create "Backend"` writes `.plan/tags/backend.md` (`# Backend`, `color:` always
       materialized) and prints `backend`; `"Front End"` normalizes to `front-end`; `"C++"` is
       rejected with the normalization rule; a second create of an existing name is rejected
       non-zero.
-- [ ] `oplan tag create "X" --color notacolor` is rejected (palette validation); `oplan tag colors`
+- [ ] `openplan tag create "X" --color notacolor` is rejected (palette validation); `openplan tag colors`
       lists the valid names.
-- [ ] `oplan create "Wire parser" --tag backend --tag wip` succeeds only if both tags exist; an
+- [ ] `openplan create "Wire parser" --tag backend --tag wip` succeeds only if both tags exist; an
       unknown tag is rejected non-zero with a `tag create` hint. The task frontmatter shows
       `tags: [backend, wip]` (sorted, deduped) and the body is byte-for-byte unchanged.
-- [ ] `oplan set <id> tags "…"` mutates only frontmatter; an empty string clears the set and omits
+- [ ] `openplan set <id> tags "…"` mutates only frontmatter; an empty string clears the set and omits
       the field. A set containing a name missing from this branch's registry is rejected even when
       the task already carried it (strict whole-set); resubmitting without it succeeds.
-- [ ] `oplan tag rename backend infra` renames the file and rewrites `tags:` in every referencing
-      task on this branch; renaming onto an existing name is refused; `oplan tag delete infra` then
+- [ ] `openplan tag rename backend infra` renames the file and rewrites `tags:` in every referencing
+      task on this branch; renaming onto an existing name is refused; `openplan tag delete infra` then
       refuses (referenced) without `--force` and succeeds with it.
 - [ ] A task referencing a non-existent tag name still reads/lists cleanly (no error); the daemon
       and UI render it as a neutral chip.
@@ -159,7 +159,7 @@ DELETE /api/tags/:name      # ?force= overrides the reference check
 - [ ] `cargo build`, `cargo test`, `cargo fmt --check`, `cargo clippy -- -D warnings` all pass.
 
 ## Out of scope (follow-ups)
-- **Filtering:** `oplan list --tag …` and any UI filter control (explicitly deferred).
+- **Filtering:** `openplan list --tag …` and any UI filter control (explicitly deferred).
 - **Merge-driver set-union for `tags:`** — the section-aware merge driver must treat `tags`
   as an unordered set so two branches adding different tags auto-merge; that lands with the
   merge-driver task. Model the field as a set now so it is ready.

@@ -4,7 +4,7 @@ use utoipa::ToSchema;
 use op_task::Task;
 pub use op_task::{Abbreviation, Status, Timestamp};
 
-pub const ADMIN_HEADER: &str = "x-oplan-admin";
+pub const ADMIN_HEADER: &str = "x-openplan-admin";
 
 // A spelling of an id the store has no id for. One key spelling is accepted and nothing else is, so
 // a refusal names the form that would have worked rather than guessing at what was meant.

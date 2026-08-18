@@ -1,6 +1,6 @@
 [package]
 name = "op-cli"
-description = "The oplan binary: CLI surface, realtime daemon, and merge driver"
+description = "The openplan binary: CLI surface, realtime daemon, and merge driver"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "oplan"
+name = "openplan"
 path = "src/main.rs"
 
 [dependencies]

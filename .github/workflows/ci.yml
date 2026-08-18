@@ -37,7 +37,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # `op-server` embeds the SPA from this folder at compile time, and it is a gitignored build
-      # output, so `oplan` does not link without it. The linter serves no assets and needs no
+      # output, so `openplan` does not link without it. The linter serves no assets and needs no
       # frontend toolchain — only the folder present.
       - run: mkdir -p web/packages/app/dist
       - run: cargo run --quiet -p op-cli -- lint

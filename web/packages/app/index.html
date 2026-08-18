@@ -7,7 +7,7 @@
     <script>
       ;(() => {
         try {
-          const stored = localStorage.getItem("oplan.theme")
+          const stored = localStorage.getItem("openplan.theme")
           const preference = stored === "light" || stored === "dark" ? stored : "system"
           const dark =
             preference === "dark" || (preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches)

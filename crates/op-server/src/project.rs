@@ -183,12 +183,18 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new(name: impl Into<String>, path: PathBuf, repo: Repo, store: Store) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        path: PathBuf,
+        repo: Repo,
+        store: Store,
+        config: &Config,
+    ) -> Self {
         Self {
             name: RwLock::new(name.into()),
             path,
-            abbreviation: RwLock::new(store.abbreviation()),
-            index: Arc::new(Mutex::new(Index::new(store.abbreviation()))),
+            abbreviation: RwLock::new(config.abbreviation),
+            index: Arc::new(Mutex::new(Index::new(config))),
             presence: Arc::new(Mutex::new(PresenceRegistry::new())),
             git_common_dir: git_common_dir(&repo),
             store,
@@ -207,7 +213,8 @@ impl Project {
             StoreError::StoreMissing => OpenError::NoStore(path.clone()),
             other => OpenError::Store(other),
         })?;
-        Ok(Self::new(name, path, repo, store))
+        let config = Config::read(store.root()).map_err(StoreError::Config)?;
+        Ok(Self::new(name, path, repo, store, &config))
     }
 
     pub fn name(&self) -> String {
@@ -252,19 +259,19 @@ impl Project {
     }
 
     // Every id the matrix holds was formatted with the abbreviation it was built under, and
-    // `Index::set_abbreviation` only drops the parse cache — the matrix keeps the old spellings. A
+    // `Index::set_config` only drops the parse cache — the matrix keeps the old spellings. A
     // read that skipped the rebuild would hand one of them to `Index::number_of`, which panics on a
     // key this abbreviation cannot parse and poisons the index for the project's whole life. So the
     // index guard is held until the project is marked stale: releasing it between the two leaves a
     // window where the index carries the new abbreviation, the matrix the old spellings, and nothing
     // yet says a rebuild is due.
-    pub fn set_abbreviation(&self, abbreviation: Abbreviation) {
+    pub fn set_config(&self, config: &Config) {
         let mut index = self.lock_index();
         *self
             .abbreviation
             .write()
-            .expect("abbreviation lock poisoned") = abbreviation;
-        index.set_abbreviation(abbreviation);
+            .expect("abbreviation lock poisoned") = config.abbreviation;
+        index.set_config(config);
         self.mark_dirty();
     }
 
@@ -337,18 +344,43 @@ impl Project {
     pub fn reload_config(&self) {
         match Config::read(self.store.root()) {
             Ok(config) => {
-                self.set_abbreviation(config.abbreviation);
+                // Applied before the project is unblocked. The other order leaves a window where a
+                // read passes the gate, finds the index fresh, and serves the old abbreviation's
+                // keys.
+                self.set_config(&config);
                 self.lock_health().config_error = None;
-                tracing::info!(
-                    project = %self.name(),
-                    abbreviation = %config.abbreviation,
-                    "store abbreviation reloaded"
-                );
+                self.report_config(&config);
             }
             Err(err) => {
                 let reason = err.to_string();
-                tracing::error!(project = %self.name(), %reason, "the store no longer names an abbreviation");
+                tracing::error!(project = %self.name(), %reason, "the store config can no longer be read");
                 self.lock_health().config_error = Some(reason);
+            }
+        }
+    }
+
+    // What the rebuild will make of the config, rather than what the file asks for. A
+    // `default_branch` no local branch carries is not an error — the task view falls back and keeps
+    // serving — so this log line is the only place it is ever mentioned.
+    fn report_config(&self, config: &Config) {
+        let resolved = self
+            .repo
+            .default_branch(config.default_branch.as_deref())
+            .ok()
+            .flatten();
+        tracing::info!(
+            project = %self.name(),
+            abbreviation = %config.abbreviation,
+            default_branch = %resolved.as_deref().unwrap_or("(none)"),
+            "store config reloaded"
+        );
+        if let Some(configured) = config.default_branch.as_deref() {
+            if resolved.as_deref() != Some(configured) {
+                tracing::warn!(
+                    project = %self.name(),
+                    %configured,
+                    "default_branch names no local branch; the task view falls back"
+                );
             }
         }
     }

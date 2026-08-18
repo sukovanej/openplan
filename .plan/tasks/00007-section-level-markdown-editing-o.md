@@ -13,7 +13,7 @@ stay pristine and diffs stay minimal. Builds directly on the read-only viewer fr
 [[./00005-bootstrap-the-realtime-web-ui-re.md]] and the whole-file/metadata writes from
 [[./00003-task-crud-across-the-store-daemo.md]] and [[./00004-support-setting-task-content-on-c.md]].
 
-Scope is **body content only** — frontmatter (`status`/`parent`/`deps`) already has `oplan set`
+Scope is **body content only** — frontmatter (`status`/`parent`/`deps`) already has `openplan set`
 and stays out.
 
 ## Decisions (locked)
@@ -62,15 +62,15 @@ One engine, called identically by the CLI, the HTTP endpoint, and (where relevan
   (implicit lead region) or explicitly reject editing it in v1; do not corrupt it on other edits.
 
 ## CLI surface
-Wire the engine into `oplan`, JSON-first for agents:
+Wire the engine into `openplan`, JSON-first for agents:
 ```
-oplan sections <id> [--json]                 # addressable targets: slug path + hash
-oplan get      <id> -t 'Section.Sub' [--json]
-oplan set      <id> -t 'Section' --body-file f|-   # overwrite one section (splice)
-oplan append   <id> --body-file f|-               # new ## section
-oplan set      <id> --title '<text>'              # overwrite the H1
-oplan delete   <id> -t 'Section'                  # remove a section
-oplan move     <id> -t 'Section' --before|--after 'Other'   # reorder
+openplan sections <id> [--json]                 # addressable targets: slug path + hash
+openplan get      <id> -t 'Section.Sub' [--json]
+openplan set      <id> -t 'Section' --body-file f|-   # overwrite one section (splice)
+openplan append   <id> --body-file f|-               # new ## section
+openplan set      <id> --title '<text>'              # overwrite the H1
+openplan delete   <id> -t 'Section'                  # remove a section
+openplan move     <id> -t 'Section' --before|--after 'Other'   # reorder
 ```
 Section writes take an optional `--base-hash` so headless agents can opt into the same guard.
 
@@ -96,7 +96,7 @@ the existing realtime stream.
 
 ## Out of scope
 - Block-level (sub-section) addressing — open decision #6, stays deferred.
-- Frontmatter editing in the UI (already `oplan set`).
+- Frontmatter editing in the UI (already `openplan set`).
 - Cross-worktree write targeting and the merge/conflict *resolution* view (the driver exists
   separately; this task only adds the per-section optimistic guard for live editing).
 - WYSIWYG editing.
