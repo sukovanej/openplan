@@ -2,11 +2,18 @@
 description = "Check the task store's .plan/ files with the openplan linter"
 run = "cargo run --quiet -p op-cli -- lint"
 
-[tasks.rebuild]
-description = "Rebuild the web SPA and restart the daemon with the fresh embed"
+# The daemon respawns itself from its own executable, so whichever binary runs `server restart`
+# becomes the machine daemon. Restarting through `cargo run` would leave a `target/debug` build
+# serving every read — one the next `cargo build` rewrites and `cargo clean` removes, both
+# underneath the running process. This names the installed binary for that reason, and the SPA is
+# built first so the binary it installs embeds a current one.
+[tasks.install]
+description = "Build the web SPA into the release binary, put it on PATH, and restart the daemon on it"
+alias = "rebuild"
 run = [
   "pnpm -C web -r build",
-  "cargo run -p op-cli -- server restart",
+  "cargo install --path crates/op-cli --force",
+  "openplan server restart",
 ]
 
 [tasks.generate-web-client]

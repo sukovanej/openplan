@@ -30,7 +30,17 @@ the daemon on :7373).
 
 ## Run
 
-`openplan` is the single binary — run it via `cargo run -p op-cli -- <args>`:
+`openplan` is the single binary. Put it on PATH and start its daemon on that build:
+
+```sh
+mise run install     # SPA → release binary → PATH → daemon restarted on it
+```
+
+The daemon respawns itself from its own executable, so the binary that starts it is the one that
+keeps serving. Installing and restarting together is what keeps the daemon and the checkout the
+same build.
+
+Without installing, run it from the checkout as `cargo run -p op-cli -- <args>`:
 
 ```sh
 openplan list                       # tasks in ./.plan

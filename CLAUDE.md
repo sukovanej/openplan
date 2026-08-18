@@ -60,6 +60,7 @@ its underlying commands by hand. Before treating a bare verb like `rebuild` as a
 cargo command, check whether it names a `mise` task and, if so, run that:
 
 ```sh
-mise run rebuild               # rebuild the web SPA and restart the daemon on the fresh embed
+mise run install               # build the SPA into the binary, put it on PATH, restart the daemon
+mise run rebuild               # an alias for install
 mise run generate-web-client   # regenerate the Effect HTTP client from the API's OpenAPI spec
 ```
