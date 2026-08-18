@@ -68,13 +68,21 @@ openplan set <key> dependencies "<key1>, <key2>"
 
 `openplan set <key> status in_progress` writes to `.plan/tasks/`, so it is a
 tracked-file change subject to the same worktree discipline as any other write.
-The correct order is: create/switch into the task's worktree **first**, then make
-marking it `in_progress` the first write you do *inside* that worktree.
+Start each task in this order, and do these three steps before anything else:
+
+1. `openplan get <key>` — read the task.
+2. Create the task's worktree and move into it.
+3. `openplan set <key> status in_progress` — immediately, as the next command.
 
 ```sh
 # from the task's worktree, not the primary checkout:
 openplan set <key> status in_progress
 ```
+
+Mark the task `in_progress` before you read the code, search the repository,
+plan, or start a subagent. The status tells the user that you took the task, so
+it must be true from the first minute. Exploration is not a reason to wait: it
+takes minutes, and for all of them the board shows the task as free.
 
 Never run `openplan set` from the primary checkout to "just mark it started" before
 the worktree exists — that is the write the Worktree rule forbids.
