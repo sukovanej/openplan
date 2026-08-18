@@ -463,22 +463,33 @@ fn file_reference(reference: &str) -> serde_yaml::Value {
     }
 }
 
+// A task the daemon could not parse well enough to write back as a file. `status` and `created` are
+// what makes a task file one — the store refuses a write without them — so a rendering missing
+// either would look like a task file and destroy the task if it were written over one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "this task cannot be rendered as a task file: its frontmatter is missing `status`, `created`, \
+     or both. Read the file itself to repair it."
+)]
+pub struct RenderError;
+
 // A task file rebuilt from the state the daemon holds, for a caller that asked for markdown rather
 // than JSON. The daemon parses; nothing above it keeps the bytes, so this is a canonical rendering
 // and not the file: key order, spacing, and keys no field names are normalized away, and a field
 // that did not parse is left out rather than guessed at (`Metadata::problems` names those).
-pub fn render_task_file(metadata: &Metadata, body: &str) -> String {
+pub fn render_task_file(metadata: &Metadata, body: &str) -> Result<String, RenderError> {
     let mut frontmatter = serde_yaml::Mapping::new();
     let mut put = |key: &str, value: serde_yaml::Value| {
         frontmatter.insert(serde_yaml::Value::String(key.to_owned()), value);
     };
-    if let Some(fields) = metadata.fields() {
-        if let Some(status) = fields.status.as_value() {
-            put("status", status.as_str().into());
-        }
-        if let Some(created) = fields.created.as_value() {
-            put("created", created.to_string().into());
-        }
+    let fields = metadata.fields().ok_or(RenderError)?;
+    {
+        let (Some(status), Some(created)) = (fields.status.as_value(), fields.created.as_value())
+        else {
+            return Err(RenderError);
+        };
+        put("status", status.as_str().into());
+        put("created", created.to_string().into());
         if let Some(Some(parent)) = fields.parent.as_value() {
             put("parent", file_reference(parent));
         }
@@ -497,11 +508,8 @@ pub fn render_task_file(metadata: &Metadata, body: &str) -> String {
             _ => {}
         }
     }
-    let yaml = match frontmatter.is_empty() {
-        true => String::new(),
-        false => serde_yaml::to_string(&frontmatter).unwrap_or_default(),
-    };
-    format!("---\n{yaml}---\n{body}")
+    let yaml = serde_yaml::to_string(&frontmatter).map_err(|_| RenderError)?;
+    Ok(format!("---\n{yaml}---\n{body}"))
 }
 
 // A direct child of a task, in sibling (`rank`) order — enough to render the subtasks list without

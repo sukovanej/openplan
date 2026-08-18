@@ -1908,3 +1908,38 @@ async fn a_branch_scoped_read_always_names_the_branch_it_answered_for() {
         .clone();
     assert_eq!(shared["branches"], json!([feature]));
 }
+
+// Naming no branch has to mean the same thing on a task and on its tree. A tree built from another
+// branch's task set would give the task a different parent and different children than the detail
+// read beside it.
+#[tokio::test]
+async fn a_branchless_tree_and_a_branchless_detail_answer_for_one_branch() {
+    let (dir, state) = git_state();
+    // A child of alpha that only `feature` carries, so the two branches disagree about the tree.
+    std::fs::write(
+        dir.path().join(".plan/tasks/00002-kid.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: './00001-alpha.md'\n---\n# Kid\n",
+    )
+    .unwrap();
+    git(dir.path(), &["checkout", "-q", "feature"]);
+    git(dir.path(), &["add", "."]);
+    git_commit_at(dir.path(), 1_000_000_200, "feature gains a child");
+    git(dir.path(), &["checkout", "-q", "main"]);
+
+    let detail = body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await).await;
+    assert_eq!(detail["headline"], "feature", "the version that headlines");
+
+    let tree =
+        body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-1/tree", None).await).await;
+    let children = tree["tree"]["children"].as_array().unwrap();
+    assert_eq!(
+        children.len(),
+        1,
+        "the tree is built from the branch the detail headlined: {tree}"
+    );
+    assert_eq!(children[0]["id"], "OPP-2");
+    assert_eq!(
+        tree["tree"]["title"], detail["title"],
+        "and the two describe the same version"
+    );
+}

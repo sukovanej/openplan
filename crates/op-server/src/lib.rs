@@ -805,13 +805,20 @@ fn index_of(project: &Project, fresh: bool) -> Result<std::sync::MutexGuard<'_, 
 // has is indexed, so "no cells here" and "no such branch" are different answers and only one of
 // them is the caller's mistake.
 fn known_branch(index: &Index, branch: &str) -> Result<(), ApiError> {
-    match index.has_branch(branch) {
-        true => Ok(()),
-        false => Err(ApiError::new(
-            StatusCode::NOT_FOUND,
-            format!("no such branch: {branch}"),
-        )),
+    if index.has_branch(branch) {
+        return Ok(());
     }
+    // The index walks `refs/heads/*`, so a repository whose first commit is still to come has no
+    // branch at all — including the one HEAD points at. Denying that branch by name sends the
+    // reader looking for a branch they are standing on; the commit is what is missing.
+    // [[OPP-58]] is what makes these reads work before it exists.
+    let message = match index.has_branches() {
+        true => format!("no such branch: {branch}"),
+        false => "this repository has no commits yet, so no branch holds any task; commit to read \
+                  through the daemon"
+            .to_owned(),
+    };
+    Err(ApiError::new(StatusCode::NOT_FOUND, message))
 }
 
 // The branch a read is scoped to when none was named: the serve-root worktree's own, mirroring the
@@ -926,7 +933,10 @@ async fn get_task_tree(
     let view = tokio::task::spawn_blocking(move || -> Result<TaskTreeView, ApiError> {
         let index = index_of(&project, query.fresh)?;
         reject_non_key(index.abbreviation(), &id)?;
-        let branch = read_branch(&index, query.branch)?;
+        // Naming no branch means the same here as it does on the task itself: the version that
+        // headlines. A tree built from another branch's task set would give the task a different
+        // parent and different children than the detail read beside it.
+        let branch = read_branch(&index, query.branch.or_else(|| index.headline_branch(&id)))?;
         let summaries = index.branch_summaries(&branch);
         let mut cycles = Vec::new();
         let tree = TaskTree::build(&summaries, &id, query.depth, &mut cycles)

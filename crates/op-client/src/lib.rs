@@ -41,6 +41,11 @@ pub enum ClientError {
     // out-of-date daemon looks like from here — not a transport failure.
     #[error("the openplan daemon answered {route} with a body this client cannot read: {message}")]
     Unreadable { route: String, message: String },
+    // A body that is not JSON at all, which no route of this API ever answers with. Told apart from
+    // `Unreadable` because that one covers JSON of the wrong shape too — a real schema mismatch,
+    // which says nothing about the daemon's age.
+    #[error("the openplan daemon answered {route} with {content_type}, not JSON")]
+    NotJson { route: String, content_type: String },
 }
 
 pub struct Client {
@@ -134,12 +139,26 @@ impl Client {
 
     fn read<T: DeserializeOwned>(&self, url: Url) -> Result<T, ClientError> {
         let route = url.path().to_owned();
-        accepted(send_read(self.http.get(url))?)?
-            .json()
-            .map_err(|err| ClientError::Unreadable {
+        let response = accepted(send_read(self.http.get(url))?)?;
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        if !content_type.starts_with("application/json") {
+            return Err(ClientError::NotJson {
                 route,
-                message: err.to_string(),
-            })
+                content_type: match content_type.is_empty() {
+                    true => "no content type".to_owned(),
+                    false => content_type,
+                },
+            });
+        }
+        response.json().map_err(|err| ClientError::Unreadable {
+            route,
+            message: err.to_string(),
+        })
     }
 
     // The caller names the wait it can afford: a write must know its project before it can start, a

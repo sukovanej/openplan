@@ -572,6 +572,10 @@ impl Index {
         self.branch_versions.contains_key(branch)
     }
 
+    pub fn has_branches(&self) -> bool {
+        !self.branch_versions.is_empty()
+    }
+
     pub fn branch_summaries(&self, branch: &str) -> Vec<TaskSummary> {
         let mut summaries: Vec<TaskSummary> = self
             .branch_of(branch)

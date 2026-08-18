@@ -424,7 +424,7 @@ fn get(
         }
         print!(
             "{}",
-            op_api::render_task_file(&detail.metadata, &detail.body)
+            op_api::render_task_file(&detail.metadata, &detail.body)?
         );
     }
     Ok(())
@@ -808,8 +808,12 @@ fn move_task(
     // caller's branch, not a second reading of the files.
     let tasks = Tasks::resolve(root, daemon_url)?;
     let group = tasks.list(tasks.branch())?;
-    let current_parent = tasks
-        .get(id, tasks.branch())?
+    // The task's own row, from the same read the siblings come from: asking for it separately would
+    // walk the repository a second time to learn what this list already says.
+    let current_parent = group
+        .iter()
+        .find(|task| task.id == id)
+        .ok_or_else(|| anyhow::anyhow!("no such task: {id}"))?
         .metadata
         .parent()
         .map(str::to_owned);

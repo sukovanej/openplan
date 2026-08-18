@@ -107,20 +107,22 @@ impl Tasks {
 
 // A daemon older than the read routes has two ways of saying so, and neither of them says it. One
 // that refuses unserved `/api/` paths answers 404 about a route, where every other 404 here is about
-// a task; an older one still falls those paths through to the SPA and answers the page, which
-// arrives as a body this client cannot read. Both mean the same thing: stop the daemon.
+// a task; an older one still falls those paths through to the SPA and answers the page itself. Both
+// mean the same thing: stop the daemon. JSON of the wrong shape is not one of them — that is a
+// schema mismatch, which says nothing about the daemon's age and must not send anyone to stop a
+// daemon other repositories are using.
 fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
     let predates = |err: &op_client::ClientError| match err {
-        op_client::ClientError::Unreadable { .. } => true,
+        op_client::ClientError::NotJson { .. } => true,
         op_client::ClientError::Refused { status, message } => {
             *status == 404 && message.starts_with("no such route")
         }
         _ => false,
     };
     outcome.map_err(|err| match predates(&err) {
-        true => anyhow::anyhow!(
-            "this openplan daemon does not serve the read routes; it predates them. Stop it (`openplan \
-             server stop`) and rerun here."
+        true => anyhow::Error::new(err).context(
+            "this openplan daemon does not serve the read routes; it predates them. Stop it \
+             (`openplan server stop`) and rerun here.",
         ),
         false => anyhow::Error::new(err),
     })

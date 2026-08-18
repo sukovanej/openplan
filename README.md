@@ -41,8 +41,9 @@ openplan project list               # repositories the daemon serves
 openplan merge-driver <O> <A> <B>   # git merge driver for .plan/**.md
 ```
 
-Reads work straight off the files; writes (`create`, `set`, `move`, `delete`) go through the daemon
-and start it if it is down. One daemon serves every repository on the machine: the first write from
+Every task command goes through the daemon and starts it if it is down, so a query answers the same
+whether the CLI or the web UI asked it. `lint` is the exception: it checks the files in front of you
+and never starts a daemon. One daemon serves every repository on the machine: the first write from
 a repository registers it, and `openplan project` manages the registry. `OPENPLAN_HOME` picks the
 daemon's state directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
 

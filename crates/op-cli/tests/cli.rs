@@ -884,10 +884,12 @@ fn get_renders_the_daemons_state_rather_than_the_file() {
     );
 }
 
-// The rendering looks like a task file, so it has to be one the store can read: a reference is the
-// number the file layer allocates there, where every surface above the store speaks the key.
+// The rendering looks like a task file, so its references have to be ones the store can read: a
+// reference is the number the file layer allocates there, where every surface above the store
+// speaks the key. Unknown frontmatter keys are a separate matter — `Metadata` does not carry them,
+// so the rendering cannot either.
 #[test]
-fn get_renders_a_task_file_the_store_can_read_back() {
+fn get_renders_references_the_store_can_read_back() {
     let dir = Project::new();
     let parent = create(&dir, "Parent");
     let kid = child(&dir, "Kid", &parent);
@@ -920,10 +922,11 @@ fn get_renders_a_task_file_the_store_can_read_back() {
     );
 }
 
-// A field the daemon could not parse has no canonical form to render, so it is named on stderr
-// instead of being dropped in silence.
+// The rendering is a task file, and `status` and `created` are what make one. A task missing either
+// cannot be rendered at all: emitting the rest would look like a task file and destroy the task if
+// it were written over one.
 #[test]
-fn get_reports_a_field_it_cannot_render() {
+fn get_refuses_to_render_a_task_missing_a_required_field() {
     let dir = Project::new();
     write(
         &dir.path().join(".plan/tasks/00001-legacy.md"),
@@ -931,10 +934,49 @@ fn get_reports_a_field_it_cannot_render() {
     );
 
     let out = run(&dir, &["get", "OPP-1"]);
-    assert!(out.status.success());
-    assert_eq!(stdout(&out), "---\nstatus: todo\n---\n# Legacy\n");
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
     assert!(
-        String::from_utf8_lossy(&out.stderr).contains("created: missing"),
+        stdout(&out).is_empty(),
+        "nothing that reads as a task file: {}",
+        stdout(&out)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("created: missing"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("cannot be rendered as a task file"),
+        "stderr: {stderr}"
+    );
+
+    // `--json` answers with the state the daemon holds, which is exactly what a broken file needs
+    // read, so it keeps working.
+    let json = run(&dir, &["get", "OPP-1", "--json"]);
+    assert!(json.status.success());
+    let view: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(view["metadata"]["created"]["kind"], "missing");
+}
+
+// A field that is not required has no canonical form when it fails to parse, so it is left out and
+// named on stderr rather than dropped in silence.
+#[test]
+fn get_reports_a_field_it_cannot_render() {
+    let dir = Project::new();
+    write(
+        &dir.path().join(".plan/tasks/00001-legacy.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: [1, 2]\n---\n# Legacy\n",
+    );
+
+    let out = run(&dir, &["get", "OPP-1"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        stdout(&out),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Legacy\n"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("rank:"),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -1832,4 +1874,59 @@ fn a_home_inside_a_repository_never_becomes_the_project_written_to() {
         .env("OPENPLAN_PORT", "0")
         .args(["server", "stop"])
         .output();
+}
+
+// Reads resolve through branches, and a repository whose first commit is still to come has none —
+// not even the one HEAD points at. [[OPP-58]] is what makes these reads work; until then the
+// refusal has to name the commit that is missing rather than deny a branch the caller is standing
+// on.
+#[test]
+fn a_read_before_the_first_commit_names_the_missing_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    git(dir.path(), &["init", "-q", "-b", "main"]);
+    git(dir.path(), &["config", "user.email", "t@example.com"]);
+    git(dir.path(), &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
+    write(
+        &dir.path().join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\n",
+    );
+    let run_there = |args: &[&str]| {
+        openplan()
+            .env("OPENPLAN_HOME", home.path())
+            .env("OPENPLAN_PORT", "0")
+            .arg("--root")
+            .arg(dir.path())
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let created = run_there(&["create", "First task"]);
+    assert!(
+        created.status.success(),
+        "a write still lands: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    let listed = run_there(&["list"]);
+    assert!(!listed.status.success());
+    let stderr = String::from_utf8_lossy(&listed.stderr);
+    assert!(
+        stderr.contains("no commits yet"),
+        "the refusal names the commit, not the branch: {stderr}"
+    );
+    assert!(
+        !stderr.contains("no such branch"),
+        "main is checked out; denying it by name misleads: {stderr}"
+    );
+
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "birth the store"]);
+    assert!(
+        run_there(&["list"]).status.success(),
+        "and the commit is all it needed"
+    );
+    let _ = run_there(&["server", "stop"]);
 }
