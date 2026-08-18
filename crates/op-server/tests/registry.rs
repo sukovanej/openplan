@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use op_server::ProjectRegistry;
+use op_server::{ProjectEntry, ProjectRegistry, unique_name};
 
 #[test]
 fn a_missing_file_is_absence_rather_than_an_error() {
@@ -15,7 +15,7 @@ fn an_entry_survives_a_write_and_a_read() {
     let path = dir.path().join("registry.toml");
 
     let mut written = ProjectRegistry::default();
-    written.add(PathBuf::from("/Users/dev/Projects/open-plan"));
+    add(&mut written, PathBuf::from("/Users/dev/Projects/open-plan"));
     written.write(&path).unwrap();
 
     let text = std::fs::read_to_string(&path).unwrap();
@@ -33,7 +33,7 @@ fn an_entry_survives_a_write_and_a_read() {
 fn a_repeated_directory_name_gets_a_distinct_project_name() {
     let mut registry = ProjectRegistry::default();
     for parent in ["/a", "/b", "/c"] {
-        registry.add(PathBuf::from(parent).join("open-plan"));
+        add(&mut registry, PathBuf::from(parent).join("open-plan"));
     }
     let names: Vec<&str> = registry
         .entries()
@@ -46,7 +46,10 @@ fn a_repeated_directory_name_gets_a_distinct_project_name() {
 #[test]
 fn a_directory_name_with_no_letters_falls_back_to_a_usable_name() {
     let mut registry = ProjectRegistry::default();
-    assert_eq!(registry.add(PathBuf::from("/srv/___")).name, "project");
+    assert_eq!(
+        add(&mut registry, PathBuf::from("/srv/___")).name,
+        "project"
+    );
 }
 
 #[test]
@@ -57,4 +60,9 @@ fn a_malformed_registry_names_its_file() {
 
     let err = ProjectRegistry::read(&path).expect_err("a broken registry cannot be guessed at");
     assert!(err.to_string().contains("registry.toml"), "{err}");
+}
+
+fn add(registry: &mut ProjectRegistry, path: PathBuf) -> &ProjectEntry {
+    let name = unique_name(&path, |name| registry.holds_name(name));
+    registry.insert(ProjectEntry { name, path })
 }

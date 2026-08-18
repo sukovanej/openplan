@@ -19,8 +19,8 @@ use axum::{
 use op_api::{
     Abbreviation, ApiErrorBody, Board, BranchComments, BranchState, ChangeEvent, ChangeKind,
     Comment, CreateComment, CreateTag, CreateTask, DaemonInfo, KeyError, Matrix, ProjectView,
-    RegisterProject, RenameProject, SearchHit, StoreConfig, TagPatch, TagView, TaskBranches,
-    TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
+    RegisterProject, RenameProject, SearchHit, TagPatch, TagView, TaskBranches, TaskDetail,
+    TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -41,7 +41,9 @@ use utoipa_swagger_ui::SwaggerUi;
 mod project;
 mod registry;
 pub use project::{OpenError, Project, open_projects, serve_root};
-pub use registry::{ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError};
+pub use registry::{
+    ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError, canonical, same_path, unique_name,
+};
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 const SLOW_REQUEST: Duration = Duration::from_millis(1000);
@@ -299,7 +301,6 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(health))
         .routes(routes!(list_projects, register_project))
         .routes(routes!(delete_project, rename_project))
-        .routes(routes!(get_config))
         .routes(routes!(list_tasks, create_task))
         .routes(routes!(get_matrix))
         .routes(routes!(get_board))
@@ -566,35 +567,6 @@ async fn rename_project(
         .map_err(join_error)??;
     publish(&state, ChangeEvent::ProjectsChanged);
     Ok(Json(view))
-}
-
-// The abbreviation every key on the wire carries, so a client can tell this store's keys from any
-// other spelling. It only ever changes with the store's `config.toml`, which announces itself over
-// `/api/events`.
-#[utoipa::path(
-    get,
-    path = "/api/projects/{project}/config",
-    params(("project" = String, Path, description = "Project name")),
-    responses(
-        (status = 200, description = "The served store's configuration", body = StoreConfig),
-        (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
-    )
-)]
-async fn get_config(
-    State(state): State<AppState>,
-    Path(project): Path<String>,
-) -> Result<Json<StoreConfig>, ApiError> {
-    config_of(project_of(&state, &project)?).await
-}
-
-async fn config_of(project: Arc<Project>) -> Result<Json<StoreConfig>, ApiError> {
-    let abbreviation = tokio::task::spawn_blocking(move || project.abbreviation())
-        .await
-        .map_err(join_error)?;
-    Ok(Json(StoreConfig {
-        abbreviation: abbreviation.to_string(),
-    }))
 }
 
 async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Response {

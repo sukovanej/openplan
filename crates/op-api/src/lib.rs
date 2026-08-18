@@ -69,13 +69,6 @@ pub struct ApiErrorBody {
     pub message: String,
 }
 
-// The store's settings a client needs to speak its id space: the abbreviation every key carries.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct StoreConfig {
-    #[schema(pattern = "^[A-Z]{3}$")]
-    pub abbreviation: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 // The daemon serves every registered repository, so it names none of them here. A client asks
 // `/api/projects` which repository it is talking to.

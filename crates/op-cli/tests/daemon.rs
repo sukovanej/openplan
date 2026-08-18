@@ -1043,7 +1043,7 @@ fn root_on_an_explicit_start_names_no_favoured_project() {
 
     let port = daemon.info_port().unwrap();
     for name in registry_names(&daemon) {
-        let answered = http_get(port, &format!("/api/projects/{name}/config"));
+        let answered = http_get(port, &format!("/api/projects/{name}/board"));
         assert!(
             answered.contains("200 OK"),
             "{name} answers its own routes: {answered}"

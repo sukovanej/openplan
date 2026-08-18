@@ -128,7 +128,7 @@ export const boardQuery = keyed((project) => new Query<Board>(project, getBoard(
 // project's changes refresh it.
 export const mergedBoardQuery: Query<Board> = new Query(undefined, getMergedBoard)
 
-export function boardTasks(board: Board): ReadonlyArray<TaskListItem> {
+function boardTasks(board: Board): ReadonlyArray<TaskListItem> {
   return board.groups.flatMap((group) => group.rows.map((row) => row.task))
 }
 

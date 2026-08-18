@@ -10,6 +10,7 @@ use fs2::FileExt as _;
 
 pub use op_api::DaemonInfo;
 use op_api::ProjectView;
+use op_server::same_path;
 
 pub const DEFAULT_PORT: u16 = 7373;
 
@@ -432,13 +433,6 @@ pub fn project_named(views: Vec<ProjectView>, repo_dir: &Path) -> Option<String>
         .into_iter()
         .find(|view| same_path(Path::new(&view.git_common_dir), repo_dir))
         .map(|view| view.name)
-}
-
-pub fn same_path(a: &Path, b: &Path) -> bool {
-    match (a.canonicalize(), b.canonicalize()) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a == b,
-    }
 }
 
 pub fn base_url(port: u16) -> String {

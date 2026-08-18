@@ -3,9 +3,6 @@
 Local-first, file-based task manager for humans and AI agents, in plain markdown.
 Design and work items in [.plan/tasks/](.plan/tasks/).
 
-> Compiling skeleton: crates, dependency edges, and the `openplan` binary are wired;
-> domain logic lands in child tasks.
-
 ## Build
 
 ```sh

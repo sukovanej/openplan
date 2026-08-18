@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use op_api::{Abbreviation, ChangeEvent, ProjectStatus, ProjectView};
 use op_git::Repo;
 use op_index::{Index, IndexError};
-use op_presence::Registry as PresenceRegistry;
 use op_store::{Config, STORE_DIR, Store, StoreError};
 use op_watch::{Change, Watcher};
 use tokio::sync::broadcast;
@@ -171,7 +170,6 @@ pub struct Project {
     // through the index would make each listing wait on every project's rebuild in turn.
     abbreviation: RwLock<Abbreviation>,
     pub index: Arc<Mutex<Index>>,
-    pub presence: Arc<Mutex<PresenceRegistry>>,
     git_common_dir: String,
     store: Store,
     repo: Repo,
@@ -195,7 +193,6 @@ impl Project {
             path,
             abbreviation: RwLock::new(config.abbreviation),
             index: Arc::new(Mutex::new(Index::new(config))),
-            presence: Arc::new(Mutex::new(PresenceRegistry::new())),
             git_common_dir: git_common_dir(&repo),
             store,
             repo,
