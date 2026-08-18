@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-07-30T11:05:18Z
 ---
 # Route every CLI query through the daemon; drop local read fallbacks
