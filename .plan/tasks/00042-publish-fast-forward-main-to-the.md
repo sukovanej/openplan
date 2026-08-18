@@ -45,7 +45,7 @@ main-move watcher refreshes automatically, then publish succeeds.
 - `POST /api/publish` -> FFs `main` to the rolling tip; returns the new `main`
   commit + count published. `409` non-FF (refresh needed); `423`/`409` if W is
   busy/dirty. `SyncState::Syncing` during, `InSync` after.
-- CLI `oplan publish` -> calls the endpoint; **daemon-only** (errors if the
+- CLI `openplan publish` -> calls the endpoint; **daemon-only** (errors if the
   daemon is down), since the daemon owns the ref lifecycle.
 
 ## Scope
@@ -62,4 +62,4 @@ the Blocked/Resolve UI are Phase 7.
   a dirty `.plan/` in W is refused.
 - non-FF: move `main` after refresh so rolling is behind -> `409` retriable, no
   merge commit, `main` unchanged.
-- `oplan publish` with the daemon down errors clearly.
+- `openplan publish` with the daemon down errors clearly.
