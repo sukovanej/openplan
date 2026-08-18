@@ -298,9 +298,12 @@ impl Project {
         result
     }
 
-    // A write's index. It rebuilds in all conditions: the gate answers "has anything changed since
-    // the last walk", and a write needs "is this branch writable right now".
-    pub fn write_index(&self) -> Result<MutexGuard<'_, Index>, IndexError> {
+    // An index that has just walked the repository, in all conditions. A write needs it because the
+    // gate answers "has anything changed since the last walk" where a write asks "is this branch
+    // writable right now". A one-shot caller needs it because the gate is cleared by the watcher,
+    // and a caller with no change stream to re-read on cannot wait out a watch that is late or
+    // ([[OPP-52]]) missed the edit outright.
+    pub fn rebuilt_index(&self) -> Result<MutexGuard<'_, Index>, IndexError> {
         let generation = self.generation();
         let mut index = self.lock_index();
         self.record_rebuild(index.rebuild(&self.repo, &self.store))?;

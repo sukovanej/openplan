@@ -21,9 +21,10 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
-// A project every write can reach: a git repository (the daemon that owns writes resolves the target
-// worktree by branch, so it needs one) plus a private OPENPLAN_HOME so each test gets its own daemon,
-// auto-started on the first write. OPENPLAN_PORT=0 keeps those daemons off a shared port.
+// A project every command can reach: a git repository (the daemon that owns reads and writes
+// resolves the target worktree by branch, so it needs one) plus a private OPENPLAN_HOME so each
+// test gets its own daemon, auto-started on the first command. OPENPLAN_PORT=0 keeps those daemons
+// off a shared port.
 struct Project {
     home: tempfile::TempDir,
     root: tempfile::TempDir,
@@ -43,6 +44,11 @@ impl Project {
             &project.path().join(".plan/config.toml"),
             "abbreviation = \"OPP\"\n",
         );
+        // The index walks `refs/heads/*`, so an unborn HEAD has no branch for a read to be scoped
+        // to. Giving the store its own birthing commit is what `op-server`'s harness does; indexing
+        // a worktree whose branch no commit holds yet is [[OPP-58]]'s to fix.
+        git(project.path(), &["add", "."]);
+        git(project.path(), &["commit", "-qm", "birth the store"]);
         project
     }
 
@@ -123,27 +129,20 @@ fn task_body(path: &PathBuf) -> String {
 
 #[test]
 fn list_reports_real_status_and_title() {
-    let dir = tempfile::tempdir().unwrap();
-    let tasks = dir.path().join(".plan/tasks");
-    std::fs::create_dir_all(&tasks).unwrap();
+    let dir = Project::new();
     write(
-        &dir.path().join(".plan/config.toml"),
-        "abbreviation = \"OPP\"\n",
-    );
-    write(
-        &tasks.join("00001-ship-it.md"),
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
-    let out = openplan()
-        .arg("--root")
-        .arg(dir.path())
-        .arg("list")
-        .output()
-        .unwrap();
+    let out = run(&dir, &["list"]);
 
-    assert!(out.status.success());
-    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = stdout(&out);
     assert!(stdout.contains("OPP-1"), "the id is the key: {stdout}");
     assert!(
         stdout.contains("done"),
@@ -157,27 +156,18 @@ fn list_reports_real_status_and_title() {
 
 #[test]
 fn list_discovers_store_from_subdirectory() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
-    write(
-        &dir.path().join(".plan/config.toml"),
-        "abbreviation = \"OPP\"\n",
-    );
+    let dir = Project::new();
     let nested = dir.path().join("crates/thing/src");
     std::fs::create_dir_all(&nested).unwrap();
 
-    let out = openplan()
-        .current_dir(&nested)
-        .arg("list")
-        .output()
-        .unwrap();
+    let out = dir.cmd().current_dir(&nested).arg("list").output().unwrap();
 
     assert!(
         out.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(String::from_utf8_lossy(&out.stdout).contains("no tasks yet"));
+    assert!(stdout(&out).contains("no tasks yet"));
 }
 
 #[test]
@@ -369,6 +359,118 @@ fn removing_the_worktree_that_started_the_daemon_leaves_writes_working() {
     );
 }
 
+// A read is scoped to the caller's branch, so the worktree a command stands in decides the answer —
+// including for a task that branch agrees with main about and therefore has no divergence cell of
+// its own.
+#[test]
+fn a_read_from_a_linked_worktree_answers_for_that_worktrees_branch() {
+    let dir = Project::new();
+    let alpha = create(&dir, "Alpha");
+    let shared = create(&dir, "Shared");
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "two tasks"]);
+    let feature = dir.path().join(".worktrees/feature");
+    git(
+        dir.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            feature.to_str().unwrap(),
+        ],
+    );
+    let on_feature = |args: &[&str]| {
+        dir.cmd()
+            .arg("--root")
+            .arg(&feature)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(
+        on_feature(&["set", &alpha, "status", "done"])
+            .status
+            .success()
+    );
+
+    let moved = on_feature(&["show", &alpha]);
+    assert!(
+        stdout(&moved).contains("status: done"),
+        "the worktree's own branch: {}",
+        stdout(&moved)
+    );
+    assert!(
+        stdout(&run(&dir, &["show", &alpha])).contains("status: backlog"),
+        "the serve root keeps its own version"
+    );
+
+    let agreed = on_feature(&["show", &shared]);
+    assert!(
+        agreed.status.success(),
+        "a task the branch agrees with main about is still the branch's own; stderr: {}",
+        String::from_utf8_lossy(&agreed.stderr)
+    );
+    let listed = stdout(&on_feature(&["list"]));
+    assert!(
+        listed.contains(&alpha) && listed.contains(&shared),
+        "the branch lists everything it carries: {listed}"
+    );
+}
+
+// A read scoped to one branch answers about that branch, so a task it does not carry fails — but the
+// failure says where the task does live rather than claiming there is no such task.
+#[test]
+fn a_read_names_the_branches_that_hold_a_task_this_one_does_not() {
+    let dir = Project::new();
+    let feature = dir.path().join(".worktrees/feature");
+    git(
+        dir.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            feature.to_str().unwrap(),
+        ],
+    );
+    let created = dir
+        .cmd()
+        .arg("--root")
+        .arg(&feature)
+        .args(["create", "Only on feature"])
+        .output()
+        .unwrap();
+    assert!(
+        created.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let id = stdout(&created).trim().to_owned();
+
+    let here = run(&dir, &["get", &id]);
+    assert!(!here.status.success(), "main does not carry it");
+    let stderr = String::from_utf8_lossy(&here.stderr);
+    assert!(
+        stderr.contains(&id) && stderr.contains("feature") && stderr.contains("dirty"),
+        "stderr: {stderr}"
+    );
+
+    let there = run(&dir, &["get", &id, "--branch", "feature"]);
+    assert!(
+        there.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&there.stderr)
+    );
+    assert!(
+        stdout(&there).contains("# Only on feature"),
+        "{}",
+        stdout(&there)
+    );
+}
+
 #[test]
 fn a_write_with_no_reachable_daemon_fails_explicitly() {
     let dir = Project::new();
@@ -389,8 +491,8 @@ fn a_write_with_no_reachable_daemon_fails_explicitly() {
 }
 
 #[test]
-fn a_write_outside_a_git_repository_is_refused() {
-    // Writes resolve their target worktree by branch, so a store with no repository has none.
+fn a_command_outside_a_git_repository_is_refused() {
+    // Every read and write resolves its worktree by branch, so a store with no repository has none.
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
     let out = openplan()
@@ -404,9 +506,22 @@ fn a_write_outside_a_git_repository_is_refused() {
 
     assert!(!out.status.success());
     assert!(
-        String::from_utf8_lossy(&out.stderr).contains("require a git repository"),
+        String::from_utf8_lossy(&out.stderr).contains("requires a git repository"),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
+    );
+
+    let read = openplan()
+        .env("OPENPLAN_HOME", dir.path().join("home"))
+        .env("OPENPLAN_PORT", "0")
+        .arg("--root")
+        .arg(dir.path())
+        .arg("list")
+        .output()
+        .unwrap();
+    assert!(
+        !read.status.success(),
+        "a read has no local fallback either"
     );
 }
 
@@ -662,9 +777,10 @@ fn delete_removes_the_file() {
 }
 
 #[test]
-fn delete_of_a_missing_id_fails_before_touching_the_daemon() {
+fn delete_of_a_missing_id_fails_before_it_prompts() {
     let dir = Project::new();
-    let out = run(&dir, &["delete", "OPP-99", "--yes"]);
+    // No `--yes`: a typo must be refused outright rather than put to the reader as a question.
+    let out = run(&dir, &["delete", "OPP-99"]);
 
     assert!(!out.status.success());
     assert!(
@@ -673,8 +789,9 @@ fn delete_of_a_missing_id_fails_before_touching_the_daemon() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        !dir.home.path().join("daemon.json").exists(),
-        "a local read settles this; no daemon should have been started"
+        !stdout(&out).contains("delete OPP-99?"),
+        "stdout: {}",
+        stdout(&out)
     );
 }
 
@@ -743,21 +860,125 @@ fn set_preserves_unknown_frontmatter_keys() {
     assert!(contents.contains("status: done"));
 }
 
+// The daemon holds the task parsed, not the bytes it parsed, so `get` renders that state back to
+// markdown. Key order, spacing, and keys no field names normalize; the task itself does not change.
 #[test]
-fn get_prints_the_file_verbatim() {
+fn get_renders_the_daemons_state_rather_than_the_file() {
     let dir = Project::new();
     let id = create(&dir, "Task D");
     let path = task_file(dir.path(), &id);
-    let raw =
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: 7\n---\n# Task D\n\nsome body\n";
-    write(&path, raw);
+    write(
+        &path,
+        "---\nassignee: milan\nrank:   '7'\ncreated: 2026-01-01T00:00:00Z\nstatus: todo\n---\n# Task D\n\nsome body\n",
+    );
 
     let out = run(&dir, &["get", &id]);
-    assert!(out.status.success());
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_eq!(
         stdout(&out),
-        raw,
-        "get must print the on-disk bytes, not a re-serialization"
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: '7'\n---\n# Task D\n\nsome body\n"
+    );
+}
+
+// The rendering looks like a task file, so its references have to be ones the store can read: a
+// reference is the number the file layer allocates there, where every surface above the store
+// speaks the key. Unknown frontmatter keys are a separate matter — `Metadata` does not carry them,
+// so the rendering cannot either.
+#[test]
+fn get_renders_references_the_store_can_read_back() {
+    let dir = Project::new();
+    let parent = create(&dir, "Parent");
+    let kid = child(&dir, "Kid", &parent);
+    let dependent = run(&dir, &["create", "Dependent", "--dependency", &kid]);
+    assert!(dependent.status.success());
+    let dependent = stdout(&dependent).trim().to_owned();
+
+    for id in [&kid, &dependent] {
+        let rendered = run(&dir, &["get", id]);
+        assert!(rendered.status.success());
+        write(&task_file(dir.path(), id), &stdout(&rendered));
+    }
+
+    let kid_again = run(&dir, &["show", &kid]);
+    assert!(
+        stdout(&kid_again).contains(&format!("parent: {parent}")),
+        "the parent survives a round-trip through `get`: {}",
+        stdout(&kid_again)
+    );
+    let dependent_again = run(&dir, &["show", &dependent]);
+    assert!(
+        stdout(&dependent_again).contains(&format!("dependencies: {kid}")),
+        "and so do the dependencies: {}",
+        stdout(&dependent_again)
+    );
+    assert!(
+        !stdout(&kid_again).contains('!'),
+        "no field may come back unreadable: {}",
+        stdout(&kid_again)
+    );
+}
+
+// The rendering is a task file, and `status` and `created` are what make one. A task missing either
+// cannot be rendered at all: emitting the rest would look like a task file and destroy the task if
+// it were written over one.
+#[test]
+fn get_refuses_to_render_a_task_missing_a_required_field() {
+    let dir = Project::new();
+    write(
+        &dir.path().join(".plan/tasks/00001-legacy.md"),
+        "---\nstatus: todo\n---\n# Legacy\n",
+    );
+
+    let out = run(&dir, &["get", "OPP-1"]);
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stdout(&out).is_empty(),
+        "nothing that reads as a task file: {}",
+        stdout(&out)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("created: missing"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("cannot be rendered as a task file"),
+        "stderr: {stderr}"
+    );
+
+    // `--json` answers with the state the daemon holds, which is exactly what a broken file needs
+    // read, so it keeps working.
+    let json = run(&dir, &["get", "OPP-1", "--json"]);
+    assert!(json.status.success());
+    let view: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(view["metadata"]["created"]["kind"], "missing");
+}
+
+// A field that is not required has no canonical form when it fails to parse, so it is left out and
+// named on stderr rather than dropped in silence.
+#[test]
+fn get_reports_a_field_it_cannot_render() {
+    let dir = Project::new();
+    write(
+        &dir.path().join(".plan/tasks/00001-legacy.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: [1, 2]\n---\n# Legacy\n",
+    );
+
+    let out = run(&dir, &["get", "OPP-1"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        stdout(&out),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Legacy\n"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("rank:"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }
 
@@ -1653,4 +1874,59 @@ fn a_home_inside_a_repository_never_becomes_the_project_written_to() {
         .env("OPENPLAN_PORT", "0")
         .args(["server", "stop"])
         .output();
+}
+
+// Reads resolve through branches, and a repository whose first commit is still to come has none —
+// not even the one HEAD points at. [[OPP-58]] is what makes these reads work; until then the
+// refusal has to name the commit that is missing rather than deny a branch the caller is standing
+// on.
+#[test]
+fn a_read_before_the_first_commit_names_the_missing_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    git(dir.path(), &["init", "-q", "-b", "main"]);
+    git(dir.path(), &["config", "user.email", "t@example.com"]);
+    git(dir.path(), &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
+    write(
+        &dir.path().join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\n",
+    );
+    let run_there = |args: &[&str]| {
+        openplan()
+            .env("OPENPLAN_HOME", home.path())
+            .env("OPENPLAN_PORT", "0")
+            .arg("--root")
+            .arg(dir.path())
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let created = run_there(&["create", "First task"]);
+    assert!(
+        created.status.success(),
+        "a write still lands: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    let listed = run_there(&["list"]);
+    assert!(!listed.status.success());
+    let stderr = String::from_utf8_lossy(&listed.stderr);
+    assert!(
+        stderr.contains("no commits yet"),
+        "the refusal names the commit, not the branch: {stderr}"
+    );
+    assert!(
+        !stderr.contains("no such branch"),
+        "main is checked out; denying it by name misleads: {stderr}"
+    );
+
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "birth the store"]);
+    assert!(
+        run_there(&["list"]).status.success(),
+        "and the commit is all it needed"
+    );
+    let _ = run_there(&["server", "stop"]);
 }

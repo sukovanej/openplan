@@ -2,7 +2,7 @@ mod daemon;
 mod mergedriver;
 mod project;
 mod serve;
-mod writer;
+mod tasks;
 
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -11,17 +11,16 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand};
 use op_api::{
-    BranchMark, ChangeKind, CreateTask, FieldUpdate, KeyError, Matrix, MatrixCell, Metadata,
-    TaskPatch, TaskSummary, TaskTree, TaskView, sibling_cmp,
+    BranchMark, ChangeKind, CreateTask, FieldUpdate, MatrixCell, Metadata, TaskListItem, TaskPatch,
+    TaskTree, list_item_cmp,
 };
 use op_git::Repo;
-use op_index::Index;
 use op_lint::{CreatedSource, Diagnostic, Snapshot};
-use op_store::{Config, Store};
-use op_task::{FieldError, FieldResult, Status, Timestamp, rank};
+use op_store::Store;
+use op_task::{Status, Timestamp, rank};
 
 use daemon::{Control, Home};
-use writer::Writer;
+use tasks::Tasks;
 
 #[derive(Parser)]
 #[command(
@@ -224,6 +223,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             branch,
         } => list(
             root,
+            daemon_url,
             status,
             parent.as_deref(),
             json,
@@ -232,11 +232,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Get { id, json, branch } => {
-            get(root, &id, json, branch.as_deref()).map(|()| ExitCode::SUCCESS)
+            get(root, daemon_url, &id, json, branch.as_deref()).map(|()| ExitCode::SUCCESS)
         }
-        Command::Show { id, branches } => show(root, &id, branches).map(|()| ExitCode::SUCCESS),
+        Command::Show { id, branches } => {
+            show(root, daemon_url, &id, branches).map(|()| ExitCode::SUCCESS)
+        }
         Command::Tree { id, depth, json } => {
-            tree(root, &id, depth, json).map(|()| ExitCode::SUCCESS)
+            tree(root, daemon_url, &id, depth, json).map(|()| ExitCode::SUCCESS)
         }
         Command::Move {
             id,
@@ -335,7 +337,7 @@ fn create(
     dependencies: Vec<String>,
     body: Option<String>,
 ) -> Result<()> {
-    let id = Writer::resolve(root, daemon_url)?.create(&CreateTask {
+    let id = Tasks::resolve(root, daemon_url)?.create(&CreateTask {
         title,
         status,
         parent,
@@ -348,49 +350,29 @@ fn create(
 
 fn list(
     root: &Path,
+    daemon_url: Option<&str>,
     status: Option<Status>,
     parent: Option<&str>,
     json: bool,
     all_branches: bool,
     branch: Option<&str>,
 ) -> Result<()> {
+    let tasks = Tasks::resolve(root, daemon_url)?;
     if all_branches {
-        return list_all_branches(root, status, json);
+        return list_all_branches(&tasks, status, json);
     }
-    if let Some(branch) = branch {
-        return list_branch(root, branch, status, parent, json);
-    }
-
-    let store = Store::discover(root)?;
-    let ids = store.task_ids()?;
-    let mut summaries = Vec::new();
-    for number in &ids {
-        let key = store.abbreviation().format_key(*number);
-        match store.read_raw(*number) {
-            Ok(raw) => {
-                let summary = TaskSummary::from_partial(
-                    key,
-                    op_task::parse_partial(&raw),
-                    store.abbreviation(),
-                );
-                if status.is_some_and(|s| summary.metadata.status() != Some(s)) {
-                    continue;
-                }
-                if parent.is_some_and(|p| summary.metadata.parent() != Some(p)) {
-                    continue;
-                }
-                summaries.push(summary);
-            }
-            // stderr keeps the diagnostic out of stdout's JSON while still surfacing it.
-            Err(err) => eprintln!("{key}: {err}"),
-        }
-    }
+    let held = tasks.list(branch.unwrap_or(tasks.branch()))?;
+    let matching: Vec<&TaskListItem> = held
+        .iter()
+        .filter(|task| status.is_none_or(|s| task.metadata.status() == Some(s)))
+        .filter(|task| parent.is_none_or(|p| task.metadata.parent() == Some(p)))
+        .collect();
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&summaries)?);
-    } else if !summaries.is_empty() {
-        print_summaries(&summaries);
-    } else if ids.is_empty() {
+        println!("{}", serde_json::to_string_pretty(&matching)?);
+    } else if !matching.is_empty() {
+        print_tasks(&matching);
+    } else if held.is_empty() {
         println!("no tasks yet");
     } else {
         println!("no matching tasks");
@@ -398,21 +380,17 @@ fn list(
     Ok(())
 }
 
-fn list_all_branches(root: &Path, status: Option<Status>, json: bool) -> Result<()> {
-    let (_repo, index) = build_index(root)?;
-    let cells: Vec<MatrixCell> = index
-        .matrix()
+fn list_all_branches(tasks: &Tasks, status: Option<Status>, json: bool) -> Result<()> {
+    let mut matrix = tasks.matrix()?;
+    matrix
         .cells
-        .iter()
-        .filter(|cell| status.is_none_or(|s| cell.task.metadata.status() == Some(s)))
-        .cloned()
-        .collect();
+        .retain(|cell| status.is_none_or(|s| cell.task.metadata.status() == Some(s)));
     if json {
-        println!("{}", serde_json::to_string_pretty(&Matrix { cells })?);
-    } else if cells.is_empty() {
+        println!("{}", serde_json::to_string_pretty(&matrix)?);
+    } else if matrix.cells.is_empty() {
         println!("no tasks on any branch");
     } else {
-        for cell in &cells {
+        for cell in &matrix.cells {
             let status = status_label(&cell.task.metadata);
             println!(
                 "{:<22} {:<10} {status:<11} {}{}",
@@ -426,81 +404,41 @@ fn list_all_branches(root: &Path, status: Option<Status>, json: bool) -> Result<
     Ok(())
 }
 
-fn list_branch(
+fn get(
     root: &Path,
-    branch: &str,
-    status: Option<Status>,
-    parent: Option<&str>,
+    daemon_url: Option<&str>,
+    id: &str,
     json: bool,
+    branch: Option<&str>,
 ) -> Result<()> {
-    let (repo, index) = build_index(root)?;
-    ensure_branch(&repo, branch)?;
-    let summaries: Vec<TaskSummary> = index
-        .branch_summaries(branch)
-        .into_iter()
-        .filter(|s| status.is_none_or(|st| s.metadata.status() == Some(st)))
-        .filter(|s| parent.is_none_or(|p| s.metadata.parent() == Some(p)))
-        .collect();
+    let tasks = Tasks::resolve(root, daemon_url)?;
+    let detail = tasks.get(id, branch.unwrap_or(tasks.branch()))?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&summaries)?);
-    } else if summaries.is_empty() {
-        println!("no matching tasks");
+        println!("{}", serde_json::to_string_pretty(&detail)?);
     } else {
-        print_summaries(&summaries);
-    }
-    Ok(())
-}
-
-fn get(root: &Path, id: &str, json: bool, branch: Option<&str>) -> Result<()> {
-    if let Some(branch) = branch {
-        return get_branch(root, id, branch, json);
-    }
-    let store = Store::discover(root)?;
-    let number = number_of(&store, id)?;
-    if json {
-        let partial = op_task::parse_partial(&store.read_raw(number)?);
-        let view = TaskView::from_partial(
-            id.to_owned(),
-            partial,
-            local_updated(root, id),
-            store.abbreviation(),
+        // The daemon holds parsed state, not the bytes it parsed, so this is a canonical rendering
+        // of the task and not a copy of the file. A field it could not parse has no canonical form
+        // and is left out of the rendering rather than guessed at, so it is reported instead.
+        for problem in detail.metadata.problems() {
+            eprintln!("{id}: {problem}");
+        }
+        print!(
+            "{}",
+            op_api::render_task_file(&detail.metadata, &detail.body)?
         );
-        println!("{}", serde_json::to_string_pretty(&view)?);
-    } else {
-        // Print the file verbatim; re-serializing would normalize formatting and is a lossy
-        // view of what is actually on disk.
-        print!("{}", store.read_raw(number)?);
     }
     Ok(())
 }
 
-fn get_branch(root: &Path, id: &str, branch: &str, json: bool) -> Result<()> {
-    let (repo, index) = build_index(root)?;
-    ensure_branch(&repo, branch)?;
-    if json {
-        match index.effective_view(&repo, id, branch)? {
-            Some(view) => println!("{}", serde_json::to_string_pretty(&view)?),
-            None => bail!("no such task on branch {branch}: {id}"),
-        }
-    } else {
-        match index.effective_raw(&repo, id, branch)? {
-            Some(raw) => print!("{raw}"),
-            None => bail!("no such task on branch {branch}: {id}"),
-        }
-    }
-    Ok(())
-}
-
-fn show(root: &Path, id: &str, branches: bool) -> Result<()> {
+fn show(root: &Path, daemon_url: Option<&str>, id: &str, branches: bool) -> Result<()> {
+    let tasks = Tasks::resolve(root, daemon_url)?;
     if branches {
-        return show_branches(root, id);
+        return show_branches(&tasks, id);
     }
-    let store = Store::discover(root)?;
-    let partial = op_task::parse_partial(&store.read_raw(number_of(&store, id)?)?);
-    let summary = TaskSummary::from_partial(id.to_owned(), partial, store.abbreviation());
-    let metadata = &summary.metadata;
+    let detail = tasks.get(id, tasks.branch())?;
+    let metadata = &detail.metadata;
     println!("id:     {id}");
-    println!("title:  {}", summary.title);
+    println!("title:  {}", detail.title);
     println!("status: {}", status_label(metadata));
     println!("parent: {}", metadata.parent().unwrap_or("-"));
     let dependencies = metadata.dependencies();
@@ -518,11 +456,8 @@ fn show(root: &Path, id: &str, branches: bool) -> Result<()> {
     Ok(())
 }
 
-fn show_branches(root: &Path, id: &str) -> Result<()> {
-    let (_repo, index) = build_index(root)?;
-    let Some(view) = index.task_branches(id) else {
-        bail!("task not found on any branch: {id}");
-    };
+fn show_branches(tasks: &Tasks, id: &str) -> Result<()> {
+    let view = tasks.branches(id)?;
     let branch_count: usize = view.versions.iter().map(|v| v.branches.len()).sum();
     let divergent = view.versions.len() > 1;
     println!("id: {}", view.id);
@@ -547,58 +482,6 @@ fn show_branches(root: &Path, id: &str) -> Result<()> {
     Ok(())
 }
 
-// `updated` is git-derived, so a store that sits outside a repository — or a task no commit holds —
-// simply has none to report. It dates the checked-out branch, the one whose file was just read; a
-// task matching its merge-base has no cell of its own there, and falls back to the branch that did
-// last change it.
-//
-// A running daemon already holds this, kept warm across requests. Asking it spares a one-shot
-// process the whole cross-branch index — every branch's blobs parsed and its history walked — built
-// to fill this one field and then dropped.
-fn local_updated(root: &Path, id: &str) -> FieldResult<Timestamp> {
-    let (Ok(repo), Ok(store)) = (Repo::discover(root), Store::discover(root)) else {
-        return Err(FieldError::Missing);
-    };
-    // The worktree's own root, not the `--root` the caller passed, which may be any directory
-    // beneath it.
-    let branch = repo.worktree_branch(store.root()).ok().flatten();
-    if let Some(updated) = Control::resolve()
-        .ok()
-        .and_then(|control| control.task_updated(&repo.git_common_dir(), id, branch.as_deref()))
-    {
-        return updated;
-    }
-    let Ok((_repo, index)) = build_index(root) else {
-        return Err(FieldError::Missing);
-    };
-    index.task_updated_or_headline(id, index.current_branch())
-}
-
-fn build_index(root: &Path) -> Result<(Repo, Index)> {
-    let repo = Repo::discover(root)?;
-    let store = Store::discover(root)?;
-    let mut index = Index::new(&Config::read(store.root())?);
-    index.rebuild(&repo, &store)?;
-    Ok((repo, index))
-}
-
-// Every id a command takes or prints is a key; the number behind it goes no further than the
-// store call it was resolved for.
-fn number_of(store: &Store, key: &str) -> Result<u64> {
-    store
-        .abbreviation()
-        .parse_key(key)
-        .ok_or_else(|| KeyError::new(store.abbreviation(), key).into())
-}
-
-fn ensure_branch(repo: &Repo, branch: &str) -> Result<()> {
-    if repo.local_branches()?.iter().any(|b| b == branch) {
-        Ok(())
-    } else {
-        bail!("no such branch: {branch}");
-    }
-}
-
 fn status_label(metadata: &Metadata) -> String {
     match metadata.status() {
         Some(status) => status.as_str().to_owned(),
@@ -606,10 +489,10 @@ fn status_label(metadata: &Metadata) -> String {
     }
 }
 
-fn print_summaries(summaries: &[TaskSummary]) {
-    for summary in summaries {
-        let status = status_label(&summary.metadata);
-        println!("{:<10} {status:<11} {}", summary.id, summary.title);
+fn print_tasks(tasks: &[&TaskListItem]) {
+    for task in tasks {
+        let status = status_label(&task.metadata);
+        println!("{:<10} {status:<11} {}", task.id, task.title);
     }
 }
 
@@ -659,7 +542,7 @@ fn plural(n: usize) -> &'static str {
 fn set(root: &Path, daemon_url: Option<&str>, id: &str, field: &str, value: &str) -> Result<()> {
     // Parse before reaching for the daemon so a typo fails without starting one.
     let patch = parse_field(field, value)?;
-    Writer::resolve(root, daemon_url)?.patch(id, &patch)?;
+    Tasks::resolve(root, daemon_url)?.patch(id, &patch)?;
     Ok(())
 }
 
@@ -697,17 +580,15 @@ fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
 }
 
 fn delete(root: &Path, daemon_url: Option<&str>, id: &str, yes: bool) -> Result<ExitCode> {
-    // A local read answers this: the delete targets the caller's branch, whose worktree is this one.
-    // Prompting — and starting a daemon — for a typo would be the daemon's 404 arriving too late.
-    let store = Store::discover(root)?;
-    if !store.exists(number_of(&store, id)?) {
-        bail!("no such task: {id}");
-    }
+    let tasks = Tasks::resolve(root, daemon_url)?;
+    // The delete targets the caller's branch, so the prompt has to be about a task that branch
+    // actually carries — a typo must refuse before it asks the reader to confirm one.
+    tasks.get(id, tasks.branch())?;
     if !yes && !confirm(id)? {
         println!("aborted");
         return Ok(ExitCode::SUCCESS);
     }
-    Writer::resolve(root, daemon_url)?.delete(id)?;
+    tasks.delete(id)?;
     println!("deleted {id}");
     Ok(ExitCode::SUCCESS)
 }
@@ -723,6 +604,9 @@ fn confirm(id: &str) -> Result<bool> {
     ))
 }
 
+// The one command that asks about git rather than about tasks. Branch names are refs, which every
+// worktree of the repository already agrees on; there is no store state to resolve and so nothing
+// for the daemon to be the single resolver of.
 fn branches(root: &Path) -> Result<()> {
     let repo = Repo::discover(root)?;
     for branch in repo.local_branches()? {
@@ -731,6 +615,10 @@ fn branches(root: &Path) -> Result<()> {
     Ok(())
 }
 
+// The other command that does not ask the daemon. Lint checks the files in front of the caller, as
+// a pre-commit hook and a bare checkout need it to — it asks what the bytes on disk say, where every
+// task query asks what a branch holds. It writes through the store for the same reason `set` goes
+// through the daemon: the advisory lock is what keeps a concurrent writer from seeing a torn file.
 fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCode> {
     let store = Store::discover(root)?;
     let snapshot = Snapshot::from_store(&store)?;
@@ -875,41 +763,22 @@ fn parse_parent(value: &str) -> Option<String> {
     }
 }
 
-fn local_summaries(store: &Store) -> Result<Vec<TaskSummary>> {
-    let mut summaries = Vec::new();
-    for number in store.task_ids()? {
-        let key = store.abbreviation().format_key(number);
-        match store.read_raw(number) {
-            Ok(raw) => summaries.push(TaskSummary::from_partial(
-                key,
-                op_task::parse_partial(&raw),
-                store.abbreviation(),
-            )),
-            Err(err) => eprintln!("{key}: {err}"),
-        }
-    }
-    Ok(summaries)
-}
-
-fn tree(root: &Path, id: &str, depth: Option<usize>, json: bool) -> Result<()> {
-    let store = Store::discover(root)?;
-    if !store.exists(number_of(&store, id)?) {
-        bail!("no such task: {id}");
-    }
-    let summaries = local_summaries(&store)?;
-    let mut cycles = Vec::new();
-    let tree = TaskTree::build(&summaries, id, depth, &mut cycles)
-        .ok_or_else(|| anyhow::anyhow!("no such task: {id}"))?;
-    let mut reported = std::collections::BTreeSet::new();
-    for cycle in cycles {
-        if reported.insert(cycle.clone()) {
-            eprintln!("warning: parent cycle at {cycle}; its subtree is truncated");
-        }
+fn tree(
+    root: &Path,
+    daemon_url: Option<&str>,
+    id: &str,
+    depth: Option<usize>,
+    json: bool,
+) -> Result<()> {
+    let tasks = Tasks::resolve(root, daemon_url)?;
+    let view = tasks.tree(id, tasks.branch(), depth)?;
+    for cycle in &view.cycles {
+        eprintln!("warning: parent cycle at {cycle}; its subtree is truncated");
     }
     if json {
-        println!("{}", serde_json::to_string_pretty(&tree)?);
+        println!("{}", serde_json::to_string_pretty(&view.tree)?);
     } else {
-        print_tree(&tree, 0);
+        print_tree(&view.tree, 0);
     }
     Ok(())
 }
@@ -935,30 +804,33 @@ fn move_task(
     before: Option<String>,
     after: Option<String>,
 ) -> Result<()> {
-    // The sibling group is read locally — reads are global, writes go through the daemon.
-    let store = Store::discover(root)?;
-    let current_parent = store
-        .read(number_of(&store, id)?)?
-        .frontmatter
-        .parent
-        .as_deref()
-        .and_then(|parent| store.abbreviation().format_ref(parent));
+    // The ranks are computed from the same state the write lands on: the daemon's view of the
+    // caller's branch, not a second reading of the files.
+    let tasks = Tasks::resolve(root, daemon_url)?;
+    let group = tasks.list(tasks.branch())?;
+    // The task's own row, from the same read the siblings come from: asking for it separately would
+    // walk the repository a second time to learn what this list already says.
+    let current_parent = group
+        .iter()
+        .find(|task| task.id == id)
+        .ok_or_else(|| anyhow::anyhow!("no such task: {id}"))?
+        .metadata
+        .parent()
+        .map(str::to_owned);
     let new_parent = match parent {
         None => current_parent,
         Some(value) => parse_parent(&value),
     };
-    let summaries = local_summaries(&store)?;
-    let mut siblings: Vec<&TaskSummary> = summaries
+    let mut siblings: Vec<&TaskListItem> = group
         .iter()
         .filter(|s| s.metadata.parent() == new_parent.as_deref() && s.id != id)
         .collect();
-    siblings.sort_by(|a, b| sibling_cmp(a, b));
+    siblings.sort_by(|a, b| list_item_cmp(a, b));
     let insert = insert_index(&siblings, before.as_deref(), after.as_deref())?;
 
-    let writer = Writer::resolve(root, daemon_url)?;
     match rank_plan(&siblings, insert) {
         RankPlan::Single(new_rank) => {
-            writer.patch(
+            tasks.patch(
                 id,
                 &TaskPatch {
                     parent: parent_update(new_parent),
@@ -975,7 +847,7 @@ fn move_task(
         } => {
             // The moved task goes first: its write is the one the store validates (parent exists,
             // no cycle), so a refused move leaves the siblings' ranks untouched.
-            writer.patch(
+            tasks.patch(
                 id,
                 &TaskPatch {
                     parent: parent_update(new_parent),
@@ -984,7 +856,7 @@ fn move_task(
                 },
             )?;
             for (sibling_id, sibling_rank) in assigned {
-                writer.patch(
+                tasks.patch(
                     &sibling_id,
                     &TaskPatch {
                         rank: Some(sibling_rank),
@@ -998,7 +870,7 @@ fn move_task(
 }
 
 fn insert_index(
-    siblings: &[&TaskSummary],
+    siblings: &[&TaskListItem],
     before: Option<&str>,
     after: Option<&str>,
 ) -> Result<usize> {
@@ -1013,7 +885,7 @@ fn insert_index(
     }
 }
 
-fn sibling_pos(siblings: &[&TaskSummary], target: &str) -> Result<usize> {
+fn sibling_pos(siblings: &[&TaskListItem], target: &str) -> Result<usize> {
     siblings
         .iter()
         .position(|s| s.id == target)
@@ -1028,7 +900,7 @@ enum RankPlan {
     },
 }
 
-fn rank_plan(siblings: &[&TaskSummary], insert: usize) -> RankPlan {
+fn rank_plan(siblings: &[&TaskListItem], insert: usize) -> RankPlan {
     let ranks: Vec<&str> = siblings.iter().filter_map(|s| s.metadata.rank()).collect();
     if ranks.len() == siblings.len() && rank::is_ordered(&ranks) {
         let neighbour = |i: usize| ranks.get(i).copied();

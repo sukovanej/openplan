@@ -1,35 +1,42 @@
 use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
-use op_api::{CreateTask, TaskDetail, TaskPatch};
+use op_api::{CreateTask, Matrix, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView};
 use op_client::Client;
 use op_git::Repo;
 use op_server::serve_root;
 
 use crate::daemon::{daemon_base_url, project_named};
 
-// Writes go through the machine daemon, the single in-band writer: it allocates ids from one counter
-// with a view across every local branch, and resolves the target worktree from the branch at write
-// time. This carries the branch the caller is on, so a checkout underneath us can only ever refuse
-// the write, never redirect it to another branch. It carries the project too, because the one daemon
-// serves every repository on the machine and a branch name means nothing without one.
-pub struct Writer {
+// The machine daemon is the store, as every task command sees it: the single in-band writer, which
+// allocates ids from one counter with a view across every local branch and resolves the target
+// worktree from the branch at write time, and the single resolver for reads, so one question gets
+// one answer whether the CLI or the web UI asked it. This carries the branch the caller is on, so a
+// checkout underneath us can only ever refuse a write, never redirect it to another branch — and a
+// read reports the caller's own branch rather than the serve root's. It carries the project too,
+// because the one daemon serves every repository on the machine and a branch name means nothing
+// without one.
+//
+// Reads and writes resolve together because `move` is both: it reads a sibling group and writes the
+// ranks it computes from it, and those two must land on one branch of one project.
+pub struct Tasks {
     client: Client,
     base_url: String,
     project: String,
     branch: String,
 }
 
-impl Writer {
+impl Tasks {
     pub fn resolve(root: &Path, daemon_url: Option<&str>) -> Result<Self> {
         let repo = Repo::discover(root).with_context(|| {
             format!(
-                "openplan writes require a git repository; none found at {}",
+                "openplan requires a git repository; none found at {}",
                 root.display()
             )
         })?;
         let branch = repo.current_branch().context(
-            "cannot determine the current branch (detached HEAD?); a write always targets a branch",
+            "cannot determine the current branch (detached HEAD?); every read and write targets a \
+             branch",
         )?;
 
         let client = Client::default();
@@ -42,6 +49,41 @@ impl Writer {
             project,
             branch,
         })
+    }
+
+    // The branch every read and write of this command targets unless the caller named another one
+    // to read.
+    pub fn branch(&self) -> &str {
+        &self.branch
+    }
+
+    pub fn list(&self, branch: &str) -> Result<Vec<TaskListItem>> {
+        served(
+            self.client
+                .tasks(&self.base_url, &self.project, Some(branch)),
+        )
+    }
+
+    pub fn matrix(&self) -> Result<Matrix> {
+        served(self.client.matrix(&self.base_url, &self.project))
+    }
+
+    pub fn get(&self, id: &str, branch: &str) -> Result<TaskDetail> {
+        served(
+            self.client
+                .task(&self.base_url, &self.project, id, Some(branch)),
+        )
+    }
+
+    pub fn tree(&self, id: &str, branch: &str, depth: Option<usize>) -> Result<TaskTreeView> {
+        served(
+            self.client
+                .task_tree(&self.base_url, &self.project, id, Some(branch), depth),
+        )
+    }
+
+    pub fn branches(&self, id: &str) -> Result<TaskBranches> {
+        served(self.client.task_branches(&self.base_url, &self.project, id))
     }
 
     pub fn create(&self, task: &CreateTask) -> Result<String> {
@@ -61,6 +103,29 @@ impl Writer {
             .client
             .delete_task(&self.base_url, &self.project, &self.branch, id)?)
     }
+}
+
+// A daemon older than the read routes has two ways of saying so, and neither of them says it. One
+// that refuses unserved `/api/` paths answers 404 about a route, where every other 404 here is about
+// a task; an older one still falls those paths through to the SPA and answers the page itself. Both
+// mean the same thing: stop the daemon. JSON of the wrong shape is not one of them — that is a
+// schema mismatch, which says nothing about the daemon's age and must not send anyone to stop a
+// daemon other repositories are using.
+fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
+    let predates = |err: &op_client::ClientError| match err {
+        op_client::ClientError::NotJson { .. } => true,
+        op_client::ClientError::Refused { status, message } => {
+            *status == 404 && message.starts_with("no such route")
+        }
+        _ => false,
+    };
+    outcome.map_err(|err| match predates(&err) {
+        true => anyhow::Error::new(err).context(
+            "this openplan daemon does not serve the read routes; it predates them. Stop it \
+             (`openplan server stop`) and rerun here.",
+        ),
+        false => anyhow::Error::new(err),
+    })
 }
 
 // The repository the caller stands in, as the daemon names it. A repository the machine daemon does

@@ -1682,3 +1682,264 @@ async fn a_patch_echoes_the_parent_title() {
     assert_eq!(detail["metadata"]["parent"], "OPP-1");
     assert_eq!(detail["parent_title"], "Epic");
 }
+
+#[tokio::test]
+async fn a_branch_scoped_list_answers_for_that_branch_alone() {
+    let (_dir, state) = git_state();
+    let response = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks?branch=feature",
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let items = body_json(response).await;
+    let items = items.as_array().unwrap();
+
+    // Same shape as the aggregated form, so one client decodes both — but every field describes the
+    // branch that was asked about, not the one that headlines the task.
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0]["id"], "OPP-1");
+    assert_eq!(items[0]["metadata"]["status"], "done");
+    assert_eq!(items[0]["headline"], "feature");
+    let branches = items[0]["branches"].as_array().unwrap();
+    assert_eq!(branches.len(), 1, "only its own state: {branches:?}");
+    assert_eq!(branches[0]["branch"], "feature");
+
+    let main = send(&state, "GET", "/api/projects/test/tasks?branch=main", None).await;
+    let main = body_json(main).await;
+    assert_eq!(main[0]["metadata"]["status"], "todo", "main's own version");
+}
+
+// An empty answer would read as "this branch has no tasks", which is a different fact and one the
+// caller could act on. A branch the repository does not have is the caller's mistake.
+#[tokio::test]
+async fn an_unknown_branch_is_refused_rather_than_answered_empty() {
+    let (_dir, state) = git_state();
+    let response = send(&state, "GET", "/api/projects/test/tasks?branch=ghost", None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        body_json(response).await["message"],
+        "no such branch: ghost"
+    );
+}
+
+#[tokio::test]
+async fn the_matrix_route_carries_one_cell_per_task_branch() {
+    let (_dir, state) = git_state();
+    let response = send(&state, "GET", "/api/projects/test/matrix", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let cells = body_json(response).await;
+    let cells = cells["cells"].as_array().unwrap().clone();
+    assert_eq!(
+        cells.len(),
+        2,
+        "alpha on main + alpha on feature: {cells:?}"
+    );
+    let branches: Vec<&str> = cells
+        .iter()
+        .map(|cell| cell["branch"].as_str().unwrap())
+        .collect();
+    assert_eq!(branches, vec!["feature", "main"]);
+}
+
+#[tokio::test]
+async fn the_branches_route_groups_the_versions() {
+    let (_dir, state) = git_state();
+    let response = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-1/branches",
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let view = body_json(response).await;
+    assert_eq!(view["id"], "OPP-1");
+    assert_eq!(
+        view["versions"].as_array().unwrap().len(),
+        2,
+        "the two branches disagree: {view}"
+    );
+
+    let missing = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-99/branches",
+        None,
+    )
+    .await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn the_tree_route_walks_the_branchs_own_task_set() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(
+        tasks.join("00001-root.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Root\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("00002-child.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: './00001-root.md'\n---\n# Child\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("00003-grandchild.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: './00002-child.md'\n---\n# Grandchild\n",
+    )
+    .unwrap();
+
+    let response = send(&state, "GET", "/api/projects/test/tasks/OPP-1/tree", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let view = body_json(response).await;
+    assert_eq!(view["tree"]["id"], "OPP-1");
+    assert_eq!(view["tree"]["children"][0]["id"], "OPP-2");
+    assert_eq!(view["tree"]["children"][0]["children"][0]["id"], "OPP-3");
+
+    let bounded = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-1/tree?depth=1",
+        None,
+    )
+    .await;
+    let bounded = body_json(bounded).await;
+    assert!(
+        bounded["tree"]["children"][0]["children"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "depth 1 stops at the direct children: {bounded}"
+    );
+
+    let missing = send(&state, "GET", "/api/projects/test/tasks/OPP-99/tree", None).await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+}
+
+// A parent cycle has no bottom to walk to. The subtree is truncated there, and the response says
+// where, so a client does not render a truncated hierarchy as a complete one.
+#[tokio::test]
+async fn the_tree_route_reports_a_truncated_cycle() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(
+        tasks.join("00001-a.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: './00002-b.md'\n---\n# A\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("00002-b.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: './00001-a.md'\n---\n# B\n",
+    )
+    .unwrap();
+
+    let response = send(&state, "GET", "/api/projects/test/tasks/OPP-1/tree", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let view = body_json(response).await;
+    assert_eq!(view["cycles"], json!(["OPP-1"]));
+}
+
+// A task a branch agrees with its merge-base about has no matrix cell to describe it there. The
+// branch still carries it, so a read scoped to that branch must say so — and must not answer with
+// an empty branch set where the list route answers with one entry for the same task.
+#[tokio::test]
+async fn a_branch_scoped_read_always_names_the_branch_it_answered_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    write_alpha(root, "todo", "Alpha");
+    std::fs::write(
+        root.join(".plan/tasks/00002-shared.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Shared\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git_commit_at(root, 1_000_000_000, "init");
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write_alpha(root, "done", "Alpha done");
+    git_commit_at(root, 1_000_000_100, "edit alpha only");
+    git(root, &["checkout", "-q", "main"]);
+    let store = op_store::Store::discover(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = project_state(root, repo, store);
+
+    let detail = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-2?branch=feature",
+        None,
+    )
+    .await;
+    assert_eq!(detail.status(), StatusCode::OK);
+    let detail = body_json(detail).await;
+    assert_eq!(detail["title"], "Shared");
+    let feature = detail["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|state| state["branch"] == "feature")
+        .unwrap_or_else(|| panic!("the branch it answered for is named: {detail}"));
+    assert_eq!(feature["kind"], "base", "it agrees with the merge-base");
+
+    // The list route asks a different question — this branch's task set — so it carries that one
+    // branch alone. Both must agree about how the task stands on the branch they were asked about.
+    let listed = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks?branch=feature",
+        None,
+    )
+    .await;
+    let listed = body_json(listed).await;
+    let shared = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["id"] == "OPP-2")
+        .expect("the branch lists it too")
+        .clone();
+    assert_eq!(shared["branches"], json!([feature]));
+}
+
+// Naming no branch has to mean the same thing on a task and on its tree. A tree built from another
+// branch's task set would give the task a different parent and different children than the detail
+// read beside it.
+#[tokio::test]
+async fn a_branchless_tree_and_a_branchless_detail_answer_for_one_branch() {
+    let (dir, state) = git_state();
+    // A child of alpha that only `feature` carries, so the two branches disagree about the tree.
+    std::fs::write(
+        dir.path().join(".plan/tasks/00002-kid.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: './00001-alpha.md'\n---\n# Kid\n",
+    )
+    .unwrap();
+    git(dir.path(), &["checkout", "-q", "feature"]);
+    git(dir.path(), &["add", "."]);
+    git_commit_at(dir.path(), 1_000_000_200, "feature gains a child");
+    git(dir.path(), &["checkout", "-q", "main"]);
+
+    let detail = body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await).await;
+    assert_eq!(detail["headline"], "feature", "the version that headlines");
+
+    let tree =
+        body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-1/tree", None).await).await;
+    let children = tree["tree"]["children"].as_array().unwrap();
+    assert_eq!(
+        children.len(),
+        1,
+        "the tree is built from the branch the detail headlined: {tree}"
+    );
+    assert_eq!(children[0]["id"], "OPP-2");
+    assert_eq!(
+        tree["tree"]["title"], detail["title"],
+        "and the two describe the same version"
+    );
+}

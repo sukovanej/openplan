@@ -17,8 +17,9 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    Abbreviation, ApiErrorBody, Board, ChangeEvent, CreateTask, DaemonInfo, KeyError, ProjectView,
-    RegisterProject, RenameProject, StoreConfig, TaskDetail, TaskListItem, TaskPatch, TaskView,
+    Abbreviation, ApiErrorBody, Board, BranchState, ChangeEvent, ChangeKind, CreateTask,
+    DaemonInfo, KeyError, Matrix, ProjectView, RegisterProject, RenameProject, StoreConfig,
+    TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -299,9 +300,12 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(delete_project, rename_project))
         .routes(routes!(get_config))
         .routes(routes!(list_tasks, create_task))
+        .routes(routes!(get_matrix))
         .routes(routes!(get_board))
         .routes(routes!(get_merged_board))
         .routes(routes!(get_task, patch_task, delete_task))
+        .routes(routes!(get_task_tree))
+        .routes(routes!(get_task_branches))
 }
 
 pub fn openapi() -> utoipa::openapi::OpenApi {
@@ -764,17 +768,84 @@ fn join_error(err: tokio::task::JoinError) -> ApiError {
     ApiError::internal(format!("task failed: {err}"))
 }
 
-// Rebuild the index from the serve root's repo + worktrees, then return one entry per logical task
-// with every branch it lives on. Like every handler it works inside `spawn_blocking`: the rebuild
-// reads the object DB and the store waits on flocks, which must never stall an async worker thread.
+// What every read route accepts. `branch` scopes the answer to one branch, and omitting it means
+// whatever "no branch was named" means for that route. `fresh` is for a caller with no change
+// stream: it pays a full rebuild rather than accept an answer the watcher has not caught up with.
+#[derive(Deserialize, utoipa::IntoParams)]
+struct ReadQuery {
+    branch: Option<String>,
+    #[serde(default)]
+    fresh: bool,
+}
+
+#[derive(Deserialize, utoipa::IntoParams)]
+struct TreeQuery {
+    branch: Option<String>,
+    #[serde(default)]
+    fresh: bool,
+    depth: Option<usize>,
+}
+
+// What a read that is not about one branch accepts.
+#[derive(Deserialize, utoipa::IntoParams)]
+struct FreshQuery {
+    #[serde(default)]
+    fresh: bool,
+}
+
+fn index_of(project: &Project, fresh: bool) -> Result<std::sync::MutexGuard<'_, Index>, ApiError> {
+    match fresh {
+        true => project.rebuilt_index(),
+        false => project.read_index(),
+    }
+    .map_err(index_error)
+}
+
+// An unknown branch is refused rather than answered with an empty set: every branch the repository
+// has is indexed, so "no cells here" and "no such branch" are different answers and only one of
+// them is the caller's mistake.
+fn known_branch(index: &Index, branch: &str) -> Result<(), ApiError> {
+    if index.has_branch(branch) {
+        return Ok(());
+    }
+    // The index walks `refs/heads/*`, so a repository whose first commit is still to come has no
+    // branch at all — including the one HEAD points at. Denying that branch by name sends the
+    // reader looking for a branch they are standing on; the commit is what is missing.
+    // [[OPP-58]] is what makes these reads work before it exists.
+    let message = match index.has_branches() {
+        true => format!("no such branch: {branch}"),
+        false => "this repository has no commits yet, so no branch holds any task; commit to read \
+                  through the daemon"
+            .to_owned(),
+    };
+    Err(ApiError::new(StatusCode::NOT_FOUND, message))
+}
+
+// The branch a read is scoped to when none was named: the serve-root worktree's own, mirroring the
+// write path.
+fn read_branch(index: &Index, requested: Option<String>) -> Result<String, ApiError> {
+    let branch = match requested {
+        Some(branch) => branch,
+        None => index.current_branch().map(str::to_owned).ok_or_else(|| {
+            ApiError::bad_request("cannot determine the current worktree's branch")
+        })?,
+    };
+    known_branch(index, &branch)?;
+    Ok(branch)
+}
+
+// One entry per logical task with every branch it lives on, or — with `?branch=` — the task set of
+// that one branch alone, in the same shape. Like every handler it works inside `spawn_blocking`: the
+// rebuild reads the object DB and the store waits on flocks, which must never stall an async worker
+// thread.
 #[utoipa::path(
     get,
     path = "/api/projects/{project}/tasks",
-    params(("project" = String, Path, description = "Project name")),
+    params(("project" = String, Path, description = "Project name"), ReadQuery),
     responses(
-        (status = 200, description = "Every logical task, aggregated across branches", body = Vec<TaskListItem>),
+        (status = 200, description = "Every logical task aggregated across branches, or one branch's own task set", body = Vec<TaskListItem>),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
-        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such branch", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
         (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
@@ -782,18 +853,148 @@ fn join_error(err: tokio::task::JoinError) -> ApiError {
 async fn list_tasks(
     State(state): State<AppState>,
     Path(project): Path<String>,
+    Query(query): Query<ReadQuery>,
 ) -> Result<Json<Vec<TaskListItem>>, ApiError> {
-    list_tasks_of(project_of(&state, &project)?).await
+    list_tasks_of(project_of(&state, &project)?, query).await
 }
 
-async fn list_tasks_of(project: Arc<Project>) -> Result<Json<Vec<TaskListItem>>, ApiError> {
-    let items = tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, IndexError> {
-        Ok(project.read_index()?.aggregated_tasks(&project.name()))
+async fn list_tasks_of(
+    project: Arc<Project>,
+    query: ReadQuery,
+) -> Result<Json<Vec<TaskListItem>>, ApiError> {
+    let items = tokio::task::spawn_blocking(move || -> Result<Vec<TaskListItem>, ApiError> {
+        let index = index_of(&project, query.fresh)?;
+        Ok(match query.branch {
+            Some(branch) => {
+                known_branch(&index, &branch)?;
+                index.branch_tasks(&project.name(), &branch)
+            }
+            None => index.aggregated_tasks(&project.name()),
+        })
     })
     .await
-    .map_err(join_error)?
-    .map_err(index_error)?;
+    .map_err(join_error)??;
     Ok(Json(items))
+}
+
+// The task×branch matrix itself: one cell per branch that diverges from the default branch's
+// merge-base. It is the only read that answers about branches rather than about tasks, so it is the
+// only one with no `?branch=`.
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/matrix",
+    params(("project" = String, Path, description = "Project name"), FreshQuery),
+    responses(
+        (status = 200, description = "One cell per task×branch that diverges from the merge-base", body = Matrix),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn get_matrix(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+    Query(query): Query<FreshQuery>,
+) -> Result<Json<Matrix>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let matrix = tokio::task::spawn_blocking(move || -> Result<Matrix, ApiError> {
+        Ok(index_of(&project, query.fresh)?.matrix().clone())
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(matrix))
+}
+
+// The subtree rooted at one task, on one branch. `hierarchy_context` answers a different question —
+// a parent title and the *direct* children a detail page embeds — so this walks the branch's whole
+// task set instead.
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/tasks/{id}/tree",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
+        TreeQuery
+    ),
+    responses(
+        (status = 200, description = "The subtree rooted at the task", body = TaskTreeView),
+        (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
+        (status = 404, description = "No such project, no such branch, or no such task", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn get_task_tree(
+    State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    Query(query): Query<TreeQuery>,
+) -> Result<Json<TaskTreeView>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let view = tokio::task::spawn_blocking(move || -> Result<TaskTreeView, ApiError> {
+        let index = index_of(&project, query.fresh)?;
+        reject_non_key(index.abbreviation(), &id)?;
+        // Naming no branch means the same here as it does on the task itself: the version that
+        // headlines. A tree built from another branch's task set would give the task a different
+        // parent and different children than the detail read beside it.
+        let branch = read_branch(&index, query.branch.or_else(|| index.headline_branch(&id)))?;
+        let summaries = index.branch_summaries(&branch);
+        let mut cycles = Vec::new();
+        let tree = TaskTree::build(&summaries, &id, query.depth, &mut cycles)
+            .ok_or_else(|| no_such_task(&index, &id))?;
+        Ok(TaskTreeView {
+            tree,
+            cycles: first_seen(cycles),
+        })
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(view))
+}
+
+fn first_seen(ids: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    ids.into_iter()
+        .filter(|id| seen.insert(id.clone()))
+        .collect()
+}
+
+// Which branches hold the task, and which of them hold the same bytes. Never branch-scoped: the
+// question is about the spread across branches.
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/tasks/{id}/branches",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
+        FreshQuery
+    ),
+    responses(
+        (status = 200, description = "Every version of the task, grouped by blob, with the branches holding it", body = TaskBranches),
+        (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
+        (status = 404, description = "No such project, or the task is on no branch", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn get_task_branches(
+    State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    Query(query): Query<FreshQuery>,
+) -> Result<Json<TaskBranches>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let branches = tokio::task::spawn_blocking(move || -> Result<TaskBranches, ApiError> {
+        let index = index_of(&project, query.fresh)?;
+        reject_non_key(index.abbreviation(), &id)?;
+        index.task_branches(&id).ok_or_else(|| {
+            ApiError::new(
+                StatusCode::NOT_FOUND,
+                format!("task not found on any branch: {id}"),
+            )
+        })
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(branches))
 }
 
 // The list view's whole data set in one read: tasks grouped by status and flattened into
@@ -909,7 +1110,7 @@ async fn create_task_in(
     let (branch, id) =
         tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
             let (branch, store, floor, abbreviation) = {
-                let index = writing.write_index().map_err(index_error)?;
+                let index = writing.rebuilt_index().map_err(index_error)?;
                 let (branch, store) = write_target(&index, writing.store(), query.branch)?;
                 (
                     branch,
@@ -974,12 +1175,12 @@ struct TaskQuery {
     params(
         ("project" = String, Path, description = "Project name"),
         ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
-        ("branch" = Option<String>, Query, description = "Branch version to read; omit for the headline")
+        ReadQuery
     ),
     responses(
         (status = 200, description = "The task on the requested branch", body = TaskDetail),
         (status = 400, description = "The request is invalid, or a stored task is malformed", body = ApiErrorBody),
-        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
+        (status = 404, description = "No such project, no such branch, or no such task", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
         (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
@@ -987,7 +1188,7 @@ struct TaskQuery {
 async fn get_task(
     State(state): State<AppState>,
     Path((project, id)): Path<(String, String)>,
-    Query(query): Query<TaskQuery>,
+    Query(query): Query<ReadQuery>,
 ) -> Result<Json<TaskDetail>, ApiError> {
     get_task_of(project_of(&state, &project)?, id, query).await
 }
@@ -995,29 +1196,56 @@ async fn get_task(
 async fn get_task_of(
     project: Arc<Project>,
     id: String,
-    query: TaskQuery,
+    query: ReadQuery,
 ) -> Result<Json<TaskDetail>, ApiError> {
-    let missing = id.clone();
-    let detail = tokio::task::spawn_blocking(move || -> Result<Option<TaskDetail>, ApiError> {
+    let detail = tokio::task::spawn_blocking(move || -> Result<TaskDetail, ApiError> {
+        let index = index_of(&project, query.fresh)?;
         // A read resolves through the index by matching cell ids, which would 404 a path segment no
         // key could ever be — where every write route answers 400. Refuse it here, once, for both.
-        reject_non_key(project.abbreviation(), &id)?;
-        project
-            .read_index()
-            .map_err(index_error)?
+        reject_non_key(index.abbreviation(), &id)?;
+        if let Some(branch) = &query.branch {
+            known_branch(&index, branch)?;
+        }
+        index
             .task_detail(
                 project.repo(),
                 &project.name(),
                 &id,
                 query.branch.as_deref(),
             )
-            .map_err(index_error)
+            .map_err(index_error)?
+            .ok_or_else(|| no_such_task(&index, &id))
     })
     .await
     .map_err(join_error)??;
-    detail
-        .map(Json)
-        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("no such task: {missing}")))
+    Ok(Json(detail))
+}
+
+// A task the branch asked about does not carry may still exist on another one. Answering only "no
+// such task" there sends the reader looking for a task the board still shows, so the refusal names
+// the branches that do hold it.
+fn no_such_task(index: &Index, id: &str) -> ApiError {
+    let elsewhere: Vec<String> = index
+        .task_branch_states(id)
+        .iter()
+        .filter(|state| state.kind != ChangeKind::Deleted)
+        .map(branch_label)
+        .collect();
+    let message = match elsewhere.is_empty() {
+        true => format!("no such task: {id}"),
+        false => format!(
+            "no such task on this branch: {id}; it lives on {}",
+            elsewhere.join(", ")
+        ),
+    };
+    ApiError::new(StatusCode::NOT_FOUND, message)
+}
+
+fn branch_label(state: &BranchState) -> String {
+    match state.dirty {
+        true => format!("{} (dirty)", state.branch),
+        false => state.branch.clone(),
+    }
 }
 
 fn reject_non_key(abbreviation: Abbreviation, key: &str) -> Result<u64, ApiError> {
@@ -1045,7 +1273,7 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
 }
 
 // Callers hold the index mutex across this and release it before writing, so the store's flock wait
-// never blocks the reads that share the mutex. The index they hold comes from `Project::write_index`,
+// never blocks the reads that share the mutex. The index they hold comes from `Project::rebuilt_index`,
 // which rebuilds in all conditions: the question here is which branch is writable right now.
 fn write_target(
     index: &Index,
@@ -1101,7 +1329,7 @@ async fn patch_task_of(
     let (branch, detail) =
         tokio::task::spawn_blocking(move || -> Result<(String, TaskDetail), ApiError> {
             let (branch, store, abbreviation) = {
-                let index = writing.write_index().map_err(index_error)?;
+                let index = writing.rebuilt_index().map_err(index_error)?;
                 let (branch, store) = write_target(&index, writing.store(), query.branch)?;
                 (branch, store, index.abbreviation())
             };
@@ -1120,7 +1348,7 @@ async fn patch_task_of(
             // would 404 a write that in fact succeeded — and its `updated` falls back to the
             // headline, the commit that already holds this exact content.
             let (headline, branches, parent_title, children, refs, updated) = {
-                let index = writing.write_index().map_err(index_error)?;
+                let index = writing.rebuilt_index().map_err(index_error)?;
                 // The index resolves a parent by key; the frontmatter holds the number the file
                 // layer names it by.
                 let parent = task
@@ -1203,7 +1431,7 @@ async fn delete_task_of(
     let changed = id.clone();
     let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
         let (branch, store, abbreviation) = {
-            let index = writing.write_index().map_err(index_error)?;
+            let index = writing.rebuilt_index().map_err(index_error)?;
             let (branch, store) = write_target(&index, writing.store(), query.branch)?;
             (branch, store, index.abbreviation())
         };
