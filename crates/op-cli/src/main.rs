@@ -254,7 +254,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         }
         Command::Delete { id, yes } => delete(root, daemon_url, &id, yes),
         Command::Branches => branches(root).map(|()| ExitCode::SUCCESS),
-        Command::Open => open::run(daemon_url).map(|()| ExitCode::SUCCESS),
+        Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Lint { targets, json, fix } => lint(root, &targets, json, fix),
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
