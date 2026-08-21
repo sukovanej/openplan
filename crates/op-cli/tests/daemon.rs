@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -1290,4 +1290,138 @@ fn a_store_above_the_git_root_registers_the_checkout() {
         .env("OPENPLAN_HOME", home.path())
         .args(["server", "stop"])
         .output();
+}
+
+// `openplan open` hands the URL to a launcher command, so a stub in $BROWSER records what a real
+// browser would have received. The stub writes `url` next to itself, and exits with `code`.
+fn browser_stub(dir: &Path, code: i32) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let script = dir.join("browser");
+    let record = dir.join("url");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf '%s' \"$*\" > {}\nexit {code}\n",
+            record.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
+fn launched_url(dir: &Path) -> String {
+    std::fs::read_to_string(dir.join("url")).expect("the launcher must run and record a URL")
+}
+
+#[test]
+fn open_starts_a_daemon_and_launches_the_browser_at_the_bound_port() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), 0);
+
+    let out = daemon
+        .cmd()
+        .env("BROWSER", &script)
+        .arg("open")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let port = daemon
+        .info_port()
+        .expect("open must start a daemon and record its port");
+    let url = format!("http://127.0.0.1:{port}/");
+    assert_eq!(launched_url(stub.path()), url);
+    assert!(String::from_utf8_lossy(&out.stdout).contains(&url));
+}
+
+#[test]
+fn open_passes_the_arguments_in_browser_before_the_url() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), 0);
+
+    let out = daemon
+        .cmd()
+        .env("BROWSER", format!("{} --new-window", script.display()))
+        .arg("open")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let port = daemon.info_port().unwrap();
+    assert_eq!(
+        launched_url(stub.path()),
+        format!("--new-window http://127.0.0.1:{port}/")
+    );
+}
+
+#[test]
+fn open_honors_the_daemon_override_and_starts_no_local_daemon() {
+    let serving = Daemon::new();
+    assert!(
+        serving
+            .cmd()
+            .args(["server", "start", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let url = format!("http://127.0.0.1:{}", serving.info_port().unwrap());
+
+    let caller = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), 0);
+    let out = caller
+        .cmd()
+        .env("BROWSER", &script)
+        .args(["--daemon", &url, "open"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert_eq!(launched_url(stub.path()), format!("{url}/"));
+    assert!(
+        !caller.home_path().join("daemon.json").exists(),
+        "--daemon must not start a machine daemon"
+    );
+}
+
+#[test]
+fn open_fails_when_the_launcher_fails() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), 3);
+
+    let out = daemon
+        .cmd()
+        .env("BROWSER", &script)
+        .arg("open")
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "a launcher that fails must exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("did not open"), "stderr: {stderr}");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).is_empty(),
+        "no URL may be printed as a fallback: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }

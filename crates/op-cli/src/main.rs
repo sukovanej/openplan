@@ -1,5 +1,6 @@
 mod daemon;
 mod mergedriver;
+mod open;
 mod project;
 mod serve;
 mod tasks;
@@ -124,6 +125,8 @@ enum Command {
     },
     /// List local git branches
     Branches,
+    /// Open the realtime web UI in the default browser
+    Open,
     /// Check task files (frontmatter, references, cycles, duplicate numbers); never starts a daemon
     Lint {
         /// Restrict the report and --fix to these tasks (file paths or keys); the whole store is always scanned
@@ -251,6 +254,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         }
         Command::Delete { id, yes } => delete(root, daemon_url, &id, yes),
         Command::Branches => branches(root).map(|()| ExitCode::SUCCESS),
+        Command::Open => open::run(daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Lint { targets, json, fix } => lint(root, &targets, json, fix),
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
