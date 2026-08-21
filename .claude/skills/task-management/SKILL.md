@@ -97,6 +97,9 @@ openplan set <key> status in_review
 task to `done` yourself; a human moves it from `in_review` to `done` (or back to
 `in_progress` if the review asks for changes).
 
+The one exception is a merge: when the user asks to merge the task's branch,
+follow the `task-management-merge` skill.
+
 ## Delete
 
 ```sh
