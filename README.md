@@ -44,6 +44,7 @@ Without installing, run it from the checkout as `cargo run -p op-cli -- <args>`:
 
 ```sh
 openplan list                       # tasks in ./.plan
+openplan open                       # the web UI in your browser
 openplan server start               # background daemon: realtime API + web UI on 127.0.0.1:7373
 openplan server ping                # report daemon status
 openplan server stop                # stop the background daemon

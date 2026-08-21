@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -1290,4 +1290,242 @@ fn a_store_above_the_git_root_registers_the_checkout() {
         .env("OPENPLAN_HOME", home.path())
         .args(["server", "stop"])
         .output();
+}
+
+// `openplan open` hands the URL to a launcher command. A stub in $BROWSER records the arguments a
+// real browser would have received, then runs `tail` — `exit 0`, a failing exit, or a sleep that
+// stands in for a browser which does not return until the user closes it.
+fn browser_stub(dir: &Path, name: &str, tail: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let script = dir.join(name);
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf '%s' \"$*\" > '{}'\n{tail}\n",
+            record_path(dir, name).display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
+fn record_path(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("{name}.args"))
+}
+
+// The launcher outlives the command that starts it, so the record can land after `openplan open`
+// has already returned.
+fn launched(dir: &Path, name: &str) -> String {
+    wait_until(|| record_path(dir, name).exists());
+    std::fs::read_to_string(record_path(dir, name)).unwrap()
+}
+
+#[test]
+fn open_starts_a_daemon_and_launches_the_browser_at_the_bound_port() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), "browser", "exit 0");
+
+    let out = daemon
+        .cmd()
+        .env("BROWSER", &script)
+        .arg("open")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let port = daemon
+        .info_port()
+        .expect("open must start a daemon and record its port");
+    let url = format!("http://127.0.0.1:{port}/");
+    assert_eq!(launched(stub.path(), "browser"), url);
+    assert!(String::from_utf8_lossy(&out.stdout).contains(&url));
+}
+
+// The UI lists the projects the daemon serves. Opening it from a repository the daemon does not
+// serve yet must show that repository, so `open` registers it as a first write does.
+#[test]
+fn open_registers_the_repository_the_caller_stands_in() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), "browser", "exit 0");
+
+    let out = daemon
+        .cmd()
+        .env("BROWSER", &script)
+        .arg("open")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let registry = std::fs::read_to_string(daemon.home_path().join("registry.toml"))
+        .expect("open must register the caller's repository");
+    let root = daemon.root.path().canonicalize().unwrap();
+    assert!(
+        registry.contains(root.to_str().unwrap()),
+        "the entry names the serve root: {registry}"
+    );
+}
+
+#[test]
+fn open_places_the_url_where_browser_spells_it() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), "browser", "exit 0");
+
+    let out = daemon
+        .cmd()
+        .env("BROWSER", format!("{} %s --new-window", script.display()))
+        .arg("open")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let port = daemon.info_port().unwrap();
+    assert_eq!(
+        launched(stub.path(), "browser"),
+        format!("http://127.0.0.1:{port}/ --new-window")
+    );
+}
+
+// $BROWSER lists candidates in order of preference, so a name this machine does not have must not
+// stop the command.
+#[test]
+fn open_skips_a_browser_candidate_that_is_not_installed() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), "second", "exit 0");
+    let missing = stub.path().join("no-such-browser");
+
+    let out = daemon
+        .cmd()
+        .env(
+            "BROWSER",
+            format!("{}:{}", missing.display(), script.display()),
+        )
+        .arg("open")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let port = daemon.info_port().unwrap();
+    assert_eq!(
+        launched(stub.path(), "second"),
+        format!("http://127.0.0.1:{port}/")
+    );
+}
+
+// A launcher that is the browser itself runs until the user closes the window. The command must
+// hand it the URL and return, not hold the terminal for the life of the browser.
+#[test]
+fn open_returns_while_the_browser_keeps_running() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), "browser", "sleep 30");
+
+    let start = Instant::now();
+    let out = daemon
+        .cmd()
+        .env("BROWSER", &script)
+        .arg("open")
+        .output()
+        .unwrap();
+    let elapsed = start.elapsed();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "open waited {elapsed:?} for a browser that stays open"
+    );
+
+    let port = daemon.info_port().unwrap();
+    assert_eq!(
+        launched(stub.path(), "browser"),
+        format!("http://127.0.0.1:{port}/")
+    );
+}
+
+#[test]
+fn open_honors_the_daemon_override_and_starts_no_local_daemon() {
+    let serving = Daemon::new();
+    assert!(
+        serving
+            .cmd()
+            .args(["server", "start", "--port", "0"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let url = format!("http://127.0.0.1:{}", serving.info_port().unwrap());
+
+    let caller = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), "browser", "exit 0");
+    let out = caller
+        .cmd()
+        .env("BROWSER", &script)
+        .args(["--daemon", &url, "open"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert_eq!(launched(stub.path(), "browser"), format!("{url}/"));
+    assert!(
+        !caller.home_path().join("daemon.json").exists(),
+        "--daemon must not start a machine daemon"
+    );
+    assert!(
+        !serving.home_path().join("registry.toml").exists(),
+        "--daemon must not register the caller's repository on a borrowed daemon"
+    );
+}
+
+#[test]
+fn open_fails_when_the_launcher_fails() {
+    let daemon = Daemon::new();
+    let stub = tempfile::tempdir().unwrap();
+    let script = browser_stub(stub.path(), "browser", "exit 3");
+
+    let out = daemon
+        .cmd()
+        .env("BROWSER", &script)
+        .arg("open")
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "a launcher that fails must exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("did not open"), "stderr: {stderr}");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).is_empty(),
+        "no URL may be printed as a fallback: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }

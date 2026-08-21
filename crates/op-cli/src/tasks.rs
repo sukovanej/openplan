@@ -136,7 +136,7 @@ fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
 // `may_register` is false when the caller named a daemon with `--daemon`. Registering there would
 // leave a repository indexed and watched by a daemon the caller only borrowed for one command, and
 // two daemons writing one checkout is exactly what the single-writer rule exists to prevent.
-fn resolve_project(
+pub fn resolve_project(
     client: &Client,
     base_url: &str,
     repo: &Repo,
