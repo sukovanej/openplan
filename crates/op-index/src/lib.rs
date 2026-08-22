@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use op_api::{
-    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Metadata, TaskBranches, TaskChild,
-    TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, id_cmp, list_item_cmp,
-    updated_field,
+    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Metadata, SearchHit, TaskBranches,
+    TaskChild, TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, id_cmp,
+    list_item_cmp, updated_field,
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{Config, RawTask, Store, StoreError};
@@ -69,6 +69,9 @@ struct BranchChanges {
 struct Version {
     title: String,
     metadata: Metadata,
+    // Everything a search reads — title, body, and the frontmatter fields — lowercased once here,
+    // so a query tests one `contains` per version instead of re-casing every field per keystroke.
+    haystack: String,
 }
 
 // How one task stands on one branch: the blob its effective text hashes to — the live working copy
@@ -508,7 +511,7 @@ impl Index {
                                 blob,
                                 ChangeKind::Deleted,
                                 dirty,
-                                &version,
+                                version,
                             ));
                         }
                     }
@@ -537,7 +540,7 @@ impl Index {
                     let working_oid = repo.hash_blob(bytes)?;
                     let dirty = committed_oid != Some(&working_oid);
                     let version = self.cache_bytes(&working_oid, bytes);
-                    Ok(Some(cell(branch, id, &working_oid, kind, dirty, &version)))
+                    Ok(Some(cell(branch, id, &working_oid, kind, dirty, version)))
                 }
                 None => Ok(None),
             };
@@ -545,27 +548,26 @@ impl Index {
         match committed_oid {
             Some(oid) => {
                 let version = self.committed_version(repo, oid)?;
-                Ok(Some(cell(branch, id, oid, kind, false, &version)))
+                Ok(Some(cell(branch, id, oid, kind, false, version)))
             }
             None => Ok(None),
         }
     }
 
-    fn committed_version(&mut self, repo: &Repo, oid: &str) -> Result<Version, IndexError> {
-        if let Some(version) = self.blob_cache.get(oid) {
-            return Ok(version.clone());
+    // Borrowed rather than cloned: a cached parse carries the file's whole searchable text, and a
+    // rebuild reads one per task per branch.
+    fn committed_version(&mut self, repo: &Repo, oid: &str) -> Result<&Version, IndexError> {
+        if !self.blob_cache.contains_key(oid) {
+            let bytes = repo.read_blob(oid)?;
+            self.cache_bytes(oid, &bytes);
         }
-        let bytes = repo.read_blob(oid)?;
-        Ok(self.cache_bytes(oid, &bytes))
+        Ok(&self.blob_cache[oid])
     }
 
-    fn cache_bytes(&mut self, oid: &str, bytes: &[u8]) -> Version {
-        if let Some(version) = self.blob_cache.get(oid) {
-            return version.clone();
-        }
-        let version = parse_version(bytes, self.abbreviation);
-        self.blob_cache.insert(oid.to_owned(), version.clone());
-        version
+    fn cache_bytes(&mut self, oid: &str, bytes: &[u8]) -> &Version {
+        self.blob_cache
+            .entry(oid.to_owned())
+            .or_insert_with(|| parse_version(bytes, self.abbreviation))
     }
 
     pub fn has_branch(&self, branch: &str) -> bool {
@@ -673,6 +675,48 @@ impl Index {
                     headline: headline.branch.clone(),
                     branches: branch_states(&cells),
                 }
+            })
+            .collect()
+    }
+
+    // Every task the query matches, on any branch, as the same aggregated rows the list reads answer
+    // with — so a hit renders and opens exactly like a list row, and a task the aggregation cannot
+    // reach is as absent here as it is on the board. Matching is a case-insensitive substring over
+    // the key and the whole file — title, body, and frontmatter — so a query means one thing
+    // everywhere it is typed. A query of nothing but spaces matches nothing rather than everything:
+    // a palette that opens on the whole store is a list, not a search.
+    pub fn search(&self, project: &str, query: &str) -> Vec<SearchHit> {
+        if query.trim().is_empty() {
+            return Vec::new();
+        }
+        let needle = query.to_lowercase();
+        let mut matched: HashMap<&str, BTreeSet<&str>> = HashMap::new();
+        for (branch, versions) in &self.branch_versions {
+            for (id, version) in versions {
+                // The id names the file, not the blob, so it is absent from the cached parse and is
+                // tested here instead. A palette where a key does not find its own task is the one
+                // thing a reader will type first.
+                let hit = id.to_lowercase().contains(&needle)
+                    || self
+                        .parsed(version)
+                        .is_some_and(|parsed| parsed.haystack.contains(&needle));
+                if hit {
+                    matched.entry(id).or_default().insert(branch);
+                }
+            }
+        }
+        self.aggregated_tasks(project)
+            .into_iter()
+            .filter_map(|task| {
+                let branches = matched.get(task.id.as_str())?;
+                // The headline branch is the version every other read answers with, so a hit names
+                // it whenever its text matches too; only a match that lives nowhere else names
+                // another branch.
+                let branch = match branches.contains(task.headline.as_str()) {
+                    true => task.headline.clone(),
+                    false => (*branches.first()?).to_owned(),
+                };
+                Some(SearchHit { task, branch })
             })
             .collect()
     }
@@ -1150,10 +1194,30 @@ impl Version {
 fn parse_version(bytes: &[u8], abbreviation: Abbreviation) -> Version {
     let text = String::from_utf8_lossy(bytes);
     let partial = op_task::parse_partial(&text);
+    let title = partial.title.unwrap_or_default();
+    let metadata = Metadata::from_partial(partial.metadata, abbreviation);
     Version {
-        title: partial.title.unwrap_or_default(),
-        metadata: Metadata::from_partial(partial.metadata, abbreviation),
+        haystack: haystack(&title, &partial.body, &metadata),
+        title,
+        metadata,
     }
+}
+
+fn haystack(title: &str, body: &str, metadata: &Metadata) -> String {
+    let mut text = format!("{title}\n{body}\n");
+    if let Some(status) = metadata.status() {
+        text.push_str(status.as_str());
+        text.push('\n');
+    }
+    if let Some(parent) = metadata.parent() {
+        text.push_str(parent);
+        text.push('\n');
+    }
+    for dependency in metadata.dependencies() {
+        text.push_str(dependency);
+        text.push('\n');
+    }
+    text.to_lowercase()
 }
 
 // Every `[[…]]` in `body` that resolves to a known task, deduplicated in first-seen order.

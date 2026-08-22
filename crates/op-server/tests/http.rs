@@ -222,6 +222,70 @@ async fn tasks_crud_roundtrip() {
     assert_eq!(gone.status(), StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn search_matches_the_body_and_carries_the_branch() {
+    let (_dir, state) = store_state();
+    send(
+        &state,
+        "POST",
+        "/api/projects/test/tasks",
+        Some(json!({ "title": "Wire the parser", "body": "It must accept a zeppelin." })),
+    )
+    .await;
+    send(
+        &state,
+        "POST",
+        "/api/projects/test/tasks",
+        Some(json!({ "title": "Paint the shed" })),
+    )
+    .await;
+
+    for uri in [
+        "/api/projects/test/search?q=ZEPPELIN",
+        "/api/search?q=zeppelin",
+    ] {
+        let response = send(&state, "GET", uri, None).await;
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        let hits = body_json(response).await;
+        let hits = hits.as_array().unwrap();
+        assert_eq!(hits.len(), 1, "{uri}");
+        assert_eq!(hits[0]["task"]["id"], "OPP-1", "{uri}");
+        assert_eq!(hits[0]["branch"], "main", "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn search_with_no_query_matches_nothing() {
+    let (_dir, state) = store_state();
+    send(
+        &state,
+        "POST",
+        "/api/projects/test/tasks",
+        Some(json!({ "title": "Wire the parser" })),
+    )
+    .await;
+
+    for uri in [
+        "/api/projects/test/search",
+        "/api/projects/test/search?q=",
+        "/api/search?q=",
+    ] {
+        let response = send(&state, "GET", uri, None).await;
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        assert!(
+            body_json(response).await.as_array().unwrap().is_empty(),
+            "{uri}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn searching_an_unknown_project_is_404() {
+    let (_dir, state) = store_state();
+    let response = send(&state, "GET", "/api/projects/nope/search?q=a", None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 // A path segment no id could ever name is a bad request, not a missing task — and it must read the
 // same whichever method asks, though only the write routes reach the store.
 #[tokio::test]

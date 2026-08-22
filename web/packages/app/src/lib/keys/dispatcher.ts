@@ -8,18 +8,20 @@ import {
   sameChord,
   startsWith,
 } from "./match"
-import type { Binding, RouteScope, RunContext, Scope } from "./types"
+import type { Binding, OverlayName, RouteScope, RunContext, Scope } from "./types"
 
 export interface DispatcherConfig {
   readonly bindings: ReadonlyArray<Binding>
   readonly routeScope: () => RouteScope
-  readonly overlayOpen: () => boolean
+  readonly activeOverlay: () => OverlayName | null
   readonly context: () => RunContext
   readonly chordTimeoutMs?: number
 }
 
-export function activeScopes(overlayOpen: boolean, route: Scope): ReadonlyArray<Scope> {
-  return overlayOpen ? ["overlay"] : ["global", route, "rows"]
+// An open overlay takes the keyboard for itself: only its own scope is live, so nothing behind it
+// fires under it.
+export function activeScopes(activeOverlay: OverlayName | null, route: Scope): ReadonlyArray<Scope> {
+  return activeOverlay === null ? ["global", route, "rows"] : [activeOverlay]
 }
 
 export function activeBindings(
@@ -68,7 +70,7 @@ export class Dispatcher {
     }
 
     const ctx = this.config.context()
-    const scopes = activeScopes(this.config.overlayOpen(), this.config.routeScope())
+    const scopes = activeScopes(this.config.activeOverlay(), this.config.routeScope())
     const bindings = activeBindings(this.config.bindings, scopes, ctx)
     const token = fromEvent(event)
 

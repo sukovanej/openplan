@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use op_api::{
     ApiErrorBody, CreateTask, DaemonInfo, Matrix, ProjectView, RegisterProject, RenameProject,
-    TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    SearchHit, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -92,6 +92,20 @@ impl Client {
         url.path_segments_mut()
             .map_err(|_| unusable(base_url))?
             .push("matrix");
+        self.read(fresh(url))
+    }
+
+    pub fn search(
+        &self,
+        base_url: &str,
+        project: &str,
+        query: &str,
+    ) -> Result<Vec<SearchHit>, ClientError> {
+        let mut url = projects_url(base_url, project)?;
+        url.path_segments_mut()
+            .map_err(|_| unusable(base_url))?
+            .push("search");
+        url.query_pairs_mut().append_pair("q", query);
         self.read(fresh(url))
     }
 

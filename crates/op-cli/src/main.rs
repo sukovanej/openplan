@@ -12,8 +12,8 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand};
 use op_api::{
-    BranchMark, ChangeKind, CreateTask, FieldUpdate, MatrixCell, Metadata, TaskListItem, TaskPatch,
-    TaskTree, list_item_cmp,
+    BranchMark, ChangeKind, CreateTask, FieldUpdate, MatrixCell, Metadata, SearchHit, TaskListItem,
+    TaskPatch, TaskTree, list_item_cmp,
 };
 use op_git::Repo;
 use op_lint::{CreatedSource, Diagnostic, Snapshot};
@@ -72,6 +72,12 @@ enum Command {
         /// Tasks as they stand on one branch, without checking it out
         #[arg(long)]
         branch: Option<String>,
+    },
+    /// Find tasks whose title, body, or frontmatter contains the query, on any branch
+    Search {
+        query: String,
+        #[arg(long)]
+        json: bool,
     },
     /// Print a whole task file, or its metadata as JSON
     Get {
@@ -234,6 +240,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
             branch.as_deref(),
         )
         .map(|()| ExitCode::SUCCESS),
+        Command::Search { query, json } => {
+            search(root, daemon_url, &query, json).map(|()| ExitCode::SUCCESS)
+        }
         Command::Get { id, json, branch } => {
             get(root, daemon_url, &id, json, branch.as_deref()).map(|()| ExitCode::SUCCESS)
         }
@@ -408,6 +417,18 @@ fn list_all_branches(tasks: &Tasks, status: Option<Status>, json: bool) -> Resul
     Ok(())
 }
 
+fn search(root: &Path, daemon_url: Option<&str>, query: &str, json: bool) -> Result<()> {
+    let hits = Tasks::resolve(root, daemon_url)?.search(query)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&hits)?);
+    } else if hits.is_empty() {
+        println!("no matching tasks");
+    } else {
+        print_hits(&hits);
+    }
+    Ok(())
+}
+
 fn get(
     root: &Path,
     daemon_url: Option<&str>,
@@ -497,6 +518,16 @@ fn print_tasks(tasks: &[&TaskListItem]) {
     for task in tasks {
         let status = status_label(&task.metadata);
         println!("{:<10} {status:<11} {}", task.id, task.title);
+    }
+}
+
+fn print_hits(hits: &[SearchHit]) {
+    for hit in hits {
+        let status = status_label(&hit.task.metadata);
+        println!(
+            "{:<22} {:<10} {status:<11} {}",
+            hit.branch, hit.task.id, hit.task.title
+        );
     }
 }
 

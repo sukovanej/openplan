@@ -226,6 +226,8 @@ export const BoardRow = Schema.Struct({
   parent_title: Schema.optionalKey(Schema.String),
   task: TaskListItem,
 })
+export type SearchHit = { readonly branch: string; readonly task: TaskListItem }
+export const SearchHit = Schema.Struct({ branch: Schema.String, task: TaskListItem })
 export type MatrixCell = {
   readonly blob_oid: string
   readonly branch: string
@@ -324,6 +326,19 @@ export type GetMatrix500 = ApiErrorBody
 export const GetMatrix500 = ApiErrorBody
 export type GetMatrix503 = ApiErrorBody
 export const GetMatrix503 = ApiErrorBody
+export type SearchProjectParams = { readonly q?: string; readonly fresh?: boolean }
+export const SearchProjectParams = Schema.Struct({
+  q: Schema.optionalKey(Schema.String),
+  fresh: Schema.optionalKey(Schema.Boolean),
+})
+export type SearchProject200 = ReadonlyArray<SearchHit>
+export const SearchProject200 = Schema.Array(SearchHit)
+export type SearchProject404 = ApiErrorBody
+export const SearchProject404 = ApiErrorBody
+export type SearchProject500 = ApiErrorBody
+export const SearchProject500 = ApiErrorBody
+export type SearchProject503 = ApiErrorBody
+export const SearchProject503 = ApiErrorBody
 export type ListTasksParams = { readonly branch?: string | null; readonly fresh?: boolean }
 export const ListTasksParams = Schema.Struct({
   branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
@@ -430,6 +445,15 @@ export type GetTaskTree500 = ApiErrorBody
 export const GetTaskTree500 = ApiErrorBody
 export type GetTaskTree503 = ApiErrorBody
 export const GetTaskTree503 = ApiErrorBody
+export type SearchAllParams = { readonly q?: string; readonly fresh?: boolean }
+export const SearchAllParams = Schema.Struct({
+  q: Schema.optionalKey(Schema.String),
+  fresh: Schema.optionalKey(Schema.Boolean),
+})
+export type SearchAll200 = ReadonlyArray<SearchHit>
+export const SearchAll200 = Schema.Array(SearchHit)
+export type SearchAll500 = ApiErrorBody
+export const SearchAll500 = ApiErrorBody
 export type Health200 = DaemonInfo
 export const Health200 = DaemonInfo
 
@@ -601,6 +625,19 @@ export const make = (
           }),
         ),
       ),
+    searchProject: (project, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/search`).pipe(
+        HttpClientRequest.setUrlParams({ q: options?.params?.["q"] as any, fresh: options?.params?.["fresh"] as any }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(SearchProject200),
+            "404": decodeError("SearchProject404", SearchProject404),
+            "500": decodeError("SearchProject500", SearchProject500),
+            "503": decodeError("SearchProject503", SearchProject503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     listTasks: (project, options) =>
       HttpClientRequest.get(`/api/projects/${project}/tasks`).pipe(
         HttpClientRequest.setUrlParams({
@@ -714,6 +751,17 @@ export const make = (
           }),
         ),
       ),
+    searchAll: (options) =>
+      HttpClientRequest.get(`/api/search`).pipe(
+        HttpClientRequest.setUrlParams({ q: options?.params?.["q"] as any, fresh: options?.params?.["fresh"] as any }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(SearchAll200),
+            "500": decodeError("SearchAll500", SearchAll500),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     health: (options) =>
       HttpClientRequest.get(`/health`).pipe(
         withResponse(options?.config)(
@@ -806,6 +854,19 @@ export interface TasksClient {
     | TasksClientError<"GetMatrix404", typeof GetMatrix404.Type>
     | TasksClientError<"GetMatrix500", typeof GetMatrix500.Type>
     | TasksClientError<"GetMatrix503", typeof GetMatrix503.Type>
+  >
+  readonly searchProject: <Config extends OperationConfig>(
+    project: string,
+    options:
+      | { readonly params?: typeof SearchProjectParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof SearchProject200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"SearchProject404", typeof SearchProject404.Type>
+    | TasksClientError<"SearchProject500", typeof SearchProject500.Type>
+    | TasksClientError<"SearchProject503", typeof SearchProject503.Type>
   >
   readonly listTasks: <Config extends OperationConfig>(
     project: string,
@@ -916,6 +977,14 @@ export interface TasksClient {
     | TasksClientError<"GetTaskTree404", typeof GetTaskTree404.Type>
     | TasksClientError<"GetTaskTree500", typeof GetTaskTree500.Type>
     | TasksClientError<"GetTaskTree503", typeof GetTaskTree503.Type>
+  >
+  readonly searchAll: <Config extends OperationConfig>(
+    options:
+      | { readonly params?: typeof SearchAllParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof SearchAll200.Type, Config>,
+    HttpClientError.HttpClientError | SchemaError | TasksClientError<"SearchAll500", typeof SearchAll500.Type>
   >
   readonly health: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,
