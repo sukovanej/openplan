@@ -40,6 +40,10 @@ A branch with no task key in its name has no status to change.
 gh pr merge <number> --squash --delete-branch
 ```
 
+`--delete-branch` fails with `'main' is already used by worktree` whenever the
+primary checkout holds main. The merge still happened — confirm with
+`gh pr view <number> --json state,mergeCommit` and let step 3 delete the branch.
+
 With no pull request: `git push origin <branch>:main && git push origin --delete <branch>`.
 
 ## 3. Clean up
@@ -49,6 +53,7 @@ From the primary checkout, never from the worktree you remove:
 ```sh
 git worktree remove .claude/worktrees/<slug>
 git branch -D <branch>
+git push origin --delete <branch>
 git fetch --prune origin
 git merge --ff-only origin/main
 ```
