@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm"
 import type { TaskRef } from "@open-planner/api-client"
 import { cn, Prose } from "@open-planner/ui"
 
+import { CodeBlock } from "./code-block"
 import { taskLinkPlugins } from "./task-links"
 import { taskRouteOf } from "./task-path"
 import { TaskRefChip } from "./task-ref-chip"
@@ -22,6 +23,7 @@ function BodyTaskRef({ href, id }: { href: string; id: string }) {
 }
 
 const components: Components = {
+  pre: CodeBlock,
   a({ href, children }) {
     const task = href === undefined ? undefined : taskRouteOf(href)
     if (href !== undefined && task !== undefined) {
