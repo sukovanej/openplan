@@ -953,7 +953,7 @@ async fn get_task_tree(
         let summaries = index.branch_summaries(&branch);
         let mut cycles = Vec::new();
         let tree = TaskTree::build(&summaries, &id, query.depth, &mut cycles)
-            .ok_or_else(|| no_such_task(&index, &id))?;
+            .ok_or_else(|| no_such_task(&index, &id, Some(&branch)))?;
         Ok(TaskTreeView {
             tree,
             cycles: first_seen(cycles),
@@ -1186,7 +1186,8 @@ async fn create_task_in(
         tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
             let (branch, store, floor, abbreviation) = {
                 let index = writing.rebuilt_index().map_err(index_error)?;
-                let (branch, store) = write_target(&index, writing.store(), query.branch)?;
+                let branch = write_branch(&index, query.branch)?;
+                let (branch, store) = write_target(&index, writing.store(), branch)?;
                 (
                     branch,
                     store,
@@ -1289,7 +1290,7 @@ async fn get_task_of(
                 query.branch.as_deref(),
             )
             .map_err(index_error)?
-            .ok_or_else(|| no_such_task(&index, &id))
+            .ok_or_else(|| no_such_task(&index, &id, query.branch.as_deref()))
     })
     .await
     .map_err(join_error)??;
@@ -1298,17 +1299,22 @@ async fn get_task_of(
 
 // A task the branch asked about does not carry may still exist on another one. Answering only "no
 // such task" there sends the reader looking for a task the board still shows, so the refusal names
-// the branches that do hold it.
-fn no_such_task(index: &Index, id: &str) -> ApiError {
+// the branches that do hold it. `branch` is the branch the request resolved to — named, so a caller
+// whose branch the daemon picked reads which branch the answer is about.
+fn no_such_task(index: &Index, id: &str, branch: Option<&str>) -> ApiError {
     let elsewhere: Vec<String> = index
         .task_branch_states(id)
         .iter()
         .filter(|state| state.kind != ChangeKind::Deleted)
         .map(branch_label)
         .collect();
-    let message = match elsewhere.is_empty() {
-        true => format!("no such task: {id}"),
-        false => format!(
+    let message = match (elsewhere.is_empty(), branch) {
+        (true, _) => format!("no such task: {id}"),
+        (false, Some(branch)) => format!(
+            "no such task on branch {branch}: {id}; it lives on {}",
+            elsewhere.join(", ")
+        ),
+        (false, None) => format!(
             "no such task on this branch: {id}; it lives on {}",
             elsewhere.join(", ")
         ),
@@ -1347,15 +1353,33 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
     }
 }
 
+// The write target of a write about one task. A named branch is an instruction and is taken as one,
+// which is what keeps a CLI write on the branch its caller stands on. Naming none instead means
+// "wherever this task lives": the branch the task headlines on when the serve root does not carry
+// it. The aggregated reads offer tasks from every branch, so acting on one of those must not depend
+// on which branch the serve root has checked out.
+fn task_write_branch(
+    index: &Index,
+    id: &str,
+    requested: Option<String>,
+) -> Result<String, ApiError> {
+    match requested {
+        Some(branch) => Ok(branch),
+        None => index
+            .write_branch(id)
+            .map(str::to_owned)
+            .ok_or_else(|| ApiError::bad_request("cannot determine the current worktree's branch")),
+    }
+}
+
 // Callers hold the index mutex across this and release it before writing, so the store's flock wait
 // never blocks the reads that share the mutex. The index they hold comes from `Project::rebuilt_index`,
 // which rebuilds in all conditions: the question here is which branch is writable right now.
 fn write_target(
     index: &Index,
     serve_store: &Store,
-    requested: Option<String>,
+    branch: String,
 ) -> Result<(String, Store), ApiError> {
-    let branch = write_branch(index, requested)?;
     let store = index.live_store(&branch).ok_or_else(|| {
         if serve_store.root().is_dir() {
             ApiError::not_writable(&branch)
@@ -1366,13 +1390,23 @@ fn write_target(
     Ok((branch, store))
 }
 
+// A write the store found no task for. The write resolved to one branch, and the reads that offered
+// the task name every branch it lives on, so the refusal names them too rather than reading as "this
+// task does not exist" about a task the board still shows.
+fn write_not_found(project: &Project, branch: &str, id: &str, err: StoreError) -> ApiError {
+    match (&err, project.read_index()) {
+        (StoreError::NotFound { .. }, Ok(index)) => no_such_task(&index, id, Some(branch)),
+        _ => err.into(),
+    }
+}
+
 #[utoipa::path(
     patch,
     path = "/api/projects/{project}/tasks/{id}",
     params(
         ("project" = String, Path, description = "Project name"),
         ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
-        ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
+        ("branch" = Option<String>, Query, description = "Branch to write; omit to write wherever the task lives")
     ),
     request_body = TaskPatch,
     responses(
@@ -1405,24 +1439,27 @@ async fn patch_task_of(
         tokio::task::spawn_blocking(move || -> Result<(String, TaskDetail), ApiError> {
             let (branch, store, abbreviation) = {
                 let index = writing.rebuilt_index().map_err(index_error)?;
-                let (branch, store) = write_target(&index, writing.store(), query.branch)?;
+                let branch = task_write_branch(&index, &id, query.branch)?;
+                let (branch, store) = write_target(&index, writing.store(), branch)?;
                 (branch, store, index.abbreviation())
             };
             let number = reject_non_key(abbreviation, &id)?;
             // The refusal has to leave the closure, not be carried out of it: `update` writes
             // whenever the mutation reports success, and a patch that fails on its third field has
             // already changed the first two.
-            let task = store.update(number, |task| {
-                patch
-                    .apply(task, abbreviation)
-                    .map_err(|err| StoreError::Invalid(err.to_string()))
-            })?;
+            let task = store
+                .update(number, |task| {
+                    patch
+                        .apply(task, abbreviation)
+                        .map_err(|err| StoreError::Invalid(err.to_string()))
+                })
+                .map_err(|err| write_not_found(&writing, &branch, &id, err))?;
             writing.mark_dirty();
             // Echo the freshly written task rather than re-reading it from the matrix: a write that
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
             // would 404 a write that in fact succeeded — and its `updated` falls back to the
             // headline, the commit that already holds this exact content.
-            let (headline, branches, parent_title, children, refs, updated) = {
+            let (headline, branches, write_target, parent_title, children, refs, updated) = {
                 let index = writing.rebuilt_index().map_err(index_error)?;
                 // The index resolves a parent by key; the frontmatter holds the number the file
                 // layer names it by.
@@ -1436,6 +1473,7 @@ async fn patch_task_of(
                 (
                     index.headline_branch(&id).unwrap_or_default(),
                     index.task_branch_states(&id),
+                    index.write_target(&id, Some(&branch)),
                     parent_title,
                     children,
                     refs,
@@ -1452,6 +1490,7 @@ async fn patch_task_of(
                 updated: view.updated,
                 headline,
                 branches,
+                write_target,
                 parent_title,
                 children,
                 refs,
@@ -1477,7 +1516,7 @@ async fn patch_task_of(
     params(
         ("project" = String, Path, description = "Project name"),
         ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
-        ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
+        ("branch" = Option<String>, Query, description = "Branch to write; omit to write wherever the task lives")
     ),
     responses(
         (status = 204, description = "Deleted"),
@@ -1507,10 +1546,13 @@ async fn delete_task_of(
     let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
         let (branch, store, abbreviation) = {
             let index = writing.rebuilt_index().map_err(index_error)?;
-            let (branch, store) = write_target(&index, writing.store(), query.branch)?;
+            let branch = task_write_branch(&index, &id, query.branch)?;
+            let (branch, store) = write_target(&index, writing.store(), branch)?;
             (branch, store, index.abbreviation())
         };
-        store.delete(reject_non_key(abbreviation, &id)?)?;
+        store
+            .delete(reject_non_key(abbreviation, &id)?)
+            .map_err(|err| write_not_found(&writing, &branch, &id, err))?;
         writing.mark_dirty();
         Ok(branch)
     })

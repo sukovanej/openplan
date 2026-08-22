@@ -4,8 +4,8 @@ use std::path::Path;
 
 use op_api::{
     BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Metadata, SearchHit, TaskBranches,
-    TaskChild, TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, id_cmp,
-    list_item_cmp, updated_field,
+    TaskChild, TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, WriteTarget,
+    id_cmp, list_item_cmp, updated_field,
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{Config, RawTask, Store, StoreError};
@@ -605,6 +605,7 @@ impl Index {
                     ),
                     headline: branch.to_owned(),
                     branches: self.branch_state(id, branch).into_iter().collect(),
+                    write_target: self.write_target(id, Some(branch)),
                     metadata: parsed.metadata.clone(),
                 })
             })
@@ -674,6 +675,7 @@ impl Index {
                     updated: updated_field(self.created_of(headline), self.cell_updated(headline)),
                     headline: headline.branch.clone(),
                     branches: branch_states(&cells),
+                    write_target: self.write_target(&headline.task.id, None),
                 }
             })
             .collect()
@@ -737,6 +739,59 @@ impl Index {
     // write rather than fabricate a commit onto a branch no worktree holds.
     pub fn live_store(&self, branch: &str) -> Option<Store> {
         self.live.get(branch).cloned()
+    }
+
+    // Where a write to one task goes when the caller names no branch: the serve-root worktree's own
+    // branch while it carries the task, else a branch that does. The aggregated reads list every
+    // branch's tasks, so acting on one of those rows must not depend on which branch the serve root
+    // happens to have checked out. The serve root's own claim comes first even when no worktree can
+    // take the write right now, so a stalled checkout refuses rather than sending the write to
+    // another branch's version. A task no branch holds resolves to the serve root, so the refusal is
+    // about the task rather than about the branch.
+    pub fn write_branch(&self, id: &str) -> Option<&str> {
+        let current = self.current_branch.as_deref();
+        if current.is_some_and(|branch| self.holds(branch, id)) {
+            return current;
+        }
+        // Every headline is a branch that holds the task: `compute_headlines` drops deletions. A task
+        // every branch agrees about contributes no cell at all, so it can be headlined by none while
+        // a branch still holds it — hence the search below rather than a fall straight to the root.
+        self.headlines
+            .get(id)
+            .map(String::as_str)
+            .or_else(|| self.holding_branch(id))
+            .or(current)
+    }
+
+    // Where a read's own writes go, and whether they can land: a read scoped to a branch writes to
+    // that branch, and one that named none writes wherever the task lives. A client must be told
+    // both, so it offers only the actions that can succeed and can name the branch that stops the
+    // rest.
+    pub fn write_target(&self, id: &str, branch: Option<&str>) -> Option<WriteTarget> {
+        let branch = match branch {
+            Some(branch) => branch,
+            None => self.write_branch(id)?,
+        };
+        Some(WriteTarget {
+            branch: branch.to_owned(),
+            writable: self.live.contains_key(branch),
+        })
+    }
+
+    // A branch that holds the task, preferring one a write could land on; branches are ranked by
+    // name after that, so the answer never rides on hash order.
+    fn holding_branch(&self, id: &str) -> Option<&str> {
+        self.branch_versions
+            .iter()
+            .filter(|(_, tasks)| tasks.contains_key(id))
+            .map(|(branch, _)| branch.as_str())
+            .min_by_key(|branch| (!self.live.contains_key(*branch), *branch))
+    }
+
+    fn holds(&self, branch: &str, id: &str) -> bool {
+        self.branch_versions
+            .get(branch)
+            .is_some_and(|tasks| tasks.contains_key(id))
     }
 
     pub fn task_branch_states(&self, id: &str) -> Vec<BranchState> {
@@ -803,6 +858,7 @@ impl Index {
                 Some(branch) => self.states_naming(&cells, id, branch),
                 None => branch_states(&cells),
             },
+            write_target: self.write_target(id, branch),
             parent_title,
             children,
             refs,

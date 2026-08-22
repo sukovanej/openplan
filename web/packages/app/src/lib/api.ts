@@ -147,12 +147,17 @@ export const getTask = (
 
 // `parent` is three-state to match the server: omit the key to leave it unchanged, JSON `null` to
 // clear it (top level), or an id to set it. `rank`, `status`, and `dependencies` are set-only.
+// `branch` writes that one branch's version. The page passes the branch it is showing, so an edit
+// changes the version on screen; omitting it leaves the daemon to write wherever the task lives.
 export const patchTask = (
   project: string,
   id: string,
   patch: Api.TaskPatch,
+  branch?: string,
 ): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.patchTask(project, encodeURIComponent(id), { payload: patch })).pipe(
+  Effect.flatMap(tasks, (client) =>
+    client.patchTask(project, encodeURIComponent(id), { payload: patch, params: { branch } }),
+  ).pipe(
     Effect.catchTags({
       PatchTask400: refusal,
       PatchTask404: () => Effect.fail(new TaskNotFound({ id })),
@@ -163,11 +168,14 @@ export const patchTask = (
     }),
   )
 
+// `branch` puts the new task on one branch's worktree. A subtask names the branch its parent lives
+// on, so the pair stays together instead of parting on whatever the daemon's root has checked out.
 export const createTask = (
   project: string,
   input: Api.CreateTask,
+  branch?: string,
 ): Effect.Effect<string, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.createTask(project, { payload: input })).pipe(
+  Effect.flatMap(tasks, (client) => client.createTask(project, { payload: input, params: { branch } })).pipe(
     Effect.map((created) => created.id),
     Effect.catchTags({
       CreateTask400: refusal,

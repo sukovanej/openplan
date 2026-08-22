@@ -63,6 +63,8 @@ export const StoreConfig = Schema.Struct({
 })
 export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
 export const TaskTreeView = Schema.Struct({ cycles: Schema.optionalKey(Schema.Array(Schema.String)), tree: TaskTree })
+export type WriteTarget = { readonly branch: string; readonly writable: boolean }
+export const WriteTarget = Schema.Struct({ branch: Schema.String, writable: Schema.Boolean })
 export type BranchMark = { readonly branch: string; readonly dirty: boolean; readonly kind: ChangeKind }
 export const BranchMark = Schema.Struct({ branch: Schema.String, dirty: Schema.Boolean, kind: ChangeKind })
 export type Field_Option_String = null | string | FieldError
@@ -180,6 +182,7 @@ export type TaskDetail = {
   readonly refs?: ReadonlyArray<TaskRef>
   readonly title: string
   readonly updated: Field_Rfc3339
+  readonly write_target?: WriteTarget
 }
 export const TaskDetail = Schema.Struct({
   body: Schema.String,
@@ -193,6 +196,7 @@ export const TaskDetail = Schema.Struct({
   refs: Schema.optionalKey(Schema.Array(TaskRef)),
   title: Schema.String,
   updated: Field_Rfc3339,
+  write_target: Schema.optionalKey(WriteTarget),
 })
 export type TaskListItem = {
   readonly branches: ReadonlyArray<BranchState>
@@ -202,6 +206,7 @@ export type TaskListItem = {
   readonly project: string
   readonly title: string
   readonly updated: Field_Rfc3339
+  readonly write_target?: WriteTarget
 }
 export const TaskListItem = Schema.Struct({
   branches: Schema.Array(BranchState),
@@ -211,6 +216,7 @@ export const TaskListItem = Schema.Struct({
   project: Schema.String,
   title: Schema.String,
   updated: Field_Rfc3339,
+  write_target: Schema.optionalKey(WriteTarget),
 })
 export type TaskSummary = { readonly id: string; readonly metadata: Metadata; readonly title: string }
 export const TaskSummary = Schema.Struct({ id: Schema.String, metadata: Metadata, title: Schema.String })
