@@ -574,6 +574,16 @@ pub struct TaskListItem {
     pub branches: Vec<BranchState>,
 }
 
+// One task a search matched, with the branch whose version of it matched. The task itself is the
+// aggregated row every other list read answers with, so a hit renders exactly like a list row;
+// `branch` is what the hit adds — where the matching text lives, which is the headline branch
+// whenever that branch matches too.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SearchHit {
+    pub task: TaskListItem,
+    pub branch: String,
+}
+
 // How a branch's committed version of a task stands against the default branch's merge-base:
 // `Base` is the default branch itself, the other three are the ways a branch diverges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

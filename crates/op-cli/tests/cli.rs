@@ -155,6 +155,69 @@ fn list_reports_real_status_and_title() {
 }
 
 #[test]
+fn search_finds_a_task_by_its_body_and_reports_the_branch() {
+    let dir = Project::new();
+    write(
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\nIt needs a zeppelin.\n",
+    );
+    write(
+        &dir.path().join(".plan/tasks/00002-paint-it.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Paint it\n",
+    );
+
+    let out = run(&dir, &["search", "ZEPPELIN"]);
+
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = stdout(&out);
+    assert!(
+        stdout.contains("main"),
+        "the branch it matched on: {stdout}"
+    );
+    assert!(stdout.contains("OPP-1"), "the key: {stdout}");
+    assert!(stdout.contains("done"), "the status: {stdout}");
+    assert!(stdout.contains("Ship it"), "the title: {stdout}");
+    assert!(!stdout.contains("OPP-2"), "and nothing else: {stdout}");
+}
+
+#[test]
+fn search_reports_no_matches_rather_than_nothing() {
+    let dir = Project::new();
+    write(
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
+    );
+
+    let out = run(&dir, &["search", "kubernetes"]);
+
+    assert!(out.status.success());
+    assert!(stdout(&out).contains("no matching tasks"));
+}
+
+#[test]
+fn search_json_carries_the_hit_and_its_branch() {
+    let dir = Project::new();
+    write(
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
+    );
+
+    let out = run(&dir, &["search", "ship", "--json"]);
+
+    assert!(out.status.success());
+    let hits: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    let hits = hits.as_array().unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["task"]["id"], "OPP-1");
+    assert_eq!(hits[0]["task"]["metadata"]["status"], "done");
+    assert_eq!(hits[0]["branch"], "main");
+}
+
+#[test]
 fn list_discovers_store_from_subdirectory() {
     let dir = Project::new();
     let nested = dir.path().join("crates/thing/src");

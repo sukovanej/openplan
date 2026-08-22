@@ -1,5 +1,6 @@
 import { Link, Outlet } from "react-router-dom"
 
+import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"
 import { Flash } from "./components/flash"
 import { HelpOverlay } from "./components/help-overlay"
@@ -9,7 +10,7 @@ import { ThemeToggle } from "./components/theme-toggle"
 import { useKeyboard } from "./lib/keys"
 
 export function App() {
-  const { overlayOpen, closeOverlay } = useKeyboard()
+  const { activeOverlay, paletteTarget, closeOverlay } = useKeyboard()
   return (
     <div className="bg-background text-foreground flex h-screen flex-col">
       <header className="shrink-0 border-b">
@@ -25,7 +26,8 @@ export function App() {
       <main className="min-h-0 flex-1 overflow-hidden px-4 py-4">
         <Outlet />
       </main>
-      <HelpOverlay open={overlayOpen} onClose={closeOverlay} />
+      <HelpOverlay open={activeOverlay === "help"} onClose={closeOverlay} />
+      <CommandPalette open={activeOverlay === "palette"} target={paletteTarget} onClose={closeOverlay} />
       <MutationError />
       <Flash />
     </div>

@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: in_review
 created: 2026-07-16T10:30:47Z
 ---
 # Reusable ⌘K palette component + task search (CLI + web)

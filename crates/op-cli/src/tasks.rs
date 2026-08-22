@@ -1,7 +1,9 @@
 use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
-use op_api::{CreateTask, Matrix, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView};
+use op_api::{
+    CreateTask, Matrix, SearchHit, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+};
 use op_client::Client;
 use op_git::Repo;
 use op_server::serve_root;
@@ -66,6 +68,10 @@ impl Tasks {
 
     pub fn matrix(&self) -> Result<Matrix> {
         served(self.client.matrix(&self.base_url, &self.project))
+    }
+
+    pub fn search(&self, query: &str) -> Result<Vec<SearchHit>> {
+        served(self.client.search(&self.base_url, &self.project, query))
     }
 
     pub fn get(&self, id: &str, branch: &str) -> Result<TaskDetail> {

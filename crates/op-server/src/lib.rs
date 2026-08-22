@@ -18,8 +18,9 @@ use axum::{
 };
 use op_api::{
     Abbreviation, ApiErrorBody, Board, BranchState, ChangeEvent, ChangeKind, CreateTask,
-    DaemonInfo, KeyError, Matrix, ProjectView, RegisterProject, RenameProject, StoreConfig,
-    TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
+    DaemonInfo, KeyError, Matrix, ProjectView, RegisterProject, RenameProject, SearchHit,
+    StoreConfig, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView,
+    TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -303,6 +304,8 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(get_matrix))
         .routes(routes!(get_board))
         .routes(routes!(get_merged_board))
+        .routes(routes!(search_project))
+        .routes(routes!(search_all))
         .routes(routes!(get_task, patch_task, delete_task))
         .routes(routes!(get_task_tree))
         .routes(routes!(get_task_branches))
@@ -793,6 +796,16 @@ struct FreshQuery {
     fresh: bool,
 }
 
+// What a search accepts. `q` is the literal the index tests every task's text against; an empty
+// one matches nothing, so a caller may send every keystroke without a special case for the first.
+#[derive(Deserialize, utoipa::IntoParams)]
+struct SearchQuery {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    fresh: bool,
+}
+
 fn index_of(project: &Project, fresh: bool) -> Result<std::sync::MutexGuard<'_, Index>, ApiError> {
     match fresh {
         true => project.rebuilt_index(),
@@ -1067,6 +1080,68 @@ async fn get_merged_board(State(state): State<AppState>) -> Result<Json<Board>, 
     .await
     .map_err(join_error)?;
     Ok(Json(board))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/search",
+    params(("project" = String, Path, description = "Project name"), SearchQuery),
+    responses(
+        (status = 200, description = "Every task of the project whose text contains the query, on any branch", body = Vec<SearchHit>),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn search_project(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<Vec<SearchHit>>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let hits = tokio::task::spawn_blocking(move || -> Result<Vec<SearchHit>, ApiError> {
+        Ok(index_of(&project, query.fresh)?.search(&project.name(), &query.q))
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(hits))
+}
+
+// Search across every servable project, which is what the web palette asks: it opens over the
+// merged board, so it searches the same set of tasks that board shows. A project that cannot answer
+// drops out rather than failing the search, exactly as it drops off the merged board.
+#[utoipa::path(
+    get,
+    path = "/api/search",
+    params(SearchQuery),
+    responses(
+        (status = 200, description = "Every task of every servable project whose text contains the query, on any branch", body = Vec<SearchHit>),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody)
+    )
+)]
+async fn search_all(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<Vec<SearchHit>>, ApiError> {
+    let hits = tokio::task::spawn_blocking(move || {
+        let mut hits = Vec::new();
+        for project in state.projects() {
+            if project.blocked().is_some() {
+                continue;
+            }
+            // One project's index mutex at a time, for the reason the merged board takes them one
+            // at a time: a rebuild holds it for a full branch walk.
+            if let Ok(mut found) =
+                index_of(&project, query.fresh).map(|index| index.search(&project.name(), &query.q))
+            {
+                hits.append(&mut found);
+            }
+        }
+        hits
+    })
+    .await
+    .map_err(join_error)?;
+    Ok(Json(hits))
 }
 
 // Creation is branch-local like every other write: it lands in the live worktree of the target

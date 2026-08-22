@@ -7,7 +7,7 @@ import { copyTargetRow, hoveredRow } from "../../src/lib/copy-target"
 import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
 import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
-import type { Binding, RouteScope, RunContext } from "../../src/lib/keys/types"
+import type { Binding, OverlayName, PaletteTarget, RouteScope, RunContext } from "../../src/lib/keys/types"
 import { focusedRow, rowCursor } from "../../src/lib/row-cursor"
 
 const PROJECT = "open-plan"
@@ -16,27 +16,37 @@ interface Harness {
   readonly navigations: Array<string>
   readonly copied: Array<string | undefined>
   readonly overlay: { open: number; close: number; toggle: number }
+  readonly closed: Array<OverlayName>
+  readonly opened: Array<PaletteTarget>
   readonly detail: { editParent: number; addSubtask: number; goToParent: number; escape: number }
   setScope: (scope: RouteScope) => void
   setPath: (pathname: string) => void
-  setOverlayOpen: (open: boolean) => void
+  setOverlay: (name: OverlayName | null) => void
   detach: () => void
 }
 
 function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   let scope: RouteScope = "list"
   let pathname = "/"
-  let overlayOpen = false
+  let activeOverlay: OverlayName | null = null
   const navigations: Array<string> = []
   const copied: Array<string | undefined> = []
   const overlay = { open: 0, close: 0, toggle: 0 }
+  const closed: Array<OverlayName> = []
+  const opened: Array<PaletteTarget> = []
   const detail = { editParent: 0, addSubtask: 0, goToParent: 0, escape: 0 }
   const context = (): RunContext => ({
     navigate: (to) => navigations.push(to),
-    overlay: {
+    overlay: (name) => ({
       open: () => void overlay.open++,
-      close: () => void overlay.close++,
+      close: () => {
+        overlay.close++
+        closed.push(name)
+      },
       toggle: () => void overlay.toggle++,
+    }),
+    palette: {
+      open: (target) => void opened.push(target),
     },
     cursor: {
       moveBy: (delta) => {
@@ -66,7 +76,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const dispatcher = new Dispatcher({
     bindings: over,
     routeScope: () => scope,
-    overlayOpen: () => overlayOpen,
+    activeOverlay: () => activeOverlay,
     context,
     chordTimeoutMs: 1000,
   })
@@ -75,10 +85,12 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     navigations,
     copied,
     overlay,
+    closed,
+    opened,
     detail,
     setScope: (next) => void (scope = next),
     setPath: (next) => void (pathname = next),
-    setOverlayOpen: (next) => void (overlayOpen = next),
+    setOverlay: (next) => void (activeOverlay = next),
     detach,
   }
 }
@@ -170,18 +182,14 @@ describe("input scoping", () => {
     h.detach()
   })
 
-  it("still delivers a command-modified key from an editable element (future palette)", () => {
-    let fired = 0
-    const palette: Array<Binding> = [
-      { id: "palette", keys: "Mod+k", scope: "global", label: "Palette", group: "General", run: () => void fired++ },
-    ]
-    const h = mount(palette)
+  it("still delivers a command-modified key from an editable element", () => {
+    const h = mount()
     const input = document.createElement("input")
     document.body.append(input)
     input.focus()
 
     press("k", input, { metaKey: true })
-    expect(fired).toBe(1)
+    expect(h.opened).toEqual(["home"])
     h.detach()
   })
 })
@@ -259,10 +267,10 @@ describe("scope resolution", () => {
     h.detach()
   })
 
-  it("suppresses route and global bindings while the overlay is open", () => {
+  it("suppresses route and global bindings while the help overlay is open", () => {
     const h = mount()
     rowCursor.setRows(paths("a", "b", "c"))
-    h.setOverlayOpen(true)
+    h.setOverlay("help")
 
     press("j")
     expect(rowCursor.getSnapshot().index).toBe(-1)
@@ -290,7 +298,7 @@ describe("scope resolution", () => {
     press(".", window, { metaKey: true })
     expect(h.copied).toEqual(["12", "28"])
 
-    h.setOverlayOpen(true)
+    h.setOverlay("help")
     press(".", window, { metaKey: true })
     expect(h.copied).toEqual(["12", "28"])
     h.detach()
@@ -372,6 +380,37 @@ describe("scope resolution", () => {
     const h = mount()
     press("?")
     expect(h.overlay.toggle).toBe(1)
+    h.detach()
+  })
+
+  it("opens the palette on home from Cmd+K and on search from /", () => {
+    const h = mount()
+    press("k", window, { metaKey: true })
+    press("/")
+    expect(h.opened).toEqual(["home", "search"])
+    h.detach()
+  })
+
+  it("leaves / to a text field rather than opening the palette over it", () => {
+    const h = mount()
+    const input = document.createElement("input")
+    document.body.append(input)
+    input.focus()
+
+    press("/", input)
+    expect(h.opened).toEqual([])
+    h.detach()
+  })
+
+  it("Escape closes the palette, and the help overlay's keys stay out of its scope", () => {
+    const h = mount()
+    h.setOverlay("palette")
+
+    press("?")
+    expect(h.overlay.close).toBe(0)
+
+    press("Escape")
+    expect(h.closed).toEqual(["palette"])
     h.detach()
   })
 })

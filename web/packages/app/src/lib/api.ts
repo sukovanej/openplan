@@ -116,6 +116,18 @@ export const getMergedBoard: Effect.Effect<Api.Board, ApiError, HttpClient.HttpC
   }),
 )
 
+// Every servable project at once, matching the merged board the palette opens over. An empty query
+// matches nothing, so the caller may send every keystroke.
+export const searchTasks = (
+  query: string,
+): Effect.Effect<ReadonlyArray<Api.SearchHit>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.searchAll({ params: { q: query } })).pipe(
+    Effect.catchTags({
+      SearchAll500: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
 // Omitting `branch` returns the headline (current-worktree) version; passing one returns that
 // branch's version. Either way the response carries every branch the task lives on.
 export const getTask = (

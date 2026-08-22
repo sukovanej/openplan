@@ -1,5 +1,18 @@
-export type Scope = "global" | "list" | "detail" | "overlay" | "rows"
+// Every overlay the app can put over the page. One is open at a time, and each is its own key
+// scope, so two overlays can bind the same key without either one firing under the other.
+export const OVERLAY_NAMES = ["help", "palette"] as const
+export type OverlayName = (typeof OVERLAY_NAMES)[number]
+
+export type Scope = "global" | "list" | "detail" | "rows" | OverlayName
 export type RouteScope = "list" | "detail"
+
+export function isOverlayScope(scope: Scope): scope is OverlayName {
+  return (OVERLAY_NAMES as ReadonlyArray<string>).includes(scope)
+}
+
+// Which consumer the palette opens on. `home` is the seat the general command interface will take;
+// until it ships the only consumer registered there is search, so `home` lands where `search` does.
+export type PaletteTarget = "home" | "search"
 
 export type KeySpec = string | ReadonlyArray<string>
 
@@ -15,6 +28,10 @@ export interface CursorControls {
   readonly focusedRow: () => string | undefined
 }
 
+export interface PaletteControls {
+  readonly open: (target: PaletteTarget) => void
+}
+
 export interface CopyControls {
   readonly taskId: () => void
 }
@@ -28,7 +45,8 @@ export interface DetailControls {
 
 export interface RunContext {
   readonly navigate: (to: string) => void
-  readonly overlay: OverlayControls
+  readonly overlay: (name: OverlayName) => OverlayControls
+  readonly palette: PaletteControls
   readonly cursor: CursorControls
   readonly copy: CopyControls
   readonly detail: DetailControls

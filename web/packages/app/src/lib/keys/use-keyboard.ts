@@ -10,26 +10,28 @@ import { focusedRow, rowCursor, subtaskCursor } from "../row-cursor"
 import { bindings } from "./bindings"
 import { Dispatcher } from "./dispatcher"
 import { historyIndex } from "./history"
-import type { RouteScope, RunContext } from "./types"
+import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types"
 
 function routeScope(pathname: string): RouteScope {
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
 }
 
 export interface Keyboard {
-  readonly overlayOpen: boolean
+  readonly activeOverlay: OverlayName | null
+  readonly paletteTarget: PaletteTarget
   readonly closeOverlay: () => void
 }
 
 export function useKeyboard(): Keyboard {
   const navigate = useNavigate()
   const location = useLocation()
-  const [overlayOpen, setOverlayOpen] = useState(false)
+  const [activeOverlay, setActiveOverlay] = useState<OverlayName | null>(null)
+  const [paletteTarget, setPaletteTarget] = useState<PaletteTarget>("home")
 
   const pathname = location.pathname
   const scope = routeScope(pathname)
-  const live = useRef({ navigate, pathname, scope, overlayOpen })
-  live.current = { navigate, pathname, scope, overlayOpen }
+  const live = useRef({ navigate, pathname, scope, activeOverlay })
+  live.current = { navigate, pathname, scope, activeOverlay }
 
   // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
   // route would stay the copy target on the next one.
@@ -46,10 +48,16 @@ export function useKeyboard(): Keyboard {
     const activeCursor = () => (live.current.scope === "detail" ? subtaskCursor : rowCursor)
     const context = (): RunContext => ({
       navigate: (to) => live.current.navigate(to),
-      overlay: {
-        open: () => setOverlayOpen(true),
-        close: () => setOverlayOpen(false),
-        toggle: () => setOverlayOpen((open) => !open),
+      overlay: (name) => ({
+        open: () => setActiveOverlay(name),
+        close: () => setActiveOverlay((open) => (open === name ? null : open)),
+        toggle: () => setActiveOverlay((open) => (open === name ? null : name)),
+      }),
+      palette: {
+        open: (target) => {
+          setPaletteTarget(target)
+          setActiveOverlay("palette")
+        },
       },
       cursor: {
         // The mouse clears the keyboard cursor (the row lists do that on mousemove); moving the
@@ -98,11 +106,11 @@ export function useKeyboard(): Keyboard {
     const dispatcher = new Dispatcher({
       bindings,
       routeScope: () => live.current.scope,
-      overlayOpen: () => live.current.overlayOpen,
+      activeOverlay: () => live.current.activeOverlay,
       context,
     })
     return dispatcher.attach()
   }, [])
 
-  return { overlayOpen, closeOverlay: () => setOverlayOpen(false) }
+  return { activeOverlay, paletteTarget, closeOverlay: () => setActiveOverlay(null) }
 }

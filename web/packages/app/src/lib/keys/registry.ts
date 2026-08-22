@@ -1,5 +1,5 @@
 import { chordOf } from "./match"
-import type { Binding } from "./types"
+import { type Binding, isOverlayScope } from "./types"
 
 export interface HelpEntry {
   readonly id: string
@@ -16,7 +16,7 @@ export function helpGroups(bindings: ReadonlyArray<Binding>): ReadonlyArray<Help
   const order: Array<string> = []
   const byGroup = new Map<string, Array<HelpEntry>>()
   for (const binding of bindings) {
-    if (binding.scope === "overlay") continue
+    if (isOverlayScope(binding.scope)) continue
     let entries = byGroup.get(binding.group)
     if (entries === undefined) {
       entries = []
