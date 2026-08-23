@@ -891,6 +891,290 @@ async fn delete_is_local_to_the_in_view_branch() {
     assert_eq!(names, vec!["feature"], "only feature retains alpha");
 }
 
+// A task the serve root's branch never carried: `feature` adds `alpha` in its own live worktree,
+// and `main` has no copy of it at all. The aggregated reads still list it, so a write to it has to
+// land somewhere.
+fn git_state_alpha_only_on_live_feature() -> (tempfile::TempDir, AppState) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+
+    let wt = root.join(".worktrees/feature");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+        ],
+    );
+    std::fs::create_dir_all(wt.join(".plan/tasks")).unwrap();
+    write_alpha(&wt, "todo", "Alpha");
+    git(&wt, &["add", "."]);
+    git(&wt, &["commit", "-qm", "feature: add alpha"]);
+
+    let store = op_store::Store::discover(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = project_state(root, repo, store);
+    (dir, state)
+}
+
+// Like the above, but no worktree holds `feature`, so nothing can write `alpha` at all.
+fn git_state_alpha_only_on_a_parked_branch() -> (tempfile::TempDir, AppState) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write_alpha(root, "todo", "Alpha");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "feature: add alpha"]);
+    git(root, &["checkout", "-q", "main"]);
+
+    let store = op_store::Store::discover(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = project_state(root, repo, store);
+    (dir, state)
+}
+
+fn row(items: &Value, id: &str) -> Value {
+    items
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == id)
+        .unwrap_or_else(|| panic!("{id} is listed: {items:?}"))
+        .clone()
+}
+
+fn message_of(body: &Value) -> String {
+    body["message"].as_str().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn a_read_names_the_branch_a_write_would_land_on() {
+    let (_dir, state) = git_state_alpha_only_on_live_feature();
+    let list = send(&state, "GET", "/api/projects/test/tasks", None).await;
+    let alpha = row(&body_json(list).await, "OPP-1");
+    assert_eq!(
+        alpha["write_target"],
+        json!({ "branch": "feature", "writable": true }),
+        "main never carried alpha, so a write goes to feature's live worktree"
+    );
+
+    let detail = send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await;
+    assert_eq!(
+        body_json(detail).await["write_target"],
+        json!({ "branch": "feature", "writable": true })
+    );
+}
+
+// A read scoped to a branch shows that branch's version, so it must name that branch as what an edit
+// of what is on screen writes to. Naming the branch a branchless write would pick instead would have
+// the client edit a version it is not showing.
+#[tokio::test]
+async fn a_branch_scoped_read_writes_to_the_branch_it_read() {
+    let (_dir, state) = git_state_live_feature();
+    let detail = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-1?branch=feature",
+        None,
+    )
+    .await;
+    let view = body_json(detail).await;
+    assert_eq!(view["metadata"]["status"], "done", "feature's version");
+    assert_eq!(
+        view["write_target"],
+        json!({ "branch": "feature", "writable": true }),
+        "the version on screen is feature's, and so is the write"
+    );
+
+    let list = send(&state, "GET", "/api/projects/test/tasks?branch=main", None).await;
+    assert_eq!(
+        row(&body_json(list).await, "OPP-1")["write_target"],
+        json!({ "branch": "main", "writable": true }),
+        "a branch-scoped list reads and writes the same branch"
+    );
+}
+
+// A task a branch agrees with its merge-base about contributes no matrix cell, so it can be
+// headlined by no branch at all while a live worktree still holds the file. The write has to find
+// that worktree — this is the 404 [[OPP-35]] is about, in the shape the matrix cannot see.
+#[tokio::test]
+async fn a_task_with_no_matrix_cell_still_writes_where_it_lives() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    write_alpha(root, "todo", "Alpha");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "init"]);
+
+    // `feature` keeps alpha exactly as the merge-base has it, so it diverges in nothing and gets no
+    // cell; main then drops the task, which leaves the task with no cell anywhere.
+    let wt = root.join(".worktrees/feature");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            wt.to_str().unwrap(),
+        ],
+    );
+    std::fs::remove_file(root.join(".plan/tasks/00001-alpha.md")).unwrap();
+    git(root, &["commit", "-qam", "main: drop alpha"]);
+
+    let store = op_store::Store::discover(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let state = project_state(root, repo, store);
+
+    let list = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks?branch=feature",
+        None,
+    )
+    .await;
+    assert_eq!(
+        row(&body_json(list).await, "OPP-1")["write_target"],
+        json!({ "branch": "feature", "writable": true })
+    );
+
+    let patch = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tasks/OPP-1",
+        Some(json!({ "status": "done" })),
+    )
+    .await;
+    assert_eq!(patch.status(), StatusCode::OK, "the file is right there");
+    assert!(
+        worktree_store(&wt)
+            .read_raw(1)
+            .unwrap()
+            .contains("status: done"),
+        "and the write lands in the worktree that holds it"
+    );
+}
+
+#[tokio::test]
+async fn patch_writes_through_to_the_branch_that_holds_the_task() {
+    let (dir, state) = git_state_alpha_only_on_live_feature();
+    let patch = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tasks/OPP-1",
+        Some(json!({ "status": "done" })),
+    )
+    .await;
+    assert_eq!(patch.status(), StatusCode::OK);
+    assert_eq!(body_json(patch).await["metadata"]["status"], "done");
+
+    let feature = worktree_store(dir.path().join(".worktrees/feature"));
+    assert!(
+        feature.read_raw(1).unwrap().contains("status: done"),
+        "the write lands in the worktree that holds the task"
+    );
+    assert!(
+        !worktree_store(dir.path()).exists(1),
+        "and never conjures a copy in the serve root"
+    );
+}
+
+#[tokio::test]
+async fn delete_writes_through_to_the_branch_that_holds_the_task() {
+    let (dir, state) = git_state_alpha_only_on_live_feature();
+    let deleted = send(&state, "DELETE", "/api/projects/test/tasks/OPP-1", None).await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+    assert!(
+        !worktree_store(dir.path().join(".worktrees/feature")).exists(1),
+        "feature's copy is the one that goes"
+    );
+}
+
+#[tokio::test]
+async fn a_named_branch_that_lacks_the_task_is_refused_with_where_it_lives() {
+    let (_dir, state) = git_state_alpha_only_on_live_feature();
+    let patch = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tasks/OPP-1?branch=main",
+        Some(json!({ "status": "done" })),
+    )
+    .await;
+    assert_eq!(patch.status(), StatusCode::NOT_FOUND);
+    let message = message_of(&body_json(patch).await);
+    assert!(
+        message.contains("branch main") && message.contains("it lives on feature"),
+        "the refusal names the branch it wrote and the branch that holds it: {message}"
+    );
+}
+
+#[tokio::test]
+async fn a_task_no_branch_holds_is_refused_as_no_such_task() {
+    let (_dir, state) = git_state_alpha_only_on_live_feature();
+    let patch = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tasks/OPP-99",
+        Some(json!({ "status": "done" })),
+    )
+    .await;
+    assert_eq!(patch.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        message_of(&body_json(patch).await),
+        "no such task: OPP-99",
+        "nothing to point at, so the refusal stays plain"
+    );
+}
+
+#[tokio::test]
+async fn a_task_no_live_worktree_holds_reads_as_unwritable() {
+    let (_dir, state) = git_state_alpha_only_on_a_parked_branch();
+    let list = send(&state, "GET", "/api/projects/test/tasks", None).await;
+    let alpha = row(&body_json(list).await, "OPP-1");
+    assert_eq!(
+        alpha["write_target"],
+        json!({ "branch": "feature", "writable": false }),
+        "the write would go to feature, and no worktree holds it: {alpha:?}"
+    );
+
+    let patch = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tasks/OPP-1",
+        Some(json!({ "status": "done" })),
+    )
+    .await;
+    assert_eq!(patch.status(), StatusCode::CONFLICT);
+    let message = message_of(&body_json(patch).await);
+    assert!(
+        message.contains("feature"),
+        "the refusal names the branch it would have written: {message}"
+    );
+}
+
 // Like `git_state`, but `feature` is checked out in a live linked worktree so writes to it land,
 // and its `alpha` diverges to `done` over main's `todo`.
 fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
@@ -932,6 +1216,41 @@ fn git_state_live_feature() -> (tempfile::TempDir, AppState) {
     let repo = op_git::Repo::discover(root).unwrap();
     let state = project_state(root, repo, store);
     (dir, state)
+}
+
+#[tokio::test]
+async fn a_stalled_serve_root_refuses_rather_than_redirecting_the_write() {
+    let (dir, state) = git_state_live_feature();
+    // Main carries alpha, so the write is main's to make — and main is mid-merge, so it cannot be
+    // made at all. `feature` carries alpha too, and holding the write is the only honest answer:
+    // landing it there would edit a version nobody asked about.
+    std::fs::write(dir.path().join(".git/MERGE_HEAD"), "").unwrap();
+    let patch = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tasks/OPP-1",
+        Some(json!({ "status": "in_progress" })),
+    )
+    .await;
+    assert_eq!(patch.status(), StatusCode::CONFLICT);
+    let message = message_of(&body_json(patch).await);
+    assert!(
+        message.contains("main"),
+        "the refusal names the branch that owns the write: {message}"
+    );
+    let detail = send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await;
+    assert_eq!(
+        body_json(detail).await["write_target"],
+        json!({ "branch": "main", "writable": false }),
+        "and the read names main too, not the branch it headlines on"
+    );
+    assert!(
+        worktree_store(dir.path().join(".worktrees/feature"))
+            .read_raw(1)
+            .unwrap()
+            .contains("status: done"),
+        "feature's version stands untouched"
+    );
 }
 
 #[tokio::test]

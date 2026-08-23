@@ -539,6 +539,7 @@ pub struct TaskRef {
 // Paired with every branch it lives on, so a cold-loaded page renders a branch switcher without the
 // list in memory; `headline` names the branch the shown version resolves to. `parent_title`,
 // `children`, and `refs` carry the immediate hierarchy so the page renders from this one read.
+// `write_target` names where an edit of the shown version lands, and whether it can land there.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskDetail {
     pub project: String,
@@ -549,6 +550,9 @@ pub struct TaskDetail {
     pub updated: Field<Rfc3339>,
     pub headline: String,
     pub branches: Vec<BranchState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub write_target: Option<WriteTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub parent_title: Option<String>,
@@ -562,7 +566,8 @@ pub struct TaskDetail {
 // `headline` branch (the most recently changed one), plus one `branches` entry per branch so a
 // client can render badges, mark the headline, and spot divergence. `project` is the coordinate the
 // key alone cannot carry: two stores can commit the same abbreviation, so `id` names a task only
-// within its project.
+// within its project. `write_target` reads as it does on `TaskDetail`: a row the aggregate shows
+// from another branch says here where acting on it would land.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskListItem {
     pub project: String,
@@ -572,6 +577,20 @@ pub struct TaskListItem {
     pub updated: Field<Rfc3339>,
     pub headline: String,
     pub branches: Vec<BranchState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub write_target: Option<WriteTarget>,
+}
+
+// Where a write to one task lands, and whether it can land there now. A read scoped to a branch
+// writes to that branch; a read of the aggregate writes wherever the task lives. `writable` is false
+// while no live worktree holds `branch` — none has it checked out, or the one that does is mid-merge
+// — and the daemon then refuses every write to the task. A client reads this to offer only the
+// actions that can succeed, and to name the branch that stops the rest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct WriteTarget {
+    pub branch: String,
+    pub writable: bool,
 }
 
 // One task a search matched, with the branch whose version of it matched. The task itself is the

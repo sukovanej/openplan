@@ -23,6 +23,10 @@ fn with_metadata(id: &str, metadata: Metadata) -> TaskListItem {
         updated: op_api::Field::Error(op_api::FieldError::Missing),
         headline: "main".to_owned(),
         branches: Vec::new(),
+        write_target: Some(op_api::WriteTarget {
+            branch: "main".to_owned(),
+            writable: true,
+        }),
     }
 }
 

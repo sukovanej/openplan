@@ -28,6 +28,7 @@ import {
   PanelTitle,
   Row,
   Section,
+  Tooltip,
 } from "@open-planner/ui"
 
 import { BodySkeleton, DetailSkeleton } from "../components/states"
@@ -42,6 +43,36 @@ import { taskMatches } from "../lib/task-search"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
 const NO_CHILDREN: ReadonlyArray<TaskChild> = []
+
+// Where an edit of the shown version lands, and what to say when it can land nowhere. The daemon
+// resolves the branch and reports whether a live worktree can take the write, so the page names that
+// branch rather than guessing at one, and offers only the actions that can succeed.
+interface WriteHere {
+  readonly branch: string | undefined
+  readonly blocked: string | undefined
+}
+
+function writeHere(task: TaskDetail | TaskListItem): WriteHere {
+  const target = task.write_target
+  if (target === undefined) {
+    return { branch: undefined, blocked: "This repository has no branch to write to." }
+  }
+  return {
+    branch: target.branch,
+    blocked: target.writable ? undefined : `No writable worktree holds ${target.branch}, so this task cannot change.`,
+  }
+}
+
+// Focusable, so the keyboard reaches the reason too: it replaces a control that had focus of its own.
+function Blocked({ reason }: { reason: string }) {
+  return (
+    <Tooltip content={reason}>
+      <span tabIndex={0} className="text-muted-foreground/70 text-xs italic">
+        read-only
+      </span>
+    </Tooltip>
+  )
+}
 
 export function DetailRoute() {
   const { project = "", id = "" } = useParams()
@@ -104,6 +135,7 @@ function TaskDetailView({
   onSelect: (branch: string | undefined) => void
 }) {
   const abbreviation = useAbbreviation(project)
+  const write = writeHere(detail ?? task)
   return (
     <Panel>
       <PanelHeader className="gap-2">
@@ -117,6 +149,7 @@ function TaskDetailView({
             parent={detail === null ? undefined : parentOf(detail.metadata)}
             parentTitle={detail?.parent_title}
             ready={detail !== null}
+            write={write}
           />
         </div>
       </PanelHeader>
@@ -149,6 +182,7 @@ function TaskDetailView({
           id={task.id}
           items={detail?.children ?? NO_CHILDREN}
           ready={detail !== null}
+          write={write}
         />
       </PanelBody>
     </Panel>
@@ -210,22 +244,31 @@ function HeaderParent({
   parent,
   parentTitle,
   ready,
+  write,
 }: {
   project: string
   id: string
   parent: string | undefined
   parentTitle: string | undefined
   ready: boolean
+  write: WriteHere
 }) {
   const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
-  useDetailAction("edit-parent", () => setEditing(true))
+  useDetailAction("edit-parent", () => {
+    if (write.blocked === undefined) setEditing(true)
+  })
+  // A refresh can take the write target away while the picker stands open — another worktree took
+  // the branch, or a merge started there. Close it rather than leave a control that cannot land.
+  useEffect(() => {
+    if (write.blocked !== undefined) setEditing(false)
+  }, [write.blocked])
   useDetailAction("go-parent", () => {
     if (parent !== undefined && parentTitle !== undefined) navigate(taskPath(project, parent))
   })
 
   if (editing) {
-    return <ParentPicker project={project} id={id} onClose={() => setEditing(false)} />
+    return <ParentPicker project={project} id={id} branch={write.branch} onClose={() => setEditing(false)} />
   }
   // The parent is unknown until the detail loads; show nothing rather than a misleading "Set parent".
   if (!ready) return null
@@ -239,27 +282,41 @@ function HeaderParent({
       ) : hasParent ? (
         <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
       ) : null}
-      <Button
-        onClick={() => setEditing(true)}
-        aria-label={hasParent ? "Change parent" : "Set parent"}
-        className="gap-1 px-1.5"
-      >
-        {hasParent ? (
-          <Pencil className="size-3.5" />
-        ) : (
-          <>
-            <Plus className="size-3.5" />
-            Set parent
-          </>
-        )}
-      </Button>
+      {write.blocked !== undefined ? (
+        <Blocked reason={write.blocked} />
+      ) : (
+        <Button
+          onClick={() => setEditing(true)}
+          aria-label={hasParent ? "Change parent" : "Set parent"}
+          className="gap-1 px-1.5"
+        >
+          {hasParent ? (
+            <Pencil className="size-3.5" />
+          ) : (
+            <>
+              <Plus className="size-3.5" />
+              Set parent
+            </>
+          )}
+        </Button>
+      )}
     </div>
   )
 }
 
 // The full task list is needed only to search for a new parent, so it is fetched here — when the
 // picker opens — rather than on every detail view. Excludes self + descendants so a pick can't cycle.
-function ParentPicker({ project, id, onClose }: { project: string; id: string; onClose: () => void }) {
+function ParentPicker({
+  project,
+  id,
+  branch,
+  onClose,
+}: {
+  project: string
+  id: string
+  branch: string | undefined
+  onClose: () => void
+}) {
   const tasks = useQuery(tasksQuery(project))
   useEffect(() => {
     tasksQuery(project).refresh()
@@ -281,19 +338,19 @@ function ParentPicker({ project, id, onClose }: { project: string; id: string; o
               Top level (no parent)
             </span>
           ),
-          onSelect: () => void runMutation(project, patchTask(project, id, { parent: null })),
+          onSelect: () => void runMutation(project, patchTask(project, id, { parent: null }, branch)),
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
         options.push({
           key: task.id,
           content: <ComboTaskRow task={task} indices={indices} />,
-          onSelect: () => void runMutation(project, patchTask(project, id, { parent: task.id })),
+          onSelect: () => void runMutation(project, patchTask(project, id, { parent: task.id }, branch)),
         })
       }
       return options
     },
-    [all, project, id],
+    [all, project, id, branch],
   )
 
   return (
@@ -314,14 +371,21 @@ function SubtasksSection({
   id,
   items,
   ready,
+  write,
 }: {
   project: string
   id: string
   items: ReadonlyArray<TaskChild>
   ready: boolean
+  write: WriteHere
 }) {
   const [adding, setAdding] = useState(false)
-  useDetailAction("add-subtask", () => setAdding(true))
+  useDetailAction("add-subtask", () => {
+    if (write.blocked === undefined) setAdding(true)
+  })
+  useEffect(() => {
+    if (write.blocked !== undefined) setAdding(false)
+  }, [write.blocked])
 
   const childPaths = useMemo(() => items.map((child) => taskPath(project, child.id)), [project, items])
   const { index } = useSubtaskCursor(taskPath(project, id), childPaths)
@@ -335,15 +399,19 @@ function SubtasksSection({
       title="Subtasks"
       count={items.length}
       action={
-        <Button variant="accent" onClick={() => setAdding((open) => !open)}>
-          <Plus className="size-3.5" />
-          Add subtask
-        </Button>
+        write.blocked !== undefined ? (
+          <Blocked reason={write.blocked} />
+        ) : (
+          <Button variant="accent" onClick={() => setAdding((open) => !open)}>
+            <Plus className="size-3.5" />
+            Add subtask
+          </Button>
+        )
       }
     >
       {adding && (
         <div className="mb-3">
-          <SubtaskPicker project={project} id={id} onClose={() => setAdding(false)} />
+          <SubtaskPicker project={project} id={id} branch={write.branch} onClose={() => setAdding(false)} />
         </div>
       )}
       {items.length === 0 ? (
@@ -387,7 +455,17 @@ function SubtasksSection({
 // Opened on demand, so the full task list it searches is fetched only when adding — not per detail
 // view. Making a task a child of `id` closes a cycle only when that task is an ancestor of `id`, so
 // exclude the ancestor chain (and self); descendants are valid re-parent targets.
-function SubtaskPicker({ project, id, onClose }: { project: string; id: string; onClose: () => void }) {
+function SubtaskPicker({
+  project,
+  id,
+  branch,
+  onClose,
+}: {
+  project: string
+  id: string
+  branch: string | undefined
+  onClose: () => void
+}) {
   const tasks = useQuery(tasksQuery(project))
   useEffect(() => {
     tasksQuery(project).refresh()
@@ -410,7 +488,7 @@ function SubtaskPicker({ project, id, onClose }: { project: string; id: string; 
               </span>
             </span>
           ),
-          onSelect: () => void runMutation(project, createTask(project, { title: query, parent: id })),
+          onSelect: () => void runMutation(project, createTask(project, { title: query, parent: id }, branch)),
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
@@ -418,12 +496,14 @@ function SubtaskPicker({ project, id, onClose }: { project: string; id: string; 
         options.push({
           key: task.id,
           content: <ComboTaskRow task={task} indices={indices} />,
-          onSelect: () => void runMutation(project, patchTask(project, task.id, { parent: id })),
+          // The parent's branch, not the child's: a parent the child's branch does not carry is no
+          // parent at all there, so the pair has to move on the branch that holds the parent.
+          onSelect: () => void runMutation(project, patchTask(project, task.id, { parent: id }, branch)),
         })
       }
       return options
     },
-    [all, project, id],
+    [all, project, id, branch],
   )
 
   return (
