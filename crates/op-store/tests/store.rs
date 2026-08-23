@@ -1161,3 +1161,94 @@ fn a_tag_file_that_does_not_parse_names_itself() {
         "one bad file among many must say which one: {refused:?}"
     );
 }
+
+#[test]
+fn a_rename_that_only_moves_the_heading_keeps_the_file() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    let id = tagged(&store, "Wire the parser", &["backend"]).unwrap();
+
+    let rewritten = store.rename_tag("backend", "Backend").unwrap();
+
+    assert!(rewritten.is_empty(), "no task moved, so none was rewritten");
+    assert_eq!(
+        store.read_tag("backend").unwrap().display_name().as_deref(),
+        Some("Backend")
+    );
+    assert_eq!(tags_of(&store, id), vec!["backend"]);
+}
+
+#[test]
+fn an_update_cannot_rename_a_tag() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+
+    let refused = store.update_tag("backend", |tag| {
+        tag.rename("infra").unwrap();
+        Ok(())
+    });
+    assert!(
+        matches!(&refused, Err(StoreError::Invalid(message)) if message.contains("rename_tag")),
+        "an update writes where the name it was given points, so it must not move a tag: {refused:?}"
+    );
+    assert!(store.tag_exists("backend"));
+    assert!(!store.tag_exists("infra"));
+    assert_eq!(
+        store.read_tag("backend").unwrap().display_name().as_deref(),
+        Some("backend"),
+        "the refused update must leave the file untouched"
+    );
+}
+
+#[test]
+fn a_rename_stops_before_it_publishes_when_a_referencing_task_cannot_be_written() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    plant(
+        &store,
+        1,
+        "---\nstatus: todo\ntags:\n- backend\n---\n# Planted\n",
+    );
+    let writable = tagged(&store, "Wire the parser", &["backend"]).unwrap();
+
+    let refused = store.rename_tag("backend", "infra");
+
+    assert!(
+        matches!(&refused, Err(StoreError::MissingCreated { .. })),
+        "the lenient scan counts a task the model cannot write: {refused:?}"
+    );
+    assert!(
+        store.tag_exists("backend") && !store.tag_exists("infra"),
+        "a rename that cannot finish must not publish the new name"
+    );
+    assert_eq!(tags_of(&store, writable), vec!["backend"]);
+    assert!(
+        tag_temp_files(&store).is_empty(),
+        "a refused rename leaves no temp file: {:?}",
+        tag_temp_files(&store)
+    );
+}
+
+#[test]
+fn a_rename_keeps_the_old_name_registered_until_every_task_moves() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    let ids: Vec<u64> = (0..3)
+        .map(|i| tagged(&store, &format!("Task {i}"), &["backend"]).unwrap())
+        .collect();
+
+    // Each rewrite runs `validate`-free, but the tasks still on the old name must stay writable
+    // while the rename walks the list, so the old file may only go once the last one has moved.
+    store.rename_tag("backend", "infra").unwrap();
+
+    for id in ids {
+        assert_eq!(tags_of(&store, id), vec!["infra"]);
+        store
+            .update(id, |task| {
+                task.set_status(Status::Done);
+                Ok(())
+            })
+            .unwrap();
+    }
+    assert!(!store.tag_exists("backend"));
+}

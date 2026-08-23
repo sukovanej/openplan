@@ -718,11 +718,16 @@ impl ApiError {
 impl From<StoreError> for ApiError {
     fn from(err: StoreError) -> Self {
         let status = match &err {
-            StoreError::NotFound { .. } => StatusCode::NOT_FOUND,
-            StoreError::Invalid(_) | StoreError::InvalidRef { .. } => StatusCode::BAD_REQUEST,
+            StoreError::NotFound { .. } | StoreError::TagNotFound { .. } => StatusCode::NOT_FOUND,
+            StoreError::Invalid(_)
+            | StoreError::InvalidRef { .. }
+            | StoreError::InvalidColor(_) => StatusCode::BAD_REQUEST,
+            StoreError::TagExists { .. } | StoreError::TagReferenced { .. } => StatusCode::CONFLICT,
             // The request is fine and the daemon is fine; the stored file is the thing that has to
             // change, and only a human can change it.
-            StoreError::MissingCreated { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+            StoreError::MissingCreated { .. } | StoreError::TagFile { .. } => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         Self::new(status, err.to_string())

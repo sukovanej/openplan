@@ -30,21 +30,9 @@ impl Store {
     }
 
     pub fn create_tag(&self, tag: &Tag) -> Result<(), StoreError> {
-        let name = normalized(&tag.name)?;
-        let contents = self.tag_file_string(tag)?;
-        std::fs::create_dir_all(self.tags_dir())?;
-        let tmp = write_temp(&self.tags_dir(), contents.as_bytes())?;
-        // Publish with a non-clobbering hard link, like `link_id`: a name another writer took in the
-        // meantime is reported rather than overwritten.
-        let result = match std::fs::hard_link(&tmp, self.tag_file(&name)) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                Err(StoreError::TagExists { name })
-            }
-            Err(e) => Err(e.into()),
-        };
-        let _ = std::fs::remove_file(&tmp);
-        result
+        let mut tag = tag.clone();
+        tag.name = normalized(&tag.name)?;
+        self.publish_tag(&tag)
     }
 
     pub fn write_tag(&self, tag: &Tag) -> Result<(), StoreError> {
@@ -71,6 +59,16 @@ impl Store {
             || {
                 let mut tag = self.read_tag_file(&path, name.clone())?;
                 mutate(&mut tag)?;
+                // The path came from the name the caller asked for, so a mutator that renamed the
+                // tag would write the new tag over the old file and report a move that never
+                // happened.
+                if tag.name != name {
+                    return Err(StoreError::Invalid(format!(
+                        "an update cannot rename {name} to {}; `rename_tag` also moves the file \
+                         and the tasks that reference it",
+                        tag.name
+                    )));
+                }
                 atomic_replace(&path, self.tag_file_string(&tag)?.as_bytes())?;
                 Ok(tag)
             },
@@ -83,44 +81,58 @@ impl Store {
     // reaches this worktree's files.
     pub fn rename_tag(&self, name: &str, new_display_name: &str) -> Result<Vec<u64>, StoreError> {
         let name = normalized(name)?;
-        let from = self.tag_path(&name)?;
-        let mut renamed = self.read_tag_file(&from, name.clone())?;
-        renamed.rename(new_display_name).map_err(invalid)?;
-        let new_name = renamed.name.clone();
-        let referencing = self.tasks_tagged(&name)?;
-
-        let tmp = write_temp(&self.tags_dir(), self.tag_file_string(&renamed)?.as_bytes())?;
-        let published = match std::fs::hard_link(&tmp, self.tag_file(&new_name)) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(StoreError::TagExists {
-                name: new_name.clone(),
-            }),
-            Err(e) => Err(e.into()),
-        };
-        let _ = std::fs::remove_file(&tmp);
-        published?;
-
-        std::fs::remove_file(&from)?;
-        for id in &referencing {
-            self.retag(*id, &name, &new_name)?;
-        }
-        Ok(referencing)
+        let path = self.tag_path(&name)?;
+        with_file_lock(
+            &path,
+            || StoreError::TagNotFound { name: name.clone() },
+            || {
+                let mut renamed = self.read_tag_file(&path, name.clone())?;
+                renamed.rename(new_display_name).map_err(invalid)?;
+                // Only the heading moved, so there is no file to publish and no task to rewrite.
+                // Publishing would hard-link the tag onto itself and read as `TagExists`.
+                if renamed.name == name {
+                    atomic_replace(&path, self.tag_file_string(&renamed)?.as_bytes())?;
+                    return Ok(Vec::new());
+                }
+                let referencing = self.tasks_tagged(&name)?;
+                // The reference scan is lenient, so it counts a task the model cannot write back.
+                // Find that task before anything is published, or the rename stops with the new
+                // file already in place and the tasks still on the old name.
+                for id in &referencing {
+                    self.read(*id)?;
+                }
+                self.publish_tag(&renamed)?;
+                // The old name stays registered until the last task moves off it, so no task ever
+                // holds a name this branch does not know.
+                for id in &referencing {
+                    self.retag(*id, &name, &renamed.name)?;
+                }
+                std::fs::remove_file(&path)?;
+                Ok(referencing)
+            },
+        )
     }
 
     pub fn delete_tag(&self, name: &str, force: bool) -> Result<(), StoreError> {
         let name = normalized(name)?;
         let path = self.tag_path(&name)?;
-        if !force {
-            let count = self.tasks_tagged(&name)?.len();
-            if count > 0 {
-                return Err(StoreError::TagReferenced { name, count });
-            }
-        }
-        match std::fs::remove_file(path) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Err(StoreError::TagNotFound { name }),
-            Err(e) => Err(e.into()),
-        }
+        with_file_lock(
+            &path,
+            || StoreError::TagNotFound { name: name.clone() },
+            || {
+                if !force {
+                    let count = self.tasks_tagged(&name)?.len();
+                    if count > 0 {
+                        return Err(StoreError::TagReferenced {
+                            name: name.clone(),
+                            count,
+                        });
+                    }
+                }
+                std::fs::remove_file(&path)?;
+                Ok(())
+            },
+        )
     }
 
     pub(crate) fn tag_names(&self) -> Result<BTreeSet<String>, StoreError> {
@@ -167,6 +179,23 @@ impl Store {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Err(StoreError::TagNotFound { name }),
             Err(e) => Err(e.into()),
         }
+    }
+
+    // A non-clobbering hard link, like `link_id`: a name another writer took in the meantime is
+    // reported rather than overwritten, and the watcher only ever sees a complete file.
+    fn publish_tag(&self, tag: &Tag) -> Result<(), StoreError> {
+        let contents = self.tag_file_string(tag)?;
+        std::fs::create_dir_all(self.tags_dir())?;
+        let tmp = write_temp(&self.tags_dir(), contents.as_bytes())?;
+        let result = match std::fs::hard_link(&tmp, self.tag_file(&tag.name)) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(StoreError::TagExists {
+                name: tag.name.clone(),
+            }),
+            Err(e) => Err(e.into()),
+        };
+        let _ = std::fs::remove_file(&tmp);
+        result
     }
 
     fn tag_file_string(&self, tag: &Tag) -> Result<String, StoreError> {
