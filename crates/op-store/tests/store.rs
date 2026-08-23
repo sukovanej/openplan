@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use op_store::{Config, Store, StoreError};
+use op_task::tag::{Color, Tag};
 use op_task::{Abbreviation, Status, Task, Timestamp};
 
 fn stamp() -> Timestamp {
@@ -776,5 +777,387 @@ fn a_write_leaves_a_quoted_reference_alone() {
     assert!(
         raw.ends_with(&body),
         "an unrelated edit must not rewrite prose about the spelling: {raw}"
+    );
+}
+
+fn tag_temp_files(store: &Store) -> Vec<String> {
+    std::fs::read_dir(store.tags_dir())
+        .unwrap()
+        .filter_map(|e| e.unwrap().file_name().into_string().ok())
+        .filter(|name| !name.ends_with(".md"))
+        .collect()
+}
+
+fn register(store: &Store, display_name: &str) -> String {
+    let tag = Tag::new(display_name, None).unwrap();
+    store.create_tag(&tag).unwrap();
+    tag.name
+}
+
+fn tagged(store: &Store, title: &str, tags: &[&str]) -> Result<u64, StoreError> {
+    let mut task = Task::new(title, Status::Todo, stamp());
+    task.set_tags(tags.iter().map(|name| (*name).to_owned()).collect());
+    create(store, &task)
+}
+
+fn tags_of(store: &Store, id: u64) -> Vec<String> {
+    store.read(id).unwrap().frontmatter.tags
+}
+
+#[test]
+fn tag_create_read_update_delete_roundtrip() {
+    let (_dir, store) = make_store();
+
+    store
+        .create_tag(&Tag::new("Backend", Some(Color::Teal)).unwrap())
+        .unwrap();
+
+    let created = store.read_tag("backend").unwrap();
+    assert_eq!(created.name, "backend");
+    assert_eq!(created.color(), Color::Teal);
+    assert_eq!(created.display_name().as_deref(), Some("Backend"));
+    assert!(store.tag_exists("backend"));
+
+    let raw = std::fs::read_to_string(store.tags_dir().join("backend.md")).unwrap();
+    assert_eq!(
+        raw,
+        created.to_file_string().unwrap(),
+        "the file holds the tag and nothing else — the name lives only in the filename"
+    );
+
+    let updated = store
+        .update_tag("backend", |tag| {
+            tag.set_color(Color::Pink);
+            tag.append_body("Server-side work.");
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(updated.color(), Color::Pink);
+    assert_eq!(store.read_tag("backend").unwrap(), updated);
+    assert!(
+        store
+            .read_tag("backend")
+            .unwrap()
+            .body
+            .contains("Server-side work.")
+    );
+
+    let mut recolored = store.read_tag("backend").unwrap();
+    recolored.set_color(Color::Amber);
+    store.write_tag(&recolored).unwrap();
+    assert_eq!(store.read_tag("backend").unwrap().color(), Color::Amber);
+
+    assert_eq!(
+        store.list_tags().unwrap(),
+        vec![store.read_tag("backend").unwrap()]
+    );
+
+    store.delete_tag("backend", false).unwrap();
+    assert!(!store.tag_exists("backend"));
+    assert!(matches!(
+        store.read_tag("backend"),
+        Err(StoreError::TagNotFound { .. })
+    ));
+    assert!(
+        tag_temp_files(&store).is_empty(),
+        "no temp file should survive a tag roundtrip: {:?}",
+        tag_temp_files(&store)
+    );
+}
+
+#[test]
+fn creating_a_tag_twice_is_refused() {
+    let (_dir, store) = make_store();
+    let tag = Tag::new("Backend", None).unwrap();
+    store.create_tag(&tag).unwrap();
+
+    let again = store.create_tag(&Tag::new("backend", Some(Color::Red)).unwrap());
+    assert!(
+        matches!(&again, Err(StoreError::TagExists { name }) if name == "backend"),
+        "a taken name must be reported, not clobbered: {again:?}"
+    );
+    assert_eq!(
+        store.read_tag("backend").unwrap(),
+        tag,
+        "the refused create must leave the first tag untouched"
+    );
+    assert!(
+        tag_temp_files(&store).is_empty(),
+        "a refused create leaves no temp file: {:?}",
+        tag_temp_files(&store)
+    );
+}
+
+#[test]
+fn tag_names_are_normalized_at_the_store_boundary() {
+    let (_dir, store) = make_store();
+    store
+        .create_tag(&Tag::new("Front End", None).unwrap())
+        .unwrap();
+
+    assert!(store.tags_dir().join("front-end.md").is_file());
+    assert!(store.tag_exists("Front End"));
+    assert_eq!(store.read_tag("FRONT_END").unwrap().name, "front-end");
+
+    let refused = store.read_tag("C++");
+    assert!(
+        matches!(&refused, Err(StoreError::Invalid(message)) if message.contains(op_task::tag::NAME_RULE)),
+        "a name the normalizer refuses must say the rule: {refused:?}"
+    );
+}
+
+#[test]
+fn tag_enumeration_skips_files_no_normalized_name_names() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    std::fs::write(store.tags_dir().join("Backend Team.md"), "---\n---\n# x\n").unwrap();
+    std::fs::write(store.tags_dir().join("notes.txt"), "ignored").unwrap();
+
+    assert_eq!(
+        store
+            .list_tags()
+            .unwrap()
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect::<Vec<_>>(),
+        vec!["backend".to_owned()]
+    );
+}
+
+#[test]
+fn assignment_requires_every_name_in_the_registry() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+
+    let refused = tagged(&store, "Wire the parser", &["backend", "wip"]);
+    assert!(
+        matches!(&refused, Err(StoreError::Invalid(message))
+            if message.contains("tag wip does not exist") && message.contains("openplan tag create")),
+        "an unknown tag must be refused with a hint: {refused:?}"
+    );
+
+    register(&store, "wip");
+    let id = tagged(&store, "Wire the parser", &["wip", "backend", "wip"]).unwrap();
+    assert_eq!(tags_of(&store, id), vec!["backend", "wip"]);
+}
+
+#[test]
+fn a_dangling_tag_blocks_an_unrelated_edit_until_it_is_dropped() {
+    let (_dir, store) = make_store();
+    plant(
+        &store,
+        1,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- ghost\n---\n# Planted\n",
+    );
+
+    let refused = store.update(1, |task| {
+        task.set_status(Status::Done);
+        Ok(())
+    });
+    assert!(
+        matches!(&refused, Err(StoreError::Invalid(message)) if message.contains("tag ghost does not exist")),
+        "validation covers the whole set, not only what the write adds: {refused:?}"
+    );
+
+    store
+        .update(1, |task| {
+            task.set_status(Status::Done);
+            task.set_tags(Vec::new());
+            Ok(())
+        })
+        .unwrap();
+    assert!(tags_of(&store, 1).is_empty());
+    assert_eq!(store.read(1).unwrap().frontmatter.status, Status::Done);
+}
+
+#[test]
+fn renaming_a_tag_rewrites_the_tasks_that_reference_it() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    register(&store, "wip");
+    let both = tagged(&store, "Wire the parser", &["backend", "wip"]).unwrap();
+    let neither = tagged(&store, "Ship it", &["wip"]).unwrap();
+
+    let rewritten = store.rename_tag("backend", "Infra Team").unwrap();
+
+    assert_eq!(rewritten, vec![both]);
+    assert!(!store.tag_exists("backend"));
+    let renamed = store.read_tag("infra-team").unwrap();
+    assert_eq!(renamed.display_name().as_deref(), Some("Infra Team"));
+    assert_eq!(tags_of(&store, both), vec!["infra-team", "wip"]);
+    assert_eq!(tags_of(&store, neither), vec!["wip"]);
+}
+
+#[test]
+fn renaming_a_tag_keeps_its_color_and_description() {
+    let (_dir, store) = make_store();
+    let mut tag = Tag::new("Backend", Some(Color::Teal)).unwrap();
+    tag.append_body("Server-side work.");
+    store.create_tag(&tag).unwrap();
+
+    store.rename_tag("backend", "infra").unwrap();
+
+    let renamed = store.read_tag("infra").unwrap();
+    assert_eq!(renamed.color(), Color::Teal);
+    assert_eq!(renamed.body, "# infra\n\nServer-side work.\n");
+}
+
+#[test]
+fn renaming_onto_an_existing_tag_is_refused() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    register(&store, "infra");
+    let id = tagged(&store, "Wire the parser", &["backend"]).unwrap();
+
+    let refused = store.rename_tag("backend", "infra");
+    assert!(
+        matches!(&refused, Err(StoreError::TagExists { name }) if name == "infra"),
+        "merging two tags is not a rename: {refused:?}"
+    );
+    assert!(
+        store.tag_exists("backend"),
+        "the refused rename keeps the source"
+    );
+    assert_eq!(tags_of(&store, id), vec!["backend"]);
+    assert!(
+        tag_temp_files(&store).is_empty(),
+        "a refused rename leaves no temp file: {:?}",
+        tag_temp_files(&store)
+    );
+}
+
+#[test]
+fn a_rename_rewrites_a_task_that_carries_another_dangling_tag() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    plant(
+        &store,
+        1,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- backend\n- ghost\n---\n# Planted\n",
+    );
+
+    store.rename_tag("backend", "infra").unwrap();
+
+    assert_eq!(
+        tags_of(&store, 1),
+        vec!["ghost", "infra"],
+        "a rename is a substitution, so another dangling name must not block it"
+    );
+}
+
+#[test]
+fn a_rename_leaves_the_body_and_the_unknown_frontmatter_of_a_task_alone() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    let body = "# Ship it\n\nSee [[./00009-gone.md]].\n\n## Plan\n- a\n- b\n";
+    plant(
+        &store,
+        1,
+        &format!(
+            "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nowner: milan\ntags:\n- backend\n---\n{body}"
+        ),
+    );
+
+    store.rename_tag("backend", "infra").unwrap();
+
+    let raw = std::fs::read_to_string(store.task_path(1).unwrap()).unwrap();
+    assert_eq!(
+        raw,
+        format!(
+            "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- infra\nowner: milan\n---\n{body}"
+        )
+    );
+}
+
+#[test]
+fn deleting_a_referenced_tag_needs_force() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    let id = tagged(&store, "Wire the parser", &["backend"]).unwrap();
+
+    let refused = store.delete_tag("backend", false);
+    assert!(
+        matches!(&refused, Err(StoreError::TagReferenced { name, count }) if name == "backend" && *count == 1),
+        "a referenced tag must name how many tasks hold it: {refused:?}"
+    );
+    assert!(store.tag_exists("backend"));
+
+    store.delete_tag("backend", true).unwrap();
+    assert!(!store.tag_exists("backend"));
+    assert_eq!(
+        tags_of(&store, id),
+        vec!["backend"],
+        "a forced delete leaves the reference dangling rather than editing tasks"
+    );
+}
+
+#[test]
+fn deleting_a_missing_tag_is_not_found() {
+    let (_dir, store) = make_store();
+    assert!(matches!(
+        store.delete_tag("backend", true),
+        Err(StoreError::TagNotFound { .. })
+    ));
+    assert!(matches!(
+        store.write_tag(&Tag::new("backend", None).unwrap()),
+        Err(StoreError::TagNotFound { .. })
+    ));
+    assert!(matches!(
+        store.rename_tag("backend", "infra"),
+        Err(StoreError::TagNotFound { .. })
+    ));
+}
+
+#[test]
+fn concurrent_updates_to_one_tag_serialize() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+
+    let threads = 8;
+    let handles: Vec<_> = (0..threads)
+        .map(|i| {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                store
+                    .update_tag("backend", |tag| {
+                        tag.append_body(&format!("line {i}"));
+                        Ok(())
+                    })
+                    .unwrap();
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    let body = store.read_tag("backend").unwrap().body;
+    for i in 0..threads {
+        assert!(
+            body.contains(&format!("line {i}\n")),
+            "lost update from thread {i}: no interleaving means every append survives\n{body}"
+        );
+    }
+    assert!(
+        tag_temp_files(&store).is_empty(),
+        "serialized atomic writes leave no partial temp files: {:?}",
+        tag_temp_files(&store)
+    );
+}
+
+#[test]
+fn a_tag_file_that_does_not_parse_names_itself() {
+    let (_dir, store) = make_store();
+    std::fs::create_dir_all(store.tags_dir()).unwrap();
+    std::fs::write(
+        store.tags_dir().join("backend.md"),
+        "---\ncolor: fuchsia\n---\n# Backend\n",
+    )
+    .unwrap();
+
+    let refused = store.list_tags();
+    assert!(
+        matches!(&refused, Err(StoreError::TagFile { path, .. }) if path.ends_with("backend.md")),
+        "one bad file among many must say which one: {refused:?}"
     );
 }

@@ -86,3 +86,44 @@ fn an_unknown_color_in_a_file_is_refused() {
         Err(TagError::Frontmatter(_))
     ));
 }
+
+#[test]
+fn a_rename_takes_the_name_and_the_display_name_from_one_string() {
+    let mut tag = Tag::new("Backend", Some(Color::Teal)).unwrap();
+    tag.append_body("Work behind the API.");
+
+    tag.rename("  Infra   Team  ").unwrap();
+
+    assert_eq!(tag.name, "infra-team");
+    assert_eq!(tag.display_name().as_deref(), Some("Infra Team"));
+    assert_eq!(tag.body, "# Infra Team\n\nWork behind the API.\n");
+    assert_eq!(tag.color(), Color::Teal);
+}
+
+#[test]
+fn a_rename_replaces_a_setext_heading_whole() {
+    let mut tag =
+        Tag::from_file_string("backend".to_owned(), "---\n---\nBackend\n=======\n\nWhy.\n")
+            .unwrap();
+
+    tag.rename("infra").unwrap();
+
+    assert_eq!(tag.body, "# infra\n\nWhy.\n");
+}
+
+#[test]
+fn a_rename_of_a_headingless_tag_writes_the_display_name_in() {
+    let mut tag = Tag::from_file_string("backend".to_owned(), "---\n---\n").unwrap();
+
+    tag.rename("Infra").unwrap();
+
+    assert_eq!(tag.body, "# Infra\n");
+    assert_eq!(tag.display_name().as_deref(), Some("Infra"));
+}
+
+#[test]
+fn a_rename_refuses_a_name_normalization_cannot_reach() {
+    let mut tag = Tag::new("Backend", None).unwrap();
+    assert!(tag.rename("C++").is_err());
+    assert_eq!(tag.name, "backend", "a refused rename changes nothing");
+}

@@ -5,6 +5,7 @@ pub struct Heading {
     pub level: u8,
     pub text: String,
     pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +39,7 @@ pub fn headings(body: &str) -> Vec<Heading> {
                         level,
                         text: text.trim().to_owned(),
                         start,
+                        end: range.end,
                     });
                 }
             }
