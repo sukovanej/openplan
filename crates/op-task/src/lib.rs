@@ -4,6 +4,7 @@ use utoipa::ToSchema;
 pub use jiff::Timestamp;
 
 pub mod rank;
+pub mod tag;
 
 const SLUG_MAX: usize = 32;
 const ID_DIGITS: usize = 5;
@@ -84,6 +85,15 @@ pub struct Frontmatter {
         deserialize_with = "deserialize_dependencies"
     )]
     pub dependencies: Vec<String>,
+    // An unordered set, unlike `dependencies`: two branches that each add a tag must merge to the
+    // union, so the field carries no order a merge could disagree about.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_tags",
+        deserialize_with = "deserialize_tags"
+    )]
+    pub tags: Vec<String>,
     // Fields the model does not name are preserved verbatim across a read-modify-write
     // so a `set` never silently drops them.
     #[serde(flatten)]
@@ -339,6 +349,40 @@ fn deserialize_dependencies<'de, D: serde::Deserializer<'de>>(
         .collect()
 }
 
+pub const TAGS_EXPECTED: &str = "expected a list of tag names, like [backend, wip]";
+
+pub fn sorted_set(mut names: Vec<String>) -> Vec<String> {
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
+fn serialize_tags<S: serde::Serializer>(tags: &[String], serializer: S) -> Result<S::Ok, S::Error> {
+    sorted_set(tags.to_vec()).serialize(serializer)
+}
+
+// A hand-written `tags: [7, on-hold]` means two names, not a type error: the entry is whatever the
+// human typed, and only a nested collection has no name to read.
+fn tag_name_of(value: &serde_yaml::Value) -> Option<String> {
+    match value {
+        serde_yaml::Value::String(name) => Some(name.clone()),
+        serde_yaml::Value::Number(number) => Some(number.to_string()),
+        serde_yaml::Value::Bool(flag) => Some(flag.to_string()),
+        _ => None,
+    }
+}
+
+fn deserialize_tags<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<String>, D::Error> {
+    Vec::<serde_yaml::Value>::deserialize(deserializer)
+        .map_err(|_| serde::de::Error::custom(TAGS_EXPECTED))?
+        .iter()
+        .map(|value| tag_name_of(value).ok_or_else(|| serde::de::Error::custom(TAGS_EXPECTED)))
+        .collect::<Result<Vec<String>, D::Error>>()
+        .map(sorted_set)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Task {
     pub frontmatter: Frontmatter,
@@ -366,6 +410,7 @@ impl Task {
                 parent: None,
                 rank: None,
                 dependencies: Vec::new(),
+                tags: Vec::new(),
                 extra: serde_yaml::Mapping::new(),
             },
             body: format!("# {title}\n"),
@@ -373,12 +418,7 @@ impl Task {
     }
 
     pub fn append_body(&mut self, content: &str) {
-        let content = content.trim_end_matches('\n');
-        if content.is_empty() {
-            return;
-        }
-        let head = self.body.trim_end_matches('\n');
-        self.body = format!("{head}\n\n{content}\n");
+        self.body = with_paragraph(&self.body, content);
     }
 
     pub fn set_status(&mut self, status: Status) {
@@ -395,6 +435,10 @@ impl Task {
 
     pub fn set_dependencies(&mut self, dependencies: Vec<String>) {
         self.frontmatter.dependencies = dependencies;
+    }
+
+    pub fn set_tags(&mut self, tags: Vec<String>) {
+        self.frontmatter.tags = sorted_set(tags);
     }
 
     pub fn title(&self) -> Option<String> {
@@ -438,6 +482,7 @@ pub struct PartialFrontmatter {
     pub parent: FieldResult<Option<String>>,
     pub rank: FieldResult<Option<String>>,
     pub dependencies: FieldResult<Vec<String>>,
+    pub tags: FieldResult<Vec<String>>,
 }
 
 // The frontmatter parsed as far as it can be: `Fields` when the YAML is a mapping (each field then
@@ -505,7 +550,22 @@ fn extract_fields(map: &serde_yaml::Mapping) -> PartialFrontmatter {
                 "{REFERENCE_EXPECTED}, one per entry"
             ))),
         },
+        tags: extract_tags(map),
     }
+}
+
+fn extract_tags(map: &serde_yaml::Mapping) -> FieldResult<Vec<String>> {
+    let Some(value) = map.get("tags") else {
+        return Ok(Vec::new());
+    };
+    let serde_yaml::Value::Sequence(items) = value else {
+        return Err(FieldError::Invalid(TAGS_EXPECTED.to_owned()));
+    };
+    items
+        .iter()
+        .map(|item| tag_name_of(item).ok_or_else(|| FieldError::Invalid(TAGS_EXPECTED.to_owned())))
+        .collect::<FieldResult<Vec<String>>>()
+        .map(sorted_set)
 }
 
 fn required<T: serde::de::DeserializeOwned>(
@@ -540,7 +600,16 @@ fn is_fence(line: &str) -> bool {
     line.trim_end_matches('\n').trim_end_matches('\r') == "---"
 }
 
-fn split_frontmatter(input: &str) -> Option<(&str, &str)> {
+pub(crate) fn with_paragraph(body: &str, content: &str) -> String {
+    let content = content.trim_end_matches('\n');
+    if content.is_empty() {
+        return body.to_owned();
+    }
+    let head = body.trim_end_matches('\n');
+    format!("{head}\n\n{content}\n")
+}
+
+pub(crate) fn split_frontmatter(input: &str) -> Option<(&str, &str)> {
     let rest = input
         .strip_prefix("---\n")
         .or_else(|| input.strip_prefix("---\r\n"))?;
