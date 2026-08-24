@@ -238,6 +238,17 @@ fn live_worktrees(worktrees: &[Worktree]) -> HashMap<&str, &Path> {
     live
 }
 
+// A worktree can hold a branch that carries no store at all — one checked out at a commit from
+// before `.plan` existed, or an orphan branch. It has no tasks and registers no tags. Reading that
+// as a failed pass would stall every later diff, so it reads as empty instead.
+fn worktree_store(store: &Store, worktree: &Path) -> Result<Option<Store>, WatchError> {
+    match Store::open(worktree, store.abbreviation()) {
+        Ok(open) => Ok(Some(open)),
+        Err(StoreError::StoreMissing) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
 fn tag_snapshot(
     repo: &Repo,
     store: &Store,
@@ -245,10 +256,11 @@ fn tag_snapshot(
 ) -> Result<TagSnapshot, WatchError> {
     let mut out = TagSnapshot::new();
     for (branch, path) in live_worktrees(worktrees) {
-        let store = Store::open(path, store.abbreviation())?;
         let mut oids = HashMap::new();
-        for (name, text) in store.read_all_raw_tags()? {
-            oids.insert(name, repo.hash_blob(text.as_bytes())?);
+        if let Some(store) = worktree_store(store, path)? {
+            for (name, text) in store.read_all_raw_tags()? {
+                oids.insert(name, repo.hash_blob(text.as_bytes())?);
+            }
         }
         out.insert(branch.to_owned(), oids);
     }
@@ -335,7 +347,9 @@ fn working_task_oids(
     store: &Store,
     worktree: &Path,
 ) -> Result<HashMap<u64, String>, WatchError> {
-    let store = Store::open(worktree, store.abbreviation())?;
+    let Some(store) = worktree_store(store, worktree)? else {
+        return Ok(HashMap::new());
+    };
     let mut out = HashMap::new();
     for number in store.task_ids()? {
         let oid = repo.hash_blob(store.read_raw(number)?.as_bytes())?;
@@ -348,6 +362,9 @@ fn emit_diff(old: &State, new: &State, sink: &Sender<Change>) {
     if old.config != new.config {
         let _ = sink.send(Change::Config);
     }
+    // A branch enters and leaves this map with its worktree, so worktree churn reports a tags
+    // change for a branch whose files nobody touched. That is the honest answer: the registry a
+    // client could read became readable, or stopped being readable.
     for branch in old
         .tags
         .keys()

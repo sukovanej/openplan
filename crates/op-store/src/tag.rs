@@ -28,9 +28,11 @@ impl Store {
     pub fn read_all_raw_tags(&self) -> Result<BTreeMap<String, String>, StoreError> {
         self.tag_names()?
             .into_iter()
-            .map(|name| {
-                let text = std::fs::read_to_string(self.tag_file(&name))?;
-                Ok((name, text))
+            .filter_map(|name| match std::fs::read_to_string(self.tag_file(&name)) {
+                Ok(text) => Some(Ok((name, text))),
+                // Deleted between the scan and the read: it simply is not in the registry.
+                Err(err) if err.kind() == io::ErrorKind::NotFound => None,
+                Err(err) => Some(Err(err.into())),
             })
             .collect()
     }
@@ -155,7 +157,7 @@ impl Store {
         let mut names = BTreeSet::new();
         for entry in std::fs::read_dir(&dir)? {
             let path = entry?.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            if path.extension().and_then(|e| e.to_str()) != Some("md") || !path.is_file() {
                 continue;
             }
             // The stem is the identity, so a file the normalizer would have named differently —

@@ -473,3 +473,44 @@ fn unrelated_git_activity_emits_no_tags_change() {
     );
     watcher.stop();
 }
+
+// A worktree can hold a branch that carries no `.plan` at all. Reading that as a failed pass would
+// stall the watcher for every branch, not only that one.
+#[test]
+fn a_worktree_without_a_store_does_not_stall_the_watcher() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    init_repo(path);
+    write_task(path, 1, "Alpha");
+    write_tag(path, "backend", "blue");
+    git(path, &["add", "."]);
+    git(path, &["commit", "-qm", "init"]);
+
+    let bare_root = tempfile::tempdir().unwrap();
+    let bare = bare_root.path().join("wt");
+    git(
+        path,
+        &["worktree", "add", "-q", "--orphan", bare.to_str().unwrap()],
+    );
+    // An orphan branch is unborn until it commits, so give it a commit with no `.plan` in it.
+    std::fs::write(bare.join("code.txt"), "one").unwrap();
+    git(&bare, &["add", "."]);
+    git(&bare, &["commit", "-qm", "no store here"]);
+
+    let repo = Repo::discover(path).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let watcher = Watcher::start(repo, store(path), tx).unwrap();
+
+    write_task(path, 1, "Alpha edited");
+    assert!(
+        saw_change(&rx, 1, "main"),
+        "a storeless worktree must not stop main's task changes"
+    );
+
+    write_tag(path, "backend", "teal");
+    assert!(
+        saw_tags(&rx, "main"),
+        "a storeless worktree must not stop main's tag changes"
+    );
+    watcher.stop();
+}
