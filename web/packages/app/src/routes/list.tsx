@@ -1,3 +1,4 @@
+import { MessageSquare } from "lucide-react"
 import { useEffect, useMemo, useRef, type MouseEvent, type Ref } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
@@ -14,7 +15,7 @@ import {
   taskPath,
   TaskTimes,
 } from "@open-planner/task-ui"
-import { cn, EmptyState, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@open-planner/ui"
+import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@open-planner/ui"
 
 import { ListSkeleton } from "../components/states"
 import { hoveredRow } from "../lib/copy-target"
@@ -278,6 +279,11 @@ function TaskRow({
             <ParentLink project={task.project} id={parent} title={parent_title} />
           )}
           <TaskTimes created={created} updated={task.updated} problems={broken} />
+          {task.comment_count > 0 && (
+            <MetaItem icon={MessageSquare} className="shrink-0 whitespace-nowrap tabular-nums">
+              {task.comment_count}
+            </MetaItem>
+          )}
         </MetaLine>
         {task.branches.length > 0 && (
           <BranchBadges branches={task.branches} headline={task.headline} className="mt-2 sm:hidden" />
