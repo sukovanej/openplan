@@ -111,6 +111,20 @@ describe("Palette", () => {
     expect(activeOf(container)?.textContent).toBe("Beta")
   })
 
+  it("keeps walking when scrollIntoView answers with a promise, as Chrome's does", async () => {
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = () => Promise.resolve() as unknown as void
+    try {
+      const container = await open(async () => named(["Alpha", "Beta", "Gamma"]))
+
+      press(container, "ArrowDown")
+      press(container, "ArrowDown")
+      expect(activeOf(container)?.textContent).toBe("Gamma")
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
   it("selects the current result on Enter and closes", async () => {
     const selected: Array<string> = []
     const onClose = vi.fn()
