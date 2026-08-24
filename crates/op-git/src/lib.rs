@@ -55,6 +55,15 @@ impl Repo {
         self.inner.to_thread_local()
     }
 
+    pub fn user_name(&self) -> Option<String> {
+        Some(
+            self.repo()
+                .config_snapshot()
+                .string("user.name")?
+                .to_string(),
+        )
+    }
+
     pub fn local_branches(&self) -> Result<Vec<String>, GitError> {
         let repo = self.repo();
         let platform = repo

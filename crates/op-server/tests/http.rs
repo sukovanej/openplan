@@ -2712,3 +2712,231 @@ async fn a_tag_write_is_announced_on_the_event_stream() {
     assert_eq!(event["project"], PROJECT);
     assert_eq!(event["branch"], "main");
 }
+
+async fn created_task(state: &AppState, title: &str) -> String {
+    let response = send(
+        state,
+        "POST",
+        "/api/projects/test/tasks",
+        Some(json!({ "title": title })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    body_json(response).await["id"].as_str().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn comments_append_and_read_back() {
+    let (_dir, state) = store_state();
+    let id = created_task(&state, "Ship login").await;
+    let path = format!("/api/projects/test/tasks/{id}/comments");
+
+    let response = send(
+        &state,
+        "POST",
+        &path,
+        Some(json!({ "text": "hello", "author": "Milan Suk", "agent": "claude-code" })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let written = body_json(response).await;
+    assert_eq!(written["author"], "Milan Suk");
+    assert_eq!(written["agent"], "claude-code");
+    assert_eq!(written["text"], "hello");
+
+    let read = body_json(send(&state, "GET", &path, None).await).await;
+    assert_eq!(read.as_array().unwrap().len(), 1);
+    assert_eq!(read[0]["text"], "hello");
+    assert_eq!(read[0]["at"], written["at"]);
+}
+
+#[tokio::test]
+async fn a_comment_never_reaches_the_detail_body() {
+    let (_dir, state) = store_state();
+    let id = created_task(&state, "Ship login").await;
+    send(
+        &state,
+        "POST",
+        &format!("/api/projects/test/tasks/{id}/comments"),
+        Some(json!({ "text": "hello", "author": "Milan Suk" })),
+    )
+    .await;
+
+    let detail = body_json(
+        send(
+            &state,
+            "GET",
+            &format!("/api/projects/test/tasks/{id}"),
+            None,
+        )
+        .await,
+    )
+    .await;
+
+    assert!(
+        !detail["body"].as_str().unwrap().contains("Comments"),
+        "the body carries no log: {}",
+        detail["body"]
+    );
+    assert_eq!(detail["comments"][0]["text"], "hello");
+    assert_eq!(detail["comments"][0]["agent"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_patch_keeps_the_comment_log_out_of_the_body_it_echoes() {
+    let (_dir, state) = store_state();
+    let id = created_task(&state, "Ship login").await;
+    send(
+        &state,
+        "POST",
+        &format!("/api/projects/test/tasks/{id}/comments"),
+        Some(json!({ "text": "hello", "author": "Milan Suk" })),
+    )
+    .await;
+
+    let echoed = body_json(
+        send(
+            &state,
+            "PATCH",
+            &format!("/api/projects/test/tasks/{id}"),
+            Some(json!({ "status": "in_progress" })),
+        )
+        .await,
+    )
+    .await;
+
+    assert!(!echoed["body"].as_str().unwrap().contains("Comments"));
+    assert_eq!(echoed["comments"][0]["text"], "hello");
+}
+
+#[tokio::test]
+async fn a_list_row_counts_the_comments() {
+    let (_dir, state) = store_state();
+    let id = created_task(&state, "Ship login").await;
+    for text in ["one", "two"] {
+        send(
+            &state,
+            "POST",
+            &format!("/api/projects/test/tasks/{id}/comments"),
+            Some(json!({ "text": text, "author": "Milan Suk" })),
+        )
+        .await;
+    }
+
+    let items = body_json(send(&state, "GET", "/api/projects/test/tasks", None).await).await;
+
+    assert_eq!(items[0]["comment_count"], 2);
+}
+
+#[tokio::test]
+async fn an_empty_or_unsigned_comment_is_refused() {
+    let (_dir, state) = store_state();
+    let id = created_task(&state, "Ship login").await;
+    let path = format!("/api/projects/test/tasks/{id}/comments");
+
+    let empty = send(
+        &state,
+        "POST",
+        &path,
+        Some(json!({ "text": "  \n ", "author": "Milan Suk" })),
+    )
+    .await;
+    assert_eq!(empty.status(), StatusCode::BAD_REQUEST);
+
+    let unsigned = send(
+        &state,
+        "POST",
+        &path,
+        Some(json!({ "text": "a", "author": "" })),
+    )
+    .await;
+    assert_eq!(unsigned.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn comments_of_a_missing_task_are_404() {
+    let (_dir, state) = store_state();
+    let response = send(
+        &state,
+        "GET",
+        "/api/projects/test/tasks/OPP-9/comments",
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn the_branch_read_groups_every_branch_that_holds_the_task() {
+    let (dir, state) = git_state();
+    let root = dir.path();
+    let store = worktree_store(root);
+    let mut task = store.read(number("OPP-1")).unwrap();
+    task.append_comment(&op_task::comment::NewComment {
+        at: "2026-01-01T00:00:00Z".parse().unwrap(),
+        author: "Milan Suk".to_owned(),
+        agent: None,
+        text: "on main".to_owned(),
+    });
+    store.write(number("OPP-1"), &task).unwrap();
+
+    let groups = body_json(
+        send(
+            &state,
+            "GET",
+            "/api/projects/test/tasks/OPP-1/comments/branches",
+            None,
+        )
+        .await,
+    )
+    .await;
+
+    let branches: Vec<&str> = groups
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|group| group["branch"].as_str().unwrap())
+        .collect();
+    assert_eq!(branches, vec!["feature", "main"]);
+    let main = groups
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|group| group["branch"] == "main")
+        .unwrap();
+    assert_eq!(main["comments"][0]["text"], "on main");
+    let feature = groups
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|group| group["branch"] == "feature")
+        .unwrap();
+    assert_eq!(feature["comments"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn a_search_matches_comment_text() {
+    let (_dir, state) = store_state();
+    let id = created_task(&state, "Ship login").await;
+    send(
+        &state,
+        "POST",
+        &format!("/api/projects/test/tasks/{id}/comments"),
+        Some(json!({ "text": "the parser mishandles a tab", "author": "Milan Suk" })),
+    )
+    .await;
+
+    let hits = body_json(
+        send(
+            &state,
+            "GET",
+            "/api/projects/test/search?q=mishandles&fresh=true",
+            None,
+        )
+        .await,
+    )
+    .await;
+
+    assert_eq!(hits.as_array().unwrap().len(), 1, "{hits}");
+    assert_eq!(hits[0]["task"]["id"], id);
+}

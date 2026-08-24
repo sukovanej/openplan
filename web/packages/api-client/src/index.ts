@@ -46,6 +46,12 @@ export const Color = Schema.Literals([
   "violet",
   "pink",
 ])
+export type CreateComment = { readonly agent?: string; readonly author: string; readonly text: string }
+export const CreateComment = Schema.Struct({
+  agent: Schema.optionalKey(Schema.String),
+  author: Schema.String,
+  text: Schema.String,
+})
 export type CreatedTask = { readonly id: string }
 export const CreatedTask = Schema.Struct({ id: Schema.String })
 export type DaemonInfo = {
@@ -132,6 +138,8 @@ export const Field_Status = Schema.Union(
   [Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]), FieldError],
   { mode: "oneOf" },
 )
+export type Field_String = string | FieldError
+export const Field_String = Schema.Union([Schema.String, FieldError], { mode: "oneOf" })
 export type Field_Vec_String = ReadonlyArray<string> | FieldError
 export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError], { mode: "oneOf" })
 export type ProjectView = {
@@ -206,6 +214,18 @@ export const TaskChild = Schema.Struct({
 })
 export type TaskRef = { readonly id: string; readonly status: Field_Status; readonly title: string }
 export const TaskRef = Schema.Struct({ id: Schema.String, status: Field_Status, title: Schema.String })
+export type Comment = {
+  readonly agent?: string | null
+  readonly at: Field_Rfc3339
+  readonly author: Field_String
+  readonly text: string
+}
+export const Comment = Schema.Struct({
+  agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  at: Field_Rfc3339,
+  author: Field_String,
+  text: Schema.String,
+})
 export type FrontmatterFields = {
   readonly created: Field_Rfc3339
   readonly dependencies: Field_Vec_String
@@ -222,6 +242,8 @@ export const FrontmatterFields = Schema.Struct({
   status: Field_Status,
   tags: Field_Vec_String,
 })
+export type BranchComments = { readonly branch: string; readonly comments: ReadonlyArray<Comment> }
+export const BranchComments = Schema.Struct({ branch: Schema.String, comments: Schema.Array(Comment) })
 export type Metadata = { readonly kind: MetadataErrorTag; readonly message: string } | FrontmatterFields
 export const Metadata = Schema.Union(
   [Schema.Struct({ kind: MetadataErrorTag, message: Schema.String }), FrontmatterFields],
@@ -231,6 +253,7 @@ export type TaskDetail = {
   readonly body: string
   readonly branches: ReadonlyArray<BranchState>
   readonly children?: ReadonlyArray<TaskChild>
+  readonly comments?: ReadonlyArray<Comment>
   readonly headline: string
   readonly id: string
   readonly metadata: Metadata
@@ -245,6 +268,7 @@ export const TaskDetail = Schema.Struct({
   body: Schema.String,
   branches: Schema.Array(BranchState),
   children: Schema.optionalKey(Schema.Array(TaskChild)),
+  comments: Schema.optionalKey(Schema.Array(Comment)),
   headline: Schema.String,
   id: Schema.String,
   metadata: Metadata,
@@ -257,6 +281,7 @@ export const TaskDetail = Schema.Struct({
 })
 export type TaskListItem = {
   readonly branches: ReadonlyArray<BranchState>
+  readonly comment_count: number
   readonly headline: string
   readonly id: string
   readonly metadata: Metadata
@@ -267,6 +292,7 @@ export type TaskListItem = {
 }
 export const TaskListItem = Schema.Struct({
   branches: Schema.Array(BranchState),
+  comment_count: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
   headline: Schema.String,
   id: Schema.String,
   metadata: Metadata,
@@ -569,6 +595,49 @@ export type GetTaskBranches500 = ApiErrorBody
 export const GetTaskBranches500 = ApiErrorBody
 export type GetTaskBranches503 = ApiErrorBody
 export const GetTaskBranches503 = ApiErrorBody
+export type ListCommentsParams = { readonly branch?: string | null; readonly fresh?: boolean }
+export const ListCommentsParams = Schema.Struct({
+  branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  fresh: Schema.optionalKey(Schema.Boolean),
+})
+export type ListComments200 = ReadonlyArray<Comment>
+export const ListComments200 = Schema.Array(Comment)
+export type ListComments400 = ApiErrorBody
+export const ListComments400 = ApiErrorBody
+export type ListComments404 = ApiErrorBody
+export const ListComments404 = ApiErrorBody
+export type ListComments500 = ApiErrorBody
+export const ListComments500 = ApiErrorBody
+export type ListComments503 = ApiErrorBody
+export const ListComments503 = ApiErrorBody
+export type AddCommentParams = { readonly branch?: string }
+export const AddCommentParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
+export type AddCommentRequestJson = CreateComment
+export const AddCommentRequestJson = CreateComment
+export type AddComment201 = Comment
+export const AddComment201 = Comment
+export type AddComment400 = ApiErrorBody
+export const AddComment400 = ApiErrorBody
+export type AddComment404 = ApiErrorBody
+export const AddComment404 = ApiErrorBody
+export type AddComment409 = ApiErrorBody
+export const AddComment409 = ApiErrorBody
+export type AddComment500 = ApiErrorBody
+export const AddComment500 = ApiErrorBody
+export type AddComment503 = ApiErrorBody
+export const AddComment503 = ApiErrorBody
+export type ListBranchCommentsParams = { readonly fresh?: boolean }
+export const ListBranchCommentsParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
+export type ListBranchComments200 = ReadonlyArray<BranchComments>
+export const ListBranchComments200 = Schema.Array(BranchComments)
+export type ListBranchComments400 = ApiErrorBody
+export const ListBranchComments400 = ApiErrorBody
+export type ListBranchComments404 = ApiErrorBody
+export const ListBranchComments404 = ApiErrorBody
+export type ListBranchComments500 = ApiErrorBody
+export const ListBranchComments500 = ApiErrorBody
+export type ListBranchComments503 = ApiErrorBody
+export const ListBranchComments503 = ApiErrorBody
 export type GetTaskTreeParams = { readonly branch?: string | null; readonly fresh?: boolean; readonly depth?: number }
 export const GetTaskTreeParams = Schema.Struct({
   branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
@@ -960,6 +1029,53 @@ export const make = (
           }),
         ),
       ),
+    listComments: (project, id, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/comments`).pipe(
+        HttpClientRequest.setUrlParams({
+          branch: options?.params?.["branch"] as any,
+          fresh: options?.params?.["fresh"] as any,
+        }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(ListComments200),
+            "400": decodeError("ListComments400", ListComments400),
+            "404": decodeError("ListComments404", ListComments404),
+            "500": decodeError("ListComments500", ListComments500),
+            "503": decodeError("ListComments503", ListComments503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    addComment: (project, id, options) =>
+      HttpClientRequest.post(`/api/projects/${project}/tasks/${id}/comments`).pipe(
+        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(AddComment201),
+            "400": decodeError("AddComment400", AddComment400),
+            "404": decodeError("AddComment404", AddComment404),
+            "409": decodeError("AddComment409", AddComment409),
+            "500": decodeError("AddComment500", AddComment500),
+            "503": decodeError("AddComment503", AddComment503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    listBranchComments: (project, id, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/comments/branches`).pipe(
+        HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(ListBranchComments200),
+            "400": decodeError("ListBranchComments400", ListBranchComments400),
+            "404": decodeError("ListBranchComments404", ListBranchComments404),
+            "500": decodeError("ListBranchComments500", ListBranchComments500),
+            "503": decodeError("ListBranchComments503", ListBranchComments503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     getTaskTree: (project, id, options) =>
       HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/tree`).pipe(
         HttpClientRequest.setUrlParams({
@@ -1274,6 +1390,54 @@ export interface TasksClient {
     | TasksClientError<"GetTaskBranches404", typeof GetTaskBranches404.Type>
     | TasksClientError<"GetTaskBranches500", typeof GetTaskBranches500.Type>
     | TasksClientError<"GetTaskBranches503", typeof GetTaskBranches503.Type>
+  >
+  readonly listComments: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options:
+      | { readonly params?: typeof ListCommentsParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListComments200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"ListComments400", typeof ListComments400.Type>
+    | TasksClientError<"ListComments404", typeof ListComments404.Type>
+    | TasksClientError<"ListComments500", typeof ListComments500.Type>
+    | TasksClientError<"ListComments503", typeof ListComments503.Type>
+  >
+  readonly addComment: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: {
+      readonly params?: typeof AddCommentParams.Encoded | undefined
+      readonly payload: typeof AddCommentRequestJson.Encoded
+      readonly config?: Config | undefined
+    },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof AddComment201.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"AddComment400", typeof AddComment400.Type>
+    | TasksClientError<"AddComment404", typeof AddComment404.Type>
+    | TasksClientError<"AddComment409", typeof AddComment409.Type>
+    | TasksClientError<"AddComment500", typeof AddComment500.Type>
+    | TasksClientError<"AddComment503", typeof AddComment503.Type>
+  >
+  readonly listBranchComments: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options:
+      | { readonly params?: typeof ListBranchCommentsParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListBranchComments200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"ListBranchComments400", typeof ListBranchComments400.Type>
+    | TasksClientError<"ListBranchComments404", typeof ListBranchComments404.Type>
+    | TasksClientError<"ListBranchComments500", typeof ListBranchComments500.Type>
+    | TasksClientError<"ListBranchComments503", typeof ListBranchComments503.Type>
   >
   readonly getTaskTree: <Config extends OperationConfig>(
     project: string,

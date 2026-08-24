@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use op_api::{
-    BranchMark, BranchState, ChangeKind, Matrix, MatrixCell, Metadata, SearchHit, TaskBranches,
-    TaskChild, TaskDetail, TaskListItem, TaskRef, TaskSummary, TaskVersion, TaskView, WriteTarget,
-    id_cmp, list_item_cmp, updated_field,
+    BranchComments, BranchMark, BranchState, ChangeKind, Comment, Matrix, MatrixCell, Metadata,
+    SearchHit, TaskBranches, TaskChild, TaskDetail, TaskListItem, TaskRef, TaskSummary,
+    TaskVersion, TaskView, WriteTarget, id_cmp, list_item_cmp, updated_field,
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{Config, RawTask, Store, StoreError};
@@ -69,6 +69,7 @@ struct BranchChanges {
 struct Version {
     title: String,
     metadata: Metadata,
+    comment_count: usize,
     // Everything a search reads — title, body, and the frontmatter fields — lowercased once here,
     // so a query tests one `contains` per version instead of re-casing every field per keystroke.
     haystack: String,
@@ -599,6 +600,7 @@ impl Index {
                     project: project.to_owned(),
                     id: id.clone(),
                     title: parsed.title.clone(),
+                    comment_count: parsed.comment_count,
                     updated: updated_field(
                         parsed.metadata.created(),
                         self.task_updated_or_headline(id, Some(branch)),
@@ -645,6 +647,14 @@ impl Index {
         })
     }
 
+    // The matrix carries a task's summary, not its whole parse, so a row's comment count comes from
+    // the blob the cell names.
+    fn comment_count(&self, blob_oid: &str) -> usize {
+        self.blob_cache
+            .get(blob_oid)
+            .map_or(0, |version| version.comment_count)
+    }
+
     fn branch_of(&self, branch: &str) -> impl Iterator<Item = (&String, &BranchVersion)> {
         self.branch_versions.get(branch).into_iter().flatten()
     }
@@ -672,6 +682,7 @@ impl Index {
                     id: headline.task.id.clone(),
                     title: headline.task.title.clone(),
                     metadata: headline.task.metadata.clone(),
+                    comment_count: self.comment_count(&headline.blob_oid),
                     updated: updated_field(self.created_of(headline), self.cell_updated(headline)),
                     headline: headline.branch.clone(),
                     branches: branch_states(&cells),
@@ -818,24 +829,12 @@ impl Index {
         branch: Option<&str>,
     ) -> Result<Option<TaskDetail>, IndexError> {
         let cells = self.cells_of(id);
-        let (raw, updated) = match branch {
-            Some(branch) => (
-                self.effective_raw(repo, id, branch)?,
-                self.task_updated_or_headline(id, Some(branch)),
-            ),
-            None => {
-                if cells.is_empty() {
-                    return Ok(None);
-                }
-                let headline = self.headline_cell(&cells);
-                (
-                    Some(self.cell_raw(repo, headline)?),
-                    self.cell_updated(headline),
-                )
-            }
-        };
-        let Some(raw) = raw else {
+        let Some(raw) = self.resolved_raw(repo, id, branch)? else {
             return Ok(None);
+        };
+        let updated = match branch {
+            Some(branch) => self.task_updated_or_headline(id, Some(branch)),
+            None => self.cell_updated(self.headline_cell(&cells)),
         };
         let view = view_from_raw(id, &raw, updated, self.abbreviation);
         let (parent_title, children, refs) =
@@ -845,7 +844,8 @@ impl Index {
             id: view.id,
             title: view.title,
             metadata: view.metadata,
-            body: view.body,
+            comments: comments_of(&view.body),
+            body: op_task::comment::strip(&view.body),
             updated: view.updated,
             // A task every branch agrees about contributes no cell at all, so a branch-scoped read
             // can resolve one the matrix cannot headline; the branch asked for is then the only
@@ -863,6 +863,63 @@ impl Index {
             children,
             refs,
         }))
+    }
+
+    // The text a read resolves to: a named branch's effective version, or the version the task
+    // headlines with. The branchless form always yields content while any cell exists — a deletion
+    // falls back to its last-known blob — so it never 404s a task the list still shows.
+    fn resolved_raw(
+        &self,
+        repo: &Repo,
+        id: &str,
+        branch: Option<&str>,
+    ) -> Result<Option<String>, IndexError> {
+        match branch {
+            Some(branch) => self.effective_raw(repo, id, branch),
+            None => match self.cells_of(id).as_slice() {
+                [] => Ok(None),
+                cells => Ok(Some(self.cell_raw(repo, self.headline_cell(cells))?)),
+            },
+        }
+    }
+
+    pub fn task_comments(
+        &self,
+        repo: &Repo,
+        id: &str,
+        branch: Option<&str>,
+    ) -> Result<Option<Vec<Comment>>, IndexError> {
+        Ok(self
+            .resolved_raw(repo, id, branch)?
+            .map(|raw| comments_of(&op_task::parse_partial(&raw).body)))
+    }
+
+    // Every branch that carries the task, each with its own log. Grouped rather than merged: the
+    // file order inside one branch is the true order, and only the reader can decide how to
+    // interleave two branches that never agreed on a clock.
+    pub fn task_comments_by_branch(
+        &self,
+        repo: &Repo,
+        id: &str,
+    ) -> Result<Vec<BranchComments>, IndexError> {
+        let mut branches: Vec<&String> = self
+            .branch_versions
+            .iter()
+            .filter(|(_, held)| held.contains_key(id))
+            .map(|(branch, _)| branch)
+            .collect();
+        branches.sort();
+        branches
+            .into_iter()
+            .map(|branch| {
+                Ok(BranchComments {
+                    branch: branch.clone(),
+                    comments: self
+                        .task_comments(repo, id, Some(branch))?
+                        .unwrap_or_default(),
+                })
+            })
+            .collect()
     }
 
     // The immediate hierarchy around a task, from the aggregated set: the parent's title (when it
@@ -1254,6 +1311,7 @@ fn parse_version(bytes: &[u8], abbreviation: Abbreviation) -> Version {
     let metadata = Metadata::from_partial(partial.metadata, abbreviation);
     Version {
         haystack: haystack(&title, &partial.body, &metadata),
+        comment_count: op_task::comment::parse(&partial.body).len(),
         title,
         metadata,
     }
@@ -1302,6 +1360,15 @@ fn body_refs(
         }
     }
     refs
+}
+
+// The comment log as the wire carries it. Every read splits it out of the body it lives in, so one
+// parser answers for it and no client renders the thread twice.
+pub fn comments_of(body: &str) -> Vec<Comment> {
+    op_task::comment::parse(body)
+        .iter()
+        .map(Comment::from)
+        .collect()
 }
 
 fn view_from_raw(

@@ -2409,3 +2409,263 @@ fn set_tags_refuses_a_name_this_branch_does_not_register() {
         "a refused set leaves the task alone"
     );
 }
+
+#[test]
+fn comment_appends_an_entry_and_creates_the_section() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+
+    let out = run(&dir, &["comment", &id, "hello"]);
+
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body = task_body(&task_file(dir.path(), &id));
+    assert!(body.contains("## Comments\n"), "{body}");
+    assert!(body.contains(" by Test"), "{body}");
+    assert!(body.trim_end().ends_with("> hello"), "{body}");
+}
+
+#[test]
+fn a_comment_holding_markdown_stays_one_entry() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+    let text = "# Any heading works\n\n```rust\nfn main() {}\n```\n\n> nested";
+
+    run(&dir, &["comment", &id, text]);
+
+    let out = run(&dir, &["comments", &id, "--json"]);
+    let comments: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(comments.as_array().unwrap().len(), 1);
+    assert_eq!(comments[0]["text"], text);
+}
+
+#[test]
+fn comments_print_oldest_first() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+    run(&dir, &["comment", &id, "first"]);
+    run(&dir, &["comment", &id, "second"]);
+
+    let printed = stdout(&run(&dir, &["comments", &id]));
+
+    let first = printed.find("first").expect("the first entry");
+    let second = printed.find("second").expect("the second entry");
+    assert!(first < second, "file order is the true order: {printed}");
+}
+
+#[test]
+fn comments_json_carries_the_four_fields() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+    run(&dir, &["comment", &id, "hello"]);
+
+    let out = run(&dir, &["comments", &id, "--json"]);
+    let comments: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    let entry = comments[0].as_object().unwrap();
+
+    let mut keys: Vec<&String> = entry.keys().collect();
+    keys.sort();
+    assert_eq!(keys, vec!["agent", "at", "author", "text"]);
+    assert_eq!(entry["author"], "Test");
+    assert_eq!(entry["text"], "hello");
+}
+
+#[test]
+fn comment_refuses_empty_text() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+
+    let out = run(&dir, &["comment", &id, "   \n"]);
+
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("needs text"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn comment_refuses_an_unsigned_entry() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+    git(dir.path(), &["config", "--unset", "user.name"]);
+
+    let out = run(&dir, &["comment", &id, "hello"]);
+
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("user.name"),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn comment_reads_its_text_from_stdin() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+
+    let mut child = dir
+        .cmd()
+        .arg("--root")
+        .arg(dir.path())
+        .args(["comment", &id, "--body-file", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"from a pipe")
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+
+    assert!(task_body(&task_file(dir.path(), &id)).contains("> from a pipe"));
+}
+
+#[test]
+fn a_damaged_entry_keeps_its_text_and_reports_the_field() {
+    let dir = Project::new();
+    write(
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\n## Comments\n\n### \
+         yesterday by Test\n\n> still readable\n",
+    );
+
+    let out = run(&dir, &["comments", "OPP-1", "--json"]);
+    let comments: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+
+    assert_eq!(comments[0]["text"], "still readable");
+    assert_eq!(comments[0]["at"]["kind"], "invalid");
+    assert!(
+        comments[0]["at"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("\"yesterday\""),
+        "the message carries the offending text: {}",
+        comments[0]["at"]["message"]
+    );
+}
+
+#[test]
+fn a_comment_on_another_branch_names_the_branches_the_task_lives_on() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "add the task"]);
+    git(dir.path(), &["checkout", "-q", "-b", "side", "HEAD~1"]);
+
+    let out = run(&dir, &["comment", &id, "hello"]);
+
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("main"), "stderr: {stderr}");
+}
+
+#[test]
+fn all_branches_labels_every_entry_with_its_branch() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+    run(&dir, &["comment", &id, "on main"]);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "add the task"]);
+    git(dir.path(), &["checkout", "-q", "-b", "side"]);
+    run(&dir, &["comment", &id, "on side"]);
+
+    let printed = stdout(&run(&dir, &["comments", &id, "--all-branches"]));
+
+    assert!(printed.contains("[main] "), "{printed}");
+    assert!(printed.contains("[side] "), "{printed}");
+    assert!(
+        printed.find("on main").unwrap() < printed.find("on side").unwrap(),
+        "the earlier entry comes first: {printed}"
+    );
+}
+
+#[test]
+fn a_named_branch_reads_that_branch_log() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+    run(&dir, &["comment", &id, "on main"]);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "add the task"]);
+    git(dir.path(), &["checkout", "-q", "-b", "side"]);
+    run(&dir, &["comment", &id, "on side"]);
+
+    let printed = stdout(&run(&dir, &["comments", &id, "--branch", "main"]));
+
+    assert!(printed.contains("on main"), "{printed}");
+    assert!(!printed.contains("on side"), "{printed}");
+}
+
+#[test]
+fn get_renders_the_comment_log_with_the_file() {
+    let dir = Project::new();
+    let id = create(&dir, "Ship login");
+    run(&dir, &["comment", &id, "hello"]);
+
+    let printed = stdout(&run(&dir, &["get", &id]));
+
+    assert!(printed.contains("## Comments"), "{printed}");
+    assert!(printed.contains("> hello"), "{printed}");
+}
+
+#[test]
+fn lint_reports_every_comment_failure_with_a_span() {
+    let dir = Project::new();
+    write(
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\n## Comments\n\n### \
+         yesterday by Test\n\n> a\n\n### 2026-01-01T00:00:00Z by Test\n\n### 2026-01-02T00:00:00Z \
+         by Test\n\n> c\n\n> orphan\n\n## Comments\n\n### 2026-01-03T00:00:00Z by Test\n\n> d\n",
+    );
+
+    let out = run(&dir, &["lint"]);
+    let report = format!("{}{}", String::from_utf8_lossy(&out.stderr), stdout(&out));
+
+    assert!(!out.status.success(), "{report}");
+    let reported: Vec<&str> = report
+        .lines()
+        .filter(|line| line.contains("error[comment]"))
+        .collect();
+    assert_eq!(reported.len(), 5, "{report}");
+    for expected in [
+        "not an RFC3339 UTC timestamp: \"yesterday\"",
+        "needs a blockquote below its heading",
+        "needs an entry heading above it",
+        "one `## Comments` section",
+        "must be the last section",
+    ] {
+        assert!(
+            reported.iter().any(|line| line.contains(expected)),
+            "{expected} is not reported: {report}"
+        );
+    }
+    for line in reported {
+        assert!(
+            line.contains("00001-ship-it.md:"),
+            "every diagnostic carries a span: {line}"
+        );
+    }
+}
+
+#[test]
+fn lint_fix_leaves_the_comment_log_alone() {
+    let dir = Project::new();
+    let target = create(&dir, "Target");
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\n## \
+                  Comments\n\n### 2026-01-01T00:00:00Z by Test\n\n> see [[OPP-1]]\n";
+    let path = dir.path().join(".plan/tasks/00002-ship-it.md");
+    write(&path, source);
+    assert_eq!(target, "OPP-1");
+
+    run(&dir, &["lint", "--fix"]);
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), source);
+}

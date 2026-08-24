@@ -2,10 +2,11 @@ import { Pencil, Plus, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
-import type { TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
+import type { Comment, TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
 import {
   boardPath,
   BranchSwitcher,
+  CommentThread,
   createdOf,
   parentOf,
   ParentLink,
@@ -43,6 +44,7 @@ import { taskMatches } from "../lib/task-search"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
 const NO_CHILDREN: ReadonlyArray<TaskChild> = []
+const NO_COMMENTS: ReadonlyArray<Comment> = []
 
 // Where an edit of the shown version lands, and what to say when it can land nowhere. The daemon
 // resolves the branch and reports whether a live worktree can take the write, so the page names that
@@ -184,6 +186,14 @@ function TaskDetailView({
           ready={detail !== null}
           write={write}
         />
+        {detail !== null && (
+          <CommentThread
+            project={project}
+            comments={detail.comments ?? NO_COMMENTS}
+            refs={detail.refs}
+            abbreviation={abbreviation}
+          />
+        )}
       </PanelBody>
     </Panel>
   )

@@ -3,6 +3,7 @@ use utoipa::ToSchema;
 
 pub use jiff::Timestamp;
 
+pub mod comment;
 pub mod rank;
 pub mod tag;
 
@@ -419,6 +420,11 @@ impl Task {
 
     pub fn append_body(&mut self, content: &str) {
         self.body = with_paragraph(&self.body, content);
+    }
+
+    pub fn append_comment(&mut self, comment: &comment::NewComment) {
+        self.body =
+            op_md::append_under(&self.body, 2, comment::HEADING, &comment::markdown(comment));
     }
 
     pub fn set_status(&mut self, status: Status) {
