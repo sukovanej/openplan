@@ -787,6 +787,10 @@ pub struct TagPatch {
 }
 
 impl TagPatch {
+    pub fn changes_content(&self) -> bool {
+        self.color.is_some() || !self.description.is_keep()
+    }
+
     // The rename is the store's to carry out — it moves the file and rewrites every task that
     // references the tag — so this covers only what lives inside the tag file.
     pub fn apply(self, tag: &mut Tag) {

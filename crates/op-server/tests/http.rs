@@ -2530,6 +2530,86 @@ async fn renaming_a_tag_rewrites_the_tasks_that_reference_it() {
 }
 
 #[tokio::test]
+async fn a_rename_keeps_the_color_and_the_description_it_does_not_name() {
+    let (_dir, state) = store_state();
+    assert_eq!(
+        create_tag(
+            &state,
+            json!({ "name": "backend", "color": "amber", "description": "Behind the API." })
+        )
+        .await
+        .status(),
+        StatusCode::CREATED
+    );
+
+    let renamed = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tags/backend",
+        Some(json!({ "name": "Infra" })),
+    )
+    .await;
+    assert_eq!(renamed.status(), StatusCode::OK);
+    let view = body_json(renamed).await;
+    assert_eq!(view["name"], "infra");
+    assert_eq!(view["color"], "amber");
+    assert_eq!(view["description"], "Behind the API.");
+}
+
+#[tokio::test]
+async fn a_rename_that_only_changes_the_case_moves_the_heading_alone() {
+    let (_dir, state) = store_state();
+    assert_eq!(
+        create_tag(&state, json!({ "name": "backend" }))
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+
+    let renamed = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tags/backend",
+        Some(json!({ "name": "Backend" })),
+    )
+    .await;
+    assert_eq!(renamed.status(), StatusCode::OK);
+    let view = body_json(renamed).await;
+    assert_eq!(view["name"], "backend");
+    assert_eq!(view["display"], "Backend");
+    assert_eq!(tag_names(&state).await, vec!["backend".to_owned()]);
+}
+
+#[tokio::test]
+async fn a_patch_can_clear_a_description() {
+    let (_dir, state) = store_state();
+    assert_eq!(
+        create_tag(
+            &state,
+            json!({ "name": "backend", "description": "Behind the API." })
+        )
+        .await
+        .status(),
+        StatusCode::CREATED
+    );
+
+    let patched = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tags/backend",
+        Some(json!({ "description": null })),
+    )
+    .await;
+    assert_eq!(patched.status(), StatusCode::OK);
+    let view = body_json(patched).await;
+    assert!(
+        view.get("description").is_none(),
+        "a cleared description leaves no prose behind: {view}"
+    );
+    assert_eq!(view["display"], "backend", "the heading stays");
+}
+
+#[tokio::test]
 async fn renaming_onto_a_registered_name_is_a_conflict() {
     let (_dir, state) = store_state();
     for name in ["backend", "infra"] {

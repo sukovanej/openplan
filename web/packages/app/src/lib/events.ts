@@ -18,6 +18,11 @@ export const ChangeEvent = Schema.Union([
     task_id: Schema.String,
   }),
   Schema.Struct({
+    kind: Schema.Literal("tags_changed"),
+    project: Schema.String,
+    branch: Schema.String,
+  }),
+  Schema.Struct({
     kind: Schema.Literal("projects_changed"),
   }),
   Schema.Struct({
@@ -53,6 +58,12 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
     }
     case "presence_changed": {
       inv.refreshList(event.project)
+      return
+    }
+    // A tag was registered, recolored, re-described, renamed, or deleted. A rename rewrites the
+    // tags of the tasks that reference it, so every row in the project can read differently.
+    case "tags_changed": {
+      inv.refreshVisible(event.project)
       return
     }
     // Membership, a rename, a status change, or a new key prefix. The last of them spells every id

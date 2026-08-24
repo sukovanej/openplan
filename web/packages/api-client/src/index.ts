@@ -406,10 +406,14 @@ export type ListTagsParams = { readonly branch?: string }
 export const ListTagsParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type ListTags200 = ReadonlyArray<TagView>
 export const ListTags200 = Schema.Array(TagView)
+export type ListTags400 = ApiErrorBody
+export const ListTags400 = ApiErrorBody
 export type ListTags404 = ApiErrorBody
 export const ListTags404 = ApiErrorBody
 export type ListTags409 = ApiErrorBody
 export const ListTags409 = ApiErrorBody
+export type ListTags422 = ApiErrorBody
+export const ListTags422 = ApiErrorBody
 export type ListTags500 = ApiErrorBody
 export const ListTags500 = ApiErrorBody
 export type ListTags503 = ApiErrorBody
@@ -784,8 +788,10 @@ export const make = (
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(ListTags200),
+            "400": decodeError("ListTags400", ListTags400),
             "404": decodeError("ListTags404", ListTags404),
             "409": decodeError("ListTags409", ListTags409),
+            "422": decodeError("ListTags422", ListTags422),
             "500": decodeError("ListTags500", ListTags500),
             "503": decodeError("ListTags503", ListTags503),
             orElse: unexpectedStatus,
@@ -1098,8 +1104,10 @@ export interface TasksClient {
     WithOptionalResponse<typeof ListTags200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
+    | TasksClientError<"ListTags400", typeof ListTags400.Type>
     | TasksClientError<"ListTags404", typeof ListTags404.Type>
     | TasksClientError<"ListTags409", typeof ListTags409.Type>
+    | TasksClientError<"ListTags422", typeof ListTags422.Type>
     | TasksClientError<"ListTags500", typeof ListTags500.Type>
     | TasksClientError<"ListTags503", typeof ListTags503.Type>
   >

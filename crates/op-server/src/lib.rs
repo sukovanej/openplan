@@ -1596,8 +1596,10 @@ const TAG_NAME_PARAM: &str = "Tag name, or any spelling that normalizes to one";
     ),
     responses(
         (status = 200, description = "Every tag the branch registers", body = Vec<TagView>),
+        (status = 400, description = "The current worktree is on no branch", body = ApiErrorBody),
         (status = 404, description = "No such project", body = ApiErrorBody),
         (status = 409, description = "The branch is not checked out in a live worktree, or the daemon's root is gone", body = ApiErrorBody),
+        (status = 422, description = "A tag file is stored in a form the daemon cannot read", body = ApiErrorBody),
         (status = 500, description = "The registry could not be read", body = ApiErrorBody),
         (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
@@ -1739,10 +1741,16 @@ async fn patch_tag(
                 }
                 None => (name, Vec::new()),
             };
-            let tag = store.update_tag(&name, |tag| {
-                patch.apply(tag);
-                Ok(())
-            })?;
+            // A rename already wrote the file. Writing it again for a patch that changes nothing
+            // inside it opens a window where a concurrent delete makes this report a failure the
+            // rename has in fact carried out.
+            let tag = match patch.changes_content() {
+                true => store.update_tag(&name, |tag| {
+                    patch.apply(tag);
+                    Ok(())
+                })?,
+                false => store.read_tag(&name)?,
+            };
             let abbreviation = writing.abbreviation();
             if !retagged.is_empty() {
                 writing.mark_dirty();

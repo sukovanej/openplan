@@ -56,6 +56,23 @@ it("ref_moved refreshes that project's screen, including the open detail", () =>
   expect(calls).toEqual({ projects: 0, lists: [], tasks: [], visible: ["open-plan"] })
 })
 
+it("decodes a tags_changed event mirroring the Rust ChangeEvent JSON", () => {
+  const decoded = Schema.decodeUnknownSync(ChangeEvent)({
+    kind: "tags_changed",
+    project: "open-plan",
+    branch: "main",
+  })
+  expect(decoded).toEqual({ kind: "tags_changed", project: "open-plan", branch: "main" })
+})
+
+// A rename rewrites the tags of every task that references it, so the rows and the open detail can
+// all read differently.
+it("tags_changed refreshes that project's screen", () => {
+  const { inv, calls } = spy()
+  applyChange(inv, { kind: "tags_changed", project: "open-plan", branch: "main" })
+  expect(calls).toEqual({ projects: 0, lists: [], tasks: [], visible: ["open-plan"] })
+})
+
 it("presence_changed refreshes that project's list", () => {
   const { inv, calls } = spy()
   applyChange(inv, { kind: "presence_changed", project: "open-plan", task_id: "abc" })
