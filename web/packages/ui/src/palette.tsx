@@ -81,7 +81,11 @@ function OpenPalette({
   }, [provider, query])
 
   useEffect(() => setActive(0), [results])
-  useEffect(() => activeRef.current?.scrollIntoView({ block: "nearest" }), [active])
+  // Braces, not a concise body: Chrome's `scrollIntoView` answers with a promise, and React reads
+  // whatever an effect returns as its clean-up function.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest" })
+  }, [active])
 
   const items = results._tag === "items" ? results.items : []
   const choose = (index: number) => {
