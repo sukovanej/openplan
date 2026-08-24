@@ -30,6 +30,16 @@ fn write_task(dir: &Path, number: u64, body: &str) {
     .unwrap();
 }
 
+fn write_tag(dir: &Path, name: &str, color: &str) {
+    let tags = dir.join(".plan").join("tags");
+    std::fs::create_dir_all(&tags).unwrap();
+    std::fs::write(
+        tags.join(format!("{name}.md")),
+        format!("---\ncolor: {color}\n---\n\n# {name}\n"),
+    )
+    .unwrap();
+}
+
 fn write_config(dir: &Path, contents: &str) {
     std::fs::create_dir_all(dir.join(".plan")).unwrap();
     std::fs::write(dir.join(".plan").join("config.toml"), contents).unwrap();
@@ -60,6 +70,32 @@ fn saw_change(rx: &Receiver<Change>, number: u64, branch: &str) -> bool {
         }
     }
     false
+}
+
+fn saw_tags(rx: &Receiver<Change>, branch: &str) -> bool {
+    let deadline = Instant::now() + WAIT;
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(Change::Tags { branch: got }) if got == branch => return true,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    false
+}
+
+// Every tags change seen over a quiet window.
+fn collect_tags(rx: &Receiver<Change>, window: Duration) -> Vec<String> {
+    let deadline = Instant::now() + window;
+    let mut out = Vec::new();
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(Change::Tags { branch }) => out.push(branch),
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    out
 }
 
 fn saw_config(rx: &Receiver<Change>) -> bool {
@@ -299,6 +335,141 @@ fn removing_the_config_is_reported_too() {
     assert!(
         saw_config(&rx),
         "a store left with no abbreviation must be reported, not read as unchanged"
+    );
+    watcher.stop();
+}
+
+#[test]
+fn registering_the_first_tag_emits_tags_for_its_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    init_repo(path);
+    write_task(path, 1, "Alpha");
+    git(path, &["add", "."]);
+    git(path, &["commit", "-qm", "init"]);
+
+    let repo = Repo::discover(path).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let watcher = Watcher::start(repo, store(path), tx).unwrap();
+
+    // No `.plan/tags` existed when the watcher started, so this covers the directory's creation as
+    // well as the file's.
+    write_tag(path, "backend", "blue");
+
+    assert!(
+        saw_tags(&rx, "main"),
+        "the first tag a branch registers must be reported"
+    );
+    watcher.stop();
+}
+
+#[test]
+fn recoloring_a_tag_emits_tags_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    init_repo(path);
+    write_task(path, 1, "Alpha");
+    write_tag(path, "backend", "blue");
+    git(path, &["add", "."]);
+    git(path, &["commit", "-qm", "init"]);
+
+    let repo = Repo::discover(path).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let watcher = Watcher::start(repo, store(path), tx).unwrap();
+
+    write_tag(path, "backend", "teal");
+
+    assert!(
+        saw_tags(&rx, "main"),
+        "an edit to a registered tag file must be reported"
+    );
+    watcher.stop();
+}
+
+#[test]
+fn a_tag_write_in_a_worktree_is_attributed_to_its_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    init_repo(path);
+    write_task(path, 1, "Alpha");
+    git(path, &["add", "."]);
+    git(path, &["commit", "-qm", "init"]);
+
+    let feat_root = tempfile::tempdir().unwrap();
+    let feat = feat_root.path().join("wt");
+    git(
+        path,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            feat.to_str().unwrap(),
+            "-b",
+            "feat",
+        ],
+    );
+
+    let repo = Repo::discover(path).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let watcher = Watcher::start(repo, store(path), tx).unwrap();
+
+    write_tag(&feat, "wip", "amber");
+
+    assert!(
+        saw_tags(&rx, "feat"),
+        "a tag registered in a worktree belongs to that worktree's branch"
+    );
+    watcher.stop();
+}
+
+#[test]
+fn a_task_only_edit_emits_no_tags_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    init_repo(path);
+    write_task(path, 1, "Alpha");
+    write_tag(path, "backend", "blue");
+    git(path, &["add", "."]);
+    git(path, &["commit", "-qm", "init"]);
+
+    let repo = Repo::discover(path).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let watcher = Watcher::start(repo, store(path), tx).unwrap();
+
+    write_task(path, 1, "Alpha edited");
+    assert!(saw_change(&rx, 1, "main"), "the task edit still lands");
+
+    let tags = collect_tags(&rx, QUIET);
+    assert!(
+        tags.is_empty(),
+        "the registry was untouched and must not be reported: {tags:?}"
+    );
+    watcher.stop();
+}
+
+#[test]
+fn unrelated_git_activity_emits_no_tags_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    init_repo(path);
+    write_task(path, 1, "Alpha");
+    write_tag(path, "backend", "blue");
+    std::fs::write(path.join("code.txt"), "one").unwrap();
+    git(path, &["add", "."]);
+    git(path, &["commit", "-qm", "init"]);
+
+    let repo = Repo::discover(path).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let watcher = Watcher::start(repo, store(path), tx).unwrap();
+
+    std::fs::write(path.join("code.txt"), "two").unwrap();
+    git(path, &["add", "code.txt"]);
+    git(path, &["commit", "-qm", "code only"]);
+
+    let tags = collect_tags(&rx, QUIET);
+    assert!(
+        tags.is_empty(),
+        "git churn that leaves the registry alone must emit nothing: {tags:?}"
     );
     watcher.stop();
 }

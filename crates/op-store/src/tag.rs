@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -20,6 +20,18 @@ impl Store {
         self.tag_names()?
             .into_iter()
             .map(|name| self.read_tag_file(&self.tag_file(&name), name))
+            .collect()
+    }
+
+    // One scan and one open per tag, hashed rather than parsed by the watcher: a tag file the
+    // parser would reject must still register as a change.
+    pub fn read_all_raw_tags(&self) -> Result<BTreeMap<String, String>, StoreError> {
+        self.tag_names()?
+            .into_iter()
+            .map(|name| {
+                let text = std::fs::read_to_string(self.tag_file(&name))?;
+                Ok((name, text))
+            })
             .collect()
     }
 

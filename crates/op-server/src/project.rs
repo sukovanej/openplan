@@ -507,6 +507,10 @@ pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent
                     id: watched.abbreviation().format_key(number),
                     branch,
                 },
+                Change::Tags { branch } => ChangeEvent::TagsChanged {
+                    project: watched.name(),
+                    branch,
+                },
                 Change::Config => {
                     watched.reload_config();
                     ChangeEvent::ProjectsChanged
