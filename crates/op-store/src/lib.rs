@@ -10,6 +10,7 @@ use op_task::{
 };
 
 mod config;
+mod tag;
 pub use config::{CONFIG_FILE, Config, ConfigError};
 
 pub const STORE_DIR: &str = ".plan";
@@ -44,6 +45,15 @@ pub enum StoreError {
     NotFound { id: String },
     #[error("task id already taken: {id}")]
     IdTaken { id: String },
+    #[error("no such tag: {name}")]
+    TagNotFound { name: String },
+    #[error("tag already exists: {name}")]
+    TagExists { name: String },
+    #[error(
+        "tag {name} is used by {count} task(s) on this branch; pass --force to delete it and leave \
+         those references dangling"
+    )]
+    TagReferenced { name: String, count: usize },
     #[error("not a task reference: {reference:?}; {}", op_task::REFERENCE_EXPECTED)]
     InvalidRef { reference: String },
     #[error("{0}")]
@@ -61,6 +71,14 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Task(#[from] op_task::TaskError),
+    #[error("{path}: {source}")]
+    TagFile {
+        path: PathBuf,
+        #[source]
+        source: op_task::tag::TagError,
+    },
+    #[error(transparent)]
+    InvalidColor(#[from] op_task::tag::ParseColorError),
 }
 
 impl Store {
@@ -309,33 +327,8 @@ impl Store {
         id: u64,
         f: impl FnOnce() -> Result<T, StoreError>,
     ) -> Result<T, StoreError> {
-        // Creation never conflicts (one file per task, one number per task), so a lock
-        // only guards mutation of an existing task — open without creating, so a
-        // lock never materializes a phantom empty task file.
         let path = self.task_path(id)?;
-        for _ in 0..LOCK_ATTEMPTS {
-            let file = match OpenOptions::new().read(true).open(&path) {
-                Ok(file) => file,
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    return Err(self.not_found(id));
-                }
-                Err(e) => return Err(e.into()),
-            };
-            file.lock_exclusive()?;
-            // A concurrent atomic replace renames a fresh inode over the path while we wait
-            // for the lock, leaving our lock guarding a stale, unlinked inode. Re-open until
-            // the inode we locked is the one currently at the path, so writes truly serialize.
-            if same_inode(&file, &path)? {
-                let result = f();
-                let _ = fs2::FileExt::unlock(&file);
-                return result;
-            }
-            let _ = fs2::FileExt::unlock(&file);
-        }
-        Err(StoreError::Io(io::Error::new(
-            io::ErrorKind::WouldBlock,
-            format!("lock contention on {id} did not settle"),
-        )))
+        with_file_lock(&path, || self.not_found(id), f)
     }
 
     // Only references this write newly introduces are validated. A parent/dep that was
@@ -435,6 +428,18 @@ impl Store {
                 )));
             }
         }
+        // The whole set, not just what this write adds: a task holding a tag this branch does not
+        // register must drop it in the same write, so no edit carries a dangling name forward.
+        if !new.tags.is_empty() {
+            let registered = self.tag_names()?;
+            for tag in &new.tags {
+                if !registered.contains(tag) {
+                    return Err(StoreError::Invalid(format!(
+                        "tag {tag} does not exist; register it with `openplan tag create \"{tag}\"`"
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -464,32 +469,74 @@ impl Store {
         Ok(())
     }
 
-    // Atomic replace of an existing task: the rename swaps the fully-written temp into place
-    // in one step, so a watcher never observes a torn file. Callers hold the per-file lock.
     fn atomic_replace(&self, id: u64, bytes: &[u8]) -> Result<(), StoreError> {
-        let path = self.task_path(id)?;
-        let tmp = self.write_temp(bytes)?;
-        std::fs::rename(&tmp, path)?;
-        Ok(())
+        atomic_replace(&self.task_path(id)?, bytes)
     }
 
     fn write_temp(&self, bytes: &[u8]) -> Result<PathBuf, StoreError> {
-        let dir = self.tasks_dir();
-        for _ in 0..ID_ATTEMPTS {
-            let path = dir.join(format!(".op-{}-{}.tmp", std::process::id(), rand_hex(4)?));
-            match OpenOptions::new().write(true).create_new(true).open(&path) {
-                Ok(mut file) => {
-                    file.write_all(bytes)?;
-                    return Ok(path);
-                }
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(e.into()),
-            }
-        }
-        Err(StoreError::Io(io::Error::other(format!(
-            "could not open a temp file after {ID_ATTEMPTS} attempts"
-        ))))
+        write_temp(&self.tasks_dir(), bytes)
     }
+}
+
+pub(crate) fn with_file_lock<T>(
+    path: &Path,
+    missing: impl Fn() -> StoreError,
+    f: impl FnOnce() -> Result<T, StoreError>,
+) -> Result<T, StoreError> {
+    // Creation never conflicts (one file per name), so a lock only guards mutation of an existing
+    // file — open without creating, so a lock never materializes a phantom empty one.
+    for _ in 0..LOCK_ATTEMPTS {
+        let file = match OpenOptions::new().read(true).open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(missing()),
+            Err(e) => return Err(e.into()),
+        };
+        file.lock_exclusive()?;
+        // A concurrent atomic replace renames a fresh inode over the path while we wait
+        // for the lock, leaving our lock guarding a stale, unlinked inode. Re-open until
+        // the inode we locked is the one currently at the path, so writes truly serialize.
+        if same_inode(&file, path)? {
+            let result = f();
+            let _ = fs2::FileExt::unlock(&file);
+            return result;
+        }
+        let _ = fs2::FileExt::unlock(&file);
+    }
+    Err(StoreError::Io(io::Error::new(
+        io::ErrorKind::WouldBlock,
+        format!("lock contention on {} did not settle", path.display()),
+    )))
+}
+
+// Atomic replace of an existing file: the rename swaps the fully-written temp into place in one
+// step, so a watcher never observes a torn file. Callers hold the per-file lock.
+pub(crate) fn atomic_replace(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
+    let dir = path.parent().ok_or_else(|| {
+        StoreError::Io(io::Error::other(format!(
+            "{} names no directory to write into",
+            path.display()
+        )))
+    })?;
+    let tmp = write_temp(dir, bytes)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+pub(crate) fn write_temp(dir: &Path, bytes: &[u8]) -> Result<PathBuf, StoreError> {
+    for _ in 0..ID_ATTEMPTS {
+        let path = dir.join(format!(".op-{}-{}.tmp", std::process::id(), rand_hex(4)?));
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                file.write_all(bytes)?;
+                return Ok(path);
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(StoreError::Io(io::Error::other(format!(
+        "could not open a temp file after {ID_ATTEMPTS} attempts"
+    ))))
 }
 
 // A task's title is its single `# H1`. Reject bodies with zero, empty, or multiple level-1

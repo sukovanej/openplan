@@ -163,14 +163,16 @@ impl Tag {
                 color: Some(color),
                 extra: serde_yaml::Mapping::new(),
             },
-            body: format!(
-                "# {}\n",
-                display_name
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
+            body: format!("# {}\n", one_line(display_name)),
         })
+    }
+
+    // The H1 goes with the name: a tag renamed to `infra` whose heading still reads `# Backend`
+    // would render under the name it no longer has.
+    pub fn rename(&mut self, display_name: &str) -> Result<(), ParseNameError> {
+        self.name = normalize_name(display_name)?;
+        self.body = retitle(&self.body, &one_line(display_name));
+        Ok(())
     }
 
     pub fn color(&self) -> Color {
@@ -203,5 +205,17 @@ impl Tag {
             frontmatter: serde_yaml::from_str(&fm_src.replace('\r', ""))?,
             body: body.to_owned(),
         })
+    }
+}
+
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn retitle(body: &str, display_name: &str) -> String {
+    let heading = format!("# {display_name}\n");
+    match op_md::headings(body).into_iter().find(|h| h.level == 1) {
+        Some(h1) => format!("{}{heading}{}", &body[..h1.start], &body[h1.end..]),
+        None => format!("{heading}{body}"),
     }
 }
