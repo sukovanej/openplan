@@ -93,7 +93,7 @@ enum Command {
         #[arg(long)]
         branch: Option<String>,
     },
-    /// Print a task's metadata (status, parent, dependencies)
+    /// Print a task's metadata (status, parent, dependencies, tags)
     Show {
         id: String,
         /// Show the per-branch status matrix for this task instead
@@ -203,7 +203,8 @@ enum TagCommand {
     /// Delete a tag file
     Delete {
         name: String,
-        /// Delete the tag even while tasks on this branch carry it
+        /// Delete the tag even while tasks on this branch carry it; each of those tasks keeps a
+        /// name this branch does not register, and refuses every write until the name goes
         #[arg(long)]
         force: bool,
         #[arg(long)]
@@ -274,6 +275,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             body_file,
         } => {
             let body = resolve_body(body, body_file)?;
+            let tags = tag::identities(tags)?;
             create(
                 root,
                 daemon_url,
@@ -659,7 +661,7 @@ fn parse_field(field: &str, value: &str) -> Result<TaskPatch> {
         // The whole set, like `dependencies`: what the caller names is what the task ends up with,
         // and "" clears it.
         "tags" => TaskPatch {
-            tags: Some(comma_separated(value)),
+            tags: Some(tag::identities(comma_separated(value))?),
             ..TaskPatch::default()
         },
         other => bail!("unknown field {other:?}; expected status | parent | dependencies | tags"),

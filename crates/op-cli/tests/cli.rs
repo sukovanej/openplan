@@ -2232,6 +2232,56 @@ fn tag_delete_refuses_a_referenced_tag_until_it_is_forced() {
     let forced = run(&dir, &["tag", "delete", "backend", "--force", "--yes"]);
     assert!(forced.status.success(), "stderr: {}", stderr(&forced));
     assert!(!tag_file(dir.path(), "backend").exists());
+    assert!(
+        stderr(&forced).contains("1 task still carries backend"),
+        "a forced delete says what it left behind: {}",
+        stderr(&forced)
+    );
+}
+
+#[test]
+fn tag_names_reach_the_store_as_the_identity_they_normalize_to() {
+    let dir = Project::new();
+    assert_eq!(create_tag(&dir, "Front End"), "front-end");
+
+    let out = run(&dir, &["create", "Wire the parser", "--tag", "Front End"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let id = stdout(&out).trim().to_owned();
+    assert_eq!(tags_of(dir.path(), &id), vec!["front-end".to_owned()]);
+
+    assert!(
+        run(&dir, &["set", &id, "tags", "FRONT_END"])
+            .status
+            .success()
+    );
+    assert_eq!(tags_of(dir.path(), &id), vec!["front-end".to_owned()]);
+
+    let shown = stdout(&run(&dir, &["tag", "show", "Front_End"]));
+    assert!(shown.contains("name:    front-end"), "{shown}");
+}
+
+#[test]
+fn a_name_no_tag_can_have_is_refused_with_the_rule() {
+    let dir = Project::new();
+
+    for args in [
+        vec!["create", "Wire the parser", "--tag", "C++"],
+        vec!["tag", "show", ""],
+        vec!["tag", "delete", ""],
+    ] {
+        let out = run(&dir, &args);
+        assert!(!out.status.success(), "{args:?} stdout: {}", stdout(&out));
+        assert!(
+            stderr(&out).contains("lowercase letters"),
+            "{args:?} answers with the naming rule: {}",
+            stderr(&out)
+        );
+        assert!(
+            !stderr(&out).contains("openplan server stop"),
+            "{args:?} must not blame the daemon: {}",
+            stderr(&out)
+        );
+    }
 }
 
 #[test]

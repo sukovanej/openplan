@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 use op_api::{CreateTag, FieldUpdate, TagPatch, TagView};
-use op_task::tag::Color;
+use op_task::tag::{Color, normalize_name};
 
 use crate::TagCommand;
 use crate::plan::Plan;
@@ -22,15 +22,36 @@ pub fn run(command: TagCommand, root: &Path, daemon_url: Option<&str>) -> Result
             description,
         } => create(&Plan::resolve(root, daemon_url)?, name, color, description),
         TagCommand::List { json } => list(&Plan::resolve(root, daemon_url)?, json),
-        TagCommand::Show { name, json } => show(&Plan::resolve(root, daemon_url)?, &name, json),
-        TagCommand::Set { name, field, value } => {
-            set(&Plan::resolve(root, daemon_url)?, &name, &field, &value)
+        TagCommand::Show { name, json } => {
+            show(&Plan::resolve(root, daemon_url)?, &identity(&name)?, json)
         }
-        TagCommand::Rename { from, to } => rename(&Plan::resolve(root, daemon_url)?, &from, to),
-        TagCommand::Delete { name, force, yes } => {
-            delete(&Plan::resolve(root, daemon_url)?, &name, force, yes)
+        TagCommand::Set { name, field, value } => set(
+            &Plan::resolve(root, daemon_url)?,
+            &identity(&name)?,
+            &field,
+            &value,
+        ),
+        TagCommand::Rename { from, to } => {
+            rename(&Plan::resolve(root, daemon_url)?, &identity(&from)?, to)
         }
+        TagCommand::Delete { name, force, yes } => delete(
+            &Plan::resolve(root, daemon_url)?,
+            &identity(&name)?,
+            force,
+            yes,
+        ),
     }
+}
+
+// A tag is identified by its name, and a name a caller typed is a spelling of one. Settling that
+// spelling here is what keeps `--tag "Front End"` from asking the daemon about a tag no name can
+// have, and what answers a name like `C++` with the rule it breaks rather than with "no such tag".
+pub fn identity(name: &str) -> Result<String> {
+    Ok(normalize_name(name)?)
+}
+
+pub fn identities(names: Vec<String>) -> Result<Vec<String>> {
+    names.iter().map(|name| identity(name)).collect()
 }
 
 fn colors() {
@@ -128,17 +149,50 @@ fn delete(plan: &Plan, name: &str, force: bool, yes: bool) -> Result<()> {
     // The delete targets the caller's branch, so the prompt has to be about a tag that branch
     // registers — a name it does not know must refuse before it asks the reader to confirm one.
     let tag = plan.tag(name)?;
-    if !yes && !confirm(&tag)? {
+    let carried = tasks_carrying(plan, &tag.name)?;
+    if !yes && !confirm(&tag, carried.len())? {
         println!("aborted");
         return Ok(());
     }
     plan.delete_tag(&tag.name, force)?;
     println!("deleted {}", tag.name);
+    // A forced delete leaves those tasks holding a name this branch no longer registers, and every
+    // write validates the whole set, so each of them refuses even a status change until the name
+    // goes. Saying so is what keeps --force from costing the reader a debugging session.
+    if !carried.is_empty() {
+        eprintln!(
+            "warning: {} still carr{} {}; each one refuses a write until you drop the name with `openplan set <id> tags \"…\"`",
+            plural_tasks(carried.len()),
+            if carried.len() == 1 { "ies" } else { "y" },
+            tag.name,
+        );
+    }
     Ok(())
 }
 
-fn confirm(tag: &TagView) -> Result<bool> {
-    print!("delete tag {}? [y/N] ", tag.name);
+fn tasks_carrying(plan: &Plan, name: &str) -> Result<Vec<String>> {
+    Ok(plan
+        .list(plan.branch())?
+        .into_iter()
+        .filter(|task| task.metadata.tags().iter().any(|tag| tag == name))
+        .map(|task| task.id)
+        .collect())
+}
+
+fn plural_tasks(count: usize) -> String {
+    format!("{count} task{}", if count == 1 { "" } else { "s" })
+}
+
+fn confirm(tag: &TagView, carried: usize) -> Result<bool> {
+    match carried {
+        0 => print!("delete tag {}? [y/N] ", tag.name),
+        carried => print!(
+            "delete tag {}? {} carr{} it [y/N] ",
+            tag.name,
+            plural_tasks(carried),
+            if carried == 1 { "ies" } else { "y" }
+        ),
+    }
     std::io::stdout().flush()?;
     let mut answer = String::new();
     std::io::stdin().read_line(&mut answer)?;

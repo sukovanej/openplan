@@ -126,27 +126,31 @@ impl Plan {
     }
 
     pub fn create_tag(&self, tag: &CreateTag) -> Result<TagView> {
-        Ok(self
-            .client
-            .create_tag(&self.base_url, &self.project, &self.branch, tag)?)
+        served(
+            self.client
+                .create_tag(&self.base_url, &self.project, &self.branch, tag),
+        )
     }
 
     pub fn patch_tag(&self, name: &str, patch: &TagPatch) -> Result<TagView> {
-        Ok(self
-            .client
-            .patch_tag(&self.base_url, &self.project, &self.branch, name, patch)?)
+        served(
+            self.client
+                .patch_tag(&self.base_url, &self.project, &self.branch, name, patch),
+        )
     }
 
     pub fn delete_tag(&self, name: &str, force: bool) -> Result<()> {
-        Ok(self
-            .client
-            .delete_tag(&self.base_url, &self.project, &self.branch, name, force)?)
+        served(
+            self.client
+                .delete_tag(&self.base_url, &self.project, &self.branch, name, force),
+        )
     }
 }
 
-// A daemon older than the read routes has two ways of saying so, and neither of them says it. One
+// A daemon older than these routes has two ways of saying so, and neither of them says it. One
 // that refuses unserved `/api/` paths answers 404 about a route, where every other 404 here is about
-// a task; an older one still falls those paths through to the SPA and answers the page itself. Both
+// a task or a tag; an older one still falls those paths through to the SPA and answers the page
+// itself. Both
 // mean the same thing: stop the daemon. JSON of the wrong shape is not one of them — that is a
 // schema mismatch, which says nothing about the daemon's age and must not send anyone to stop a
 // daemon other repositories are using.
@@ -160,7 +164,7 @@ fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
     };
     outcome.map_err(|err| match predates(&err) {
         true => anyhow::Error::new(err).context(
-            "this openplan daemon does not serve the read routes; it predates them. Stop it \
+            "this openplan daemon does not serve these routes; it predates them. Stop it \
              (`openplan server stop`) and rerun here.",
         ),
         false => anyhow::Error::new(err),
