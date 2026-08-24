@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-08-23T23:09:52Z
 ---
 # Comments on tasks (CLI, API, read-only web thread)
@@ -187,3 +187,7 @@ No `--fix` for any of them. Every possible fix rewrites what a person wrote in a
 >
 > - An author whose name holds ` via ` loses the tail to the agent. `Ada via Lovelace` reads back as author `Ada` and agent `Lovelace`. Only a change to the heading grammar can prevent it.
 > - `AI_AGENT` cannot override `CLAUDECODE`, because the order in this task reads the environment for a known tool first. An explicit declaration could outrank inference instead.
+
+### 2026-08-24T17:01:42Z by Milan Suk via claude-code
+
+> The task row shows the comment count, although "no comment column in the task table" is out of scope here. The count sits in the row's meta line beside the times, not in a column of its own, and it hides at zero. `TaskListItem.comment_count` already carried it.
