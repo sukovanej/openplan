@@ -710,13 +710,21 @@ async fn removing_a_project_leaves_the_others_serving() {
 
     send(&state, "DELETE", "/api/projects/alpha", None).await;
     assert_eq!(
-        send(&state, "GET", "/api/projects/alpha/config", None)
+        send(&state, "GET", "/api/projects/alpha/board", None)
             .await
             .status(),
         StatusCode::NOT_FOUND
     );
-    let config = body_json(send(&state, "GET", "/api/projects/beta/config", None).await).await;
-    assert_eq!(config["abbreviation"], "BBB");
+    let views = body_json(send(&state, "GET", "/api/projects", None).await).await;
+    assert_eq!(views.as_array().unwrap().len(), 1, "{views}");
+    assert_eq!(views[0]["name"], "beta");
+    assert_eq!(views[0]["abbreviation"], "BBB");
+    assert_eq!(
+        send(&state, "GET", "/api/projects/beta/board", None)
+            .await
+            .status(),
+        StatusCode::OK
+    );
 }
 
 // Zero projects is a served state: the daemon answers, and says so, rather than refusing to run.

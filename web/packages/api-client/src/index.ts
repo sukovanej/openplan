@@ -90,10 +90,6 @@ export type RenameProject = { readonly name: string }
 export const RenameProject = Schema.Struct({ name: Schema.String })
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
-export type StoreConfig = { readonly abbreviation: string }
-export const StoreConfig = Schema.Struct({
-  abbreviation: Schema.String.check(Schema.isPattern(new RegExp("^[A-Z]{3}$"))),
-})
 export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
 export const TaskTreeView = Schema.Struct({ cycles: Schema.optionalKey(Schema.Array(Schema.String)), tree: TaskTree })
 export type WriteTarget = { readonly branch: string; readonly writable: boolean }
@@ -399,12 +395,6 @@ export type GetBoard500 = ApiErrorBody
 export const GetBoard500 = ApiErrorBody
 export type GetBoard503 = ApiErrorBody
 export const GetBoard503 = ApiErrorBody
-export type GetConfig200 = StoreConfig
-export const GetConfig200 = StoreConfig
-export type GetConfig404 = ApiErrorBody
-export const GetConfig404 = ApiErrorBody
-export type GetConfig503 = ApiErrorBody
-export const GetConfig503 = ApiErrorBody
 export type GetMatrixParams = { readonly fresh?: boolean }
 export const GetMatrixParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
 export type GetMatrix200 = Matrix
@@ -814,17 +804,6 @@ export const make = (
           }),
         ),
       ),
-    getConfig: (project, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/config`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetConfig200),
-            "404": decodeError("GetConfig404", GetConfig404),
-            "503": decodeError("GetConfig503", GetConfig503),
-            orElse: unexpectedStatus,
-          }),
-        ),
-      ),
     getMatrix: (project, options) =>
       HttpClientRequest.get(`/api/projects/${project}/matrix`).pipe(
         HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
@@ -1174,16 +1153,6 @@ export interface TasksClient {
     | TasksClientError<"GetBoard404", typeof GetBoard404.Type>
     | TasksClientError<"GetBoard500", typeof GetBoard500.Type>
     | TasksClientError<"GetBoard503", typeof GetBoard503.Type>
-  >
-  readonly getConfig: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetConfig200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetConfig404", typeof GetConfig404.Type>
-    | TasksClientError<"GetConfig503", typeof GetConfig503.Type>
   >
   readonly getMatrix: <Config extends OperationConfig>(
     project: string,

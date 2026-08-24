@@ -19,6 +19,7 @@ use op_api::{
 };
 use op_git::Repo;
 use op_lint::{CreatedSource, Diagnostic, Snapshot};
+use op_server::canonical;
 use op_store::Store;
 use op_task::tag::Color;
 use op_task::{Status, Timestamp, rank};
@@ -971,10 +972,6 @@ fn lint_target_path(snapshot: &Snapshot, store: &Store, target: &str) -> Option<
         .iter()
         .map(|file| canonical(&file.path))
         .find(|path| spellings.contains(path))
-}
-
-fn canonical(path: &Path) -> PathBuf {
-    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 struct GitCreated {

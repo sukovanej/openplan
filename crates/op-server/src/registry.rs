@@ -44,7 +44,7 @@ impl ProjectRegistry {
     // Rename over a temporary in the same directory, so a reader never sees a half-written registry
     // and a crash mid-write leaves the previous one intact. The contents reach the disk before the
     // rename, and the rename before this returns: an empty file here parses as zero projects, which
-    // would drop every project but `--root` on the next start without reporting anything.
+    // would leave the next start serving nothing at all without reporting anything.
     pub fn write(&self, path: &Path) -> Result<(), RegistryError> {
         let text = toml::to_string_pretty(self).map_err(|err| RegistryError::Invalid {
             path: path.to_path_buf(),
@@ -66,11 +66,6 @@ impl ProjectRegistry {
         &self.entries
     }
 
-    pub fn add(&mut self, path: PathBuf) -> &ProjectEntry {
-        let name = unique_name(&path, |name| self.holds_name(name));
-        self.insert(ProjectEntry { name, path })
-    }
-
     pub fn insert(&mut self, entry: ProjectEntry) -> &ProjectEntry {
         self.entries.push(entry);
         self.entries.last().expect("just pushed")
@@ -82,9 +77,8 @@ impl ProjectRegistry {
             .find(|entry| same_path(&entry.path, path))
     }
 
-    // A rename keeps the entry where it is. `AppState::new` takes the first entry it can open as the
-    // default project, so removing and re-appending would hand the routes that carry no project
-    // segment to another repository on the next start.
+    // A rename keeps the entry where it is. `registry.toml` holds the projects in the order they
+    // were registered in, and removing and re-appending would move the renamed one to the end.
     pub fn replace(&mut self, name: &str, entry: ProjectEntry) -> bool {
         match self.entries.iter().position(|held| held.name == name) {
             Some(at) => {

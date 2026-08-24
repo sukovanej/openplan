@@ -2242,7 +2242,6 @@ dependencies = [
  "op-api",
  "op-git",
  "op-index",
- "op-presence",
  "op-store",
  "op-task",
  "op-watch",

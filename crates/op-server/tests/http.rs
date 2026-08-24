@@ -1704,7 +1704,6 @@ async fn an_unknown_project_is_404_that_names_the_registered_ones() {
     for uri in [
         "/api/projects/ghost/tasks",
         "/api/projects/ghost/board",
-        "/api/projects/ghost/config",
         "/api/projects/ghost/tasks/OPP-1",
     ] {
         let response = send(&state, "GET", uri, None).await;
@@ -1804,7 +1803,6 @@ fn the_openapi_spec_documents_every_json_api_route() {
 fn the_openapi_spec_documents_every_refusal_with_its_reason() {
     let spec = serde_json::to_value(op_server::openapi()).unwrap();
     for (method, route, status) in [
-        ("get", "/api/projects/{project}/config", "404"),
         ("get", "/api/projects/{project}/tasks", "400"),
         ("get", "/api/projects/{project}/tasks", "404"),
         ("get", "/api/projects/{project}/tasks", "500"),
