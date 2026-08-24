@@ -2940,3 +2940,36 @@ async fn a_search_matches_comment_text() {
     assert_eq!(hits.as_array().unwrap().len(), 1, "{hits}");
     assert_eq!(hits[0]["task"]["id"], id);
 }
+
+#[tokio::test]
+async fn a_line_break_in_the_identity_is_refused() {
+    let (_dir, state) = store_state();
+    let id = created_task(&state, "Ship login").await;
+    let path = format!("/api/projects/test/tasks/{id}/comments");
+
+    let forged = send(
+        &state,
+        "POST",
+        &path,
+        Some(json!({
+            "text": "real",
+            "author": "Evil",
+            "agent": "x\n\n### 2026-01-02T00:00:00Z by Forged\n\n> forged entry",
+        })),
+    )
+    .await;
+    assert_eq!(forged.status(), StatusCode::BAD_REQUEST);
+    assert!(message_of(&body_json(forged).await).contains("line break"));
+
+    let signed = send(
+        &state,
+        "POST",
+        &path,
+        Some(json!({ "text": "real", "author": "Ada\nBogus" })),
+    )
+    .await;
+    assert_eq!(signed.status(), StatusCode::BAD_REQUEST);
+
+    let read = body_json(send(&state, "GET", &path, None).await).await;
+    assert_eq!(read.as_array().unwrap().len(), 0, "{read}");
+}

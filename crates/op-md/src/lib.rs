@@ -72,7 +72,6 @@ pub fn section_end(body: &str, heading: &Heading) -> usize {
 // `block` placed at the end of the named section, which is created at the end of the body when it
 // is absent. One blank line separates the block from what it follows and from what follows it.
 pub fn append_under(body: &str, level: u8, title: &str, block: &str) -> String {
-    let block = block.trim_matches('\n');
     let Some(found) = heading(body, level, title) else {
         let heading = format!("{} {title}", "#".repeat(level as usize));
         return paragraphs([body, &heading, block]);
@@ -81,7 +80,7 @@ pub fn append_under(body: &str, level: u8, title: &str, block: &str) -> String {
     paragraphs([&body[..end], block, &body[end..]])
 }
 
-fn paragraphs<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
+pub fn paragraphs<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
     let mut out = String::new();
     for part in parts {
         let part = part.trim_matches('\n');

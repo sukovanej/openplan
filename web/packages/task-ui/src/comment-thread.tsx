@@ -3,10 +3,8 @@ import { Bot, CircleAlert } from "lucide-react"
 import type { Comment, FieldError, TaskRef } from "@open-planner/api-client"
 import { absoluteTime, MetaLine, Section, Tag, Tooltip } from "@open-planner/ui"
 
-import { fieldFailure, fieldValue } from "./metadata"
+import { fieldFailure, fieldMessage, fieldValue } from "./metadata"
 import { TaskBody } from "./task-body"
-
-const describe = (failure: FieldError): string => (failure.kind === "missing" ? "missing" : failure.message)
 
 // A comment log is append-only, and the web reads it. There is no input box and no edit control,
 // because the CLI is what writes an entry and the daemon is the single writer behind it.
@@ -63,7 +61,7 @@ function Damaged({ field, children }: { field: string | FieldError; children: (v
   const value = fieldValue(field)
   if (value !== undefined) return <>{children(value)}</>
   const failure = fieldFailure(field)
-  const message = failure === undefined ? "unreadable" : describe(failure)
+  const message = failure === undefined ? "unreadable" : fieldMessage(failure)
   return (
     <Tooltip content={message}>
       {/* Focusable, so the keyboard reaches the reason: it stands where a value would have. */}

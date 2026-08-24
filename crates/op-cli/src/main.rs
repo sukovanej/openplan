@@ -592,46 +592,30 @@ fn comments(
     Ok(())
 }
 
-// One stream out of several logs. The file order inside a branch is the true order, so an entry is
-// only ever taken from the front of its own branch's log; between branches the earlier timestamp
-// goes first, and the branch name breaks a tie. An entry whose timestamp does not parse inherits
-// the one before it in its branch — the epoch when it leads — which holds it among the entries it
-// was written with.
+// One stream out of several logs. The earlier timestamp goes first, the branch name breaks a tie,
+// and the position within a branch breaks the rest — so the file order inside a branch survives,
+// which is the only order a log promises. An entry whose timestamp does not parse takes the one
+// before it in its branch, the epoch when it leads, which holds it among the entries it was written
+// with.
 fn merged(groups: &[op_api::BranchComments]) -> Vec<(&str, &Comment)> {
-    let mut queues: Vec<(&str, std::vec::IntoIter<(Timestamp, &Comment)>)> = groups
+    let mut all: Vec<(Timestamp, &str, usize, &Comment)> = groups
         .iter()
-        .map(|group| {
+        .flat_map(|group| {
             let mut carried = Timestamp::default();
-            let dated: Vec<(Timestamp, &Comment)> = group
+            group
                 .comments
                 .iter()
-                .map(|comment| {
+                .enumerate()
+                .map(move |(position, comment)| {
                     carried = comment.at.as_value().map_or(carried, |at| at.0);
-                    (carried, comment)
+                    (carried, group.branch.as_str(), position, comment)
                 })
-                .collect();
-            (group.branch.as_str(), dated.into_iter())
         })
         .collect();
-    let mut out = Vec::new();
-    loop {
-        let next = queues
-            .iter()
-            .enumerate()
-            .filter_map(|(index, (branch, queue))| {
-                queue
-                    .as_slice()
-                    .first()
-                    .map(|(at, _)| (*at, *branch, index))
-            })
-            .min();
-        let Some((_, branch, index)) = next else {
-            return out;
-        };
-        if let Some((_, comment)) = queues[index].1.next() {
-            out.push((branch, comment));
-        }
-    }
+    all.sort_by_key(|(at, branch, position, _)| (*at, *branch, *position));
+    all.into_iter()
+        .map(|(_, branch, _, comment)| (branch, comment))
+        .collect()
 }
 
 fn print_comment(branch: Option<&str>, comment: &Comment) {

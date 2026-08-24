@@ -3,8 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use op_task::{
-    Abbreviation, FieldError, PartialMetadata, Timestamp, body_ref_id, body_ref_spans, ref_id,
-    task_ref,
+    Abbreviation, FieldError, PartialMetadata, Timestamp, body_ref_id, ref_id, task_ref,
 };
 
 use crate::snapshot::{Snapshot, TaskFile};
@@ -207,15 +206,10 @@ fn scalar_ref_fix(snapshot: &Snapshot, base: usize, after: &str) -> Option<Fix> 
     })
 }
 
-// The comment log is append-only and holds text a person wrote, so no fix reaches inside it.
 fn body_ref_fixes(snapshot: &Snapshot, body: &str, body_offset: usize) -> Vec<Fix> {
     let abbreviation = snapshot.abbreviation();
-    let log = op_task::comment::section_span(body);
     let mut fixes = Vec::new();
-    for (span, inner) in body_ref_spans(body) {
-        if log.as_ref().is_some_and(|log| log.contains(&span.start)) {
-            continue;
-        }
+    for (span, inner) in crate::rules::outside_the_log(body) {
         let Some(canonical) = canonical_body_ref(snapshot, abbreviation, inner) else {
             continue;
         };

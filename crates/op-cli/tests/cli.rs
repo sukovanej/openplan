@@ -59,7 +59,12 @@ impl Project {
     fn cmd(&self) -> Command {
         let mut cmd = openplan();
         cmd.env("OPENPLAN_HOME", self.home.path())
-            .env("OPENPLAN_PORT", "0");
+            .env("OPENPLAN_PORT", "0")
+            // The repository under test is the only git config a test may read. Without this a
+            // developer's own `~/.gitconfig` reaches the command, and a test about an unset field
+            // passes here and fails on a machine that sets it.
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null");
         cmd
     }
 }

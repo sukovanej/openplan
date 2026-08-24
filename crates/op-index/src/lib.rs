@@ -829,7 +829,7 @@ impl Index {
         branch: Option<&str>,
     ) -> Result<Option<TaskDetail>, IndexError> {
         let cells = self.cells_of(id);
-        let Some(raw) = self.resolved_raw(repo, id, branch)? else {
+        let Some(raw) = self.resolved_raw(repo, id, branch, &cells)? else {
             return Ok(None);
         };
         let updated = match branch {
@@ -873,10 +873,11 @@ impl Index {
         repo: &Repo,
         id: &str,
         branch: Option<&str>,
+        cells: &[&MatrixCell],
     ) -> Result<Option<String>, IndexError> {
         match branch {
             Some(branch) => self.effective_raw(repo, id, branch),
-            None => match self.cells_of(id).as_slice() {
+            None => match cells {
                 [] => Ok(None),
                 cells => Ok(Some(self.cell_raw(repo, self.headline_cell(cells))?)),
             },
@@ -889,8 +890,9 @@ impl Index {
         id: &str,
         branch: Option<&str>,
     ) -> Result<Option<Vec<Comment>>, IndexError> {
+        let cells = self.cells_of(id);
         Ok(self
-            .resolved_raw(repo, id, branch)?
+            .resolved_raw(repo, id, branch, &cells)?
             .map(|raw| comments_of(&op_task::parse_partial(&raw).body)))
     }
 

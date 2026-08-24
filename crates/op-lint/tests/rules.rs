@@ -572,3 +572,16 @@ fn a_comments_section_that_is_not_last_is_reported() {
         false,
     );
 }
+
+#[test]
+fn prose_the_comment_log_has_no_place_for_is_reported() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# One\n\n## Comments\n\nplain prose a human typed\n\n### 2026-01-01T00:00:00Z by Test\n\n> a\n";
+    assert_single(
+        "00001-one.md",
+        source,
+        &[],
+        Code::Comment,
+        Some(span_of(source, "plain prose a human typed\n")),
+        false,
+    );
+}

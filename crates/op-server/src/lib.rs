@@ -1729,6 +1729,18 @@ fn new_comment(body: CreateComment) -> Result<op_task::comment::NewComment, ApiE
             "a comment needs an author; an unsigned entry in an append-only log is worse than none",
         ));
     }
+    // An entry heading is one line, and the identity is what signs it. A newline there would let one
+    // write append entries no one signed, so it is refused rather than folded away.
+    let one_line = |field: &str, value: &str| match value.contains(['\n', '\r']) {
+        true => Err(ApiError::bad_request(format!(
+            "a comment's {field} is one line; this one holds a line break"
+        ))),
+        false => Ok(()),
+    };
+    one_line("author", &body.author)?;
+    if let Some(agent) = &body.agent {
+        one_line("agent", agent)?;
+    }
     Ok(op_task::comment::NewComment {
         at: op_task::now(),
         author: body.author.trim().to_owned(),

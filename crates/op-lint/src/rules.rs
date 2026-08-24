@@ -569,11 +569,11 @@ fn body_refs_rewritable(snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
 // A comment holds text a person wrote, quoted line by line. A reference inside it belongs to that
 // text: the log is append-only, so no rule may ask for it to be rewritten and no `--fix` may rewrite
 // it.
-fn outside_the_log(body: &str) -> Vec<(Range<usize>, &str)> {
-    let log = op_task::comment::section_span(body);
+pub(crate) fn outside_the_log(body: &str) -> Vec<(Range<usize>, &str)> {
+    let log = op_task::comment::sections(body);
     op_task::body_ref_spans(body)
         .into_iter()
-        .filter(|(span, _)| !log.as_ref().is_some_and(|log| log.contains(&span.start)))
+        .filter(|(span, _)| !op_task::comment::inside_log(&log, span.start))
         .collect()
 }
 
@@ -593,18 +593,19 @@ fn comment_log(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
     };
     for section in extra {
         report(
-            at(&(section.start..section.end)),
+            at(&section.heading),
             "a task holds one `## Comments` section",
         );
     }
-    if op_md::section_end(body, first) < body.len() {
+    if first.span.end < body.len() {
         report(
-            at(&(first.start..first.end)),
+            at(&first.heading),
             "`## Comments` must be the last section of a task",
         );
     }
 
-    for entry in op_task::comment::entries(body) {
+    let log = op_task::comment::read(body);
+    for entry in &log.entries {
         match (&entry.heading, &entry.quote) {
             (Some(heading), None) => report(
                 at(heading),
@@ -621,6 +622,14 @@ fn comment_log(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
             }
             (None, None) => {}
         }
+    }
+    // A log holds entry headings and blockquotes and nothing else, so anything else in it reaches no
+    // reader — every surface renders the entries. Reporting it is what keeps it from being lost.
+    for line in &log.stray {
+        report(
+            at(line),
+            "a comment log holds entry headings and blockquotes only",
+        );
     }
 }
 

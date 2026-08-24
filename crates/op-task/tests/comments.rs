@@ -132,7 +132,7 @@ fn an_unquoted_blank_line_splits_a_comment_in_two() {
 #[test]
 fn a_heading_with_no_quote_is_an_entry_with_no_text() {
     let body = "# T\n\n## Comments\n\n### 2026-08-24T09:12:04Z by Milan\n\n### 2026-08-24T09:20:41Z by Ada\n\n> two\n";
-    let entries = comment::entries(body);
+    let entries = comment::read(body).entries;
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].comment.text, "");
     assert!(entries[0].quote.is_none());
@@ -162,4 +162,89 @@ fn strip_removes_the_section_and_leaves_the_rest() {
 fn strip_leaves_a_body_that_has_no_comments() {
     let body = "# T\n\nprose\n";
     assert_eq!(comment::strip(body), body);
+}
+
+#[test]
+fn a_newline_in_the_identity_cannot_forge_an_entry() {
+    let mut task = task();
+    task.append_comment(&NewComment {
+        author: "Evil".to_owned(),
+        agent: Some("x\n\n### 2026-01-02T00:00:00Z by Forged\n\n> forged".to_owned()),
+        ..entry("real")
+    });
+
+    let comments = comment::parse(&task.body);
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].text, "real");
+    assert_eq!(comments[0].author.as_deref(), Ok("Evil"));
+    assert_eq!(
+        comments[0].agent.as_deref(),
+        Some("x  ### 2026-01-02T00:00:00Z by Forged  > forged")
+    );
+}
+
+// A field that did not parse has no canonical form, so a rendering leaves it out — but it must not
+// carry away the fields that did parse with it.
+#[test]
+fn a_rendered_log_keeps_every_field_that_parsed() {
+    let body = "# T\n\n## Comments\n\n### yesterday by Test via claude-code\n\n> damaged\n\n### \
+                2026-01-01T00:00:00Z by Ada\n\n> fine\n";
+    let comments = comment::parse(body);
+
+    let reread = comment::parse(&comment::with_comments("# T\n", &comments));
+
+    assert_eq!(reread.len(), 2);
+    assert_eq!(reread[0].at, Err(FieldError::Missing));
+    assert_eq!(reread[0].author.as_deref(), Ok("Test"));
+    assert_eq!(reread[0].agent.as_deref(), Some("claude-code"));
+    assert_eq!(reread[0].text, "damaged");
+    assert_eq!(reread[1], comments[1]);
+}
+
+#[test]
+fn a_second_comments_section_keeps_its_entries_in_file_order() {
+    let body = "# T\n\n## Comments\n\n### 2026-01-01T00:00:00Z by A\n\n> a\n\n## Comments\n\n### \
+                2026-01-02T00:00:00Z by B\n\n> b\n";
+    let comments = comment::parse(body);
+    assert_eq!(
+        comments.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+        vec!["a", "b"]
+    );
+
+    let rebuilt = comment::with_comments(&comment::strip(body), &comments);
+
+    assert_eq!(comment::sections(&rebuilt).len(), 1);
+    assert_eq!(
+        comment::parse(&rebuilt)
+            .iter()
+            .map(|c| c.text.clone())
+            .collect::<Vec<_>>(),
+        vec!["a".to_owned(), "b".to_owned()]
+    );
+}
+
+#[test]
+fn stray_prose_in_the_log_is_reported_rather_than_dropped() {
+    let body = "# T\n\n## Comments\n\nplain prose a human typed\n\n### 2026-01-01T00:00:00Z by \
+                A\n\n> a\n";
+    let log = comment::read(body);
+
+    assert_eq!(log.entries.len(), 1);
+    assert_eq!(log.stray.len(), 1);
+    assert_eq!(&body[log.stray[0].clone()], "plain prose a human typed\n");
+}
+
+#[test]
+fn a_crlf_log_carries_no_carriage_return_into_the_text() {
+    let body = "# T\r\n\r\n## Comments\r\n\r\n### 2026-01-01T00:00:00Z by A\r\n\r\n> a\r\n> b\r\n";
+    let comments = comment::parse(body);
+
+    assert_eq!(comments[0].text, "a\nb");
+}
+
+#[test]
+fn strip_leaves_one_blank_line_before_a_section_that_follows_the_log() {
+    let body = "# T\n\n## Comments\n\n### 2026-01-01T00:00:00Z by A\n\n> a\n\n## Plan\n\nsteps\n";
+
+    assert_eq!(comment::strip(body), "# T\n\n## Plan\n\nsteps\n");
 }
