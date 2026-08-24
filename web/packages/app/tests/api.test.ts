@@ -53,6 +53,7 @@ it.effect("decodes the branch-aware task list from GET /api/projects/:project/ta
           tags: [],
         },
         updated: "2026-01-02T00:00:00Z",
+        comment_count: 0,
         headline: "main",
         branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" }],
       },
@@ -70,6 +71,7 @@ it.effect("decodes the branch-aware task list from GET /api/projects/:project/ta
         },
         parent: "a-1",
         updated: "2026-01-02T00:00:00Z",
+        comment_count: 0,
         headline: "feature",
         branches: [
           { branch: "main", status: "todo", blob_oid: "bbb", dirty: false, kind: "base" },

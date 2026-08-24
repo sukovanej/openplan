@@ -2,9 +2,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use op_api::{
-    ApiErrorBody, CreateTag, CreateTask, DaemonInfo, Matrix, ProjectView, RegisterProject,
-    RenameProject, SearchHit, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch,
-    TaskTreeView,
+    ApiErrorBody, BranchComments, Comment, CreateComment, CreateTag, CreateTask, DaemonInfo,
+    Matrix, ProjectView, RegisterProject, RenameProject, SearchHit, TagPatch, TagView,
+    TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -137,6 +137,49 @@ impl Client {
                 .append_pair("depth", &depth.to_string());
         }
         self.read(url)
+    }
+
+    pub fn comments(
+        &self,
+        base_url: &str,
+        project: &str,
+        id: &str,
+        branch: Option<&str>,
+    ) -> Result<Vec<Comment>, ClientError> {
+        self.read(sub_url(
+            read_url(base_url, project, Some(id), branch)?,
+            base_url,
+            &["comments"],
+        )?)
+    }
+
+    pub fn branch_comments(
+        &self,
+        base_url: &str,
+        project: &str,
+        id: &str,
+    ) -> Result<Vec<BranchComments>, ClientError> {
+        self.read(sub_url(
+            read_url(base_url, project, Some(id), None)?,
+            base_url,
+            &["comments", "branches"],
+        )?)
+    }
+
+    pub fn add_comment(
+        &self,
+        base_url: &str,
+        project: &str,
+        branch: &str,
+        id: &str,
+        comment: &CreateComment,
+    ) -> Result<Comment, ClientError> {
+        let url = sub_url(
+            write_url(base_url, project, branch, Some(id))?,
+            base_url,
+            &["comments"],
+        )?;
+        self.json(self.http.post(url).json(comment))
     }
 
     pub fn task_branches(
@@ -467,6 +510,16 @@ fn read_url(
         url.query_pairs_mut().append_pair("branch", branch);
     }
     Ok(fresh(url))
+}
+
+fn sub_url(mut url: Url, base_url: &str, segments: &[&str]) -> Result<Url, ClientError> {
+    {
+        let mut path = url.path_segments_mut().map_err(|_| unusable(base_url))?;
+        for segment in segments {
+            path.push(segment);
+        }
+    }
+    Ok(url)
 }
 
 fn fresh(mut url: Url) -> Url {

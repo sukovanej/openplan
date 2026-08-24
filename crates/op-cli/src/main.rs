@@ -1,3 +1,4 @@
+mod author;
 mod daemon;
 mod mergedriver;
 mod open;
@@ -13,8 +14,8 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand};
 use op_api::{
-    BranchMark, ChangeKind, CreateTask, FieldUpdate, MatrixCell, Metadata, SearchHit, TaskListItem,
-    TaskPatch, TaskTree, list_item_cmp,
+    BranchMark, ChangeKind, Comment, CreateComment, CreateTask, Field, FieldError, FieldUpdate,
+    MatrixCell, Metadata, SearchHit, TaskListItem, TaskPatch, TaskTree, list_item_cmp,
 };
 use op_git::Repo;
 use op_lint::{CreatedSource, Diagnostic, Snapshot};
@@ -92,6 +93,28 @@ enum Command {
         /// Read the task's version on another branch (read-only)
         #[arg(long)]
         branch: Option<String>,
+    },
+    /// Append an entry to a task's comment log
+    Comment {
+        id: String,
+        /// The comment text
+        #[arg(conflicts_with = "body_file")]
+        text: Option<String>,
+        /// Read the text from a file, or `-` for stdin
+        #[arg(long = "body-file")]
+        body_file: Option<String>,
+    },
+    /// Print a task's comment log, oldest first
+    Comments {
+        id: String,
+        #[arg(long)]
+        json: bool,
+        /// Read the log on another branch (read-only)
+        #[arg(long, conflicts_with = "all_branches")]
+        branch: Option<String>,
+        /// Every branch's log, merged by timestamp and labelled with its branch
+        #[arg(long = "all-branches")]
+        all_branches: bool,
     },
     /// Print a task's metadata (status, parent, dependencies, tags)
     Show {
@@ -312,6 +335,21 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Get { id, json, branch } => {
             get(root, daemon_url, &id, json, branch.as_deref()).map(|()| ExitCode::SUCCESS)
         }
+        Command::Comment {
+            id,
+            text,
+            body_file,
+        } => {
+            let text = resolve_body(text, body_file)?.unwrap_or_default();
+            comment(root, daemon_url, &id, &text).map(|()| ExitCode::SUCCESS)
+        }
+        Command::Comments {
+            id,
+            json,
+            branch,
+            all_branches,
+        } => comments(root, daemon_url, &id, json, branch.as_deref(), all_branches)
+            .map(|()| ExitCode::SUCCESS),
         Command::Show { id, branches } => {
             show(root, daemon_url, &id, branches).map(|()| ExitCode::SUCCESS)
         }
@@ -502,10 +540,120 @@ fn get(
         }
         print!(
             "{}",
-            op_api::render_task_file(&detail.metadata, &detail.body)?
+            op_api::render_task_file(&detail.metadata, &detail.body, &detail.comments)?
         );
     }
     Ok(())
+}
+
+fn comment(root: &Path, daemon_url: Option<&str>, id: &str, text: &str) -> Result<()> {
+    if text.trim().is_empty() {
+        bail!("a comment needs text");
+    }
+    let tasks = Plan::resolve(root, daemon_url)?;
+    let entry = CreateComment {
+        text: text.trim_end_matches('\n').to_owned(),
+        author: author::author(root)?,
+        agent: author::agent(),
+    };
+    let written = tasks.comment(id, &entry)?;
+    println!("{id}: {}", heading_of(&written));
+    Ok(())
+}
+
+fn comments(
+    root: &Path,
+    daemon_url: Option<&str>,
+    id: &str,
+    json: bool,
+    branch: Option<&str>,
+    all_branches: bool,
+) -> Result<()> {
+    let tasks = Plan::resolve(root, daemon_url)?;
+    if all_branches {
+        let groups = tasks.branch_comments(id)?;
+        if json {
+            println!("{}", serde_json::to_string_pretty(&groups)?);
+            return Ok(());
+        }
+        for (branch, comment) in merged(&groups) {
+            print_comment(Some(branch), comment);
+        }
+        return Ok(());
+    }
+    let comments = tasks.comments(id, branch.unwrap_or(tasks.branch()))?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&comments)?);
+        return Ok(());
+    }
+    for comment in &comments {
+        print_comment(None, comment);
+    }
+    Ok(())
+}
+
+// One stream out of several logs. The earlier timestamp goes first, the branch name breaks a tie,
+// and the position within a branch breaks the rest — so the file order inside a branch survives,
+// which is the only order a log promises. An entry whose timestamp does not parse takes the one
+// before it in its branch, the epoch when it leads, which holds it among the entries it was written
+// with.
+fn merged(groups: &[op_api::BranchComments]) -> Vec<(&str, &Comment)> {
+    let mut all: Vec<(Timestamp, &str, usize, &Comment)> = groups
+        .iter()
+        .flat_map(|group| {
+            let mut carried = Timestamp::default();
+            group
+                .comments
+                .iter()
+                .enumerate()
+                .map(move |(position, comment)| {
+                    carried = comment.at.as_value().map_or(carried, |at| at.0);
+                    (carried, group.branch.as_str(), position, comment)
+                })
+        })
+        .collect();
+    all.sort_by_key(|(at, branch, position, _)| (*at, *branch, *position));
+    all.into_iter()
+        .map(|(_, branch, _, comment)| (branch, comment))
+        .collect()
+}
+
+fn print_comment(branch: Option<&str>, comment: &Comment) {
+    let label = match branch {
+        Some(branch) => format!("[{branch}] "),
+        None => String::new(),
+    };
+    println!("{label}{}", heading_of(comment));
+    for line in comment.text.lines() {
+        match line.is_empty() {
+            true => println!(),
+            false => println!("    {line}"),
+        }
+    }
+    println!();
+}
+
+fn heading_of(comment: &Comment) -> String {
+    let agent = match &comment.agent {
+        Some(agent) => format!(" via {agent}"),
+        None => String::new(),
+    };
+    format!(
+        "{} by {}{agent}",
+        shown(&comment.at),
+        shown(&comment.author)
+    )
+}
+
+// A field the daemon could not parse reads as the reason it could not, where its value would have
+// been: the entry is still worth showing, and hiding why it is broken sends the reader to the file
+// with nothing to look for.
+fn shown<T: std::fmt::Display>(field: &Field<T>) -> String {
+    match field {
+        Field::Value(value) => value.to_string(),
+        Field::Error(FieldError::Missing) => "(missing)".to_owned(),
+        Field::Error(FieldError::Invalid { message }) => format!("({message})"),
+    }
 }
 
 fn show(root: &Path, daemon_url: Option<&str>, id: &str, branches: bool) -> Result<()> {

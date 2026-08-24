@@ -501,3 +501,87 @@ fn a_broken_frontmatter_file_does_not_hide_the_rest() {
         "each file contributes exactly its own diagnostic: {diags:#?}"
     );
 }
+
+#[test]
+fn a_reference_that_names_an_entry_heading_does_not_resolve() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# One\n\nSee [[./00002-two.md#2026-01-01T00:00:00Z by Test]].\n";
+    let target = file(
+        "00002-two.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Two\n\n## Comments\n\n### 2026-01-01T00:00:00Z by Test\n\n> a\n",
+    );
+    assert_single(
+        "00001-anchor.md",
+        source,
+        &[target],
+        Code::Reference,
+        Some(span_of(
+            source,
+            "[[./00002-two.md#2026-01-01T00:00:00Z by Test]]",
+        )),
+        false,
+    );
+}
+
+#[test]
+fn the_comments_section_itself_is_no_anchor() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# One\n\nSee [[./00002-two.md#Comments]].\n";
+    let target = file(
+        "00002-two.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Two\n\n## Comments\n\n### 2026-01-01T00:00:00Z by Test\n\n> a\n",
+    );
+    assert_single(
+        "00001-anchor.md",
+        source,
+        &[target],
+        Code::Reference,
+        Some(span_of(source, "[[./00002-two.md#Comments]]")),
+        false,
+    );
+}
+
+#[test]
+fn a_reference_inside_a_comment_is_left_alone() {
+    let target = file(
+        "00002-two.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Two\n",
+    );
+    let referrer = file(
+        "00001-one.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# One\n\n## Comments\n\n### 2026-01-01T00:00:00Z by Test\n\n> See [[42]] and [[./00099-gone.md]].\n",
+    );
+    let diags = lint_files(&[target, referrer]);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn a_well_formed_comment_log_lints_clean() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# One\n\n## Comments\n\n### 2026-01-01T00:00:00Z by Test via claude-code\n\n> # a quoted heading\n>\n> and prose\n\n### 2026-01-02T00:00:00Z by Test\n\n> more\n";
+    let diags = lint_files(&[file("00001-one.md", source)]);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn a_comments_section_that_is_not_last_is_reported() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# One\n\n## Comments\n\n### 2026-01-01T00:00:00Z by Test\n\n> a\n\n## Plan\n\nsteps\n";
+    assert_single(
+        "00001-one.md",
+        source,
+        &[],
+        Code::Comment,
+        Some(span_of(source, "## Comments\n")),
+        false,
+    );
+}
+
+#[test]
+fn prose_the_comment_log_has_no_place_for_is_reported() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# One\n\n## Comments\n\nplain prose a human typed\n\n### 2026-01-01T00:00:00Z by Test\n\n> a\n";
+    assert_single(
+        "00001-one.md",
+        source,
+        &[],
+        Code::Comment,
+        Some(span_of(source, "plain prose a human typed\n")),
+        false,
+    );
+}

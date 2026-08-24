@@ -2,8 +2,8 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 use op_api::{
-    CreateTag, CreateTask, Matrix, SearchHit, TagPatch, TagView, TaskBranches, TaskDetail,
-    TaskListItem, TaskPatch, TaskTreeView,
+    BranchComments, Comment, CreateComment, CreateTag, CreateTask, Matrix, SearchHit, TagPatch,
+    TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use op_client::Client;
 use op_git::Repo;
@@ -91,6 +91,26 @@ impl Plan {
 
     pub fn branches(&self, id: &str) -> Result<TaskBranches> {
         served(self.client.task_branches(&self.base_url, &self.project, id))
+    }
+
+    pub fn comments(&self, id: &str, branch: &str) -> Result<Vec<Comment>> {
+        served(
+            self.client
+                .comments(&self.base_url, &self.project, id, Some(branch)),
+        )
+    }
+
+    pub fn branch_comments(&self, id: &str) -> Result<Vec<BranchComments>> {
+        served(
+            self.client
+                .branch_comments(&self.base_url, &self.project, id),
+        )
+    }
+
+    pub fn comment(&self, id: &str, comment: &CreateComment) -> Result<Comment> {
+        Ok(self
+            .client
+            .add_comment(&self.base_url, &self.project, &self.branch, id, comment)?)
     }
 
     pub fn create(&self, task: &CreateTask) -> Result<String> {

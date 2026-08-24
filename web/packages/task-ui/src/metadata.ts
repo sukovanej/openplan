@@ -34,7 +34,9 @@ export interface FieldProblem {
   readonly message: string
 }
 
-const describe = (failure: FieldError): string => (failure.kind === "missing" ? "missing" : failure.message)
+// How a field failure reads, wherever one is shown: the message it carries, or the one word that
+// stands for a field the file never named.
+export const fieldMessage = (failure: FieldError): string => (failure.kind === "missing" ? "missing" : failure.message)
 
 // Every field that failed, for a surface that reports what is wrong with a task rather than just
 // that something is.
@@ -45,6 +47,6 @@ export function problems(metadata: Metadata): ReadonlyArray<FieldProblem> {
   if (found === undefined) return []
   return (["status", "created", "parent", "rank", "dependencies"] as const).flatMap((field) => {
     const failure = fieldFailure(found[field])
-    return failure === undefined ? [] : [{ field, message: describe(failure) }]
+    return failure === undefined ? [] : [{ field, message: fieldMessage(failure) }]
   })
 }

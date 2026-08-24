@@ -39,6 +39,7 @@ pub const TASK_RULES: &[TaskRule] = &[
     references_resolve,
     body_refs_rewritable,
     single_title,
+    comment_log,
 ];
 
 pub const STORE_RULES: &[StoreRule] = &[parent_cycles, dependency_cycles, unique_numbers];
@@ -288,7 +289,7 @@ fn rank_is_base36(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
 fn anchor_slugs(body: &str) -> HashSet<String> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     let mut slugs = HashSet::new();
-    for heading in op_md::headings(body) {
+    for heading in op_task::comment::addressable(body) {
         let base = github_slug(&heading.text);
         let seen = counts.entry(base.clone()).or_insert(0);
         let anchor = if *seen == 0 {
@@ -479,7 +480,7 @@ fn references_resolve(snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
     let body_offset = source.len().saturating_sub(body.len());
     let abbreviation = snapshot.abbreviation();
 
-    for (range, inner) in op_task::body_ref_spans(body) {
+    for (range, inner) in outside_the_log(body) {
         if let Some(number) = op_task::body_ref_id(abbreviation, inner) {
             let section = inner.split_once('#').map(|(_, section)| section);
             let span = Span::new(body_offset + range.start, body_offset + range.end);
@@ -549,7 +550,7 @@ fn body_refs_rewritable(snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
     let body_offset = source.len().saturating_sub(body.len());
     let abbreviation = snapshot.abbreviation();
 
-    for (range, inner) in op_task::body_ref_spans(body) {
+    for (range, inner) in outside_the_log(body) {
         if op_task::body_ref_id(abbreviation, inner).is_some() {
             continue;
         }
@@ -563,6 +564,92 @@ fn body_refs_rewritable(snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
             sink.emit(d);
         }
     }
+}
+
+// A comment holds text a person wrote, quoted line by line. A reference inside it belongs to that
+// text: the log is append-only, so no rule may ask for it to be rewritten and no `--fix` may rewrite
+// it.
+pub(crate) fn outside_the_log(body: &str) -> Vec<(Range<usize>, &str)> {
+    let log = op_task::comment::sections(body);
+    op_task::body_ref_spans(body)
+        .into_iter()
+        .filter(|(span, _)| !op_task::comment::inside_log(&log, span.start))
+        .collect()
+}
+
+fn comment_log(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
+    let body = &file.task.body;
+    let offset = file.source.len().saturating_sub(body.len());
+    let at = |range: &Range<usize>| Span::new(offset + range.start, offset + range.end);
+    let mut report = |span: Span, message: &str| {
+        sink.emit(
+            Diagnostic::error(Code::Comment, file.path.clone(), message).at(span, &file.source),
+        );
+    };
+
+    let sections = op_task::comment::sections(body);
+    let Some((first, extra)) = sections.split_first() else {
+        return;
+    };
+    for section in extra {
+        report(
+            at(&section.heading),
+            "a task holds one `## Comments` section",
+        );
+    }
+    if first.span.end < body.len() {
+        report(
+            at(&first.heading),
+            "`## Comments` must be the last section of a task",
+        );
+    }
+
+    let log = op_task::comment::read(body);
+    for entry in &log.entries {
+        match (&entry.heading, &entry.quote) {
+            (Some(heading), None) => report(
+                at(heading),
+                "a comment entry needs a blockquote below its heading",
+            ),
+            (None, Some(quote)) => report(
+                at(quote),
+                "a blockquote in the comment log needs an entry heading above it",
+            ),
+            (Some(heading), Some(_)) => {
+                for message in heading_problems(&entry.comment) {
+                    report(at(heading), &message);
+                }
+            }
+            (None, None) => {}
+        }
+    }
+    // A log holds entry headings and blockquotes and nothing else, so anything else in it reaches no
+    // reader — every surface renders the entries. Reporting it is what keeps it from being lost.
+    for line in &log.stray {
+        report(
+            at(line),
+            "a comment log holds entry headings and blockquotes only",
+        );
+    }
+}
+
+fn heading_problems(comment: &op_task::comment::Comment) -> Vec<String> {
+    let mut problems = Vec::new();
+    match &comment.at {
+        Ok(_) => {}
+        Err(FieldError::Missing) => problems.push(
+            "an entry heading reads `### <timestamp> by <author>`, and this one names no timestamp"
+                .to_owned(),
+        ),
+        Err(FieldError::Invalid(message)) => problems.push(message.clone()),
+    }
+    if comment.author.is_err() {
+        problems.push(
+            "an entry heading reads `### <timestamp> by <author>`, and this one names no author"
+                .to_owned(),
+        );
+    }
+    problems
 }
 
 fn single_title(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {

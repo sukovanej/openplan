@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-08-23T23:09:52Z
 ---
 # Comments on tasks (CLI, API, read-only web thread)
@@ -145,30 +145,30 @@ No `--fix` for any of them. Every possible fix rewrites what a person wrote in a
 - Tests go in each crate's `tests/` directory.
 
 ## Acceptance criteria
-- [ ] `openplan comment OPP-1 "hello"` appends an entry and creates `## Comments` when it is absent.
-- [ ] The entry heading reads `### <timestamp> by <author> via <agent>` under an agent, and
+- [x] `openplan comment OPP-1 "hello"` appends an entry and creates `## Comments` when it is absent.
+- [x] The entry heading reads `### <timestamp> by <author> via <agent>` under an agent, and
       `### <timestamp> by <author>` under a person, and the text follows as a blockquote.
-- [ ] A comment that holds headings of every level, a fence, and a nested quote round-trips through a
+- [x] A comment that holds headings of every level, a fence, and a nested quote round-trips through a
       write and a read unchanged, and stays one entry.
-- [ ] `op_md::headings` ignores a heading inside a blockquote.
-- [ ] A second comment appends below the first and never reorders the file.
-- [ ] `openplan comment` fails with a clear error when git `user.name` is unset.
-- [ ] `openplan comment` refuses empty or whitespace-only text.
-- [ ] `openplan comments OPP-1` prints every entry, oldest first; `--json` prints the four fields.
-- [ ] `openplan comments --branch` and `--all-branches` read other branches, and `--all-branches`
+- [x] `op_md::headings` ignores a heading inside a blockquote.
+- [x] A second comment appends below the first and never reorders the file.
+- [x] `openplan comment` fails with a clear error when git `user.name` is unset.
+- [x] `openplan comment` refuses empty or whitespace-only text.
+- [x] `openplan comments OPP-1` prints every entry, oldest first; `--json` prints the four fields.
+- [x] `openplan comments --branch` and `--all-branches` read other branches, and `--all-branches`
       labels each entry with its branch.
-- [ ] A comment on a task that is not on the caller's branch is refused, and the error names the
+- [x] A comment on a task that is not on the caller's branch is refused, and the error names the
       branches the task lives on.
-- [ ] A damaged entry heading parses into `Field::Error` with the offending text in the message, and
+- [x] A damaged entry heading parses into `Field::Error` with the offending text in the message, and
       the read still returns the text.
-- [ ] Section addressing offers no target inside `## Comments`, and a reference that names an entry
+- [x] Section addressing offers no target inside `## Comments`, and a reference that names an entry
       heading does not resolve.
-- [ ] `openplan lint` reports each of the five comment failures with a span, and `--fix` changes
+- [x] `openplan lint` reports each of the five comment failures with a span, and `--fix` changes
       nothing in a `## Comments` section.
-- [ ] `TaskDetail.body` excludes the `## Comments` section, and `TaskDetail.comments` holds it.
-- [ ] The web task detail shows the thread under the body, with an agent badge and an error mark on
+- [x] `TaskDetail.body` excludes the `## Comments` section, and `TaskDetail.comments` holds it.
+- [x] The web task detail shows the thread under the body, with an agent badge and an error mark on
       a damaged entry, and it refreshes when the file changes.
-- [ ] `cargo test`, `cargo fmt --check`, and `cargo clippy -- -D warnings` pass.
+- [x] `cargo test`, `cargo fmt --check`, and `cargo clippy -- -D warnings` pass.
 
 ## Out of scope
 - Editing or deleting a comment.
@@ -176,3 +176,18 @@ No `--fix` for any of them. Every possible fix rewrites what a person wrote in a
 - A comment anchored to a section.
 - A merge-driver rule for the `## Comments` section.
 - Writing a comment from the web UI.
+
+## Comments
+
+### 2026-08-24T10:31:35Z by Milan Suk via claude-code
+
+> The first comment this feature carries is about itself.
+>
+> Two decisions stay as this task locks them. Neither is a defect, but both are worth a second look:
+>
+> - An author whose name holds ` via ` loses the tail to the agent. `Ada via Lovelace` reads back as author `Ada` and agent `Lovelace`. Only a change to the heading grammar can prevent it.
+> - `AI_AGENT` cannot override `CLAUDECODE`, because the order in this task reads the environment for a known tool first. An explicit declaration could outrank inference instead.
+
+### 2026-08-24T17:01:42Z by Milan Suk via claude-code
+
+> The task row shows the comment count, although "no comment column in the task table" is out of scope here. The count sits in the row's meta line beside the times, not in a column of its own, and it hides at zero. `TaskListItem.comment_count` already carried it.

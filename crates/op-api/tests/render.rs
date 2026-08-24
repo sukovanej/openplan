@@ -11,7 +11,7 @@ fn abbreviation() -> Abbreviation {
 
 fn rendered(task: &Task) -> String {
     let metadata = Metadata::from_frontmatter(&task.frontmatter, abbreviation());
-    render_task_file(&metadata, &task.body).unwrap()
+    render_task_file(&metadata, &task.body, &[]).unwrap()
 }
 
 #[test]

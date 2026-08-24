@@ -17,10 +17,10 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    Abbreviation, ApiErrorBody, Board, BranchState, ChangeEvent, ChangeKind, CreateTag, CreateTask,
-    DaemonInfo, KeyError, Matrix, ProjectView, RegisterProject, RenameProject, SearchHit,
-    StoreConfig, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree,
-    TaskTreeView, TaskView,
+    Abbreviation, ApiErrorBody, Board, BranchComments, BranchState, ChangeEvent, ChangeKind,
+    Comment, CreateComment, CreateTag, CreateTask, DaemonInfo, KeyError, Matrix, ProjectView,
+    RegisterProject, RenameProject, SearchHit, StoreConfig, TagPatch, TagView, TaskBranches,
+    TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -309,6 +309,8 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(get_task, patch_task, delete_task))
         .routes(routes!(get_task_tree))
         .routes(routes!(get_task_branches))
+        .routes(routes!(list_comments, add_comment))
+        .routes(routes!(list_branch_comments))
         .routes(routes!(list_tags, create_tag))
         .routes(routes!(get_tag, patch_tag, delete_tag))
 }
@@ -1493,7 +1495,8 @@ async fn patch_task_of(
                 id: view.id,
                 title: view.title,
                 metadata: view.metadata,
-                body: view.body,
+                comments: op_index::comments_of(&view.body),
+                body: op_task::comment::strip(&view.body),
                 updated: view.updated,
                 headline,
                 branches,
@@ -1574,6 +1577,176 @@ async fn delete_task_of(
         },
     );
     Ok(StatusCode::NO_CONTENT)
+}
+
+// The comment log lives in the task file, so a read of it is branch-aware exactly like a read of the
+// task: `?branch=` names one, and omitting it answers from the version the task headlines with.
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/tasks/{id}/comments",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
+        ReadQuery
+    ),
+    responses(
+        (status = 200, description = "The log, oldest first", body = Vec<Comment>),
+        (status = 400, description = "The request is invalid", body = ApiErrorBody),
+        (status = 404, description = "No such project, no such branch, or no such task", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn list_comments(
+    State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    Query(query): Query<ReadQuery>,
+) -> Result<Json<Vec<Comment>>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let comments = tokio::task::spawn_blocking(move || -> Result<Vec<Comment>, ApiError> {
+        let index = index_of(&project, query.fresh)?;
+        reject_non_key(index.abbreviation(), &id)?;
+        if let Some(branch) = &query.branch {
+            known_branch(&index, branch)?;
+        }
+        index
+            .task_comments(project.repo(), &id, query.branch.as_deref())
+            .map_err(index_error)?
+            .ok_or_else(|| no_such_task(&index, &id, query.branch.as_deref()))
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(comments))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/tasks/{id}/comments/branches",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
+        FreshQuery
+    ),
+    responses(
+        (status = 200, description = "One group per branch that carries the task", body = Vec<BranchComments>),
+        (status = 400, description = "The request is invalid", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn list_branch_comments(
+    State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    Query(query): Query<FreshQuery>,
+) -> Result<Json<Vec<BranchComments>>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let groups = tokio::task::spawn_blocking(move || -> Result<Vec<BranchComments>, ApiError> {
+        let index = index_of(&project, query.fresh)?;
+        reject_non_key(index.abbreviation(), &id)?;
+        let groups = index
+            .task_comments_by_branch(project.repo(), &id)
+            .map_err(index_error)?;
+        match groups.is_empty() {
+            true => Err(no_such_task(&index, &id, None)),
+            false => Ok(groups),
+        }
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(groups))
+}
+
+// The log is append-only, so this is the whole write surface: no route edits an entry and none
+// removes one. The daemon stamps the time, because it is the single in-band writer and one clock
+// must order every entry; the caller carries the identity, because only the process that ran the
+// command can see who ran it.
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project}/tasks/{id}/comments",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$"),
+        ("branch" = Option<String>, Query, description = "Branch to write; omit to write wherever the task lives")
+    ),
+    request_body = CreateComment,
+    responses(
+        (status = 201, description = "The appended entry", body = Comment),
+        (status = 400, description = "The text or the author is empty", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
+        (status = 409, description = "The write was refused: the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn add_comment(
+    State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    Query(query): Query<BranchQuery>,
+    Json(body): Json<CreateComment>,
+) -> Result<Response, ApiError> {
+    let project = project_of(&state, &project)?;
+    let entry = new_comment(body)?;
+    let written = Comment::from(&entry);
+    let writing = Arc::clone(&project);
+    let changed = id.clone();
+    let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
+        let (branch, store, abbreviation) = {
+            let index = writing.rebuilt_index().map_err(index_error)?;
+            let branch = task_write_branch(&index, &id, query.branch)?;
+            let (branch, store) = write_target(&index, writing.store(), branch)?;
+            (branch, store, index.abbreviation())
+        };
+        let number = reject_non_key(abbreviation, &id)?;
+        store
+            .update(number, |task| {
+                task.append_comment(&entry);
+                Ok(())
+            })
+            .map_err(|err| write_not_found(&writing, &branch, &id, err))?;
+        writing.mark_dirty();
+        Ok(branch)
+    })
+    .await
+    .map_err(join_error)??;
+    publish(
+        &state,
+        ChangeEvent::TaskChanged {
+            project: project.name(),
+            id: changed,
+            branch,
+        },
+    );
+    Ok((StatusCode::CREATED, Json(written)).into_response())
+}
+
+fn new_comment(body: CreateComment) -> Result<op_task::comment::NewComment, ApiError> {
+    if body.text.trim().is_empty() {
+        return Err(ApiError::bad_request("a comment needs text"));
+    }
+    if body.author.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "a comment needs an author; an unsigned entry in an append-only log is worse than none",
+        ));
+    }
+    // An entry heading is one line, and the identity is what signs it. A newline there would let one
+    // write append entries no one signed, so it is refused rather than folded away.
+    let one_line = |field: &str, value: &str| match value.contains(['\n', '\r']) {
+        true => Err(ApiError::bad_request(format!(
+            "a comment's {field} is one line; this one holds a line break"
+        ))),
+        false => Ok(()),
+    };
+    one_line("author", &body.author)?;
+    if let Some(agent) = &body.agent {
+        one_line("agent", agent)?;
+    }
+    Ok(op_task::comment::NewComment {
+        at: op_task::now(),
+        author: body.author.trim().to_owned(),
+        agent: body.agent.filter(|agent| !agent.trim().is_empty()),
+        text: body.text.to_owned(),
+    })
 }
 
 // A tag is a file in one worktree's `.plan/tags`, and the daemon keeps no cross-branch index of

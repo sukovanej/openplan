@@ -12,6 +12,7 @@ const hit = (over: Partial<SearchHit["task"]> & { branch: string }): SearchHit =
     title: "Palette",
     metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [], tags: [] },
     updated: "2026-01-01T00:00:00Z",
+    comment_count: 0,
     headline: "main",
     branches: [],
     ...over,

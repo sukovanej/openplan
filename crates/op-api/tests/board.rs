@@ -21,6 +21,7 @@ fn with_metadata(id: &str, metadata: Metadata) -> TaskListItem {
         id: id.to_owned(),
         title: id.to_uppercase(),
         metadata,
+        comment_count: 0,
         updated: op_api::Field::Error(op_api::FieldError::Missing),
         headline: "main".to_owned(),
         branches: Vec::new(),
