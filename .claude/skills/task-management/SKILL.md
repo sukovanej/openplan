@@ -100,6 +100,17 @@ task to `done` yourself; a human moves it from `in_review` to `done` (or back to
 The one exception is a merge: when the user asks to merge the task's branch,
 follow the `task-management-merge` skill.
 
+## Comments
+
+Every task carries an append-only comment log. Follow the `task-comments` skill
+when you depart from what the task says, decide something it leaves open, keep a
+doubt, or stop before the end.
+
+```sh
+openplan comments <key>              # read the log
+openplan comment <key> "text"        # append an entry
+```
+
 ## Delete
 
 ```sh
