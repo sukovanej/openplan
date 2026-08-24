@@ -176,3 +176,14 @@ No `--fix` for any of them. Every possible fix rewrites what a person wrote in a
 - A comment anchored to a section.
 - A merge-driver rule for the `## Comments` section.
 - Writing a comment from the web UI.
+
+## Comments
+
+### 2026-08-24T10:31:35Z by Milan Suk via claude-code
+
+> The first comment this feature carries is about itself.
+>
+> Two decisions stay as this task locks them. Neither is a defect, but both are worth a second look:
+>
+> - An author whose name holds ` via ` loses the tail to the agent. `Ada via Lovelace` reads back as author `Ada` and agent `Lovelace`. Only a change to the heading grammar can prevent it.
+> - `AI_AGENT` cannot override `CLAUDECODE`, because the order in this task reads the environment for a known tool first. An explicit declaration could outrank inference instead.
