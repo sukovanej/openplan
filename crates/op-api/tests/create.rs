@@ -15,6 +15,7 @@ fn create(title: &str, body: Option<&str>) -> op_task::Task {
         status: None,
         parent: None,
         dependencies: Vec::new(),
+        tags: Vec::new(),
         body: body.map(str::to_owned),
     }
     .into_task(stamp(), abbreviation())
@@ -54,4 +55,20 @@ fn into_task_normalizes_a_single_trailing_newline() {
 fn into_task_with_empty_body_stays_title_only() {
     let task = create("Ship login", Some(""));
     assert_eq!(task.body, "# Ship login\n");
+}
+
+#[test]
+fn into_task_carries_the_tags_it_was_given_as_a_sorted_set() {
+    let task = CreateTask {
+        title: "Ship login".to_owned(),
+        status: None,
+        parent: None,
+        dependencies: Vec::new(),
+        tags: vec!["wip".to_owned(), "backend".to_owned(), "wip".to_owned()],
+        body: None,
+    }
+    .into_task(stamp(), abbreviation())
+    .unwrap();
+
+    assert_eq!(task.frontmatter.tags, vec!["backend", "wip"]);
 }

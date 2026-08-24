@@ -2,6 +2,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
 use op_task::Task;
+pub use op_task::tag::Color;
+use op_task::tag::{ParseNameError, Tag};
 pub use op_task::{Abbreviation, Status, Timestamp};
 
 pub const ADMIN_HEADER: &str = "x-openplan-admin";
@@ -267,6 +269,9 @@ pub struct FrontmatterFields {
     pub parent: Field<Option<String>>,
     pub rank: Field<Option<String>>,
     pub dependencies: Field<Vec<String>>,
+    // Tag names, not keys: a tag is identified by the name a task file spells, so nothing here is
+    // translated the way a reference is.
+    pub tags: Field<Vec<String>>,
 }
 
 // The task's metadata as parsed: `Fields` when the YAML is a mapping (each field carries its own
@@ -307,6 +312,7 @@ impl Metadata {
                         .map(|d| key_of(abbreviation, d))
                         .collect()
                 }),
+                tags: fields.tags.into(),
             }),
         }
     }
@@ -358,6 +364,7 @@ impl Metadata {
                     .map(|d| key_of(abbreviation, d))
                     .collect(),
             ),
+            tags: Field::Value(fm.tags.clone()),
         })
     }
 
@@ -421,12 +428,20 @@ impl Metadata {
         push("parent", fields.parent.as_error());
         push("rank", fields.rank.as_error());
         push("dependencies", fields.dependencies.as_error());
+        push("tags", fields.tags.as_error());
         out
     }
 
     pub fn dependencies(&self) -> &[String] {
         match self.fields().map(|fields| &fields.dependencies) {
             Some(Field::Value(dependencies)) => dependencies,
+            _ => &[],
+        }
+    }
+
+    pub fn tags(&self) -> &[String] {
+        match self.fields().map(|fields| &fields.tags) {
+            Some(Field::Value(tags)) => tags,
             _ => &[],
         }
     }
@@ -504,6 +519,13 @@ pub fn render_task_file(metadata: &Metadata, body: &str) -> Result<String, Rende
                     .map(|d| file_reference(d))
                     .collect::<Vec<_>>()
                     .into(),
+            ),
+            _ => {}
+        }
+        match fields.tags.as_value() {
+            Some(tags) if !tags.is_empty() => put(
+                "tags",
+                tags.iter().map(String::as_str).collect::<Vec<_>>().into(),
             ),
             _ => {}
         }
@@ -632,6 +654,8 @@ pub struct CreateTask {
     pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 }
@@ -655,6 +679,7 @@ impl CreateTask {
                 .map(|dependency| reference_of(abbreviation, dependency))
                 .collect::<Result<_, _>>()?,
         );
+        task.set_tags(self.tags);
         if let Some(body) = &self.body {
             task.append_body(&body_from_keys(abbreviation, body)?);
         }
@@ -699,6 +724,87 @@ impl<T> FieldUpdate<T> {
     }
 }
 
+// One registered tag. `name` is the identity a task's `tags:` holds; `display` is the heading a
+// human reads, which differs from the name only in case and separators.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct TagView {
+    pub name: String,
+    pub display: String,
+    pub color: Color,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub description: Option<String>,
+}
+
+impl From<&Tag> for TagView {
+    fn from(tag: &Tag) -> Self {
+        let description = tag.description();
+        Self {
+            name: tag.name.clone(),
+            display: tag.display_name().unwrap_or_else(|| tag.name.clone()),
+            color: tag.color(),
+            description: (!description.is_empty()).then_some(description),
+        }
+    }
+}
+
+// `name` is the name a human typed, so `Front End` registers `front-end` and reads back as
+// `# Front End`. An omitted color is derived from the name rather than left unset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct CreateTag {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub color: Option<Color>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub description: Option<String>,
+}
+
+impl CreateTag {
+    pub fn into_tag(self) -> Result<Tag, ParseNameError> {
+        let mut tag = Tag::new(&self.name, self.color)?;
+        if let Some(description) = &self.description {
+            tag.set_description(description);
+        }
+        Ok(tag)
+    }
+}
+
+// `name` renames: it carries the new display name, and its normalization is the tag's new identity,
+// so a change of case alone moves the heading and leaves the file where it is.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct TagPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub color: Option<Color>,
+    #[serde(default, skip_serializing_if = "FieldUpdate::is_keep")]
+    #[schema(value_type = Option<String>)]
+    pub description: FieldUpdate<String>,
+}
+
+impl TagPatch {
+    pub fn changes_content(&self) -> bool {
+        self.color.is_some() || !self.description.is_keep()
+    }
+
+    // The rename is the store's to carry out — it moves the file and rewrites every task that
+    // references the tag — so this covers only what lives inside the tag file.
+    pub fn apply(self, tag: &mut Tag) {
+        if let Some(color) = self.color {
+            tag.set_color(color);
+        }
+        match self.description {
+            FieldUpdate::Keep => {}
+            FieldUpdate::Clear => tag.set_description(""),
+            FieldUpdate::Set(description) => tag.set_description(&description),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -713,6 +819,11 @@ pub struct TaskPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub dependencies: Option<Vec<String>>,
+    // The whole set replaces the old one, which is what the store validates: a name the branch does
+    // not register fails the write even when the task already carried it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub tags: Option<Vec<String>>,
 }
 
 impl TaskPatch {
@@ -735,6 +846,9 @@ impl TaskPatch {
                     .map(|dependency| reference_of(abbreviation, dependency))
                     .collect::<Result<_, _>>()?,
             );
+        }
+        if let Some(tags) = self.tags {
+            task.set_tags(tags);
         }
         Ok(())
     }
@@ -1113,6 +1227,12 @@ pub enum ChangeEvent {
     PresenceChanged {
         project: String,
         task_id: String,
+    },
+    // A tag was registered, recolored, re-described, renamed, or deleted. A client answers all five
+    // the same way — read the registry again — so they are one event rather than five.
+    TagsChanged {
+        project: String,
+        branch: String,
     },
     // Membership, a rename, a status change, or a new abbreviation. A client answers all four the
     // same way — read `/api/projects` again — so they are one event rather than four.

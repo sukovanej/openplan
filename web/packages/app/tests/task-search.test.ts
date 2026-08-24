@@ -14,6 +14,7 @@ function task(id: string, title: string): TaskListItem {
       parent: null,
       rank: null,
       dependencies: [],
+      tags: [],
     },
     updated: { kind: "missing" },
     headline: "main",
