@@ -2326,3 +2326,309 @@ async fn a_branchless_tree_and_a_branchless_detail_answer_for_one_branch() {
         "and the two describe the same version"
     );
 }
+
+async fn create_tag(state: &AppState, body: Value) -> Response {
+    send(state, "POST", "/api/projects/test/tags", Some(body)).await
+}
+
+async fn tag_names(state: &AppState) -> Vec<String> {
+    let list = send(state, "GET", "/api/projects/test/tags", None).await;
+    assert_eq!(list.status(), StatusCode::OK);
+    body_json(list)
+        .await
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tag| tag["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+async fn create_task_with(state: &AppState, body: Value) -> Response {
+    send(state, "POST", "/api/projects/test/tasks", Some(body)).await
+}
+
+#[tokio::test]
+async fn tags_crud_roundtrip() {
+    let (_dir, state) = store_state();
+
+    let created = create_tag(
+        &state,
+        json!({ "name": "Front End", "color": "violet", "description": "The web client." }),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let view = body_json(created).await;
+    assert_eq!(view["name"], "front-end", "the name is normalized");
+    assert_eq!(view["display"], "Front End", "the heading keeps the case");
+    assert_eq!(view["color"], "violet");
+    assert_eq!(view["description"], "The web client.");
+
+    assert_eq!(tag_names(&state).await, vec!["front-end".to_owned()]);
+
+    let got = send(&state, "GET", "/api/projects/test/tags/front-end", None).await;
+    assert_eq!(got.status(), StatusCode::OK);
+    assert_eq!(body_json(got).await, view);
+
+    let patched = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tags/front-end",
+        Some(json!({ "color": "teal", "description": "The SPA." })),
+    )
+    .await;
+    assert_eq!(patched.status(), StatusCode::OK);
+    let view = body_json(patched).await;
+    assert_eq!(view["color"], "teal");
+    assert_eq!(view["description"], "The SPA.");
+
+    let deleted = send(&state, "DELETE", "/api/projects/test/tags/front-end", None).await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+    assert!(tag_names(&state).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_tag_without_a_color_is_given_one() {
+    let (_dir, state) = store_state();
+
+    let created = create_tag(&state, json!({ "name": "backend" })).await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let view = body_json(created).await;
+    assert!(
+        view["color"].is_string(),
+        "an omitted color is derived from the name, not left unset"
+    );
+    assert!(
+        view.get("description").is_none(),
+        "a tag with no prose carries no description"
+    );
+}
+
+#[tokio::test]
+async fn creating_a_registered_tag_again_is_a_conflict() {
+    let (_dir, state) = store_state();
+
+    assert_eq!(
+        create_tag(&state, json!({ "name": "backend" }))
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+    let again = create_tag(&state, json!({ "name": "Backend" })).await;
+    assert_eq!(
+        again.status(),
+        StatusCode::CONFLICT,
+        "both spellings normalize to one name"
+    );
+}
+
+#[tokio::test]
+async fn a_color_outside_the_palette_is_refused() {
+    let (_dir, state) = store_state();
+
+    // The palette is a closed enum, so a name outside it never reaches the store: the body fails
+    // to deserialize, the same 422 every other closed field answers with.
+    let created = create_tag(&state, json!({ "name": "backend", "color": "chartreuse" })).await;
+    assert_eq!(created.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn a_name_that_cannot_be_normalized_is_refused() {
+    let (_dir, state) = store_state();
+
+    let created = create_tag(&state, json!({ "name": "C++" })).await;
+    assert_eq!(created.status(), StatusCode::BAD_REQUEST);
+    let message = body_json(created).await["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        message.contains("lowercase letters"),
+        "the refusal names the rule: {message}"
+    );
+}
+
+#[tokio::test]
+async fn a_tag_no_branch_registers_is_not_found() {
+    let (_dir, state) = store_state();
+
+    let got = send(&state, "GET", "/api/projects/test/tags/backend", None).await;
+    assert_eq!(got.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn deleting_a_referenced_tag_needs_force() {
+    let (_dir, state) = store_state();
+    assert_eq!(
+        create_tag(&state, json!({ "name": "backend" }))
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+    let created = create_task_with(
+        &state,
+        json!({ "title": "Wire the parser", "tags": ["backend"] }),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    let refused = send(&state, "DELETE", "/api/projects/test/tags/backend", None).await;
+    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    assert_eq!(tag_names(&state).await, vec!["backend".to_owned()]);
+
+    let forced = send(
+        &state,
+        "DELETE",
+        "/api/projects/test/tags/backend?force=true",
+        None,
+    )
+    .await;
+    assert_eq!(forced.status(), StatusCode::NO_CONTENT);
+    assert!(tag_names(&state).await.is_empty());
+}
+
+#[tokio::test]
+async fn renaming_a_tag_rewrites_the_tasks_that_reference_it() {
+    let (_dir, state) = store_state();
+    assert_eq!(
+        create_tag(&state, json!({ "name": "backend" }))
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+    let created = create_task_with(
+        &state,
+        json!({ "title": "Wire the parser", "tags": ["backend"] }),
+    )
+    .await;
+    let id = body_json(created).await["id"].as_str().unwrap().to_owned();
+
+    let renamed = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tags/backend",
+        Some(json!({ "name": "Infra" })),
+    )
+    .await;
+    assert_eq!(renamed.status(), StatusCode::OK);
+    let view = body_json(renamed).await;
+    assert_eq!(view["name"], "infra");
+    assert_eq!(view["display"], "Infra");
+    assert_eq!(tag_names(&state).await, vec!["infra".to_owned()]);
+
+    let task = send(
+        &state,
+        "GET",
+        &format!("/api/projects/test/tasks/{id}"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        body_json(task).await["metadata"]["tags"],
+        json!(["infra"]),
+        "the reference moved with the tag"
+    );
+}
+
+#[tokio::test]
+async fn renaming_onto_a_registered_name_is_a_conflict() {
+    let (_dir, state) = store_state();
+    for name in ["backend", "infra"] {
+        assert_eq!(
+            create_tag(&state, json!({ "name": name })).await.status(),
+            StatusCode::CREATED
+        );
+    }
+
+    let renamed = send(
+        &state,
+        "PATCH",
+        "/api/projects/test/tags/backend",
+        Some(json!({ "name": "infra" })),
+    )
+    .await;
+    assert_eq!(renamed.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        tag_names(&state).await,
+        vec!["backend".to_owned(), "infra".to_owned()],
+        "a refused rename leaves both tags alone"
+    );
+}
+
+#[tokio::test]
+async fn a_task_can_only_carry_registered_tags() {
+    let (_dir, state) = store_state();
+
+    let refused = create_task_with(
+        &state,
+        json!({ "title": "Wire the parser", "tags": ["backend"] }),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let message = body_json(refused).await["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        message.contains("openplan tag create"),
+        "the refusal says how to register the tag: {message}"
+    );
+
+    assert_eq!(
+        create_tag(&state, json!({ "name": "backend" }))
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+    let created = create_task_with(
+        &state,
+        json!({ "title": "Wire the parser", "tags": ["backend"] }),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let id = body_json(created).await["id"].as_str().unwrap().to_owned();
+
+    let patched = send(
+        &state,
+        "PATCH",
+        &format!("/api/projects/test/tasks/{id}"),
+        Some(json!({ "tags": ["backend", "wip"] })),
+    )
+    .await;
+    assert_eq!(
+        patched.status(),
+        StatusCode::BAD_REQUEST,
+        "the whole set is validated, not only what the patch adds"
+    );
+
+    let cleared = send(
+        &state,
+        "PATCH",
+        &format!("/api/projects/test/tasks/{id}"),
+        Some(json!({ "tags": [] })),
+    )
+    .await;
+    assert_eq!(cleared.status(), StatusCode::OK);
+    assert_eq!(body_json(cleared).await["metadata"]["tags"], json!([]));
+}
+
+#[tokio::test]
+async fn a_tag_write_is_announced_on_the_event_stream() {
+    let (_dir, state) = store_state();
+
+    // The GET resolves once the handler has subscribed, so a change published afterwards is
+    // buffered for this receiver rather than lost.
+    let events = send(&state, "GET", "/api/events", None).await;
+    assert_eq!(events.status(), StatusCode::OK);
+
+    assert_eq!(
+        create_tag(&state, json!({ "name": "backend" }))
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+
+    let event: Value = serde_json::from_str(&first_sse_data(events).await).unwrap();
+    assert_eq!(event["kind"], "tags_changed");
+    assert_eq!(event["project"], PROJECT);
+    assert_eq!(event["branch"], "main");
+}

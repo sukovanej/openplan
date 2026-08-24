@@ -127,3 +127,42 @@ fn a_rename_refuses_a_name_normalization_cannot_reach() {
     assert!(tag.rename("C++").is_err());
     assert_eq!(tag.name, "backend", "a refused rename changes nothing");
 }
+
+#[test]
+fn the_description_is_what_stands_below_the_display_name() {
+    let tag = Tag::from_file_string(
+        "backend".to_owned(),
+        "---\ncolor: teal\n---\n# Backend\n\nWork behind the API.\n\n- `op-store`\n",
+    )
+    .unwrap();
+
+    assert_eq!(tag.description(), "Work behind the API.\n\n- `op-store`");
+}
+
+#[test]
+fn a_tag_with_no_prose_has_no_description() {
+    let tag = Tag::new("Backend", None).unwrap();
+    assert_eq!(tag.description(), "");
+}
+
+#[test]
+fn setting_a_description_replaces_the_old_one_and_keeps_the_heading() {
+    let mut tag = Tag::new("Backend", Some(Color::Teal)).unwrap();
+    tag.set_description("Work behind the API.");
+    assert_eq!(tag.body, "# Backend\n\nWork behind the API.\n");
+
+    tag.set_description("Everything the SPA calls.");
+    assert_eq!(tag.body, "# Backend\n\nEverything the SPA calls.\n");
+    assert_eq!(tag.display_name().as_deref(), Some("Backend"));
+}
+
+#[test]
+fn an_empty_description_leaves_the_display_name_alone() {
+    let mut tag = Tag::new("Backend", Some(Color::Teal)).unwrap();
+    tag.set_description("Work behind the API.");
+
+    tag.set_description("");
+
+    assert_eq!(tag.body, "# Backend\n");
+    assert_eq!(tag.description(), "");
+}

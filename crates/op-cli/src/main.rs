@@ -355,6 +355,8 @@ fn create(
         status,
         parent,
         dependencies,
+        // TODO(OPP-75): `--tag` puts names here.
+        tags: Vec::new(),
         body,
     })?;
     println!("{id}");

@@ -189,6 +189,21 @@ impl Tag {
         op_md::title(&self.body)
     }
 
+    pub fn description(&self) -> String {
+        match h1(&self.body) {
+            Some(h1) => self.body[h1.end..].trim().to_owned(),
+            None => self.body.trim().to_owned(),
+        }
+    }
+
+    pub fn set_description(&mut self, description: &str) {
+        let head = match h1(&self.body) {
+            Some(h1) => &self.body[..h1.end],
+            None => "",
+        };
+        self.body = with_paragraph(head, description);
+    }
+
     pub fn append_body(&mut self, content: &str) {
         self.body = with_paragraph(&self.body, content);
     }
@@ -214,8 +229,12 @@ fn one_line(text: &str) -> String {
 
 fn retitle(body: &str, display_name: &str) -> String {
     let heading = format!("# {display_name}\n");
-    match op_md::headings(body).into_iter().find(|h| h.level == 1) {
+    match h1(body) {
         Some(h1) => format!("{}{heading}{}", &body[..h1.start], &body[h1.end..]),
         None => format!("{heading}{body}"),
     }
+}
+
+fn h1(body: &str) -> Option<op_md::Heading> {
+    op_md::headings(body).into_iter().find(|h| h.level == 1)
 }

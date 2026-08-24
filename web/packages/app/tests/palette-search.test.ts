@@ -10,7 +10,7 @@ const hit = (over: Partial<SearchHit["task"]> & { branch: string }): SearchHit =
     project: "open-plan",
     id: "OPP-31",
     title: "Palette",
-    metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [] },
+    metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [], tags: [] },
     updated: "2026-01-01T00:00:00Z",
     headline: "main",
     branches: [],

@@ -21,6 +21,7 @@ fn summary(id: &str, parent: Option<&str>, rank: Option<&str>) -> TaskSummary {
             parent: Field::Value(parent.map(str::to_owned)),
             rank: Field::Value(rank.map(str::to_owned)),
             dependencies: Field::Value(Vec::new()),
+            tags: Field::Value(Vec::new()),
         }),
     }
 }

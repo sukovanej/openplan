@@ -19,6 +19,33 @@ export type ApiErrorBody = { readonly message: string }
 export const ApiErrorBody = Schema.Struct({ message: Schema.String })
 export type ChangeKind = "base" | "added" | "modified" | "deleted"
 export const ChangeKind = Schema.Literals(["base", "added", "modified", "deleted"])
+export type Color =
+  | "slate"
+  | "red"
+  | "orange"
+  | "amber"
+  | "yellow"
+  | "green"
+  | "teal"
+  | "cyan"
+  | "blue"
+  | "indigo"
+  | "violet"
+  | "pink"
+export const Color = Schema.Literals([
+  "slate",
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "green",
+  "teal",
+  "cyan",
+  "blue",
+  "indigo",
+  "violet",
+  "pink",
+])
 export type CreatedTask = { readonly id: string }
 export const CreatedTask = Schema.Struct({ id: Schema.String })
 export type DaemonInfo = {
@@ -67,6 +94,30 @@ export type WriteTarget = { readonly branch: string; readonly writable: boolean 
 export const WriteTarget = Schema.Struct({ branch: Schema.String, writable: Schema.Boolean })
 export type BranchMark = { readonly branch: string; readonly dirty: boolean; readonly kind: ChangeKind }
 export const BranchMark = Schema.Struct({ branch: Schema.String, dirty: Schema.Boolean, kind: ChangeKind })
+export type CreateTag = { readonly color?: Color; readonly description?: string; readonly name: string }
+export const CreateTag = Schema.Struct({
+  color: Schema.optionalKey(Color),
+  description: Schema.optionalKey(Schema.String),
+  name: Schema.String,
+})
+export type TagPatch = { readonly color?: Color; readonly description?: string | null; readonly name?: string }
+export const TagPatch = Schema.Struct({
+  color: Schema.optionalKey(Color),
+  description: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  name: Schema.optionalKey(Schema.String),
+})
+export type TagView = {
+  readonly color: Color
+  readonly description?: string
+  readonly display: string
+  readonly name: string
+}
+export const TagView = Schema.Struct({
+  color: Color,
+  description: Schema.optionalKey(Schema.String),
+  display: Schema.String,
+  name: Schema.String,
+})
 export type Field_Option_String = null | string | FieldError
 export const Field_Option_String = Schema.Union(
   [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError],
@@ -102,6 +153,7 @@ export type CreateTask = {
   readonly dependencies?: ReadonlyArray<string>
   readonly parent?: string | null
   readonly status?: null | Status
+  readonly tags?: ReadonlyArray<string>
   readonly title: string
 }
 export const CreateTask = Schema.Struct({
@@ -109,6 +161,7 @@ export const CreateTask = Schema.Struct({
   dependencies: Schema.optionalKey(Schema.Array(Schema.String)),
   parent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   status: Schema.optionalKey(Schema.Union([Schema.Null, Status], { mode: "oneOf" })),
+  tags: Schema.optionalKey(Schema.Array(Schema.String)),
   title: Schema.String,
 })
 export type TaskPatch = {
@@ -116,12 +169,14 @@ export type TaskPatch = {
   readonly parent?: string | null
   readonly rank?: string
   readonly status?: Status
+  readonly tags?: ReadonlyArray<string>
 }
 export const TaskPatch = Schema.Struct({
   dependencies: Schema.optionalKey(Schema.Array(Schema.String)),
   parent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   rank: Schema.optionalKey(Schema.String),
   status: Schema.optionalKey(Status),
+  tags: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 export type BranchState = {
   readonly blob_oid: string
@@ -157,6 +212,7 @@ export type FrontmatterFields = {
   readonly parent: Field_Option_String
   readonly rank: Field_Option_String
   readonly status: Field_Status
+  readonly tags: Field_Vec_String
 }
 export const FrontmatterFields = Schema.Struct({
   created: Field_Rfc3339,
@@ -164,6 +220,7 @@ export const FrontmatterFields = Schema.Struct({
   parent: Field_Option_String,
   rank: Field_Option_String,
   status: Field_Status,
+  tags: Field_Vec_String,
 })
 export type Metadata = { readonly kind: MetadataErrorTag; readonly message: string } | FrontmatterFields
 export const Metadata = Schema.Union(
@@ -345,6 +402,83 @@ export type SearchProject500 = ApiErrorBody
 export const SearchProject500 = ApiErrorBody
 export type SearchProject503 = ApiErrorBody
 export const SearchProject503 = ApiErrorBody
+export type ListTagsParams = { readonly branch?: string }
+export const ListTagsParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
+export type ListTags200 = ReadonlyArray<TagView>
+export const ListTags200 = Schema.Array(TagView)
+export type ListTags404 = ApiErrorBody
+export const ListTags404 = ApiErrorBody
+export type ListTags409 = ApiErrorBody
+export const ListTags409 = ApiErrorBody
+export type ListTags500 = ApiErrorBody
+export const ListTags500 = ApiErrorBody
+export type ListTags503 = ApiErrorBody
+export const ListTags503 = ApiErrorBody
+export type CreateTagParams = { readonly branch?: string }
+export const CreateTagParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
+export type CreateTagRequestJson = CreateTag
+export const CreateTagRequestJson = CreateTag
+export type CreateTag201 = TagView
+export const CreateTag201 = TagView
+export type CreateTag400 = ApiErrorBody
+export const CreateTag400 = ApiErrorBody
+export type CreateTag404 = ApiErrorBody
+export const CreateTag404 = ApiErrorBody
+export type CreateTag409 = ApiErrorBody
+export const CreateTag409 = ApiErrorBody
+export type CreateTag422 = ApiErrorBody
+export const CreateTag422 = ApiErrorBody
+export type CreateTag500 = ApiErrorBody
+export const CreateTag500 = ApiErrorBody
+export type CreateTag503 = ApiErrorBody
+export const CreateTag503 = ApiErrorBody
+export type GetTagParams = { readonly branch?: string }
+export const GetTagParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
+export type GetTag200 = TagView
+export const GetTag200 = TagView
+export type GetTag400 = ApiErrorBody
+export const GetTag400 = ApiErrorBody
+export type GetTag404 = ApiErrorBody
+export const GetTag404 = ApiErrorBody
+export type GetTag409 = ApiErrorBody
+export const GetTag409 = ApiErrorBody
+export type GetTag422 = ApiErrorBody
+export const GetTag422 = ApiErrorBody
+export type GetTag503 = ApiErrorBody
+export const GetTag503 = ApiErrorBody
+export type DeleteTagParams = { readonly branch?: string; readonly force?: boolean }
+export const DeleteTagParams = Schema.Struct({
+  branch: Schema.optionalKey(Schema.String),
+  force: Schema.optionalKey(Schema.Boolean),
+})
+export type DeleteTag400 = ApiErrorBody
+export const DeleteTag400 = ApiErrorBody
+export type DeleteTag404 = ApiErrorBody
+export const DeleteTag404 = ApiErrorBody
+export type DeleteTag409 = ApiErrorBody
+export const DeleteTag409 = ApiErrorBody
+export type DeleteTag500 = ApiErrorBody
+export const DeleteTag500 = ApiErrorBody
+export type DeleteTag503 = ApiErrorBody
+export const DeleteTag503 = ApiErrorBody
+export type PatchTagParams = { readonly branch?: string }
+export const PatchTagParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
+export type PatchTagRequestJson = TagPatch
+export const PatchTagRequestJson = TagPatch
+export type PatchTag200 = TagView
+export const PatchTag200 = TagView
+export type PatchTag400 = ApiErrorBody
+export const PatchTag400 = ApiErrorBody
+export type PatchTag404 = ApiErrorBody
+export const PatchTag404 = ApiErrorBody
+export type PatchTag409 = ApiErrorBody
+export const PatchTag409 = ApiErrorBody
+export type PatchTag422 = ApiErrorBody
+export const PatchTag422 = ApiErrorBody
+export type PatchTag500 = ApiErrorBody
+export const PatchTag500 = ApiErrorBody
+export type PatchTag503 = ApiErrorBody
+export const PatchTag503 = ApiErrorBody
 export type ListTasksParams = { readonly branch?: string | null; readonly fresh?: boolean }
 export const ListTasksParams = Schema.Struct({
   branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
@@ -644,6 +778,87 @@ export const make = (
           }),
         ),
       ),
+    listTags: (project, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/tags`).pipe(
+        HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(ListTags200),
+            "404": decodeError("ListTags404", ListTags404),
+            "409": decodeError("ListTags409", ListTags409),
+            "500": decodeError("ListTags500", ListTags500),
+            "503": decodeError("ListTags503", ListTags503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    createTag: (project, options) =>
+      HttpClientRequest.post(`/api/projects/${project}/tags`).pipe(
+        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(CreateTag201),
+            "400": decodeError("CreateTag400", CreateTag400),
+            "404": decodeError("CreateTag404", CreateTag404),
+            "409": decodeError("CreateTag409", CreateTag409),
+            "422": decodeError("CreateTag422", CreateTag422),
+            "500": decodeError("CreateTag500", CreateTag500),
+            "503": decodeError("CreateTag503", CreateTag503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    getTag: (project, name, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/tags/${name}`).pipe(
+        HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetTag200),
+            "400": decodeError("GetTag400", GetTag400),
+            "404": decodeError("GetTag404", GetTag404),
+            "409": decodeError("GetTag409", GetTag409),
+            "422": decodeError("GetTag422", GetTag422),
+            "503": decodeError("GetTag503", GetTag503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    deleteTag: (project, name, options) =>
+      HttpClientRequest.delete(`/api/projects/${project}/tags/${name}`).pipe(
+        HttpClientRequest.setUrlParams({
+          branch: options?.params?.["branch"] as any,
+          force: options?.params?.["force"] as any,
+        }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "400": decodeError("DeleteTag400", DeleteTag400),
+            "404": decodeError("DeleteTag404", DeleteTag404),
+            "409": decodeError("DeleteTag409", DeleteTag409),
+            "500": decodeError("DeleteTag500", DeleteTag500),
+            "503": decodeError("DeleteTag503", DeleteTag503),
+            "204": () => Effect.void,
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    patchTag: (project, name, options) =>
+      HttpClientRequest.patch(`/api/projects/${project}/tags/${name}`).pipe(
+        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(PatchTag200),
+            "400": decodeError("PatchTag400", PatchTag400),
+            "404": decodeError("PatchTag404", PatchTag404),
+            "409": decodeError("PatchTag409", PatchTag409),
+            "422": decodeError("PatchTag422", PatchTag422),
+            "500": decodeError("PatchTag500", PatchTag500),
+            "503": decodeError("PatchTag503", PatchTag503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     listTasks: (project, options) =>
       HttpClientRequest.get(`/api/projects/${project}/tasks`).pipe(
         HttpClientRequest.setUrlParams({
@@ -873,6 +1088,89 @@ export interface TasksClient {
     | TasksClientError<"SearchProject404", typeof SearchProject404.Type>
     | TasksClientError<"SearchProject500", typeof SearchProject500.Type>
     | TasksClientError<"SearchProject503", typeof SearchProject503.Type>
+  >
+  readonly listTags: <Config extends OperationConfig>(
+    project: string,
+    options:
+      | { readonly params?: typeof ListTagsParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListTags200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"ListTags404", typeof ListTags404.Type>
+    | TasksClientError<"ListTags409", typeof ListTags409.Type>
+    | TasksClientError<"ListTags500", typeof ListTags500.Type>
+    | TasksClientError<"ListTags503", typeof ListTags503.Type>
+  >
+  readonly createTag: <Config extends OperationConfig>(
+    project: string,
+    options: {
+      readonly params?: typeof CreateTagParams.Encoded | undefined
+      readonly payload: typeof CreateTagRequestJson.Encoded
+      readonly config?: Config | undefined
+    },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof CreateTag201.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"CreateTag400", typeof CreateTag400.Type>
+    | TasksClientError<"CreateTag404", typeof CreateTag404.Type>
+    | TasksClientError<"CreateTag409", typeof CreateTag409.Type>
+    | TasksClientError<"CreateTag422", typeof CreateTag422.Type>
+    | TasksClientError<"CreateTag500", typeof CreateTag500.Type>
+    | TasksClientError<"CreateTag503", typeof CreateTag503.Type>
+  >
+  readonly getTag: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    options:
+      | { readonly params?: typeof GetTagParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetTag200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetTag400", typeof GetTag400.Type>
+    | TasksClientError<"GetTag404", typeof GetTag404.Type>
+    | TasksClientError<"GetTag409", typeof GetTag409.Type>
+    | TasksClientError<"GetTag422", typeof GetTag422.Type>
+    | TasksClientError<"GetTag503", typeof GetTag503.Type>
+  >
+  readonly deleteTag: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    options:
+      | { readonly params?: typeof DeleteTagParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DeleteTag400", typeof DeleteTag400.Type>
+    | TasksClientError<"DeleteTag404", typeof DeleteTag404.Type>
+    | TasksClientError<"DeleteTag409", typeof DeleteTag409.Type>
+    | TasksClientError<"DeleteTag500", typeof DeleteTag500.Type>
+    | TasksClientError<"DeleteTag503", typeof DeleteTag503.Type>
+  >
+  readonly patchTag: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    options: {
+      readonly params?: typeof PatchTagParams.Encoded | undefined
+      readonly payload: typeof PatchTagRequestJson.Encoded
+      readonly config?: Config | undefined
+    },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof PatchTag200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"PatchTag400", typeof PatchTag400.Type>
+    | TasksClientError<"PatchTag404", typeof PatchTag404.Type>
+    | TasksClientError<"PatchTag409", typeof PatchTag409.Type>
+    | TasksClientError<"PatchTag422", typeof PatchTag422.Type>
+    | TasksClientError<"PatchTag500", typeof PatchTag500.Type>
+    | TasksClientError<"PatchTag503", typeof PatchTag503.Type>
   >
   readonly listTasks: <Config extends OperationConfig>(
     project: string,

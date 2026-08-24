@@ -15,6 +15,7 @@ fn create(parent: Option<&str>, dependencies: &[&str], body: Option<&str>) -> Cr
         status: None,
         parent: parent.map(str::to_owned),
         dependencies: dependencies.iter().map(|d| (*d).to_owned()).collect(),
+        tags: Vec::new(),
         body: body.map(str::to_owned),
     }
 }

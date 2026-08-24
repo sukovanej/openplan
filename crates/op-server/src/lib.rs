@@ -17,10 +17,10 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    Abbreviation, ApiErrorBody, Board, BranchState, ChangeEvent, ChangeKind, CreateTask,
+    Abbreviation, ApiErrorBody, Board, BranchState, ChangeEvent, ChangeKind, CreateTag, CreateTask,
     DaemonInfo, KeyError, Matrix, ProjectView, RegisterProject, RenameProject, SearchHit,
-    StoreConfig, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView,
-    TaskView,
+    StoreConfig, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree,
+    TaskTreeView, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -309,6 +309,8 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(get_task, patch_task, delete_task))
         .routes(routes!(get_task_tree))
         .routes(routes!(get_task_branches))
+        .routes(routes!(list_tags, create_tag))
+        .routes(routes!(get_tag, patch_tag, delete_tag))
 }
 
 pub fn openapi() -> utoipa::openapi::OpenApi {
@@ -1173,7 +1175,7 @@ async fn search_all(
 async fn create_task(
     State(state): State<AppState>,
     Path(project): Path<String>,
-    Query(query): Query<TaskQuery>,
+    Query(query): Query<BranchQuery>,
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
     create_task_in(&state, project_of(&state, &project)?, query, body).await
@@ -1182,7 +1184,7 @@ async fn create_task(
 async fn create_task_in(
     state: &AppState,
     project: Arc<Project>,
-    query: TaskQuery,
+    query: BranchQuery,
     body: CreateTask,
 ) -> Result<Response, ApiError> {
     let writing = Arc::clone(&project);
@@ -1243,7 +1245,7 @@ async fn create_task_in(
 }
 
 #[derive(Deserialize)]
-struct TaskQuery {
+struct BranchQuery {
     branch: Option<String>,
 }
 
@@ -1426,7 +1428,7 @@ fn write_not_found(project: &Project, branch: &str, id: &str, err: StoreError) -
 async fn patch_task(
     State(state): State<AppState>,
     Path((project, id)): Path<(String, String)>,
-    Query(query): Query<TaskQuery>,
+    Query(query): Query<BranchQuery>,
     Json(patch): Json<TaskPatch>,
 ) -> Result<Json<TaskDetail>, ApiError> {
     patch_task_of(&state, project_of(&state, &project)?, id, query, patch).await
@@ -1436,7 +1438,7 @@ async fn patch_task_of(
     state: &AppState,
     project: Arc<Project>,
     id: String,
-    query: TaskQuery,
+    query: BranchQuery,
     patch: TaskPatch,
 ) -> Result<Json<TaskDetail>, ApiError> {
     let writing = Arc::clone(&project);
@@ -1535,7 +1537,7 @@ async fn patch_task_of(
 async fn delete_task(
     State(state): State<AppState>,
     Path((project, id)): Path<(String, String)>,
-    Query(query): Query<TaskQuery>,
+    Query(query): Query<BranchQuery>,
 ) -> Result<StatusCode, ApiError> {
     delete_task_of(&state, project_of(&state, &project)?, id, query).await
 }
@@ -1544,7 +1546,7 @@ async fn delete_task_of(
     state: &AppState,
     project: Arc<Project>,
     id: String,
-    query: TaskQuery,
+    query: BranchQuery,
 ) -> Result<StatusCode, ApiError> {
     let writing = Arc::clone(&project);
     let changed = id.clone();
@@ -1572,6 +1574,255 @@ async fn delete_task_of(
         },
     );
     Ok(StatusCode::NO_CONTENT)
+}
+
+// A tag is a file in one worktree's `.plan/tags`, and the daemon keeps no cross-branch index of
+// them, so a read resolves the same live worktree a write does: `?branch=` names it, and omitting
+// it means the worktree the daemon serves.
+fn tag_target(project: &Project, branch: Option<String>) -> Result<(String, Store), ApiError> {
+    let index = project.rebuilt_index().map_err(index_error)?;
+    let branch = write_branch(&index, branch)?;
+    write_target(&index, project.store(), branch)
+}
+
+const TAG_NAME_PARAM: &str = "Tag name, or any spelling that normalizes to one";
+
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/tags",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("branch" = Option<String>, Query, description = "Branch to read; omit for the current worktree")
+    ),
+    responses(
+        (status = 200, description = "Every tag the branch registers", body = Vec<TagView>),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 409, description = "The branch is not checked out in a live worktree, or the daemon's root is gone", body = ApiErrorBody),
+        (status = 500, description = "The registry could not be read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn list_tags(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+    Query(query): Query<BranchQuery>,
+) -> Result<Json<Vec<TagView>>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let tags = tokio::task::spawn_blocking(move || -> Result<Vec<TagView>, ApiError> {
+        let (_, store) = tag_target(&project, query.branch)?;
+        Ok(store.list_tags()?.iter().map(TagView::from).collect())
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(tags))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project}/tags",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
+    ),
+    request_body = CreateTag,
+    responses(
+        (status = 201, description = "Registered", body = TagView),
+        (status = 400, description = "The name cannot be normalized to a tag name", body = ApiErrorBody),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 409, description = "The name is already registered, the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
+        (status = 422, description = "The color is not a palette name", body = ApiErrorBody),
+        (status = 500, description = "The registry could not be written", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn create_tag(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+    Query(query): Query<BranchQuery>,
+    Json(body): Json<CreateTag>,
+) -> Result<Response, ApiError> {
+    let project = project_of(&state, &project)?;
+    let writing = Arc::clone(&project);
+    let (branch, view) =
+        tokio::task::spawn_blocking(move || -> Result<(String, TagView), ApiError> {
+            let (branch, store) = tag_target(&writing, query.branch)?;
+            let tag = body
+                .into_tag()
+                .map_err(|err| ApiError::bad_request(err.to_string()))?;
+            store.create_tag(&tag)?;
+            Ok((branch, TagView::from(&tag)))
+        })
+        .await
+        .map_err(join_error)??;
+    publish(
+        &state,
+        ChangeEvent::TagsChanged {
+            project: project.name(),
+            branch,
+        },
+    );
+    Ok((StatusCode::CREATED, Json(view)).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/tags/{name}",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("name" = String, Path, description = TAG_NAME_PARAM),
+        ("branch" = Option<String>, Query, description = "Branch to read; omit for the current worktree")
+    ),
+    responses(
+        (status = 200, description = "The tag", body = TagView),
+        (status = 400, description = "The name cannot be normalized to a tag name", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such tag", body = ApiErrorBody),
+        (status = 409, description = "The branch is not checked out in a live worktree, or the daemon's root is gone", body = ApiErrorBody),
+        (status = 422, description = "The tag file is stored in a form the daemon cannot read", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn get_tag(
+    State(state): State<AppState>,
+    Path((project, name)): Path<(String, String)>,
+    Query(query): Query<BranchQuery>,
+) -> Result<Json<TagView>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let view = tokio::task::spawn_blocking(move || -> Result<TagView, ApiError> {
+        let (_, store) = tag_target(&project, query.branch)?;
+        Ok(TagView::from(&store.read_tag(&name)?))
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(view))
+}
+
+// A rename moves the file and rewrites the `tags:` of every task on this branch that holds the old
+// name, so those tasks change too and are published one by one.
+#[utoipa::path(
+    patch,
+    path = "/api/projects/{project}/tags/{name}",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("name" = String, Path, description = TAG_NAME_PARAM),
+        ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree")
+    ),
+    request_body = TagPatch,
+    responses(
+        (status = 200, description = "The updated tag", body = TagView),
+        (status = 400, description = "The new name cannot be normalized to a tag name", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such tag", body = ApiErrorBody),
+        (status = 409, description = "The new name is already registered, the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
+        (status = 422, description = "The color is not a palette name, or the tag file is stored in a form the daemon cannot read", body = ApiErrorBody),
+        (status = 500, description = "The registry could not be written", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn patch_tag(
+    State(state): State<AppState>,
+    Path((project, name)): Path<(String, String)>,
+    Query(query): Query<BranchQuery>,
+    Json(patch): Json<TagPatch>,
+) -> Result<Json<TagView>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let writing = Arc::clone(&project);
+    let (branch, view, retagged) = tokio::task::spawn_blocking(
+        move || -> Result<(String, TagView, Vec<String>), ApiError> {
+            let (branch, store) = tag_target(&writing, query.branch)?;
+            // The rename goes first. It is the step that can refuse — on a name already taken, or
+            // on a referencing task it cannot write — and refusing there leaves the tag untouched.
+            let (name, retagged) = match &patch.name {
+                Some(display) => {
+                    let retagged = store.rename_tag(&name, display)?;
+                    let renamed = op_task::tag::normalize_name(display)
+                        .map_err(|err| ApiError::bad_request(err.to_string()))?;
+                    (renamed, retagged)
+                }
+                None => (name, Vec::new()),
+            };
+            let tag = store.update_tag(&name, |tag| {
+                patch.apply(tag);
+                Ok(())
+            })?;
+            let abbreviation = writing.abbreviation();
+            if !retagged.is_empty() {
+                writing.mark_dirty();
+            }
+            let retagged = retagged
+                .iter()
+                .map(|number| abbreviation.format_key(*number))
+                .collect();
+            Ok((branch, TagView::from(&tag), retagged))
+        },
+    )
+    .await
+    .map_err(join_error)??;
+    for id in retagged {
+        publish(
+            &state,
+            ChangeEvent::TaskChanged {
+                project: project.name(),
+                id,
+                branch: branch.clone(),
+            },
+        );
+    }
+    publish(
+        &state,
+        ChangeEvent::TagsChanged {
+            project: project.name(),
+            branch,
+        },
+    );
+    Ok(Json(view))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/projects/{project}/tags/{name}",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("name" = String, Path, description = TAG_NAME_PARAM),
+        ("branch" = Option<String>, Query, description = "Branch to write; omit for the current worktree"),
+        ("force" = Option<bool>, Query, description = "Delete the tag even while tasks on this branch reference it")
+    ),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 400, description = "The name cannot be normalized to a tag name", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such tag", body = ApiErrorBody),
+        (status = 409, description = "Tasks on this branch reference the tag, the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
+        (status = 500, description = "The registry could not be written", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn delete_tag(
+    State(state): State<AppState>,
+    Path((project, name)): Path<(String, String)>,
+    Query(query): Query<DeleteTagQuery>,
+) -> Result<StatusCode, ApiError> {
+    let project = project_of(&state, &project)?;
+    let writing = Arc::clone(&project);
+    let branch = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
+        let (branch, store) = tag_target(&writing, query.branch)?;
+        store.delete_tag(&name, query.force)?;
+        Ok(branch)
+    })
+    .await
+    .map_err(join_error)??;
+    publish(
+        &state,
+        ChangeEvent::TagsChanged {
+            project: project.name(),
+            branch,
+        },
+    );
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct DeleteTagQuery {
+    branch: Option<String>,
+    #[serde(default)]
+    force: bool,
 }
 
 async fn static_handler(uri: Uri) -> Response {
