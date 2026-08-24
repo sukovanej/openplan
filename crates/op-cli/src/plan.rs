@@ -2,7 +2,8 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 use op_api::{
-    CreateTask, Matrix, SearchHit, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    CreateTag, CreateTask, Matrix, SearchHit, TagPatch, TagView, TaskBranches, TaskDetail,
+    TaskListItem, TaskPatch, TaskTreeView,
 };
 use op_client::Client;
 use op_git::Repo;
@@ -10,10 +11,10 @@ use op_server::serve_root;
 
 use crate::daemon::{daemon_base_url, project_named};
 
-// The machine daemon is the store, as every task command sees it: the single in-band writer, which
-// allocates ids from one counter with a view across every local branch and resolves the target
-// worktree from the branch at write time, and the single resolver for reads, so one question gets
-// one answer whether the CLI or the web UI asked it. This carries the branch the caller is on, so a
+// The machine daemon is the store, as every task and tag command sees it: the single in-band
+// writer, which allocates ids from one counter with a view across every local branch and resolves
+// the target worktree from the branch at write time, and the single resolver for reads, so one
+// question gets one answer whether the CLI or the web UI asked it. This carries the branch the caller is on, so a
 // checkout underneath us can only ever refuse a write, never redirect it to another branch — and a
 // read reports the caller's own branch rather than the serve root's. It carries the project too,
 // because the one daemon serves every repository on the machine and a branch name means nothing
@@ -21,14 +22,14 @@ use crate::daemon::{daemon_base_url, project_named};
 //
 // Reads and writes resolve together because `move` is both: it reads a sibling group and writes the
 // ranks it computes from it, and those two must land on one branch of one project.
-pub struct Tasks {
+pub struct Plan {
     client: Client,
     base_url: String,
     project: String,
     branch: String,
 }
 
-impl Tasks {
+impl Plan {
     pub fn resolve(root: &Path, daemon_url: Option<&str>) -> Result<Self> {
         let repo = Repo::discover(root).with_context(|| {
             format!(
@@ -108,6 +109,38 @@ impl Tasks {
         Ok(self
             .client
             .delete_task(&self.base_url, &self.project, &self.branch, id)?)
+    }
+
+    pub fn tags(&self) -> Result<Vec<TagView>> {
+        served(
+            self.client
+                .tags(&self.base_url, &self.project, Some(&self.branch)),
+        )
+    }
+
+    pub fn tag(&self, name: &str) -> Result<TagView> {
+        served(
+            self.client
+                .tag(&self.base_url, &self.project, name, Some(&self.branch)),
+        )
+    }
+
+    pub fn create_tag(&self, tag: &CreateTag) -> Result<TagView> {
+        Ok(self
+            .client
+            .create_tag(&self.base_url, &self.project, &self.branch, tag)?)
+    }
+
+    pub fn patch_tag(&self, name: &str, patch: &TagPatch) -> Result<TagView> {
+        Ok(self
+            .client
+            .patch_tag(&self.base_url, &self.project, &self.branch, name, patch)?)
+    }
+
+    pub fn delete_tag(&self, name: &str, force: bool) -> Result<()> {
+        Ok(self
+            .client
+            .delete_tag(&self.base_url, &self.project, &self.branch, name, force)?)
     }
 }
 

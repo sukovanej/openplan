@@ -84,6 +84,10 @@ fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).unwrap()
 }
 
+fn stderr(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
 fn create(project: &Project, title: &str) -> String {
     let out = run(project, &["create", title]);
     assert!(
@@ -1992,4 +1996,366 @@ fn a_read_before_the_first_commit_names_the_missing_commit() {
         "and the commit is all it needed"
     );
     let _ = run_there(&["server", "stop"]);
+}
+
+fn create_tag(project: &Project, name: &str) -> String {
+    let out = run(project, &["tag", "create", name]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    stdout(&out).trim().to_owned()
+}
+
+fn tag_file(root: &Path, name: &str) -> PathBuf {
+    root.join(".plan/tags").join(format!("{name}.md"))
+}
+
+fn tags_of(root: &Path, key: &str) -> Vec<String> {
+    std::fs::read_to_string(task_file(root, key))
+        .unwrap()
+        .lines()
+        .skip_while(|line| *line != "tags:")
+        .skip(1)
+        .map_while(|line| line.strip_prefix("- ").map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn tag_create_normalizes_the_name_and_writes_the_file() {
+    let dir = Project::new();
+
+    let out = run(&dir, &["tag", "create", "Front End", "--desc", "the SPA"]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert_eq!(
+        stdout(&out).trim(),
+        "front-end",
+        "create prints the name the tag is registered under"
+    );
+    let contents = std::fs::read_to_string(tag_file(dir.path(), "front-end")).unwrap();
+    assert!(contents.contains("# Front End"), "contents: {contents}");
+    assert!(contents.contains("the SPA"), "contents: {contents}");
+    assert!(
+        contents.contains("color: "),
+        "a create always materializes the color: {contents}"
+    );
+}
+
+#[test]
+fn tag_create_refuses_a_name_it_cannot_normalize() {
+    let dir = Project::new();
+
+    let out = run(&dir, &["tag", "create", "C++"]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("lowercase letters"),
+        "the refusal carries the naming rule: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn tag_create_refuses_a_second_tag_of_the_same_name() {
+    let dir = Project::new();
+    create_tag(&dir, "backend");
+
+    let out = run(&dir, &["tag", "create", "Backend"]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("backend"),
+        "the refusal names the tag: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn tag_create_refuses_a_color_outside_the_palette() {
+    let dir = Project::new();
+
+    let out = run(&dir, &["tag", "create", "backend", "--color", "turquoise"]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("teal"),
+        "the refusal lists the palette: {}",
+        stderr(&out)
+    );
+    assert!(
+        !tag_file(dir.path(), "backend").exists(),
+        "a refused color registers nothing"
+    );
+}
+
+#[test]
+fn tag_colors_lists_the_palette() {
+    let dir = Project::new();
+
+    let out = run(&dir, &["tag", "colors"]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let names: Vec<String> = stdout(&out).lines().map(str::to_owned).collect();
+    assert_eq!(names.len(), 12, "the palette is closed: {names:?}");
+    assert!(names.contains(&"teal".to_owned()), "{names:?}");
+
+    let elsewhere = tempfile::tempdir().unwrap();
+    let outside = dir
+        .cmd()
+        .arg("--root")
+        .arg(elsewhere.path())
+        .arg("tag")
+        .arg("colors")
+        .output()
+        .unwrap();
+    assert!(
+        outside.status.success(),
+        "the palette needs no repository and no daemon: {}",
+        stderr(&outside)
+    );
+    assert_eq!(stdout(&outside), stdout(&out));
+}
+
+#[test]
+fn tag_list_and_show_report_the_registry() {
+    let dir = Project::new();
+    assert!(
+        run(&dir, &["tag", "create", "Backend", "--color", "teal"])
+            .status
+            .success()
+    );
+    assert!(
+        run(&dir, &["tag", "create", "wip", "--desc", "in flight"])
+            .status
+            .success()
+    );
+
+    let listed = stdout(&run(&dir, &["tag", "list"]));
+    assert!(listed.contains("backend"), "{listed}");
+    assert!(listed.contains("teal"), "{listed}");
+    assert!(listed.contains("in flight"), "{listed}");
+
+    let shown = stdout(&run(&dir, &["tag", "show", "Backend"]));
+    assert!(
+        shown.contains("name:    backend"),
+        "show takes any spelling that normalizes: {shown}"
+    );
+    assert!(shown.contains("display: Backend"), "{shown}");
+    assert!(shown.contains("color:   teal"), "{shown}");
+
+    let out = run(&dir, &["tag", "show", "wip", "--json"]);
+    let tag: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(tag["name"], "wip");
+    assert_eq!(tag["description"], "in flight");
+}
+
+#[test]
+fn tag_set_recolors_and_redescribes() {
+    let dir = Project::new();
+    create_tag(&dir, "backend");
+
+    assert!(
+        run(&dir, &["tag", "set", "backend", "color", "pink"])
+            .status
+            .success()
+    );
+    assert!(
+        run(&dir, &["tag", "set", "backend", "desc", "server work"])
+            .status
+            .success()
+    );
+    let shown = stdout(&run(&dir, &["tag", "show", "backend"]));
+    assert!(shown.contains("color:   pink"), "{shown}");
+    assert!(shown.contains("desc:    server work"), "{shown}");
+
+    assert!(
+        run(&dir, &["tag", "set", "backend", "desc", ""])
+            .status
+            .success()
+    );
+    let shown = stdout(&run(&dir, &["tag", "show", "backend"]));
+    assert!(
+        shown.contains("desc:    -"),
+        "an empty value clears the description: {shown}"
+    );
+}
+
+#[test]
+fn tag_set_rejects_an_unknown_field() {
+    let dir = Project::new();
+    create_tag(&dir, "backend");
+
+    let out = run(&dir, &["tag", "set", "backend", "colour", "pink"]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("expected color | desc"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn tag_rename_moves_the_file_and_rewrites_the_tasks_that_carry_it() {
+    let dir = Project::new();
+    create_tag(&dir, "backend");
+    let out = run(&dir, &["create", "Wire the parser", "--tag", "backend"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let id = stdout(&out).trim().to_owned();
+
+    let renamed = run(&dir, &["tag", "rename", "backend", "Infra"]);
+
+    assert!(renamed.status.success(), "stderr: {}", stderr(&renamed));
+    assert_eq!(stdout(&renamed).trim(), "infra");
+    assert!(!tag_file(dir.path(), "backend").exists());
+    assert!(tag_file(dir.path(), "infra").exists());
+    assert_eq!(tags_of(dir.path(), &id), vec!["infra".to_owned()]);
+}
+
+#[test]
+fn tag_delete_refuses_a_referenced_tag_until_it_is_forced() {
+    let dir = Project::new();
+    create_tag(&dir, "backend");
+    assert!(
+        run(&dir, &["create", "Wire the parser", "--tag", "backend"])
+            .status
+            .success()
+    );
+
+    let refused = run(&dir, &["tag", "delete", "backend", "--yes"]);
+    assert!(!refused.status.success(), "stdout: {}", stdout(&refused));
+    assert!(
+        stderr(&refused).contains("--force"),
+        "the refusal says how to override it: {}",
+        stderr(&refused)
+    );
+    assert!(tag_file(dir.path(), "backend").exists());
+
+    let forced = run(&dir, &["tag", "delete", "backend", "--force", "--yes"]);
+    assert!(forced.status.success(), "stderr: {}", stderr(&forced));
+    assert!(!tag_file(dir.path(), "backend").exists());
+}
+
+#[test]
+fn tag_delete_of_an_unknown_name_fails_before_it_prompts() {
+    let dir = Project::new();
+
+    // No `--yes`: a typo must be refused outright rather than put to the reader as a question.
+    let out = run(&dir, &["tag", "delete", "backend"]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("no such tag: backend"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !stdout(&out).contains("delete tag backend?"),
+        "stdout: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn create_with_tags_writes_a_sorted_set_and_leaves_the_body_alone() {
+    let dir = Project::new();
+    create_tag(&dir, "backend");
+    create_tag(&dir, "wip");
+
+    let out = run(
+        &dir,
+        &[
+            "create",
+            "Wire the parser",
+            "--tag",
+            "wip",
+            "--tag",
+            "backend",
+            "--tag",
+            "wip",
+            "--body",
+            "## Goals\n- Parse it\n",
+        ],
+    );
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let id = stdout(&out).trim().to_owned();
+    assert_eq!(
+        tags_of(dir.path(), &id),
+        vec!["backend".to_owned(), "wip".to_owned()],
+        "the set is sorted and deduplicated"
+    );
+    assert_eq!(
+        task_body(&task_file(dir.path(), &id)),
+        "# Wire the parser\n\n## Goals\n- Parse it\n"
+    );
+}
+
+#[test]
+fn create_with_an_unknown_tag_names_the_command_that_registers_it() {
+    let dir = Project::new();
+
+    let out = run(&dir, &["create", "Wire the parser", "--tag", "wip"]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("openplan tag create"),
+        "the refusal says how to register the tag: {}",
+        stderr(&out)
+    );
+    assert!(
+        !stdout(&run(&dir, &["list"])).contains("Wire the parser"),
+        "a refused write creates no task"
+    );
+}
+
+#[test]
+fn set_tags_replaces_the_whole_set_and_an_empty_value_clears_it() {
+    let dir = Project::new();
+    create_tag(&dir, "backend");
+    create_tag(&dir, "wip");
+    let id = create(&dir, "Wire the parser");
+
+    assert!(
+        run(&dir, &["set", &id, "tags", "wip, backend"])
+            .status
+            .success()
+    );
+    assert_eq!(
+        tags_of(dir.path(), &id),
+        vec!["backend".to_owned(), "wip".to_owned()]
+    );
+
+    assert!(run(&dir, &["set", &id, "tags", "wip"]).status.success());
+    assert_eq!(tags_of(dir.path(), &id), vec!["wip".to_owned()]);
+
+    assert!(run(&dir, &["set", &id, "tags", ""]).status.success());
+    assert!(
+        tags_of(dir.path(), &id).is_empty(),
+        "an empty value clears the set and omits the field"
+    );
+    assert!(
+        !std::fs::read_to_string(task_file(dir.path(), &id))
+            .unwrap()
+            .contains("tags:")
+    );
+    assert!(stdout(&run(&dir, &["show", &id])).contains("tags: -"));
+}
+
+#[test]
+fn set_tags_refuses_a_name_this_branch_does_not_register() {
+    let dir = Project::new();
+    create_tag(&dir, "backend");
+    let id = create(&dir, "Wire the parser");
+
+    let out = run(&dir, &["set", &id, "tags", "backend, wip"]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("openplan tag create"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        tags_of(dir.path(), &id).is_empty(),
+        "a refused set leaves the task alone"
+    );
 }

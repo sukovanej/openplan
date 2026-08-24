@@ -1,9 +1,10 @@
 mod daemon;
 mod mergedriver;
 mod open;
+mod plan;
 mod project;
 mod serve;
-mod tasks;
+mod tag;
 
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -18,10 +19,11 @@ use op_api::{
 use op_git::Repo;
 use op_lint::{CreatedSource, Diagnostic, Snapshot};
 use op_store::Store;
+use op_task::tag::Color;
 use op_task::{Status, Timestamp, rank};
 
 use daemon::{Control, Home};
-use tasks::Tasks;
+use plan::Plan;
 
 #[derive(Parser)]
 #[command(
@@ -51,6 +53,9 @@ enum Command {
         status: Option<Status>,
         #[arg(long = "dependency")]
         dependencies: Vec<String>,
+        /// Assign a registered tag; repeat for more
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// Markdown content placed below the title heading
         #[arg(long, conflicts_with = "body_file")]
         body: Option<String>,
@@ -117,7 +122,7 @@ enum Command {
         #[arg(long)]
         after: Option<String>,
     },
-    /// Set a validated field: status | parent | dependencies
+    /// Set a validated field: status | parent | dependencies | tags
     Set {
         id: String,
         field: String,
@@ -143,6 +148,11 @@ enum Command {
         #[arg(long)]
         fix: bool,
     },
+    /// Manage the tags tasks on this branch can carry
+    Tag {
+        #[command(subcommand)]
+        command: TagCommand,
+    },
     /// Manage the repositories the daemon serves
     Project {
         #[command(subcommand)]
@@ -159,6 +169,48 @@ enum Command {
         current: String,
         other: String,
     },
+}
+
+#[derive(Subcommand)]
+enum TagCommand {
+    /// Register a tag and print the name it normalizes to
+    Create {
+        name: String,
+        #[arg(long)]
+        color: Option<Color>,
+        #[arg(long = "desc")]
+        description: Option<String>,
+    },
+    /// List every tag this branch registers
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print one tag (name, display name, color, description)
+    Show {
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set a validated field: color | desc
+    Set {
+        name: String,
+        field: String,
+        value: String,
+    },
+    /// Rename a tag and rewrite the tasks on this branch that carry the old name
+    Rename { from: String, to: String },
+    /// Delete a tag file
+    Delete {
+        name: String,
+        /// Delete the tag even while tasks on this branch carry it
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Print the color names a tag can take
+    Colors,
 }
 
 #[derive(Subcommand)]
@@ -217,12 +269,24 @@ fn run(cli: Cli) -> Result<ExitCode> {
             parent,
             status,
             dependencies,
+            tags,
             body,
             body_file,
         } => {
             let body = resolve_body(body, body_file)?;
-            create(root, daemon_url, title, parent, status, dependencies, body)
-                .map(|()| ExitCode::SUCCESS)
+            create(
+                root,
+                daemon_url,
+                &CreateTask {
+                    title,
+                    status,
+                    parent,
+                    dependencies,
+                    tags,
+                    body,
+                },
+            )
+            .map(|()| ExitCode::SUCCESS)
         }
         Command::List {
             status,
@@ -265,6 +329,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Branches => branches(root).map(|()| ExitCode::SUCCESS),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Lint { targets, json, fix } => lint(root, &targets, json, fix),
+        Command::Tag { command } => tag::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
@@ -341,24 +406,8 @@ fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Optio
     }
 }
 
-fn create(
-    root: &Path,
-    daemon_url: Option<&str>,
-    title: String,
-    parent: Option<String>,
-    status: Option<Status>,
-    dependencies: Vec<String>,
-    body: Option<String>,
-) -> Result<()> {
-    let id = Tasks::resolve(root, daemon_url)?.create(&CreateTask {
-        title,
-        status,
-        parent,
-        dependencies,
-        // TODO(OPP-75): `--tag` puts names here.
-        tags: Vec::new(),
-        body,
-    })?;
+fn create(root: &Path, daemon_url: Option<&str>, task: &CreateTask) -> Result<()> {
+    let id = Plan::resolve(root, daemon_url)?.create(task)?;
     println!("{id}");
     Ok(())
 }
@@ -372,11 +421,11 @@ fn list(
     all_branches: bool,
     branch: Option<&str>,
 ) -> Result<()> {
-    let tasks = Tasks::resolve(root, daemon_url)?;
+    let plan = Plan::resolve(root, daemon_url)?;
     if all_branches {
-        return list_all_branches(&tasks, status, json);
+        return list_all_branches(&plan, status, json);
     }
-    let held = tasks.list(branch.unwrap_or(tasks.branch()))?;
+    let held = plan.list(branch.unwrap_or(plan.branch()))?;
     let matching: Vec<&TaskListItem> = held
         .iter()
         .filter(|task| status.is_none_or(|s| task.metadata.status() == Some(s)))
@@ -395,8 +444,8 @@ fn list(
     Ok(())
 }
 
-fn list_all_branches(tasks: &Tasks, status: Option<Status>, json: bool) -> Result<()> {
-    let mut matrix = tasks.matrix()?;
+fn list_all_branches(plan: &Plan, status: Option<Status>, json: bool) -> Result<()> {
+    let mut matrix = plan.matrix()?;
     matrix
         .cells
         .retain(|cell| status.is_none_or(|s| cell.task.metadata.status() == Some(s)));
@@ -420,7 +469,7 @@ fn list_all_branches(tasks: &Tasks, status: Option<Status>, json: bool) -> Resul
 }
 
 fn search(root: &Path, daemon_url: Option<&str>, query: &str, json: bool) -> Result<()> {
-    let hits = Tasks::resolve(root, daemon_url)?.search(query)?;
+    let hits = Plan::resolve(root, daemon_url)?.search(query)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&hits)?);
     } else if hits.is_empty() {
@@ -438,8 +487,8 @@ fn get(
     json: bool,
     branch: Option<&str>,
 ) -> Result<()> {
-    let tasks = Tasks::resolve(root, daemon_url)?;
-    let detail = tasks.get(id, branch.unwrap_or(tasks.branch()))?;
+    let plan = Plan::resolve(root, daemon_url)?;
+    let detail = plan.get(id, branch.unwrap_or(plan.branch()))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&detail)?);
     } else {
@@ -458,11 +507,11 @@ fn get(
 }
 
 fn show(root: &Path, daemon_url: Option<&str>, id: &str, branches: bool) -> Result<()> {
-    let tasks = Tasks::resolve(root, daemon_url)?;
+    let plan = Plan::resolve(root, daemon_url)?;
     if branches {
-        return show_branches(&tasks, id);
+        return show_branches(&plan, id);
     }
-    let detail = tasks.get(id, tasks.branch())?;
+    let detail = plan.get(id, plan.branch())?;
     let metadata = &detail.metadata;
     println!("id:     {id}");
     println!("title:  {}", detail.title);
@@ -477,14 +526,23 @@ fn show(root: &Path, daemon_url: Option<&str>, id: &str, branches: bool) -> Resu
             dependencies.join(", ")
         }
     );
+    let tags = metadata.tags();
+    println!(
+        "tags: {}",
+        if tags.is_empty() {
+            "-".to_owned()
+        } else {
+            tags.join(", ")
+        }
+    );
     for problem in metadata.problems() {
         println!("!       {problem}");
     }
     Ok(())
 }
 
-fn show_branches(tasks: &Tasks, id: &str) -> Result<()> {
-    let view = tasks.branches(id)?;
+fn show_branches(plan: &Plan, id: &str) -> Result<()> {
+    let view = plan.branches(id)?;
     let branch_count: usize = view.versions.iter().map(|v| v.branches.len()).sum();
     let divergent = view.versions.len() > 1;
     println!("id: {}", view.id);
@@ -579,7 +637,7 @@ fn plural(n: usize) -> &'static str {
 fn set(root: &Path, daemon_url: Option<&str>, id: &str, field: &str, value: &str) -> Result<()> {
     // Parse before reaching for the daemon so a typo fails without starting one.
     let patch = parse_field(field, value)?;
-    Tasks::resolve(root, daemon_url)?.patch(id, &patch)?;
+    Plan::resolve(root, daemon_url)?.patch(id, &patch)?;
     Ok(())
 }
 
@@ -595,18 +653,26 @@ fn parse_field(field: &str, value: &str) -> Result<TaskPatch> {
             ..TaskPatch::default()
         },
         "dependencies" => TaskPatch {
-            dependencies: Some(
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_owned)
-                    .collect(),
-            ),
+            dependencies: Some(comma_separated(value)),
             ..TaskPatch::default()
         },
-        other => bail!("unknown field {other:?}; expected status | parent | dependencies"),
+        // The whole set, like `dependencies`: what the caller names is what the task ends up with,
+        // and "" clears it.
+        "tags" => TaskPatch {
+            tags: Some(comma_separated(value)),
+            ..TaskPatch::default()
+        },
+        other => bail!("unknown field {other:?}; expected status | parent | dependencies | tags"),
     })
+}
+
+fn comma_separated(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
@@ -617,15 +683,15 @@ fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
 }
 
 fn delete(root: &Path, daemon_url: Option<&str>, id: &str, yes: bool) -> Result<ExitCode> {
-    let tasks = Tasks::resolve(root, daemon_url)?;
+    let plan = Plan::resolve(root, daemon_url)?;
     // The delete targets the caller's branch, so the prompt has to be about a task that branch
     // actually carries — a typo must refuse before it asks the reader to confirm one.
-    tasks.get(id, tasks.branch())?;
+    plan.get(id, plan.branch())?;
     if !yes && !confirm(id)? {
         println!("aborted");
         return Ok(ExitCode::SUCCESS);
     }
-    tasks.delete(id)?;
+    plan.delete(id)?;
     println!("deleted {id}");
     Ok(ExitCode::SUCCESS)
 }
@@ -641,7 +707,7 @@ fn confirm(id: &str) -> Result<bool> {
     ))
 }
 
-// The one command that asks about git rather than about tasks. Branch names are refs, which every
+// The one command that asks about git rather than about plan. Branch names are refs, which every
 // worktree of the repository already agrees on; there is no store state to resolve and so nothing
 // for the daemon to be the single resolver of.
 fn branches(root: &Path) -> Result<()> {
@@ -807,8 +873,8 @@ fn tree(
     depth: Option<usize>,
     json: bool,
 ) -> Result<()> {
-    let tasks = Tasks::resolve(root, daemon_url)?;
-    let view = tasks.tree(id, tasks.branch(), depth)?;
+    let plan = Plan::resolve(root, daemon_url)?;
+    let view = plan.tree(id, plan.branch(), depth)?;
     for cycle in &view.cycles {
         eprintln!("warning: parent cycle at {cycle}; its subtree is truncated");
     }
@@ -843,8 +909,8 @@ fn move_task(
 ) -> Result<()> {
     // The ranks are computed from the same state the write lands on: the daemon's view of the
     // caller's branch, not a second reading of the files.
-    let tasks = Tasks::resolve(root, daemon_url)?;
-    let group = tasks.list(tasks.branch())?;
+    let plan = Plan::resolve(root, daemon_url)?;
+    let group = plan.list(plan.branch())?;
     // The task's own row, from the same read the siblings come from: asking for it separately would
     // walk the repository a second time to learn what this list already says.
     let current_parent = group
@@ -867,7 +933,7 @@ fn move_task(
 
     match rank_plan(&siblings, insert) {
         RankPlan::Single(new_rank) => {
-            tasks.patch(
+            plan.patch(
                 id,
                 &TaskPatch {
                     parent: parent_update(new_parent),
@@ -884,7 +950,7 @@ fn move_task(
         } => {
             // The moved task goes first: its write is the one the store validates (parent exists,
             // no cycle), so a refused move leaves the siblings' ranks untouched.
-            tasks.patch(
+            plan.patch(
                 id,
                 &TaskPatch {
                     parent: parent_update(new_parent),
@@ -893,7 +959,7 @@ fn move_task(
                 },
             )?;
             for (sibling_id, sibling_rank) in assigned {
-                tasks.patch(
+                plan.patch(
                     &sibling_id,
                     &TaskPatch {
                         rank: Some(sibling_rank),

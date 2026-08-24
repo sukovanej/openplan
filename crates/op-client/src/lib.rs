@@ -2,8 +2,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use op_api::{
-    ApiErrorBody, CreateTask, DaemonInfo, Matrix, ProjectView, RegisterProject, RenameProject,
-    SearchHit, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    ApiErrorBody, CreateTag, CreateTask, DaemonInfo, Matrix, ProjectView, RegisterProject,
+    RenameProject, SearchHit, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch,
+    TaskTreeView,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -151,6 +152,25 @@ impl Client {
         self.read(url)
     }
 
+    pub fn tags(
+        &self,
+        base_url: &str,
+        project: &str,
+        branch: Option<&str>,
+    ) -> Result<Vec<TagView>, ClientError> {
+        self.read(tag_read_url(base_url, project, None, branch)?)
+    }
+
+    pub fn tag(
+        &self,
+        base_url: &str,
+        project: &str,
+        name: &str,
+        branch: Option<&str>,
+    ) -> Result<TagView, ClientError> {
+        self.read(tag_read_url(base_url, project, Some(name), branch)?)
+    }
+
     fn read<T: DeserializeOwned>(&self, url: Url) -> Result<T, ClientError> {
         let route = url.path().to_owned();
         let response = accepted(send_read(self.http.get(url))?)?;
@@ -277,6 +297,44 @@ impl Client {
         accepted(send(self.http.delete(url))?).map(drop)
     }
 
+    pub fn create_tag(
+        &self,
+        base_url: &str,
+        project: &str,
+        branch: &str,
+        tag: &CreateTag,
+    ) -> Result<TagView, ClientError> {
+        let url = tag_write_url(base_url, project, branch, None)?;
+        self.json(self.http.post(url).json(tag))
+    }
+
+    pub fn patch_tag(
+        &self,
+        base_url: &str,
+        project: &str,
+        branch: &str,
+        name: &str,
+        patch: &TagPatch,
+    ) -> Result<TagView, ClientError> {
+        let url = tag_write_url(base_url, project, branch, Some(name))?;
+        self.json(self.http.patch(url).json(patch))
+    }
+
+    pub fn delete_tag(
+        &self,
+        base_url: &str,
+        project: &str,
+        branch: &str,
+        name: &str,
+        force: bool,
+    ) -> Result<(), ClientError> {
+        let mut url = tag_write_url(base_url, project, branch, Some(name))?;
+        if force {
+            url.query_pairs_mut().append_pair("force", "true");
+        }
+        accepted(send(self.http.delete(url))?).map(drop)
+    }
+
     fn json<T: DeserializeOwned>(&self, request: RequestBuilder) -> Result<T, ClientError> {
         accepted(send(request)?)?
             .json()
@@ -345,6 +403,44 @@ fn tasks_url(base_url: &str, project: &str, id: Option<&str>) -> Result<Url, Cli
         if let Some(id) = id {
             segments.push(id);
         }
+    }
+    Ok(url)
+}
+
+fn tags_url(base_url: &str, project: &str, name: Option<&str>) -> Result<Url, ClientError> {
+    let mut url = projects_url(base_url, project)?;
+    {
+        let mut segments = url.path_segments_mut().map_err(|_| unusable(base_url))?;
+        segments.push("tags");
+        if let Some(name) = name {
+            segments.push(name);
+        }
+    }
+    Ok(url)
+}
+
+fn tag_write_url(
+    base_url: &str,
+    project: &str,
+    branch: &str,
+    name: Option<&str>,
+) -> Result<Url, ClientError> {
+    let mut url = tags_url(base_url, project, name)?;
+    url.query_pairs_mut().append_pair("branch", branch);
+    Ok(url)
+}
+
+// A tag read names its branch the way a write does; the daemon walks the worktree either way, so
+// there is no stale index for `fresh` to bypass.
+fn tag_read_url(
+    base_url: &str,
+    project: &str,
+    name: Option<&str>,
+    branch: Option<&str>,
+) -> Result<Url, ClientError> {
+    let mut url = tags_url(base_url, project, name)?;
+    if let Some(branch) = branch {
+        url.query_pairs_mut().append_pair("branch", branch);
     }
     Ok(url)
 }
