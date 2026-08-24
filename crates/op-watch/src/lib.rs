@@ -14,6 +14,9 @@ use op_store::{CONFIG_FILE, Store, StoreError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {
     Task { number: u64, branch: String },
+    // Coarse on purpose: every registry edit sends a reader back to the whole registry, so the
+    // watcher names the branch and leaves the tags undiffed.
+    Tags { branch: String },
     Config,
 }
 
@@ -69,10 +72,7 @@ impl Watcher {
         let worktrees = repo.worktrees()?;
         let mut watched = HashSet::new();
         reconcile(&repo, &store, &worktrees, &mut notifier, &mut watched);
-        let baseline = State {
-            tasks: snapshot(&repo, &store, &worktrees)?,
-            config: config_text(&store),
-        };
+        let baseline = observe(&repo, &store, &worktrees)?;
 
         let worker =
             std::thread::spawn(move || run(repo, store, notifier, rx, sink, watched, baseline));
@@ -177,12 +177,8 @@ fn attempt_pass(
         return Pass::Retry(Instant::now() + SETTLE);
     }
     reconcile(repo, store, &worktrees, notifier, watched);
-    match snapshot(repo, store, &worktrees) {
-        Ok(tasks) => {
-            let next = State {
-                tasks,
-                config: config_text(store),
-            };
+    match observe(repo, store, &worktrees) {
+        Ok(next) => {
             emit_diff(state, &next, sink);
             *state = next;
             Pass::Settled
@@ -195,9 +191,18 @@ fn attempt_pass(
 
 struct State {
     tasks: Snapshot,
+    tags: TagSnapshot,
     // Compared verbatim rather than parsed: an edit that leaves the file invalid must register too,
     // so the daemon can stop rather than keep serving keys the store no longer claims.
     config: Option<String>,
+}
+
+fn observe(repo: &Repo, store: &Store, worktrees: &[Worktree]) -> Result<State, WatchError> {
+    Ok(State {
+        tasks: task_snapshot(repo, store, worktrees)?,
+        tags: tag_snapshot(repo, store, worktrees)?,
+        config: config_text(store),
+    })
 }
 
 fn config_text(store: &Store) -> Option<String> {
@@ -205,6 +210,10 @@ fn config_text(store: &Store) -> Option<String> {
 }
 
 type Snapshot = HashMap<String, HashMap<u64, Cell>>;
+
+// Only branches a live worktree holds: a tag is readable and writable through its worktree's
+// registry alone, so a branch with no worktree has no registry to report on.
+type TagSnapshot = HashMap<String, HashMap<String, String>>;
 
 // A task's effective state on one branch: the working-tree blob when that branch is checked out in a
 // live worktree, else its committed blob. `dirty` marks a working copy diverging from the commit;
@@ -216,7 +225,7 @@ struct Cell {
     deleted: bool,
 }
 
-fn snapshot(repo: &Repo, store: &Store, worktrees: &[Worktree]) -> Result<Snapshot, WatchError> {
+fn live_worktrees(worktrees: &[Worktree]) -> HashMap<&str, &Path> {
     let mut live: HashMap<&str, &Path> = HashMap::new();
     for worktree in worktrees {
         if worktree.op_in_progress {
@@ -226,6 +235,44 @@ fn snapshot(repo: &Repo, store: &Store, worktrees: &[Worktree]) -> Result<Snapsh
             live.entry(branch).or_insert(worktree.path.as_path());
         }
     }
+    live
+}
+
+// A worktree can hold a branch that carries no store at all — one checked out at a commit from
+// before `.plan` existed, or an orphan branch. It has no tasks and registers no tags. Reading that
+// as a failed pass would stall every later diff, so it reads as empty instead.
+fn worktree_store(store: &Store, worktree: &Path) -> Result<Option<Store>, WatchError> {
+    match Store::open(worktree, store.abbreviation()) {
+        Ok(open) => Ok(Some(open)),
+        Err(StoreError::StoreMissing) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn tag_snapshot(
+    repo: &Repo,
+    store: &Store,
+    worktrees: &[Worktree],
+) -> Result<TagSnapshot, WatchError> {
+    let mut out = TagSnapshot::new();
+    for (branch, path) in live_worktrees(worktrees) {
+        let mut oids = HashMap::new();
+        if let Some(store) = worktree_store(store, path)? {
+            for (name, text) in store.read_all_raw_tags()? {
+                oids.insert(name, repo.hash_blob(text.as_bytes())?);
+            }
+        }
+        out.insert(branch.to_owned(), oids);
+    }
+    Ok(out)
+}
+
+fn task_snapshot(
+    repo: &Repo,
+    store: &Store,
+    worktrees: &[Worktree],
+) -> Result<Snapshot, WatchError> {
+    let live = live_worktrees(worktrees);
 
     let mut out = Snapshot::new();
     for branch in repo.local_branches()? {
@@ -300,7 +347,9 @@ fn working_task_oids(
     store: &Store,
     worktree: &Path,
 ) -> Result<HashMap<u64, String>, WatchError> {
-    let store = Store::open(worktree, store.abbreviation())?;
+    let Some(store) = worktree_store(store, worktree)? else {
+        return Ok(HashMap::new());
+    };
     let mut out = HashMap::new();
     for number in store.task_ids()? {
         let oid = repo.hash_blob(store.read_raw(number)?.as_bytes())?;
@@ -312,6 +361,21 @@ fn working_task_oids(
 fn emit_diff(old: &State, new: &State, sink: &Sender<Change>) {
     if old.config != new.config {
         let _ = sink.send(Change::Config);
+    }
+    // A branch enters and leaves this map with its worktree, so worktree churn reports a tags
+    // change for a branch whose files nobody touched. That is the honest answer: the registry a
+    // client could read became readable, or stopped being readable.
+    for branch in old
+        .tags
+        .keys()
+        .chain(new.tags.keys())
+        .collect::<HashSet<_>>()
+    {
+        if old.tags.get(branch) != new.tags.get(branch) {
+            let _ = sink.send(Change::Tags {
+                branch: branch.clone(),
+            });
+        }
     }
     let empty = HashMap::new();
     let branches: HashSet<&String> = old.tasks.keys().chain(new.tasks.keys()).collect();
@@ -367,11 +431,12 @@ fn reconcile(
     }
 }
 
-// The change sources: every live worktree's `.plan/tasks` for working edits, the served
-// store's own `.plan` for its `config.toml`, and the git-side refs/HEAD/worktrees under the shared
-// `.git`. The common dir and `.plan` are watched non-recursively so HEAD, `packed-refs`, the first
-// creation of `worktrees/`, and the config file register without pulling in objects/ or every task;
-// the callback's `is_relevant` filter drops the index/log churn that watch still surfaces.
+// The change sources: every live worktree's `.plan/tasks` and `.plan/tags` for working edits, the
+// served store's own `.plan` for its `config.toml`, and the git-side refs/HEAD/worktrees under the
+// shared `.git`. The common dir and `.plan` are watched non-recursively so HEAD, `packed-refs`, the
+// first creation of `worktrees/` or `tags/`, and the config file register without pulling in
+// objects/ or every task; the callback's `is_relevant` filter drops the index/log churn that watch
+// still surfaces.
 pub fn watch_paths(
     repo: &Repo,
     store: &Store,
@@ -387,10 +452,14 @@ pub fn watch_paths(
         paths.push((plan, RecursiveMode::NonRecursive));
     }
     for worktree in worktrees {
-        paths.push((
-            worktree.path.join(".plan").join("tasks"),
-            RecursiveMode::Recursive,
-        ));
+        let plan = worktree.path.join(".plan");
+        // Non-recursive on `.plan` itself so the *creation* of `tags/` registers: a worktree that
+        // registered no tag yet has no `tags` directory to watch, and its first tag write would
+        // otherwise land unseen.
+        paths.push((plan.clone(), RecursiveMode::NonRecursive));
+        for sub in ["tasks", "tags"] {
+            paths.push((plan.join(sub), RecursiveMode::Recursive));
+        }
     }
     paths
         .into_iter()
@@ -407,10 +476,10 @@ fn canonical_dir(path: &Path) -> Option<PathBuf> {
     canonical.is_dir().then_some(canonical)
 }
 
-// A watched path is worth a diff pass only when it touches a task file (`.plan/tasks/*`), the store's
-// `.plan/config.toml`, or a git ref source (`refs/*`, `HEAD`, `packed-refs`, `worktrees/*`).
-// Everything else under `.git` — `index`, `ORIG_HEAD`, `COMMIT_EDITMSG`, logs — churns on routine git
-// commands without changing any task.
+// A watched path is worth a diff pass only when it touches a task file (`.plan/tasks/*`), a tag
+// file (`.plan/tags/*`), the store's `.plan/config.toml`, or a git ref source (`refs/*`, `HEAD`,
+// `packed-refs`, `worktrees/*`). Everything else under `.git` — `index`, `ORIG_HEAD`,
+// `COMMIT_EDITMSG`, logs — churns on routine git commands without changing any task.
 fn is_relevant(event: &notify::Event) -> bool {
     event.paths.iter().any(|path| {
         if matches!(
@@ -424,15 +493,17 @@ fn is_relevant(event: &notify::Event) -> bool {
         let mut worktrees = false;
         let mut plan = false;
         let mut tasks = false;
+        let mut tags = false;
         for part in path.components().filter_map(|c| c.as_os_str().to_str()) {
             match part {
                 "refs" => refs = true,
                 "worktrees" => worktrees = true,
                 ".plan" => plan = true,
                 "tasks" => tasks = true,
+                "tags" => tags = true,
                 _ => {}
             }
         }
-        refs || worktrees || (plan && (tasks || config))
+        refs || worktrees || (plan && (tasks || tags || config))
     })
 }

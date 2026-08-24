@@ -810,3 +810,56 @@ async fn branch_names(state: &AppState) -> Vec<String> {
         .map(|b| b["branch"].as_str().unwrap().to_owned())
         .collect()
 }
+
+// A tag registered outside the daemon — by the CLI, or by hand — is only visible to a UI if the
+// watcher sees the registry.
+#[tokio::test]
+async fn a_tag_written_outside_the_daemon_reaches_the_event_stream() {
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path(), "AAA");
+    let state = AppState::new([open("alpha", dir.path())]);
+    state.start_watchers();
+
+    let events = send(&state, "GET", "/api/events", None).await;
+    assert_eq!(events.status(), StatusCode::OK);
+
+    // The repository has no `.plan/tags` yet, so this covers the directory's creation too.
+    std::fs::create_dir_all(dir.path().join(".plan/tags")).unwrap();
+    std::fs::write(
+        dir.path().join(".plan/tags/backend.md"),
+        "---\ncolor: blue\n---\n\n# Backend\n",
+    )
+    .unwrap();
+
+    let event = sse_event(events, "tags_changed").await;
+    assert_eq!(event["project"], "alpha");
+    assert_eq!(event["branch"], "main");
+}
+
+async fn sse_event(response: Response, kind: &str) -> Value {
+    let read = async {
+        let mut body = response.into_body();
+        let mut buffer = String::new();
+        while let Some(frame) = body.frame().await {
+            if let Some(data) = frame.unwrap().data_ref() {
+                buffer.push_str(&String::from_utf8_lossy(data));
+            }
+            // An SSE event ends at a blank line; only parse a fully-received event so a payload
+            // split across frames is never read half-formed.
+            while let Some(end) = buffer.find("\n\n") {
+                let event: String = buffer.drain(..end + 2).collect();
+                let Some(line) = event.lines().find_map(|line| line.strip_prefix("data:")) else {
+                    continue;
+                };
+                let value: Value = serde_json::from_str(line.trim()).unwrap();
+                if value["kind"] == kind {
+                    return value;
+                }
+            }
+        }
+        panic!("event stream closed before delivering a {kind} event");
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(10), read)
+        .await
+        .unwrap_or_else(|_| panic!("no {kind} event arrived"))
+}

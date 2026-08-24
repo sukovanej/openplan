@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -20,6 +20,20 @@ impl Store {
         self.tag_names()?
             .into_iter()
             .map(|name| self.read_tag_file(&self.tag_file(&name), name))
+            .collect()
+    }
+
+    // One scan and one open per tag, hashed rather than parsed by the watcher: a tag file the
+    // parser would reject must still register as a change.
+    pub fn read_all_raw_tags(&self) -> Result<BTreeMap<String, String>, StoreError> {
+        self.tag_names()?
+            .into_iter()
+            .filter_map(|name| match std::fs::read_to_string(self.tag_file(&name)) {
+                Ok(text) => Some(Ok((name, text))),
+                // Deleted between the scan and the read: it simply is not in the registry.
+                Err(err) if err.kind() == io::ErrorKind::NotFound => None,
+                Err(err) => Some(Err(err.into())),
+            })
             .collect()
     }
 
@@ -143,7 +157,7 @@ impl Store {
         let mut names = BTreeSet::new();
         for entry in std::fs::read_dir(&dir)? {
             let path = entry?.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            if path.extension().and_then(|e| e.to_str()) != Some("md") || !path.is_file() {
                 continue;
             }
             // The stem is the identity, so a file the normalizer would have named differently —
