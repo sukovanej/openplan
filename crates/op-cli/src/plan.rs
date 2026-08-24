@@ -2,7 +2,8 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 use op_api::{
-    CreateTask, Matrix, SearchHit, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    CreateTag, CreateTask, Matrix, SearchHit, TagPatch, TagView, TaskBranches, TaskDetail,
+    TaskListItem, TaskPatch, TaskTreeView,
 };
 use op_client::Client;
 use op_git::Repo;
@@ -10,10 +11,10 @@ use op_server::serve_root;
 
 use crate::daemon::{daemon_base_url, project_named};
 
-// The machine daemon is the store, as every task command sees it: the single in-band writer, which
-// allocates ids from one counter with a view across every local branch and resolves the target
-// worktree from the branch at write time, and the single resolver for reads, so one question gets
-// one answer whether the CLI or the web UI asked it. This carries the branch the caller is on, so a
+// The machine daemon is the store, as every task and tag command sees it: the single in-band
+// writer, which allocates ids from one counter with a view across every local branch and resolves
+// the target worktree from the branch at write time, and the single resolver for reads, so one
+// question gets one answer whether the CLI or the web UI asked it. This carries the branch the caller is on, so a
 // checkout underneath us can only ever refuse a write, never redirect it to another branch — and a
 // read reports the caller's own branch rather than the serve root's. It carries the project too,
 // because the one daemon serves every repository on the machine and a branch name means nothing
@@ -21,14 +22,14 @@ use crate::daemon::{daemon_base_url, project_named};
 //
 // Reads and writes resolve together because `move` is both: it reads a sibling group and writes the
 // ranks it computes from it, and those two must land on one branch of one project.
-pub struct Tasks {
+pub struct Plan {
     client: Client,
     base_url: String,
     project: String,
     branch: String,
 }
 
-impl Tasks {
+impl Plan {
     pub fn resolve(root: &Path, daemon_url: Option<&str>) -> Result<Self> {
         let repo = Repo::discover(root).with_context(|| {
             format!(
@@ -109,11 +110,47 @@ impl Tasks {
             .client
             .delete_task(&self.base_url, &self.project, &self.branch, id)?)
     }
+
+    pub fn tags(&self) -> Result<Vec<TagView>> {
+        served(
+            self.client
+                .tags(&self.base_url, &self.project, Some(&self.branch)),
+        )
+    }
+
+    pub fn tag(&self, name: &str) -> Result<TagView> {
+        served(
+            self.client
+                .tag(&self.base_url, &self.project, name, Some(&self.branch)),
+        )
+    }
+
+    pub fn create_tag(&self, tag: &CreateTag) -> Result<TagView> {
+        served(
+            self.client
+                .create_tag(&self.base_url, &self.project, &self.branch, tag),
+        )
+    }
+
+    pub fn patch_tag(&self, name: &str, patch: &TagPatch) -> Result<TagView> {
+        served(
+            self.client
+                .patch_tag(&self.base_url, &self.project, &self.branch, name, patch),
+        )
+    }
+
+    pub fn delete_tag(&self, name: &str, force: bool) -> Result<()> {
+        served(
+            self.client
+                .delete_tag(&self.base_url, &self.project, &self.branch, name, force),
+        )
+    }
 }
 
-// A daemon older than the read routes has two ways of saying so, and neither of them says it. One
+// A daemon older than these routes has two ways of saying so, and neither of them says it. One
 // that refuses unserved `/api/` paths answers 404 about a route, where every other 404 here is about
-// a task; an older one still falls those paths through to the SPA and answers the page itself. Both
+// a task or a tag; an older one still falls those paths through to the SPA and answers the page
+// itself. Both
 // mean the same thing: stop the daemon. JSON of the wrong shape is not one of them — that is a
 // schema mismatch, which says nothing about the daemon's age and must not send anyone to stop a
 // daemon other repositories are using.
@@ -127,7 +164,7 @@ fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
     };
     outcome.map_err(|err| match predates(&err) {
         true => anyhow::Error::new(err).context(
-            "this openplan daemon does not serve the read routes; it predates them. Stop it \
+            "this openplan daemon does not serve these routes; it predates them. Stop it \
              (`openplan server stop`) and rerun here.",
         ),
         false => anyhow::Error::new(err),

@@ -7,7 +7,7 @@ use op_client::Client;
 use op_git::Repo;
 
 use crate::daemon::daemon_base_url;
-use crate::tasks::resolve_project;
+use crate::plan::resolve_project;
 
 #[cfg(target_os = "macos")]
 const DEFAULT_LAUNCHER: &str = "open";
