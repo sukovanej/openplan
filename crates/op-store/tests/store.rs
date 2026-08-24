@@ -1252,3 +1252,45 @@ fn a_rename_keeps_the_old_name_registered_until_every_task_moves() {
     }
     assert!(!store.tag_exists("backend"));
 }
+
+#[test]
+fn replace_raw_tag_overwrites_the_file_it_names_and_nothing_else() {
+    let (_dir, store) = make_store();
+    register(&store, "Backend");
+
+    let planted = "---\ncolor: pink\n---\n# Backend\n\nhand-written\n";
+    store
+        .replace_raw_tag("backend", planted.as_bytes())
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(store.tags_dir().join("backend.md")).unwrap(),
+        planted,
+        "a raw write is verbatim — nothing is reflowed through the model"
+    );
+
+    // The name is a file stem, not a path, so neither a missing tag nor a traversal names a file.
+    for name in ["missing", "../tasks/00001-planted"] {
+        assert!(matches!(
+            store.replace_raw_tag(name, b"x"),
+            Err(StoreError::TagNotFound { .. })
+        ));
+    }
+    assert!(tag_temp_files(&store).is_empty());
+}
+
+// A stem the normalizer would have named differently registers no tag, so `read_tag` cannot reach
+// it — but `lint --fix` still repairs the bytes of the file it read.
+#[test]
+fn replace_raw_tag_reaches_a_file_the_registry_does_not() {
+    let (_dir, store) = make_store();
+    std::fs::create_dir_all(store.tags_dir()).unwrap();
+    let path = store.tags_dir().join("Back End.md");
+    std::fs::write(&path, "---\n---\n# Back End\n").unwrap();
+
+    let repaired = "---\ncolor: teal\n---\n# Back End\n";
+    store
+        .replace_raw_tag("Back End", repaired.as_bytes())
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), repaired);
+    assert!(store.list_tags().unwrap().is_empty());
+}

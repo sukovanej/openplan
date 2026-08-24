@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{split_frontmatter, with_paragraph};
+use crate::{FieldError, FieldResult, split_frontmatter, with_paragraph};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -220,6 +220,50 @@ impl Tag {
             frontmatter: serde_yaml::from_str(&fm_src.replace('\r', ""))?,
             body: body.to_owned(),
         })
+    }
+}
+
+// The lenient counterpart to `from_file_string`, and the tag-side twin of `parse_partial`: a file
+// the model would reject still yields its color, its heading, and its body for a linter to report on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartialTag {
+    pub frontmatter: Result<serde_yaml::Mapping, String>,
+    pub color: FieldResult<Color>,
+    pub body: String,
+}
+
+pub fn parse_partial(input: &str) -> PartialTag {
+    let Some((fm_src, body)) = split_frontmatter(input) else {
+        return PartialTag {
+            frontmatter: Err("missing frontmatter fence".to_owned()),
+            color: Err(FieldError::Missing),
+            body: input.to_owned(),
+        };
+    };
+    match serde_yaml::from_str::<serde_yaml::Mapping>(&fm_src.replace('\r', "")) {
+        Err(err) => PartialTag {
+            frontmatter: Err(err.to_string()),
+            color: Err(FieldError::Missing),
+            body: body.to_owned(),
+        },
+        Ok(map) => PartialTag {
+            color: extract_color(&map),
+            frontmatter: Ok(map),
+            body: body.to_owned(),
+        },
+    }
+}
+
+fn extract_color(map: &serde_yaml::Mapping) -> FieldResult<Color> {
+    match map.get("color") {
+        None | Some(serde_yaml::Value::Null) => Err(FieldError::Missing),
+        Some(value) => serde_yaml::from_value::<Color>(value.clone()).map_err(|_| {
+            let got = serde_yaml::to_string(value)
+                .unwrap_or_default()
+                .trim()
+                .to_owned();
+            FieldError::Invalid(ParseColorError { got }.to_string())
+        }),
     }
 }
 

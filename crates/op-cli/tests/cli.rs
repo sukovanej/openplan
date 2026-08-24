@@ -1857,6 +1857,38 @@ fn lint_fix_rewrites_then_reports_clean() {
 }
 
 #[test]
+fn lint_reports_and_repairs_a_tag_file_by_its_path() {
+    let dir = lint_store();
+    write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
+    std::fs::create_dir_all(dir.path().join(".plan/tags")).unwrap();
+    let tag = dir.path().join(".plan/tags/backend.md");
+    write(&tag, "---\n---\n# Backend\n");
+
+    let reported = run_lint(dir.path(), &[".plan/tags/backend.md"]);
+    assert!(
+        !reported.status.success(),
+        "a tag target must be resolvable, not rejected as naming no file; output: {}",
+        combined(&reported)
+    );
+    assert!(
+        combined(&reported).contains("tag-color"),
+        "the missing color must be reported: {}",
+        combined(&reported)
+    );
+
+    let fixed = run_lint(dir.path(), &[".plan/tags/backend.md", "--fix"]);
+    assert!(
+        fixed.status.success(),
+        "--fix must materialize the derived color and re-check clean; output: {}",
+        combined(&fixed)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&tag).unwrap(),
+        "---\ncolor: amber\n---\n# Backend\n"
+    );
+}
+
+#[test]
 fn lint_lints_this_repos_own_plan_cleanly() {
     // The workspace root holds `.plan/`; CARGO_MANIFEST_DIR is this crate under `crates/`.
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -14,16 +14,26 @@ fn tpath(name: &str) -> PathBuf {
     Path::new(ROOT).join(".plan/tasks").join(name)
 }
 
+fn gpath(name: &str) -> PathBuf {
+    Path::new(ROOT).join(".plan/tags").join(name)
+}
+
 fn file(name: &str, source: &str) -> (PathBuf, String) {
     (tpath(name), source.to_owned())
 }
 
+fn tag(name: &str, source: &str) -> (PathBuf, String) {
+    (gpath(name), source.to_owned())
+}
+
 fn lint_files(files: &[(PathBuf, String)]) -> Vec<Diagnostic> {
-    lint(&Snapshot::from_files(
-        PathBuf::from(ROOT),
-        abbr(),
-        files.to_vec(),
-    ))
+    lint_all(files, &[])
+}
+
+fn lint_all(files: &[(PathBuf, String)], tags: &[(PathBuf, String)]) -> Vec<Diagnostic> {
+    lint(
+        &Snapshot::from_files(PathBuf::from(ROOT), abbr(), files.to_vec()).with_tags(tags.to_vec()),
+    )
 }
 
 // Spans are byte offsets into the file source; a fixture computes the expected span from the offending
@@ -67,6 +77,14 @@ fn assert_single(
         span.map(|span| Position::in_source(source, span.start)),
         "a span carries the position it resolves to in the snapshot's own source, not the disk's"
     );
+}
+
+fn assert_single_tag(name: &str, source: &str, code: Code, span: Option<Span>, fixable: bool) {
+    let d = only(lint_all(&[], &[tag(name, source)]));
+    assert_eq!(d.code, code, "code for {name}");
+    assert_eq!(d.path, gpath(name), "path for {name}");
+    assert_eq!(d.span, span, "span for {name}");
+    assert_eq!(d.fixable, fixable, "fixable for {name}");
 }
 
 fn assert_graph(diags: &[Diagnostic], code: Code, names: &[&str]) {
@@ -584,4 +602,175 @@ fn prose_the_comment_log_has_no_place_for_is_reported() {
         Some(span_of(source, "plain prose a human typed\n")),
         false,
     );
+}
+
+const BACKEND_TAG: &str = "---\ncolor: teal\n---\n# Backend\n\nWork below the API.\n";
+
+#[test]
+fn a_well_formed_tag_registry_lints_clean() {
+    let tags = vec![
+        tag("backend", BACKEND_TAG),
+        tag("wip", "---\ncolor: amber\n---\n# WIP\n"),
+    ];
+    let files = vec![file(
+        "00001-one.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- backend\n- wip\n---\n# One\n",
+    )];
+    let diags = lint_all(&files, &tags);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn a_tag_filename_that_is_not_normalized_is_reported() {
+    let d = only(lint_all(&[], &[tag("Back End", BACKEND_TAG)]));
+    assert_eq!(d.code, Code::TagName);
+    assert_eq!(d.path, gpath("Back End"));
+    assert!(!d.fixable, "a rename moves a file, which fix cannot do");
+    assert_eq!(
+        d.help.as_deref(),
+        Some("rename the file to back-end.md"),
+        "the reader is told the one name the file may have"
+    );
+}
+
+#[test]
+fn a_tag_filename_that_names_no_tag_is_reported() {
+    assert_single_tag("c++", BACKEND_TAG, Code::TagName, None, false);
+}
+
+#[test]
+fn a_missing_tag_color_is_reported_and_fixable() {
+    assert_single_tag(
+        "backend",
+        "---\nrank: a0\n---\n# Backend\n",
+        Code::TagColor,
+        None,
+        true,
+    );
+}
+
+#[test]
+fn a_tag_color_outside_the_palette_is_reported() {
+    let source = "---\ncolor: notacolor\n---\n# Backend\n";
+    assert_single_tag(
+        "backend",
+        source,
+        Code::TagColor,
+        Some(span_of(source, "notacolor")),
+        false,
+    );
+}
+
+#[test]
+fn a_tag_without_one_title_is_reported() {
+    assert_single_tag(
+        "backend",
+        "---\ncolor: teal\n---\n\nWork below the API.\n",
+        Code::Title,
+        None,
+        false,
+    );
+    assert_single_tag(
+        "backend",
+        "---\ncolor: teal\n---\n# Backend\n\n# Also Backend\n",
+        Code::Title,
+        None,
+        false,
+    );
+}
+
+#[test]
+fn tag_frontmatter_that_does_not_parse_is_reported() {
+    assert_single_tag("backend", "# Backend\n", Code::Frontmatter, None, false);
+}
+
+#[test]
+fn a_tags_field_that_is_not_a_sequence_is_reported() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags: backend\n---\n# Title\n";
+    assert_single(
+        "00001-tags.md",
+        source,
+        &[],
+        Code::Tags,
+        Some(span_of(source, "backend")),
+        false,
+    );
+}
+
+#[test]
+fn a_tags_entry_that_is_not_normalized_is_reported_and_fixable() {
+    let source =
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- Back End\n---\n# Title\n";
+    assert_single(
+        "00001-tags.md",
+        source,
+        &[],
+        Code::Tags,
+        Some(span_of(source, "Back End")),
+        true,
+    );
+}
+
+#[test]
+fn a_tags_entry_that_names_no_tag_is_reported() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- c++\n---\n# Title\n";
+    assert_single(
+        "00001-tags.md",
+        source,
+        &[],
+        Code::Tags,
+        Some(span_of(source, "c++")),
+        false,
+    );
+}
+
+// An entry no rewrite can repair takes the whole field with it: the fix replaces the block as one,
+// so no other entry in it may be reported as fixable either.
+#[test]
+fn one_unrepairable_tags_entry_makes_the_whole_field_unfixable() {
+    let source =
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- Wip\n- c++\n---\n# Title\n";
+    let diags = lint_files(&[file("00001-tags.md", source)]);
+    assert_eq!(diags.len(), 2, "{diags:#?}");
+    assert!(
+        diags.iter().all(|d| d.code == Code::Tags && !d.fixable),
+        "{diags:#?}"
+    );
+}
+
+// A whole-field defect spans the whole field, down to the last item and no further: the reader is
+// pointed at the set, not at one entry that is no worse than its neighbours.
+#[test]
+fn tags_that_are_unsorted_or_repeated_are_reported_and_fixable() {
+    for (source, field) in [
+        (
+            "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- wip\n- backend\n---\n# Title\n",
+            "tags:\n- wip\n- backend",
+        ),
+        (
+            "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- backend\n- backend\n---\n# Title\n",
+            "tags:\n- backend\n- backend",
+        ),
+    ] {
+        assert_single(
+            "00001-tags.md",
+            source,
+            &[],
+            Code::Tags,
+            Some(span_of(source, field)),
+            true,
+        );
+    }
+}
+
+// A task may name a tag this branch does not hold: the registry is read globally and written
+// locally, so a name created on another branch is legal rather than dangling.
+#[test]
+fn a_tags_entry_that_no_registered_tag_matches_lints_clean() {
+    let files = vec![file(
+        "00001-one.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- elsewhere\n---\n# One\n",
+    )];
+    let diags = lint_all(&files, &[tag("backend", BACKEND_TAG)]);
+    assert!(diags.is_empty(), "{diags:#?}");
 }
