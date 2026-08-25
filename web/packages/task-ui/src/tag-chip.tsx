@@ -62,7 +62,7 @@ export function TagChip({
           type="button"
           aria-label={`Remove ${label}`}
           onClick={onRemove}
-          className="-mr-0.5 shrink-0 opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+          className="-mr-0.5 shrink-0 cursor-pointer opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
         >
           <X className="size-3" />
         </button>
