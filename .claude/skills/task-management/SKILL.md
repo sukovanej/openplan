@@ -46,6 +46,21 @@ openplan create "Ship login" --body-file notes.md   # or --body-file - for stdin
 
 `--dependency` is repeatable; each is a task key (or `<key>#Section`).
 
+Set the dependencies when you create a task. A dependency shows that another
+task must be complete first, so the file records the order of the work.
+
+Decomposition is the usual case. `--parent` groups the subtasks of a large task,
+and `--dependency` puts them in order. When a subtask needs the result of a
+sibling, name that sibling.
+
+```sh
+openplan create "Add the store schema" --parent OPP-42            # prints OPP-43
+openplan create "Read the schema in the API" --parent OPP-42 --dependency OPP-43
+```
+
+Name only a task that must be complete first. When a person can do two subtasks
+in any order, do not put a dependency between them.
+
 `--body` / `--body-file` set the markdown content below the title heading; they
 are mutually exclusive.
 
