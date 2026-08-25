@@ -15,6 +15,7 @@ import {
   TaskBody,
   TaskIdentity,
   taskPath,
+  TaskTags,
   TaskTimes,
 } from "@open-planner/task-ui"
 import {
@@ -40,6 +41,7 @@ import { errorText } from "../lib/format"
 import { useAbbreviation } from "../lib/projects"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
+import { useTags } from "../lib/tags"
 import { taskMatches } from "../lib/task-search"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
@@ -137,6 +139,7 @@ function TaskDetailView({
   onSelect: (branch: string | undefined) => void
 }) {
   const abbreviation = useAbbreviation(project)
+  const tags = useTags(project)
   const write = writeHere(detail ?? task)
   return (
     <Panel>
@@ -167,6 +170,7 @@ function TaskDetailView({
             problems={detail === null ? [] : problems(detail.metadata)}
           />
         </MetaLine>
+        <TaskTags metadata={task.metadata} tags={tags} className="mb-4" />
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? (
           <BodySkeleton />

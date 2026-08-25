@@ -11,11 +11,14 @@ export {
   parentOf,
   problems,
   statusField,
+  tagsOf,
 } from "./metadata"
 export { ParentLink } from "./parent-link"
 export { StatusChip, StatusField, StatusGroupHeader, statusGroupLabel, StatusIcon, statusLabel } from "./status"
+export { TagChip } from "./tag-chip"
 export { TaskBody } from "./task-body"
 export { BOARD_ROUTE, boardPath, TASK_ROUTE, taskPath, type TaskRoute, taskRouteOf } from "./task-path"
 export { TaskIdentity } from "./task-identity"
 export { TaskRefChip } from "./task-ref-chip"
+export { TaskTags } from "./task-tags"
 export { TaskTimes } from "./task-times"
