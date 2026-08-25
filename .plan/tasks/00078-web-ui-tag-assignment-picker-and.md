@@ -90,3 +90,18 @@ Vitest coverage for the picker's prune-danglings behavior and the palette picker
 > refused and nothing is overwritten. The reachable case is narrower: a line that
 > parses as a list but holds a name that is not a tag name. The field now refuses
 > to edit any tags field the reader could not read, and says so.
+
+### 2026-08-25T20:48:57Z by Milan Suk via claude-code
+
+> A second review found the write gate reopened too early. The gate closed on the
+> write's own answer, but that answer only says the server took the write. The
+> chips still show the set from before it until the re-read lands. An edit made in
+> that gap was built on the old set and undid the first one. The gate now waits
+> for the task to come back carrying what the write sent.
+
+### 2026-08-25T20:48:57Z by Milan Suk via claude-code
+
+> Keeping every task query in the map made one edit re-read every task the session
+> had opened, up to the cap of sixty-four. A refresh now asks for listeners first.
+> The map still holds the queries, because a view that remounts must find the one
+> it already had.
