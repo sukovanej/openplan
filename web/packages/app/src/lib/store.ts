@@ -2,9 +2,9 @@ import { Effect, Result } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { useSyncExternalStore } from "react"
 
-import type { Board, TaskDetail, TaskListItem } from "@open-planner/api-client"
+import type { Board, TagView, TaskDetail, TaskListItem } from "@open-planner/api-client"
 
-import { getBoard, getMergedBoard, getTask, listProjects, listTasks } from "./api"
+import { getBoard, getMergedBoard, getTask, listProjects, listTags, listTasks } from "./api"
 import type { Invalidator } from "./events"
 import { projectsStore } from "./projects"
 import { runtime } from "./runtime"
@@ -119,6 +119,11 @@ function keyed<A>(build: (project: string) => Query<A>): (project: string) => Qu
 // The whole flat task set of a project. Only the parent / add-subtask pickers need it, and only
 // while open, so it is fetched lazily on subscribe rather than on every detail view.
 export const tasksQuery = keyed((project) => new Query(project, listTasks(project)))
+
+// The tag registry every tag name on a task row resolves against. It is per project because each
+// project serves its own `.plan/tags/`, and it is refetched whenever the daemon reports
+// `tags_changed`.
+export const tagsQuery = keyed((project) => new Query<ReadonlyArray<TagView>>(project, listTags(project)))
 
 // The list view's grouped/ordered/nested rows — the sole always-loaded task read; the detail page
 // gets its hierarchy from the per-task `taskQuery` instead.

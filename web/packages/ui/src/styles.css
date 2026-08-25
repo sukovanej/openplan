@@ -56,6 +56,21 @@
   --status-unreadable: oklch(0.637 0.237 25.331);
   --status-unreadable-surface: var(--status-unreadable);
   --status-unreadable-text: oklch(0.577 0.245 27.325);
+
+  /* The tag palette. One rung per colour, dark enough to read on the page in light mode and
+     light enough in dark mode, because a chip spends it on both its border and its text. */
+  --tag-slate: oklch(0.446 0.043 257.281);
+  --tag-red: oklch(0.577 0.245 27.325);
+  --tag-orange: oklch(0.646 0.222 41.116);
+  --tag-amber: oklch(0.666 0.179 58.318);
+  --tag-yellow: oklch(0.681 0.162 75.834);
+  --tag-green: oklch(0.627 0.194 149.214);
+  --tag-teal: oklch(0.6 0.118 184.704);
+  --tag-cyan: oklch(0.609 0.126 221.723);
+  --tag-blue: oklch(0.546 0.245 262.881);
+  --tag-indigo: oklch(0.511 0.262 276.966);
+  --tag-violet: oklch(0.541 0.281 293.009);
+  --tag-pink: oklch(0.592 0.249 0.584);
 }
 
 .dark {
@@ -95,6 +110,19 @@
   --status-done-text: oklch(0.845 0.143 164.978);
   --status-cancelled-text: oklch(0.707 0.022 261.325);
   --status-unreadable-text: oklch(0.808 0.114 19.571);
+
+  --tag-slate: oklch(0.704 0.04 256.788);
+  --tag-red: oklch(0.704 0.191 22.216);
+  --tag-orange: oklch(0.75 0.183 55.934);
+  --tag-amber: oklch(0.769 0.188 70.08);
+  --tag-yellow: oklch(0.852 0.199 91.936);
+  --tag-green: oklch(0.792 0.209 151.711);
+  --tag-teal: oklch(0.777 0.152 181.912);
+  --tag-cyan: oklch(0.789 0.154 211.53);
+  --tag-blue: oklch(0.707 0.165 254.624);
+  --tag-indigo: oklch(0.673 0.182 276.935);
+  --tag-violet: oklch(0.702 0.183 293.541);
+  --tag-pink: oklch(0.718 0.202 349.761);
 }
 
 @theme inline {
@@ -151,4 +179,16 @@
   --color-status-unreadable: var(--status-unreadable);
   --color-status-unreadable-surface: var(--status-unreadable-surface);
   --color-status-unreadable-text: var(--status-unreadable-text);
+  --color-tag-slate: var(--tag-slate);
+  --color-tag-red: var(--tag-red);
+  --color-tag-orange: var(--tag-orange);
+  --color-tag-amber: var(--tag-amber);
+  --color-tag-yellow: var(--tag-yellow);
+  --color-tag-green: var(--tag-green);
+  --color-tag-teal: var(--tag-teal);
+  --color-tag-cyan: var(--tag-cyan);
+  --color-tag-blue: var(--tag-blue);
+  --color-tag-indigo: var(--tag-indigo);
+  --color-tag-violet: var(--tag-violet);
+  --color-tag-pink: var(--tag-pink);
 }

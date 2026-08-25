@@ -92,6 +92,20 @@ export const listTasks = (
     }),
   )
 
+// The tag registry of a project's served worktree, which every tag name on a task resolves against.
+export const listTags = (project: string): Effect.Effect<ReadonlyArray<Api.TagView>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.listTags(project, undefined)).pipe(
+    Effect.catchTags({
+      ListTags400: refusal,
+      ListTags404: refusal,
+      ListTags409: refusal,
+      ListTags422: refusal,
+      ListTags500: refusal,
+      ListTags503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
 // The board of one project, which its own route answers for.
 export const getBoard = (project: string): Effect.Effect<Api.Board, ApiError, HttpClient.HttpClient> =>
   Effect.flatMap(tasks, (client) => client.getBoard(project, undefined)).pipe(

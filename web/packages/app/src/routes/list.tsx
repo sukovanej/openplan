@@ -13,6 +13,7 @@ import {
   StatusGroupHeader,
   statusGroupLabel,
   taskPath,
+  TaskTags,
   TaskTimes,
 } from "@open-planner/task-ui"
 import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@open-planner/ui"
@@ -23,6 +24,7 @@ import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { boardQuery, mergedBoardQuery, useQuery, type QueryState } from "../lib/store"
+import { useTags } from "../lib/tags"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
 
 // `/` is every project at once and `/:project` is one of them. They differ only in which board they
@@ -207,6 +209,7 @@ function TaskRow({
   const parent = parentOf(task.metadata)
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
+  const tags = useTags(task.project)
   const navigate = useNavigate()
 
   // The row opens its task from its own click rather than from a link stretched over it: an overlay
@@ -284,6 +287,7 @@ function TaskRow({
               {task.comment_count}
             </MetaItem>
           )}
+          <TaskTags metadata={task.metadata} tags={tags} />
         </MetaLine>
         {task.branches.length > 0 && (
           <BranchBadges branches={task.branches} headline={task.headline} className="mt-2 sm:hidden" />

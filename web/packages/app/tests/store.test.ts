@@ -8,6 +8,7 @@ import {
   Query,
   runMutation,
   storeInvalidator,
+  tagsQuery,
   taskQuery,
   tasksQuery,
 } from "../src/lib/store"
@@ -34,6 +35,12 @@ describe("per-project queries", () => {
     expect(boardQuery("alpha")).toBe(boardQuery("alpha"))
     expect(boardQuery("alpha")).not.toBe(boardQuery("beta"))
     expect(tasksQuery("alpha")).not.toBe(tasksQuery("beta"))
+  })
+
+  // Each project serves its own `.plan/tags/`, so one project's registry never names another's tags.
+  it("gives each project its own tag registry", () => {
+    expect(tagsQuery("alpha")).toBe(tagsQuery("alpha"))
+    expect(tagsQuery("alpha")).not.toBe(tagsQuery("beta"))
   })
 
   // Two stores can commit the same abbreviation, so the same key names a different task in each.

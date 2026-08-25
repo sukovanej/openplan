@@ -21,6 +21,7 @@ description = "Regenerate the Effect HTTP client (web/packages/api-client) from 
 dir = "web/packages/api-client"
 run = [
   "cargo run --quiet --manifest-path ../../../Cargo.toml -p op-cli -- server openapi > openapi.json",
-  "pnpm exec openapigen -s openapi.json -f httpclient -n TasksClient > src/index.ts",
+  # `pnpm exec` prints a workspace banner on stdout, which the redirect would write into the file.
+  "pnpm --silent exec openapigen -s openapi.json -f httpclient -n TasksClient > src/index.ts",
   "pnpm exec oxfmt src/index.ts",
 ]
