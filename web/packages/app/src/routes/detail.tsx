@@ -146,7 +146,20 @@ function TaskDetailView({
         </div>
       </PanelHeader>
       <PanelBody className="p-6">
-        <h1 className="mb-1.5 text-2xl font-semibold tracking-tight">{task.title}</h1>
+        {/* The tags sit level with the first line of the title: the row aligns to the top, and the
+            chips centre inside a box as tall as that line. They wrap inside half the row rather than
+            holding their width — a task carrying a handful of them squeezed the title to nothing. */}
+        <div className="mb-1.5 flex items-start justify-between gap-4">
+          <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
+          <TagsField
+            project={project}
+            id={task.id}
+            metadata={task.metadata}
+            branch={write.branch}
+            blocked={write.blocked}
+            className="min-h-8 max-w-[50%] justify-end"
+          />
+        </div>
         {/* `created` arrives with the full detail while `updated` is already on the seeded list item,
             so the line renders as soon as the header does and fills in rather than shifting the body
             twice. */}
@@ -157,14 +170,6 @@ function TaskDetailView({
             problems={detail === null ? [] : problems(detail.metadata)}
           />
         </MetaLine>
-        <TagsField
-          project={project}
-          id={task.id}
-          metadata={task.metadata}
-          branch={write.branch}
-          blocked={write.blocked}
-          className="mb-4"
-        />
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? (
           <BodySkeleton />

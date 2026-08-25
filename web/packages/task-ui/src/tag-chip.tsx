@@ -3,21 +3,23 @@ import { TriangleAlert, X } from "lucide-react"
 import type { Color, TagView } from "@open-planner/api-client"
 import { cn, Tag, Tooltip } from "@open-planner/ui"
 
-// Tailwind emits only the class names it can read literally in the source, so each colour is spelled
-// out rather than composed from the name. Border and text share the rung, as they do on a branch tag.
-const paletteColor: Record<Color, string> = {
-  slate: "border-tag-slate text-tag-slate",
-  red: "border-tag-red text-tag-red",
-  orange: "border-tag-orange text-tag-orange",
-  amber: "border-tag-amber text-tag-amber",
-  yellow: "border-tag-yellow text-tag-yellow",
-  green: "border-tag-green text-tag-green",
-  teal: "border-tag-teal text-tag-teal",
-  cyan: "border-tag-cyan text-tag-cyan",
-  blue: "border-tag-blue text-tag-blue",
-  indigo: "border-tag-indigo text-tag-indigo",
-  violet: "border-tag-violet text-tag-violet",
-  pink: "border-tag-pink text-tag-pink",
+// A chip fills with its colour, so its ink is whatever reads on that fill rather than a theme
+// colour. Six of the palette are bright enough in light mode to need dark ink; in dark mode every
+// rung is a light one, where only dark ink reads. Tailwind emits only the class names it can read
+// literally in the source, so each colour spells out its own pair.
+const paletteFill: Record<Color, string> = {
+  slate: "bg-tag-slate text-white dark:text-black",
+  red: "bg-tag-red text-white dark:text-black",
+  orange: "bg-tag-orange text-black",
+  amber: "bg-tag-amber text-black",
+  yellow: "bg-tag-yellow text-black",
+  green: "bg-tag-green text-black",
+  teal: "bg-tag-teal text-black",
+  cyan: "bg-tag-cyan text-black",
+  blue: "bg-tag-blue text-white dark:text-black",
+  indigo: "bg-tag-indigo text-white dark:text-black",
+  violet: "bg-tag-violet text-white dark:text-black",
+  pink: "bg-tag-pink text-white dark:text-black",
 }
 
 // Chips are the tallest thing on a task row, so they decide its height — and a list row owes its
@@ -52,7 +54,7 @@ export function TagChip({
   const label = tag?.display ?? name
   const chip = (
     <Tag
-      className={cn(tag === undefined ? DANGLING : paletteColor[tag.color], WHOLE_PIXELS)}
+      className={cn(tag === undefined ? DANGLING : `${paletteFill[tag.color]} border-transparent`, WHOLE_PIXELS)}
       dashed={tag === undefined}
     >
       {tag === undefined && <TriangleAlert aria-hidden className="size-3 shrink-0" />}
