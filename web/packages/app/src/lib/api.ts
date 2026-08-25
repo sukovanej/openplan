@@ -92,9 +92,13 @@ export const listTasks = (
     }),
   )
 
-// The tag registry of a project's served worktree, which every tag name on a task resolves against.
-export const listTags = (project: string): Effect.Effect<ReadonlyArray<Api.TagView>, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.listTags(project, undefined)).pipe(
+// The tag registry a tag name resolves against. `branch` names the worktree that holds it — the same
+// one a tags write is validated against — and omitting it reads the served worktree's.
+export const listTags = (
+  project: string,
+  branch?: string,
+): Effect.Effect<ReadonlyArray<Api.TagView>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.listTags(project, { params: { branch } })).pipe(
     Effect.catchTags({
       ListTags400: refusal,
       ListTags404: refusal,

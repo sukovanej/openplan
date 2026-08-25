@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { TagView } from "@open-planner/api-client"
 
-import { spellsTag, tagMatches, tagsWith, tagsWithout } from "../src/lib/tags"
+import { tagMatches, tagSpelled, tagsWith, tagsWithout } from "../src/lib/tags"
 
 const view = (name: string, over: Partial<TagView> = {}): TagView => ({
   name,
@@ -58,15 +58,17 @@ describe("the picker's options", () => {
   })
 })
 
-describe("offering to register the typed name", () => {
+describe("the tag a typed name already spells", () => {
   const all = [view("front-end", { display: "Front End" })]
 
-  it("holds back when the registry already spells it", () => {
-    expect(spellsTag(all, "front-end")).toBe(true)
-    expect(spellsTag(all, "Front End")).toBe(true)
+  // The picker offers to register a name only when the registry holds none, and it answers a name
+  // the task already carries with "already on this task" rather than an empty list.
+  it("finds the entry under either spelling, whatever the case", () => {
+    expect(tagSpelled(all, "front-end")?.name).toBe("front-end")
+    expect(tagSpelled(all, "Front End")?.name).toBe("front-end")
   })
 
-  it("offers a name the registry does not hold", () => {
-    expect(spellsTag(all, "backend")).toBe(false)
+  it("finds nothing for a name the registry does not hold", () => {
+    expect(tagSpelled(all, "backend")).toBeUndefined()
   })
 })

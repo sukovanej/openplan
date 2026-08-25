@@ -34,7 +34,6 @@ export class Query<A> {
   constructor(
     readonly project: string | undefined,
     private readonly effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
-    private readonly onIdle?: () => void,
   ) {}
 
   hasListeners(): boolean {
@@ -52,10 +51,7 @@ export class Query<A> {
     }
     return () => {
       this.listeners.delete(listener)
-      if (this.listeners.size === 0) {
-        mounted.delete(this)
-        this.onIdle?.()
-      }
+      if (this.listeners.size === 0) mounted.delete(this)
     }
   }
 
@@ -120,10 +116,20 @@ function keyed<A>(build: (project: string) => Query<A>): (project: string) => Qu
 // while open, so it is fetched lazily on subscribe rather than on every detail view.
 export const tasksQuery = keyed((project) => new Query(project, listTasks(project)))
 
-// The tag registry every tag name on a task row resolves against. It is per project because each
-// project serves its own `.plan/tags/`, and it is refetched whenever the daemon reports
-// `tags_changed`.
-export const tagsQuery = keyed((project) => new Query<ReadonlyArray<TagView>>(project, listTags(project)))
+const tagsQueries = new Map<string, Query<ReadonlyArray<TagView>>>()
+
+// The tag registry a tag name resolves against, and the one a tags write is validated against. It is
+// per project and per branch: each project serves its own `.plan/tags/`, and a branch can register a
+// name the serve root's branch does not hold. Omitting the branch reads the served worktree's
+// registry, which is all a row that cannot write needs.
+export function tagsQuery(project: string, branch?: string): Query<ReadonlyArray<TagView>> {
+  const key = branch === undefined ? project : `${project} ${branch}`
+  const existing = tagsQueries.get(key)
+  if (existing !== undefined) return existing
+  const query = new Query<ReadonlyArray<TagView>>(project, listTags(project, branch))
+  tagsQueries.set(key, query)
+  return query
+}
 
 // The list view's grouped/ordered/nested rows — the sole always-loaded task read; the detail page
 // gets its hierarchy from the per-task `taskQuery` instead.
@@ -164,14 +170,16 @@ export function taskQuery(project: string, id: string, branch?: string): Query<T
   const key = taskKey(project, id, branch)
   const existing = taskQueries.get(key)
   if (existing !== undefined) return existing
-  const query = new Query(project, getTask(project, id, branch), () => taskQueries.delete(key))
+  const query = new Query(project, getTask(project, id, branch))
   taskQueries.set(key, query)
   evictOrphanedTaskQueries(key)
   return query
 }
 
-// A concurrent render can build a query that never subscribes (so onIdle never fires); cap the
-// map by dropping unmounted entries once it grows past the bound.
+// The map is what a write and an event reach a task's reads through, so a query stays in it for as
+// long as it exists: dropping it when its last listener left would leave a view that remounts —
+// which every view does under StrictMode — holding a query nothing can refresh. Unmounted entries
+// are pruned once the map grows past the bound instead.
 function evictOrphanedTaskQueries(keep: string): void {
   if (taskQueries.size <= MAX_TASK_QUERIES) return
   for (const [key, query] of taskQueries) {
@@ -223,16 +231,15 @@ export function useMutationError(): unknown {
 // Run a write, then refresh the written project's reads and every open task detail of it so the
 // change shows at once — without waiting for the daemon's SSE echo (which also refreshes, and
 // covers external edits). A refused write refreshes too, so the view snaps back to what the server
-// actually holds. It resolves `false` when the server refused: the toast carries the reason, but a
-// caller that can follow a refusal with a different attempt — a forced tag delete — has to know.
+// actually holds. It resolves with the refusal, or `undefined` when the write landed: the toast
+// carries the reason, but a caller that answers one refusal with a different attempt — a forced tag
+// delete — has to read which refusal it was.
 export function runMutation<A>(
   project: string,
   effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
-): Promise<boolean> {
+): Promise<unknown> {
   const refresh = () => {
     refreshBoards(project)
-    const tags = tagsQuery(project)
-    if (tags.hasListeners()) tags.refresh()
     for (const query of taskQueries.values()) {
       if (query.project === project) query.refresh()
     }
@@ -241,14 +248,29 @@ export function runMutation<A>(
     () => {
       mutationError.clear()
       refresh()
-      return true
+      return undefined
     },
     (error: unknown) => {
       mutationError.report(error)
       refresh()
-      return false
+      return error
     },
   )
+}
+
+// Only a tag write can change the registry, and it changes it on the branch it was sent to — but the
+// serve root's branch and a named one can be the same worktree read twice, so every registry this
+// project has open is re-read rather than the one the write named.
+export function runTagMutation<A>(
+  project: string,
+  effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
+): Promise<unknown> {
+  return runMutation(project, effect).then((refusal) => {
+    for (const query of tagsQueries.values()) {
+      if (query.project === project) query.refresh()
+    }
+    return refusal
+  })
 }
 
 function refreshBoards(project: string): void {

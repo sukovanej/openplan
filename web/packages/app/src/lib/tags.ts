@@ -6,9 +6,10 @@ import { fuzzyMatch } from "@open-planner/ui"
 import { tagsQuery, useQuery } from "./store"
 
 // `undefined` until the registry has been read, which a reader must not mistake for a registry that
-// holds nothing: every name would then read as dangling.
-export function useTags(project: string): ReadonlyMap<string, TagView> | undefined {
-  const state = useQuery(tagsQuery(project))
+// holds nothing: every name would then read as dangling. `branch` must be the branch a tags write
+// would land on, so that what the chips call dangling is what the write would refuse.
+export function useTags(project: string, branch?: string): ReadonlyMap<string, TagView> | undefined {
+  const state = useQuery(useMemo(() => tagsQuery(project, branch), [project, branch]))
   return useMemo(
     () => (state._tag === "success" ? new Map(state.value.map((tag) => [tag.name, tag])) : undefined),
     [state],
@@ -42,8 +43,7 @@ export interface TagMatch {
   readonly indices: ReadonlyArray<number>
 }
 
-// Ranked matches over the registry, minus the names the task already carries. A tag is searched by
-// the name it is displayed under, which is the one the reader sees on the chips.
+// A tag is searched by the name it is displayed under, which is the one the chips show.
 export function tagMatches(
   tags: ReadonlyArray<TagView>,
   query: string,
@@ -60,9 +60,9 @@ export function tagMatches(
 }
 
 // Not the normalization rule — that lives in the store and is the only thing that decides identity.
-// This only keeps the picker from offering to create a name the list right above it already shows; a
-// spelling that slips past it is refused as a duplicate.
-export function spellsTag(tags: ReadonlyArray<TagView>, query: string): boolean {
+// This only keeps the picker from offering to register a name the registry already holds; a spelling
+// that slips past it is refused as a duplicate.
+export function tagSpelled(tags: ReadonlyArray<TagView>, query: string): TagView | undefined {
   const wanted = query.toLowerCase()
-  return tags.some((tag) => tag.name === wanted || tag.display.toLowerCase() === wanted)
+  return tags.find((tag) => tag.name === wanted || tag.display.toLowerCase() === wanted)
 }

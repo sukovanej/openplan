@@ -18,8 +18,7 @@ const swatch: Record<Color, string> = {
   pink: "bg-tag-pink",
 }
 
-// The palette in the order the picker lays it out. The map above is exhaustive by its type, so a
-// colour the API can carry cannot miss the picker.
+// The map above is exhaustive by its type, so a colour the API can carry cannot miss the picker.
 export const TAG_COLORS = Object.keys(swatch) as ReadonlyArray<Color>
 
 export function ColorDot({ color, className }: { color: Color; className?: string }) {

@@ -50,6 +50,16 @@ describe("per-project queries", () => {
     expect(taskQuery("alpha", "APP-1")).not.toBe(taskQuery("alpha", "APP-1", "feature"))
     expect(taskQuery("alpha", "APP-1", "feature")).not.toBe(taskQuery("beta", "APP-1", "feature"))
   })
+
+  // A view that mounts, unmounts, and mounts again — which is every view under StrictMode — comes
+  // back holding the query it already had, and a write reaches a task's reads through this map.
+  // Dropping the query when its last listener left left that remounted view unreachable, so the
+  // second write of a session showed nothing until a reload.
+  it("keeps a task query in the map after its last listener leaves", () => {
+    const query = taskQuery("gamma", "GAM-1")
+    query.subscribe(() => {})()
+    expect(taskQuery("gamma", "GAM-1")).toBe(query)
+  })
 })
 
 describe("invalidation", () => {
@@ -119,14 +129,17 @@ describe("mutationError", () => {
   })
 
   it("resolves rather than rejecting, so a caller never needs its own catch", async () => {
-    await expect(runMutation("open-plan", Effect.fail(new Error("boom")))).resolves.toBe(false)
+    const boom = new Error("boom")
+    await expect(runMutation("open-plan", Effect.fail(boom))).resolves.toBe(boom)
     mutationError.clear()
   })
 
   // A refusal is the whole answer for most writes, but one that can be followed by a different
-  // attempt — a forced tag delete after the daemon refused the plain one — has to read the outcome.
-  it("says whether the write landed", async () => {
-    await expect(runMutation("open-plan", Effect.succeed("ok"))).resolves.toBe(true)
+  // attempt — a forced tag delete, which only a conflict earns — has to read which refusal it was.
+  it("hands the refusal back, and nothing at all when the write landed", async () => {
+    const refusal = new TaskRejected({ status: 409, message: "still referenced" })
+    await expect(runMutation("open-plan", Effect.fail(refusal))).resolves.toBe(refusal)
+    await expect(runMutation("open-plan", Effect.succeed("ok"))).resolves.toBeUndefined()
   })
 
   it("notifies subscribers on change and stops after unsubscribe", async () => {

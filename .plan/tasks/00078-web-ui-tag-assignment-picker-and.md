@@ -59,3 +59,32 @@ Vitest coverage for the picker's prune-danglings behavior and the palette picker
 > force delete in light and dark. A read-only branch (no writable worktree) was
 > not reachable in that setup, so the `read-only` marker on the tags row is
 > covered by inspection alone.
+
+### 2026-08-25T13:01:54Z by Milan Suk via claude-code
+
+> A code review found that the picker reads the registry of the served worktree
+> while it writes to the task's branch. A tag that only the write branch
+> registers then reads as dangling, and the next edit prunes it away — the write
+> loses a valid tag. `listTags` now takes a branch, `tagsQuery` is keyed by it,
+> and the field reads the registry of the branch it writes to. A branch no
+> worktree can write has no registry to read either, so those chips fall back to
+> the served worktree's and stay read-only.
+
+### 2026-08-25T13:01:54Z by Milan Suk via claude-code
+
+> Hand verification found a bug older than this task: a task query left the
+> `taskQueries` map when its last listener went, and nothing put it back. Every
+> view remounts under StrictMode, so from the second write of a session the
+> detail page showed stale data until a reload — and a stale tags set is worse
+> than stale text, because the next whole-set write is built from it and undoes
+> the first. It reproduces on the parent picker, which this task never touched.
+> The map now holds a query for as long as it exists; the size cap already
+> pruned the unmounted ones.
+
+### 2026-08-25T13:01:54Z by Milan Suk via claude-code
+
+> Two review findings did not survive checking. A `tags:` line that YAML cannot
+> parse takes the strict `Task::from_file_string` down with it, so the PATCH is
+> refused and nothing is overwritten. The reachable case is narrower: a line that
+> parses as a list but holds a name that is not a tag name. The field now refuses
+> to edit any tags field the reader could not read, and says so.
