@@ -187,13 +187,12 @@ function TaskDetailView({
             data-keys-ignore
           />
         )}
-        <RefSection title="Depends on" rows={rows.dependsOn} offset={0} cursor={index} />
-        <RefSection title="Blocks" rows={rows.blocks} offset={rows.dependsOn.length} cursor={index} />
+        <RefSection title="Depends on" rows={rows.dependsOn} cursor={index} />
+        <RefSection title="Blocks" rows={rows.blocks} cursor={index} />
         <SubtasksSection
           project={project}
           id={task.id}
           rows={rows.subtasks}
-          offset={rows.dependsOn.length + rows.blocks.length}
           cursor={index}
           ready={detail !== null}
           write={write}
@@ -386,9 +385,9 @@ function ParentPicker({
   )
 }
 
-// A slice of the page's single row cursor: `offset` is where this list starts in it, so a row knows
-// its own place without the sections agreeing on anything but their order.
-function RowList({ rows, offset, cursor }: { rows: ReadonlyArray<DetailRow>; offset: number; cursor: number }) {
+// One list's rows, each carrying its own place in the page-wide cursor, so the sections agree on
+// nothing but the order `detailRows` numbered them in.
+function RowList({ rows, cursor }: { rows: ReadonlyArray<DetailRow>; cursor: number }) {
   const activeRow = useRef<HTMLLIElement>(null)
   useEffect(() => {
     activeRow.current?.scrollIntoView({ block: "nearest" })
@@ -402,56 +401,43 @@ function RowList({ rows, offset, cursor }: { rows: ReadonlyArray<DetailRow>; off
       }}
       onMouseLeave={hoveredRow.clear}
     >
-      {rows.map((row, i) => {
-        const at = offset + i
-        return (
-          // A file may name the same dependency twice, so a row's place is the only unique key.
-          <li
-            key={at}
-            ref={at === cursor ? activeRow : undefined}
-            aria-selected={at === cursor}
-            onMouseMove={() => hoveredRow.enter(row.path)}
-            onMouseLeave={() => hoveredRow.leave(row.path)}
+      {rows.map((row) => (
+        // A file may name the same dependency twice, so a row's place is the only unique key.
+        <li
+          key={row.at}
+          ref={row.at === cursor ? activeRow : undefined}
+          aria-selected={row.at === cursor}
+          onMouseMove={() => hoveredRow.enter(row.path, row.at)}
+          onMouseLeave={() => hoveredRow.leave(row.path, row.at)}
+        >
+          <Row
+            as={Link}
+            variant="option"
+            active={row.at === cursor}
+            hoverable
+            to={row.path}
+            onClick={() => detailCursor.focus(row.at)}
           >
-            <Row
-              as={Link}
-              variant="option"
-              active={at === cursor}
-              hoverable
-              to={row.path}
-              onClick={() => detailCursor.focus(at)}
-            >
-              <TaskIdentity
-                status={row.status}
-                mark={row.unresolved ? <UnresolvedMark /> : undefined}
-                id={row.id}
-                title={row.title}
-              />
-            </Row>
-          </li>
-        )
-      })}
+            <TaskIdentity
+              status={row.status}
+              mark={row.unresolved ? <UnresolvedMark /> : undefined}
+              id={row.id}
+              title={row.title}
+            />
+          </Row>
+        </li>
+      ))}
     </ul>
   )
 }
 
 // The two dependency directions. Neither carries an action, so an empty one has nothing to say and
 // stays hidden.
-function RefSection({
-  title,
-  rows,
-  offset,
-  cursor,
-}: {
-  title: string
-  rows: ReadonlyArray<DetailRow>
-  offset: number
-  cursor: number
-}) {
+function RefSection({ title, rows, cursor }: { title: string; rows: ReadonlyArray<DetailRow>; cursor: number }) {
   if (rows.length === 0) return null
   return (
     <Section title={title} count={rows.length}>
-      <RowList rows={rows} offset={offset} cursor={cursor} />
+      <RowList rows={rows} cursor={cursor} />
     </Section>
   )
 }
@@ -462,7 +448,6 @@ function SubtasksSection({
   project,
   id,
   rows,
-  offset,
   cursor,
   ready,
   write,
@@ -470,7 +455,6 @@ function SubtasksSection({
   project: string
   id: string
   rows: ReadonlyArray<DetailRow>
-  offset: number
   cursor: number
   ready: boolean
   write: WriteHere
@@ -508,7 +492,7 @@ function SubtasksSection({
           <p className="text-muted-foreground text-sm">No subtasks yet.</p>
         ) : null
       ) : (
-        <RowList rows={rows} offset={offset} cursor={cursor} />
+        <RowList rows={rows} cursor={cursor} />
       )}
     </Section>
   )

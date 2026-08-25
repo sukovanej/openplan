@@ -64,7 +64,7 @@ export function useKeyboard(): Keyboard {
         // cursor hands the selection back, so it resumes from the hovered row and drops the hover.
         moveBy: (delta) => {
           const cursor = activeCursor()
-          const hovered = hoveredRow.among(cursor.getSnapshot().rows)
+          const hovered = hoveredRow.place(cursor.getSnapshot().rows)
           hoveredRow.clear()
           cursor.moveBy(delta, hovered)
         },

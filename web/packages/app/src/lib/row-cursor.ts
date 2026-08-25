@@ -30,8 +30,10 @@ export function withRows(state: CursorState, rows: ReadonlyArray<string>): Curso
   return { rows, index: -1 }
 }
 
-export function moved(state: CursorState, delta: number, from?: string): CursorState {
-  const origin = state.index === -1 && from !== undefined ? state.rows.indexOf(from) : state.index
+// `from` is where an unselected cursor resumes — the row the pointer marks, or -1 for none, which
+// starts it at the first row either way.
+export function moved(state: CursorState, delta: number, from = -1): CursorState {
+  const origin = state.index === -1 ? from : state.index
   const index = clampIndex(origin + delta, state.rows.length)
   return index === state.index ? state : { rows: state.rows, index }
 }
@@ -63,7 +65,7 @@ class RowCursorStore {
   readonly getSnapshot = (): CursorState => this.state
 
   readonly setRows = (rows: ReadonlyArray<string>): void => this.commit(withRows(this.state, rows))
-  readonly moveBy = (delta: number, from?: string): void => this.commit(moved(this.state, delta, from))
+  readonly moveBy = (delta: number, from?: number): void => this.commit(moved(this.state, delta, from))
   readonly focus = (index: number): void => this.commit(focused(this.state, index))
   readonly clear = (): void => this.commit(cleared(this.state))
 
@@ -108,7 +110,7 @@ class KeyedRowCursor {
     this.commit({ rows, index })
   }
 
-  readonly moveBy = (delta: number, from?: string): void => this.commit(moved(this.state, delta, from))
+  readonly moveBy = (delta: number, from?: number): void => this.commit(moved(this.state, delta, from))
   readonly focus = (index: number): void => this.commit(focused(this.state, index))
   readonly clear = (): void => this.commit(cleared(this.state))
 

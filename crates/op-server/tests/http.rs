@@ -482,10 +482,10 @@ async fn task_detail_carries_both_directions_of_its_dependencies() {
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Design\n",
     )
     .unwrap();
-    // Three entries: a plain one, one that names a section, and one no file holds.
+    // A plain entry, two that name two sections of one task, and one no file holds.
     std::fs::write(
         tasks.join("00002-api.md"),
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ndependencies:\n- ./00003-schema.md\n- ./00001-design.md#Wire\n- ./00099-gone.md\n---\n# API\n",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ndependencies:\n- ./00003-schema.md\n- ./00001-design.md#Wire\n- ./00001-design.md#Shape\n- ./00099-gone.md\n---\n# API\n",
     )
     .unwrap();
     std::fs::write(
@@ -512,7 +512,7 @@ async fn task_detail_carries_both_directions_of_its_dependencies() {
             .map(|d| d["id"].as_str().unwrap())
             .collect::<Vec<_>>(),
         vec!["OPP-3", "OPP-1"],
-        "file order, and an entry that names no task drops out"
+        "file order; an entry that names no task drops out, and one task counts once"
     );
     assert_eq!(depends_on[0]["title"], "Schema");
     assert_eq!(depends_on[0]["status"], "done");

@@ -961,11 +961,14 @@ impl Index {
                 rank: t.metadata.rank().map(str::to_owned),
             })
             .collect();
+        // Two entries may name two sections of one task, which is still one task this waits for.
+        let mut waited_for = HashSet::new();
         let depends_on = view
             .metadata
             .dependencies()
             .iter()
             .filter_map(|entry| by_id.get(op_task::ref_target(entry)))
+            .filter(|t| waited_for.insert(t.id.as_str()))
             .map(|t| task_ref(t))
             .collect();
         let mut blocked: Vec<&TaskListItem> =

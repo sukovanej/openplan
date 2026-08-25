@@ -35,30 +35,38 @@ it("the cursor cannot move past the last row or before the first", () => {
   expect(focused(first, -99).index).toBe(0)
 })
 
-it("an unselected cursor starts from the row it is given", () => {
+it("an unselected cursor starts from the place it is given", () => {
   const rowed = withRows(emptyCursor, rows(5))
-  expect(moved(rowed, 1, "t-2").index).toBe(3)
-  expect(moved(rowed, -1, "t-2").index).toBe(1)
-  expect(moved(rowed, -1, "t-0").index).toBe(0)
-  expect(moved(rowed, 1, "t-4").index).toBe(4)
+  expect(moved(rowed, 1, 2).index).toBe(3)
+  expect(moved(rowed, -1, 2).index).toBe(1)
+  expect(moved(rowed, -1, 0).index).toBe(0)
+  expect(moved(rowed, 1, 4).index).toBe(4)
 })
 
 it("an unselected cursor falls back to the first row", () => {
   const rowed = withRows(emptyCursor, rows(5))
   expect(moved(rowed, 1).index).toBe(0)
   expect(moved(rowed, -1).index).toBe(0)
-  expect(moved(rowed, 1, "gone").index).toBe(0)
+  expect(moved(rowed, 1, -1).index).toBe(0)
 })
 
-it("a selected cursor ignores the row it is given", () => {
+it("a selected cursor ignores the place it is given", () => {
   const at2 = focused(withRows(emptyCursor, rows(5)), 2)
-  expect(moved(at2, 1, "t-4").index).toBe(3)
+  expect(moved(at2, 1, 4).index).toBe(3)
 })
 
 it("the store resumes from the hovered row", () => {
   rowCursor.setRows(["hovered-a", "hovered-b", "hovered-c"])
-  rowCursor.moveBy(1, "hovered-b")
+  rowCursor.moveBy(1, 1)
   expect(rowCursor.getSnapshot().index).toBe(2)
+})
+
+// Two rows can name the same task — one under "Blocks", one under "Subtasks" — so the cursor
+// resumes from the place the pointer is on rather than from the first row with that path.
+it("resumes from the second of two rows that name the same task", () => {
+  detailCursor.activate("twice", ["a", "b", "b"])
+  detailCursor.moveBy(-1, 2)
+  expect(detailCursor.getSnapshot().index).toBe(1)
 })
 
 it("the cursor clears when the task set changes", () => {

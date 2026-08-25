@@ -50,7 +50,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     },
     cursor: {
       moveBy: (delta) => {
-        const hovered = hoveredRow.among(rowCursor.getSnapshot().rows)
+        const hovered = hoveredRow.place(rowCursor.getSnapshot().rows)
         hoveredRow.clear()
         rowCursor.moveBy(delta, hovered)
       },
@@ -311,7 +311,7 @@ describe("scope resolution", () => {
     const h = mount()
     rowCursor.setRows(paths("12", "13"))
     rowCursor.moveBy(1)
-    hoveredRow.enter(path("13"))
+    hoveredRow.enter(path("13"), 1)
 
     press(".", window, { metaKey: true })
     press(".", window, { ctrlKey: true })
@@ -322,7 +322,7 @@ describe("scope resolution", () => {
   it("copies the row j moved to, not the one the pointer was left resting on", () => {
     const h = mount()
     rowCursor.setRows(paths("12", "13", "14"))
-    hoveredRow.enter(path("13"))
+    hoveredRow.enter(path("13"), 1)
 
     press("j")
     press(".", window, { metaKey: true })
@@ -333,7 +333,7 @@ describe("scope resolution", () => {
   it("j resumes from the hovered row, and from the first row when nothing is hovered", () => {
     const h = mount()
     rowCursor.setRows(paths("12", "13", "14"))
-    hoveredRow.enter(path("13"))
+    hoveredRow.enter(path("13"), 1)
     press("j")
     expect(focusedRow(rowCursor.getSnapshot())).toBe(path("14"))
 
@@ -346,7 +346,7 @@ describe("scope resolution", () => {
   it("Enter opens the hovered row, which reads as the current one", () => {
     const h = mount()
     rowCursor.setRows(paths("12", "13"))
-    hoveredRow.enter(path("13"))
+    hoveredRow.enter(path("13"), 1)
 
     press("Enter")
     expect(h.navigations).toEqual([path("13")])

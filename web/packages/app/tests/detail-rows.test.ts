@@ -35,7 +35,7 @@ const waiting = detail({
     created: "2026-01-01T00:00:00Z",
     parent: null,
     rank: null,
-    dependencies: ["OPP-3", "OPP-1#Wire", "OPP-99"],
+    dependencies: ["OPP-3", "OPP-1#Wire", "OPP-1#Shape", "OPP-99"],
     tags: [],
   },
   depends_on: [ref("OPP-3", "Schema"), ref("OPP-1", "Design")],
@@ -44,12 +44,13 @@ const waiting = detail({
 })
 
 it("keeps the order the file gives", () => {
-  expect(detailRows("plan", waiting).dependsOn.map((row) => row.id)).toEqual(["OPP-3", "OPP-1", "OPP-99"])
+  expect(detailRows("plan", waiting).dependsOn.map((row) => row.id)).toEqual(["OPP-3", "OPP-1", "OPP-1", "OPP-99"])
 })
 
 it("marks a dependency that names no task, which has no title and no status", () => {
-  const [, , gone] = detailRows("plan", waiting).dependsOn
+  const gone = detailRows("plan", waiting).dependsOn[3]
   expect(gone).toEqual({
+    at: 3,
     path: "/plan/task/OPP-99",
     id: "OPP-99",
     title: undefined,
@@ -58,17 +59,20 @@ it("marks a dependency that names no task, which has no title and no status", ()
   })
 })
 
-it("names the task a sectioned dependency aims at, and links to the section", () => {
-  const [, sectioned] = detailRows("plan", waiting).dependsOn
-  expect(sectioned.id).toBe("OPP-1")
-  expect(sectioned.title).toBe("Design")
-  expect(sectioned.path).toBe("/plan/task/OPP-1#Wire")
+it("names the task a sectioned dependency aims at, and links each entry to its own section", () => {
+  const [, wire, shape] = detailRows("plan", waiting).dependsOn
+  expect([wire.title, shape.title]).toEqual(["Design", "Design"])
+  expect([wire.path, shape.path]).toEqual(["/plan/task/OPP-1#Wire", "/plan/task/OPP-1#Shape"])
 })
 
-it("sequences the three lists in document order for the one cursor that walks them", () => {
-  expect(detailRows("plan", waiting).paths).toEqual([
+it("numbers every row for the one cursor that walks the three lists in document order", () => {
+  const rows = detailRows("plan", waiting)
+  expect(rows.blocks.map((row) => row.at)).toEqual([4])
+  expect(rows.subtasks.map((row) => row.at)).toEqual([5])
+  expect(rows.paths).toEqual([
     "/plan/task/OPP-3",
     "/plan/task/OPP-1#Wire",
+    "/plan/task/OPP-1#Shape",
     "/plan/task/OPP-99",
     "/plan/task/OPP-4",
     "/plan/task/OPP-7",

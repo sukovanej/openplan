@@ -11,23 +11,36 @@ const rendered = ["12", "13"]
 describe("hovered row", () => {
   it("tracks the row the pointer is over", () => {
     expect(hoveredRow.among(rendered)).toBeUndefined()
-    hoveredRow.enter("12")
+    hoveredRow.enter("12", 0)
     expect(hoveredRow.among(rendered)).toBe("12")
-    hoveredRow.leave("12")
+    expect(hoveredRow.place(rendered)).toBe(0)
+    hoveredRow.leave("12", 0)
     expect(hoveredRow.among(rendered)).toBeUndefined()
+    expect(hoveredRow.place(rendered)).toBe(-1)
   })
 
   it("keeps the newer hover when the row left behind reports its leave last", () => {
-    hoveredRow.enter("12")
-    hoveredRow.enter("13")
-    hoveredRow.leave("12")
+    hoveredRow.enter("12", 0)
+    hoveredRow.enter("13", 1)
+    hoveredRow.leave("12", 0)
     expect(hoveredRow.among(rendered)).toBe("13")
   })
 
   it("drops a hover whose row is gone, since an unmounted row reports no leave", () => {
-    hoveredRow.enter("13")
+    hoveredRow.enter("13", 1)
     expect(hoveredRow.among(["12"])).toBeUndefined()
     expect(hoveredRow.among([])).toBeUndefined()
+  })
+
+  // A task detail can show one task under both "Blocks" and "Subtasks".
+  it("tells two rows that name the same task apart by their place", () => {
+    const twice = ["12", "13", "13"]
+    hoveredRow.enter("13", 2)
+    expect(hoveredRow.place(twice)).toBe(2)
+    hoveredRow.leave("13", 1)
+    expect(hoveredRow.place(twice)).toBe(2)
+    hoveredRow.leave("13", 2)
+    expect(hoveredRow.place(twice)).toBe(-1)
   })
 })
 
