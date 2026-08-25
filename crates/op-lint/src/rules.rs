@@ -2,12 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 
-use op_task::{FieldError, PartialFrontmatter, PartialMetadata};
+use op_task::tag::{NAME_RULE, normalize_name};
+use op_task::{FieldError, PartialFrontmatter, PartialMetadata, sorted_set};
 
 use crate::diagnostic::{Code, Diagnostic, Span};
-use crate::snapshot::{Snapshot, TaskFile, github_slug};
+use crate::snapshot::{Snapshot, TagFile, TaskFile, github_slug};
 
 pub type TaskRule = fn(&Snapshot, &TaskFile, &mut Sink);
+pub type TagRule = fn(&Snapshot, &TagFile, &mut Sink);
 pub type StoreRule = fn(&Snapshot, &mut Sink);
 
 #[derive(Debug, Default)]
@@ -35,11 +37,19 @@ pub const TASK_RULES: &[TaskRule] = &[
     created_valid,
     parent_is_ref,
     dependencies_are_refs,
+    tags_are_names,
     rank_is_base36,
     references_resolve,
     body_refs_rewritable,
     single_title,
     comment_log,
+];
+
+pub const TAG_RULES: &[TagRule] = &[
+    tag_frontmatter_parses,
+    tag_name_is_normalized,
+    tag_color_in_palette,
+    tag_single_title,
 ];
 
 pub const STORE_RULES: &[StoreRule] = &[parent_cycles, dependency_cycles, unique_numbers];
@@ -75,17 +85,24 @@ fn frontmatter_span(source: &str) -> Option<Range<usize>> {
     None
 }
 
-fn frontmatter_lines(file: &TaskFile) -> Vec<(usize, &str)> {
-    let Some(region) = frontmatter_span(&file.source) else {
+fn frontmatter_line_ranges(source: &str) -> Vec<Range<usize>> {
+    let Some(region) = frontmatter_span(source) else {
         return Vec::new();
     };
-    let mut lines = Vec::new();
+    let mut ranges = Vec::new();
     let mut offset = region.start;
-    for line in file.source[region].split_inclusive('\n') {
-        lines.push((offset, line.trim_end_matches(['\n', '\r'])));
+    for line in source[region].split_inclusive('\n') {
+        ranges.push(offset..offset + line.len());
         offset += line.len();
     }
-    lines
+    ranges
+}
+
+fn frontmatter_lines(source: &str) -> Vec<(usize, &str)> {
+    frontmatter_line_ranges(source)
+        .into_iter()
+        .map(|range| (range.start, source[range].trim_end_matches(['\n', '\r'])))
+        .collect()
 }
 
 fn key_of(line: &str) -> Option<&str> {
@@ -96,15 +113,15 @@ fn key_of(line: &str) -> Option<&str> {
 // A value is searched for on its own key's line: `42` in `parent: 42` also reads as the minutes of
 // a `created:` timestamp above it, and a span that lands on another field points the reader, the
 // editor, and `--json` at the wrong text.
-fn value_region(file: &TaskFile, key: &str) -> Option<Range<usize>> {
-    let (offset, line) = frontmatter_lines(file)
+pub(crate) fn value_region(source: &str, key: &str) -> Option<Range<usize>> {
+    let (offset, line) = frontmatter_lines(source)
         .into_iter()
         .find(|(_, line)| key_of(line) == Some(key))?;
     Some(offset + key.len() + 1..offset + line.len())
 }
 
-fn item_region(file: &TaskFile, key: &str, index: usize) -> Option<Range<usize>> {
-    let lines = frontmatter_lines(file);
+fn item_region(source: &str, key: &str, index: usize) -> Option<Range<usize>> {
+    let lines = frontmatter_lines(source);
     let at = lines
         .iter()
         .position(|(_, line)| key_of(line) == Some(key))?;
@@ -121,18 +138,41 @@ fn item_region(file: &TaskFile, key: &str, index: usize) -> Option<Range<usize>>
         .nth(index)
 }
 
+// The whole `key:` block — its own line, plus the block-sequence items under it. A fix that
+// reorders a sequence has to replace all of it at once, where a per-entry fix would only rewrite
+// text in place.
+pub(crate) fn field_region(source: &str, key: &str) -> Option<Range<usize>> {
+    let ranges = frontmatter_line_ranges(source);
+    let content = |range: &Range<usize>| source[range.clone()].trim_end_matches(['\n', '\r']);
+    let at = ranges
+        .iter()
+        .position(|range| key_of(content(range)) == Some(key))?;
+    let end = ranges[at + 1..]
+        .iter()
+        .take_while(|range| content(range).trim_start().starts_with('-'))
+        .last()
+        .map_or(ranges[at].end, |range| range.end);
+    Some(ranges[at].start..end)
+}
+
+fn field_span(source: &str, key: &str) -> Option<Span> {
+    let region = field_region(source, key)?;
+    let text = source[region.clone()].trim_end();
+    Some(Span::new(region.start, region.start + text.len()))
+}
+
 fn span_in(source: &str, region: Range<usize>, text: &str) -> Option<Span> {
     let start = source[region.clone()].find(text)? + region.start;
     Some(Span::new(start, start + text.len()))
 }
 
-fn value_span(file: &TaskFile, map: &serde_yaml::Mapping, key: &str) -> Option<Span> {
+fn value_span(source: &str, map: &serde_yaml::Mapping, key: &str) -> Option<Span> {
     let text = scalar_text(map.get(key)?)?;
-    span_in(&file.source, value_region(file, key)?, &text)
+    span_in(source, value_region(source, key)?, &text)
 }
 
-fn item_span(file: &TaskFile, key: &str, index: usize, text: &str) -> Option<Span> {
-    span_in(&file.source, item_region(file, key, index)?, text)
+fn item_span(source: &str, key: &str, index: usize, text: &str) -> Option<Span> {
+    span_in(source, item_region(source, key, index)?, text)
 }
 
 fn frontmatter_parses(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
@@ -157,7 +197,7 @@ fn status_in_enum(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
         file.path.clone(),
         "status must be one of backlog, todo, in_progress, in_review, done, cancelled",
     );
-    if let (FieldError::Invalid(_), Some(span)) = (err, value_span(file, map, "status")) {
+    if let (FieldError::Invalid(_), Some(span)) = (err, value_span(&file.source, map, "status")) {
         d = d.at(span, &file.source);
     }
     sink.emit(d);
@@ -187,7 +227,7 @@ fn created_valid(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
                 file.path.clone(),
                 "created must be an RFC3339 instant",
             );
-            match value_span(file, map, "created") {
+            match value_span(&file.source, map, "created") {
                 Some(span) => d.at(span, &file.source),
                 None => d,
             }
@@ -208,7 +248,7 @@ fn parent_is_ref(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
         file.path.clone(),
         "parent must be a task reference and not a section reference",
     );
-    if let (FieldError::Invalid(_), Some(span)) = (err, value_span(file, map, "parent")) {
+    if let (FieldError::Invalid(_), Some(span)) = (err, value_span(&file.source, map, "parent")) {
         d = d.at(span, &file.source);
     }
     sink.emit(d);
@@ -229,7 +269,7 @@ fn dependencies_are_refs(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink)
             file.path.clone(),
             "dependencies must be a sequence of task references",
         );
-        sink.emit(match value_span(file, map, "dependencies") {
+        sink.emit(match value_span(&file.source, map, "dependencies") {
             Some(span) => d.at(span, &file.source),
             None => d,
         });
@@ -242,8 +282,8 @@ fn dependencies_are_refs(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink)
         let message = format!("dependencies entry {} {defect}", index + 1);
         let d = Diagnostic::error(Code::Dependencies, file.path.clone(), message);
         let span = scalar_text(item)
-            .and_then(|text| item_span(file, "dependencies", index, &text))
-            .or_else(|| item_region(file, "dependencies", index).map(Span::from));
+            .and_then(|text| item_span(&file.source, "dependencies", index, &text))
+            .or_else(|| item_region(&file.source, "dependencies", index).map(Span::from));
         sink.emit(match span {
             Some(span) => d.at(span, &file.source),
             None => d,
@@ -263,6 +303,106 @@ fn dependency_defect(item: &serde_yaml::Value) -> Option<&'static str> {
     )
 }
 
+// The set the file would carry if every entry were spelled as a name: `None` when an entry names
+// nothing a tag could be called, which is the one defect no rewrite can repair.
+pub(crate) fn canonical_tags(items: &[serde_yaml::Value]) -> Option<Vec<String>> {
+    let names: Option<Vec<String>> = items
+        .iter()
+        .map(|item| scalar_text(item).and_then(|text| normalize_name(&text).ok()))
+        .collect();
+    Some(sorted_set(names?))
+}
+
+fn tags_are_names(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
+    let Some((_, map)) = fields(file) else {
+        return;
+    };
+    let Some(value) = map.get("tags") else {
+        return;
+    };
+    let serde_yaml::Value::Sequence(items) = value else {
+        let d = Diagnostic::error(
+            Code::Tags,
+            file.path.clone(),
+            "tags must be a sequence of tag names",
+        );
+        sink.emit(match value_span(&file.source, map, "tags") {
+            Some(span) => d.at(span, &file.source),
+            None => d,
+        });
+        return;
+    };
+    let canonical = canonical_tags(items);
+    let mut written = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let Some(text) = scalar_text(item) else {
+            emit_tag_entry(sink, file, index, None, "must be a tag name", false);
+            continue;
+        };
+        match normalize_name(&text) {
+            Ok(name) if name == text => written.push(name),
+            Ok(name) => {
+                written.push(name.clone());
+                emit_tag_entry(
+                    sink,
+                    file,
+                    index,
+                    Some(&text),
+                    &format!("is not a normalized tag name; write it as {name}"),
+                    canonical.is_some(),
+                );
+            }
+            Err(_) => emit_tag_entry(
+                sink,
+                file,
+                index,
+                Some(&text),
+                &format!("is not a tag name; {NAME_RULE}"),
+                false,
+            ),
+        }
+    }
+    // Spelling is already reported entry by entry, so this compares the names the entries mean:
+    // what is left is the order and the duplicates, which belong to the field and not to one entry.
+    if canonical.is_some_and(|names| written != names) {
+        let d = Diagnostic::error(
+            Code::Tags,
+            file.path.clone(),
+            "tags is a set, so its entries are sorted and unique",
+        )
+        .mark_fixable();
+        sink.emit(match field_span(&file.source, "tags") {
+            Some(span) => d.at(span, &file.source),
+            None => d,
+        });
+    }
+}
+
+fn emit_tag_entry(
+    sink: &mut Sink,
+    file: &TaskFile,
+    index: usize,
+    text: Option<&str>,
+    defect: &str,
+    fixable: bool,
+) {
+    let mut d = Diagnostic::error(
+        Code::Tags,
+        file.path.clone(),
+        format!("tags entry {} {defect}", index + 1),
+    );
+    let span = text
+        .and_then(|text| item_span(&file.source, "tags", index, text))
+        .or_else(|| item_region(&file.source, "tags", index).map(Span::from));
+    if let Some(span) = span {
+        d = d.at(span, &file.source);
+    }
+    if fixable {
+        d = d.mark_fixable();
+    }
+    sink.emit(d);
+}
+
 fn rank_is_base36(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
     let Some((f, map)) = fields(file) else {
         return;
@@ -280,7 +420,7 @@ fn rank_is_base36(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
         file.path.clone(),
         "rank must be a base-36 fractional index",
     );
-    if let Some(span) = value_span(file, map, "rank") {
+    if let Some(span) = value_span(&file.source, map, "rank") {
         d = d.at(span, &file.source);
     }
     sink.emit(d);
@@ -432,7 +572,7 @@ fn frontmatter_references(snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink)
                     number,
                     section: None,
                     raw: &raw,
-                    span: value_span(file, map, "parent"),
+                    span: value_span(&file.source, map, "parent"),
                     canonicalizable: true,
                 },
             );
@@ -463,7 +603,7 @@ fn frontmatter_references(snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink)
                 number,
                 section,
                 raw: &raw,
-                span: item_span(file, "dependencies", index, &raw),
+                span: item_span(&file.source, "dependencies", index, &raw),
                 // `--fix` rewrites a reference to its target's file name, and a sectioned one is
                 // the spelling it leaves alone.
                 canonicalizable: section.is_none(),
@@ -652,17 +792,84 @@ fn heading_problems(comment: &op_task::comment::Comment) -> Vec<String> {
     problems
 }
 
-fn single_title(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
-    let titles: Vec<_> = op_md::headings(&file.task.body)
+fn has_single_title(body: &str) -> bool {
+    let titles: Vec<_> = op_md::headings(body)
         .into_iter()
         .filter(|heading| heading.level == 1)
         .collect();
-    let ok = titles.len() == 1 && !titles[0].text.trim().is_empty();
-    if !ok {
+    titles.len() == 1 && !titles[0].text.trim().is_empty()
+}
+
+fn single_title(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
+    if !has_single_title(&file.task.body) {
         sink.emit(Diagnostic::error(
             Code::Title,
             file.path.clone(),
             "a task needs exactly one non-empty title",
+        ));
+    }
+}
+
+fn tag_frontmatter_parses(_snapshot: &Snapshot, file: &TagFile, sink: &mut Sink) {
+    if let Err(message) = &file.tag.frontmatter {
+        sink.emit(Diagnostic::error(
+            Code::Frontmatter,
+            file.path.clone(),
+            message.clone(),
+        ));
+    }
+}
+
+fn tag_name_is_normalized(_snapshot: &Snapshot, file: &TagFile, sink: &mut Sink) {
+    match normalize_name(&file.name) {
+        Ok(name) if name == file.name => {}
+        Ok(name) => sink.emit(
+            Diagnostic::error(
+                Code::TagName,
+                file.path.clone(),
+                "the file name is not a normalized tag name, so the file registers no tag",
+            )
+            .with_help(format!("rename the file to {name}.md")),
+        ),
+        Err(_) => sink.emit(Diagnostic::error(
+            Code::TagName,
+            file.path.clone(),
+            format!("the file name is not a tag name, so the file registers no tag; {NAME_RULE}"),
+        )),
+    }
+}
+
+fn tag_color_in_palette(_snapshot: &Snapshot, file: &TagFile, sink: &mut Sink) {
+    let Ok(map) = &file.tag.frontmatter else {
+        return;
+    };
+    let Err(err) = &file.tag.color else {
+        return;
+    };
+    let d = match err {
+        FieldError::Missing => Diagnostic::error(
+            Code::TagColor,
+            file.path.clone(),
+            "color is missing, so the tag is rendered in a color derived from its name",
+        )
+        .mark_fixable(),
+        FieldError::Invalid(message) => {
+            let d = Diagnostic::error(Code::TagColor, file.path.clone(), message.clone());
+            match value_span(&file.source, map, "color") {
+                Some(span) => d.at(span, &file.source),
+                None => d,
+            }
+        }
+    };
+    sink.emit(d);
+}
+
+fn tag_single_title(_snapshot: &Snapshot, file: &TagFile, sink: &mut Sink) {
+    if !has_single_title(&file.tag.body) {
+        sink.emit(Diagnostic::error(
+            Code::Title,
+            file.path.clone(),
+            "a tag needs exactly one non-empty title, which is its display name",
         ));
     }
 }

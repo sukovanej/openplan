@@ -60,6 +60,29 @@ impl Store {
         )
     }
 
+    // A verbatim overwrite of a tag's file, the tag-side twin of `replace_raw`: `lint --fix`
+    // materializes a derived color and must not have the rest of the file reflowed through
+    // `Tag::to_file_string`. It addresses the file rather than the registry, so a stem the
+    // normalizer would have named differently is still repairable.
+    pub fn replace_raw_tag(&self, name: &str, bytes: &[u8]) -> Result<(), StoreError> {
+        let dir = self.tags_dir();
+        let path = dir.join(format!("{name}.md"));
+        // The name is a file stem, not a path: one carrying a separator would write outside the
+        // registry entirely.
+        if path.parent() != Some(dir.as_path()) || !path.is_file() {
+            return Err(StoreError::TagNotFound {
+                name: name.to_owned(),
+            });
+        }
+        with_file_lock(
+            &path,
+            || StoreError::TagNotFound {
+                name: name.to_owned(),
+            },
+            || atomic_replace(&path, bytes),
+        )
+    }
+
     pub fn update_tag(
         &self,
         name: &str,

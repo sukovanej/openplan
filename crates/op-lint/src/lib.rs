@@ -8,15 +8,20 @@ use std::path::PathBuf;
 use op_store::{Store, StoreError};
 
 pub use diagnostic::{Code, Diagnostic, Position, Severity, Span};
-pub use fix::{CreatedSource, Fix, Uncommitted, apply, file_fixes, fix};
-pub use rules::{STORE_RULES, Sink, StoreRule, TASK_RULES, TaskRule};
-pub use snapshot::{Snapshot, TaskFile, github_slug};
+pub use fix::{CreatedSource, Fix, Uncommitted, apply, file_fixes, fix, tag_fixes};
+pub use rules::{STORE_RULES, Sink, StoreRule, TAG_RULES, TASK_RULES, TagRule, TaskRule};
+pub use snapshot::{Snapshot, TagFile, TaskFile, github_slug};
 
 pub fn lint(snapshot: &Snapshot) -> Vec<Diagnostic> {
     let mut sink = Sink::new();
     for file in snapshot.files() {
         for rule in TASK_RULES {
             rule(snapshot, file, &mut sink);
+        }
+    }
+    for tag in snapshot.tags() {
+        for rule in TAG_RULES {
+            rule(snapshot, tag, &mut sink);
         }
     }
     for rule in STORE_RULES {
@@ -36,6 +41,15 @@ pub fn fix_store(store: &Store, created: &dyn CreatedSource) -> Result<Vec<PathB
         if after != &file.source {
             replace_file(store, file, after)?;
             changed.push(file.path.clone());
+        }
+    }
+    for tag in snapshot.tags() {
+        let Some(after) = fixed.get(&tag.path) else {
+            continue;
+        };
+        if after != &tag.source {
+            store.replace_raw_tag(&tag.name, after.as_bytes())?;
+            changed.push(tag.path.clone());
         }
     }
     Ok(changed)

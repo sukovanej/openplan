@@ -933,6 +933,17 @@ fn apply_fixes(
             store.replace_raw(file.number, after.as_bytes())?;
         }
     }
+    for tag in snapshot.tags() {
+        if !selected.contains(&canonical(&tag.path)) {
+            continue;
+        }
+        let Some(after) = fixed.get(&tag.path) else {
+            continue;
+        };
+        if after != &tag.source {
+            store.replace_raw_tag(&tag.name, after.as_bytes())?;
+        }
+    }
     Ok(())
 }
 
@@ -952,7 +963,7 @@ fn lint_target_paths(
         // A target that resolves to nothing would filter every diagnostic away and pass, so a stale
         // key or a path spelled against the wrong directory has to stop the run instead.
         let Some(path) = lint_target_path(snapshot, store, target) else {
-            bail!("no task file matches {target}");
+            bail!("no task or tag file matches {target}");
         };
         set.insert(path);
     }
@@ -970,7 +981,9 @@ fn lint_target_path(snapshot: &Snapshot, store: &Store, target: &str) -> Option<
     snapshot
         .files()
         .iter()
-        .map(|file| canonical(&file.path))
+        .map(|file| &file.path)
+        .chain(snapshot.tags().iter().map(|tag| &tag.path))
+        .map(|path| canonical(path))
         .find(|path| spellings.contains(path))
 }
 

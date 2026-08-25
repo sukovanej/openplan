@@ -32,6 +32,7 @@ pub enum Code {
     Created,
     Parent,
     Dependencies,
+    Tags,
     Rank,
     Reference,
     UnrewritableRef,
@@ -40,6 +41,8 @@ pub enum Code {
     ParentCycle,
     DependencyCycle,
     DuplicateNumber,
+    TagName,
+    TagColor,
 }
 
 impl Code {
@@ -50,6 +53,7 @@ impl Code {
             Code::Created => "created",
             Code::Parent => "parent",
             Code::Dependencies => "dependencies",
+            Code::Tags => "tags",
             Code::Rank => "rank",
             Code::Reference => "reference",
             Code::UnrewritableRef => "unrewritable-ref",
@@ -58,6 +62,8 @@ impl Code {
             Code::ParentCycle => "parent-cycle",
             Code::DependencyCycle => "dependency-cycle",
             Code::DuplicateNumber => "duplicate-number",
+            Code::TagName => "tag-name",
+            Code::TagColor => "tag-color",
         }
     }
 }

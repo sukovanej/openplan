@@ -2,11 +2,13 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use op_task::tag::Color;
 use op_task::{
     Abbreviation, FieldError, PartialMetadata, Timestamp, body_ref_id, ref_id, task_ref,
 };
 
-use crate::snapshot::{Snapshot, TaskFile};
+use crate::rules::{canonical_tags, field_region, value_region};
+use crate::snapshot::{Snapshot, TagFile, TaskFile};
 
 // Where `created:` backfill draws its answer: the author time of the first commit that added a path.
 // An uncommitted file has no answer and stays unfixable.
@@ -38,9 +40,14 @@ pub fn file_fixes(snapshot: &Snapshot, file: &TaskFile, created: &dyn CreatedSou
             }
         }
         fixes.extend(frontmatter_ref_fixes(snapshot, &file.source[..body_offset]));
+        fixes.extend(tags_set_fix(file));
     }
     fixes.extend(body_ref_fixes(snapshot, &file.task.body, body_offset));
     fixes
+}
+
+pub fn tag_fixes(file: &TagFile) -> Vec<Fix> {
+    color_fix(file).into_iter().collect()
 }
 
 pub fn apply(source: &str, fixes: &[Fix]) -> String {
@@ -65,13 +72,19 @@ pub fn apply(source: &str, fixes: &[Fix]) -> String {
 pub fn fix(snapshot: &Snapshot, created: &dyn CreatedSource) -> BTreeMap<PathBuf, String> {
     let root = snapshot.root().to_path_buf();
     let abbreviation = snapshot.abbreviation();
+    let tags: Vec<(PathBuf, String)> = snapshot
+        .tags()
+        .iter()
+        .map(|tag| (tag.path.clone(), apply(&tag.source, &tag_fixes(tag))))
+        .collect();
     let mut current: Vec<(PathBuf, String)> = snapshot
         .files()
         .iter()
         .map(|file| (file.path.clone(), file.source.clone()))
         .collect();
     loop {
-        let snap = Snapshot::from_files(root.clone(), abbreviation, current.clone());
+        let snap = Snapshot::from_files(root.clone(), abbreviation, current.clone())
+            .with_tags(tags.clone());
         let mut next = Vec::with_capacity(snap.files().len());
         let mut changed = false;
         for file in snap.files() {
@@ -86,7 +99,7 @@ pub fn fix(snapshot: &Snapshot, created: &dyn CreatedSource) -> BTreeMap<PathBuf
             break;
         }
     }
-    current.into_iter().collect()
+    current.into_iter().chain(tags).collect()
 }
 
 fn created_backfill(
@@ -242,6 +255,60 @@ fn file_name(file: &TaskFile) -> String {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+// The store writes `tags:` through serde_yaml, so the repaired spelling is produced the same way
+// rather than hand-rolled — a fix that quoted a name differently would never reach a fixpoint.
+fn tags_set_fix(file: &TaskFile) -> Option<Fix> {
+    let items = file.task.frontmatter.as_ref()?.get("tags")?.as_sequence()?;
+    let block = tags_block(&canonical_tags(items)?)?;
+    let range = field_region(&file.source, "tags")?;
+    (file.source[range.clone()] != block).then_some(Fix {
+        range,
+        replacement: block,
+    })
+}
+
+fn tags_block(names: &[String]) -> Option<String> {
+    let items = names
+        .iter()
+        .map(|name| serde_yaml::Value::String(name.clone()))
+        .collect();
+    let mut map = serde_yaml::Mapping::new();
+    map.insert(
+        serde_yaml::Value::String("tags".to_owned()),
+        serde_yaml::Value::Sequence(items),
+    );
+    serde_yaml::to_string(&map).ok()
+}
+
+fn color_fix(file: &TagFile) -> Option<Fix> {
+    let map = file.tag.frontmatter.as_ref().ok()?;
+    if file.tag.color != Err(FieldError::Missing) {
+        return None;
+    }
+    let color = Color::for_name(&file.name).as_str();
+    // `color:` written with no value already holds the key, and a second one would make the
+    // frontmatter a mapping with a duplicate key, which parses as nothing at all.
+    if map.contains_key("color") {
+        let range = value_region(&file.source, "color")?;
+        return Some(Fix {
+            range,
+            replacement: format!(" {color}"),
+        });
+    }
+    let at = fence_end(&file.source)?;
+    Some(Fix {
+        range: at..at,
+        replacement: format!("color: {color}\n"),
+    })
+}
+
+fn fence_end(source: &str) -> Option<usize> {
+    ["---\r\n", "---\n"]
+        .into_iter()
+        .find(|fence| source.starts_with(fence))
+        .map(str::len)
 }
 
 fn line_content(line: &str) -> &str {
