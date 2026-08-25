@@ -246,10 +246,12 @@ export const Metadata = Schema.Union(
   { mode: "oneOf" },
 )
 export type TaskDetail = {
+  readonly blocks?: ReadonlyArray<TaskRef>
   readonly body: string
   readonly branches: ReadonlyArray<BranchState>
   readonly children?: ReadonlyArray<TaskChild>
   readonly comments?: ReadonlyArray<Comment>
+  readonly depends_on?: ReadonlyArray<TaskRef>
   readonly headline: string
   readonly id: string
   readonly metadata: Metadata
@@ -261,10 +263,12 @@ export type TaskDetail = {
   readonly write_target?: WriteTarget
 }
 export const TaskDetail = Schema.Struct({
+  blocks: Schema.optionalKey(Schema.Array(TaskRef)),
   body: Schema.String,
   branches: Schema.Array(BranchState),
   children: Schema.optionalKey(Schema.Array(TaskChild)),
   comments: Schema.optionalKey(Schema.Array(Comment)),
+  depends_on: Schema.optionalKey(Schema.Array(TaskRef)),
   headline: Schema.String,
   id: Schema.String,
   metadata: Metadata,

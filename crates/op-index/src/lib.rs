@@ -98,6 +98,14 @@ struct DiffCtx<'a> {
     default_blobs: &'a HashMap<String, String>,
 }
 
+pub struct HierarchyContext {
+    pub parent_title: Option<String>,
+    pub children: Vec<TaskChild>,
+    pub refs: Vec<TaskRef>,
+    pub depends_on: Vec<TaskRef>,
+    pub blocks: Vec<TaskRef>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
     #[error(transparent)]
@@ -837,8 +845,7 @@ impl Index {
             None => self.cell_updated(self.headline_cell(&cells)),
         };
         let view = view_from_raw(id, &raw, updated, self.abbreviation);
-        let (parent_title, children, refs) =
-            self.hierarchy_context(project, id, view.metadata.parent(), &view.body);
+        let hierarchy = self.hierarchy_context(project, &view);
         Ok(Some(TaskDetail {
             project: project.to_owned(),
             id: view.id,
@@ -859,9 +866,11 @@ impl Index {
                 None => branch_states(&cells),
             },
             write_target: self.write_target(id, branch),
-            parent_title,
-            children,
-            refs,
+            parent_title: hierarchy.parent_title,
+            children: hierarchy.children,
+            refs: hierarchy.refs,
+            depends_on: hierarchy.depends_on,
+            blocks: hierarchy.blocks,
         }))
     }
 
@@ -924,20 +933,20 @@ impl Index {
             .collect()
     }
 
-    // The immediate hierarchy around a task, from the aggregated set: the parent's title (when it
-    // resolves), the direct children in sibling order, and every `[[id]]` in `body` resolved to a
-    // title/status. Lets the detail read stand alone without shipping the whole task list.
-    pub fn hierarchy_context(
-        &self,
-        project: &str,
-        id: &str,
-        parent: Option<&str>,
-        body: &str,
-    ) -> (Option<String>, Vec<TaskChild>, Vec<TaskRef>) {
+    // The immediate neighbourhood of a task, from the aggregated set: the parent's title (when it
+    // resolves), the direct children in sibling order, every `[[id]]` in the body resolved to a
+    // title/status, and both directions of its dependencies. Lets the detail read stand alone
+    // without shipping the whole task list.
+    pub fn hierarchy_context(&self, project: &str, view: &TaskView) -> HierarchyContext {
         let aggregated = self.aggregated_tasks(project);
         let by_id: HashMap<&str, &TaskListItem> =
             aggregated.iter().map(|t| (t.id.as_str(), t)).collect();
-        let parent_title = parent.and_then(|p| by_id.get(p)).map(|t| t.title.clone());
+        let id = view.id.as_str();
+        let parent_title = view
+            .metadata
+            .parent()
+            .and_then(|p| by_id.get(p))
+            .map(|t| t.title.clone());
         let mut kids: Vec<&TaskListItem> = aggregated
             .iter()
             .filter(|t| t.metadata.parent() == Some(id))
@@ -952,11 +961,23 @@ impl Index {
                 rank: t.metadata.rank().map(str::to_owned),
             })
             .collect();
-        (
+        let depends_on = view
+            .metadata
+            .dependencies()
+            .iter()
+            .filter_map(|entry| by_id.get(op_task::ref_target(entry)))
+            .map(|t| task_ref(t))
+            .collect();
+        let mut blocked: Vec<&TaskListItem> =
+            aggregated.iter().filter(|t| depends_on_id(t, id)).collect();
+        blocked.sort_by(|a, b| list_item_cmp(a, b));
+        HierarchyContext {
             parent_title,
             children,
-            body_refs(self.abbreviation, body, &by_id),
-        )
+            refs: body_refs(self.abbreviation, &view.body, &by_id),
+            depends_on,
+            blocks: blocked.into_iter().map(task_ref).collect(),
+        }
     }
 
     // The branch a branchless read headlines with, for the write path which builds its own
@@ -1336,6 +1357,22 @@ fn haystack(title: &str, body: &str, metadata: &Metadata) -> String {
     text.to_lowercase()
 }
 
+fn task_ref(item: &TaskListItem) -> TaskRef {
+    TaskRef {
+        id: item.id.clone(),
+        title: item.title.clone(),
+        status: item.metadata.status_field(),
+    }
+}
+
+// A dependency may aim at a section (`OPP-42#Design`), which names the same task as the bare key.
+fn depends_on_id(item: &TaskListItem, id: &str) -> bool {
+    item.metadata
+        .dependencies()
+        .iter()
+        .any(|entry| op_task::ref_target(entry) == id)
+}
+
 // Every `[[…]]` in `body` that resolves to a known task, deduplicated in first-seen order.
 // Unresolvable references are skipped — the client renders those as a dangling chip anyway, so they
 // need no metadata.
@@ -1353,11 +1390,7 @@ fn body_refs(
         let key = abbreviation.format_key(number);
         if let Some(item) = by_id.get(key.as_str()) {
             if seen.insert(key) {
-                refs.push(TaskRef {
-                    id: item.id.clone(),
-                    title: item.title.clone(),
-                    status: item.metadata.status_field(),
-                });
+                refs.push(task_ref(item));
             }
         }
     }

@@ -29,6 +29,11 @@ export const createdOf = (metadata: Metadata): string | undefined => {
   return field === undefined ? undefined : fieldValue(field)
 }
 
+export const dependenciesOf = (metadata: Metadata): ReadonlyArray<string> => {
+  const field = fields(metadata)?.dependencies
+  return field === undefined ? [] : (fieldValue(field) ?? [])
+}
+
 export const tagsOf = (metadata: Metadata): ReadonlyArray<string> => {
   const field = fields(metadata)?.tags
   return field === undefined ? [] : (fieldValue(field) ?? [])

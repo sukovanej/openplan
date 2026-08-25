@@ -474,6 +474,80 @@ async fn task_detail_carries_parent_title_children_and_resolved_refs() {
 }
 
 #[tokio::test]
+async fn task_detail_carries_both_directions_of_its_dependencies() {
+    let (dir, state) = store_state();
+    let tasks = dir.path().join(".plan/tasks");
+    std::fs::write(
+        tasks.join("00001-design.md"),
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Design\n",
+    )
+    .unwrap();
+    // Three entries: a plain one, one that names a section, and one no file holds.
+    std::fs::write(
+        tasks.join("00002-api.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ndependencies:\n- ./00003-schema.md\n- ./00001-design.md#Wire\n- ./00099-gone.md\n---\n# API\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("00003-schema.md"),
+        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Schema\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("00004-ship.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: t\ndependencies:\n- ./00002-api.md\n---\n# Ship\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tasks.join("00005-web.md"),
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: m\ndependencies:\n- ./00002-api.md#Wire\n---\n# Web\n",
+    )
+    .unwrap();
+
+    let detail = body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-2", None).await).await;
+    let depends_on = detail["depends_on"].as_array().unwrap();
+    assert_eq!(
+        depends_on
+            .iter()
+            .map(|d| d["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["OPP-3", "OPP-1"],
+        "file order, and an entry that names no task drops out"
+    );
+    assert_eq!(depends_on[0]["title"], "Schema");
+    assert_eq!(depends_on[0]["status"], "done");
+
+    let blocks = detail["blocks"].as_array().unwrap();
+    assert_eq!(
+        blocks
+            .iter()
+            .map(|b| b["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["OPP-5", "OPP-4"],
+        "rank order, and a sectioned entry still reports the task it names"
+    );
+
+    // A task that waits for nothing ships no `depends_on` at all.
+    let schema = body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-3", None).await).await;
+    assert!(schema.get("depends_on").is_none());
+    assert_eq!(schema["blocks"][0]["id"], "OPP-2");
+
+    // The write path builds its own detail, so it has to carry both fields too.
+    let patched = body_json(
+        send(
+            &state,
+            "PATCH",
+            "/api/projects/test/tasks/OPP-2",
+            Some(json!({ "status": "in_progress" })),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(patched["depends_on"][0]["id"], "OPP-3");
+    assert_eq!(patched["blocks"][0]["id"], "OPP-5");
+}
+
+#[tokio::test]
 async fn patch_preserves_unknown_frontmatter_keys() {
     let (dir, state) = store_state();
     std::fs::write(

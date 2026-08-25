@@ -85,7 +85,7 @@ export function useRowCursor(rows: ReadonlyArray<string>): CursorState {
 }
 
 // A cursor whose focused row is remembered per key, so navigating parent → child → back leaves the
-// parent's subtask still highlighted. A key never visited starts unselected, unlike a bounds clamp.
+// parent's row still highlighted. A key never visited starts unselected, unlike a bounds clamp.
 class KeyedRowCursor {
   private activeKey = ""
   private state: CursorState = emptyCursor
@@ -120,12 +120,12 @@ class KeyedRowCursor {
   }
 }
 
-export const subtaskCursor = new KeyedRowCursor()
+export const detailCursor = new KeyedRowCursor()
 
-export function useSubtaskCursor(key: string, rows: ReadonlyArray<string>): CursorState {
-  const state = useSyncExternalStore(subtaskCursor.subscribe, subtaskCursor.getSnapshot)
+export function useDetailCursor(key: string, rows: ReadonlyArray<string>): CursorState {
+  const state = useSyncExternalStore(detailCursor.subscribe, detailCursor.getSnapshot)
   useLayoutEffect(() => {
-    subtaskCursor.activate(key, rows)
+    detailCursor.activate(key, rows)
   }, [key, rows])
   return state
 }

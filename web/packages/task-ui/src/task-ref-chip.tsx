@@ -1,10 +1,9 @@
-import { CircleDashed } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import type { TaskRef } from "@open-planner/api-client"
 import { cn } from "@open-planner/ui"
 
-import { TaskIdentity } from "./task-identity"
+import { TaskIdentity, UnresolvedMark } from "./task-identity"
 
 // `align-middle` centres the chip on the surrounding font's x-height, which leaves it sitting ~1.5px
 // below the optical middle of the line; the nudge takes that back without disturbing the line box.
@@ -27,11 +26,7 @@ export function TaskRefChip({ to, id, task }: { to: string; id: string; task: Ta
       <TaskIdentity
         variant="chip"
         status={task?.status}
-        mark={
-          task === undefined ? (
-            <CircleDashed className="text-muted-foreground/60 size-4 shrink-0" aria-hidden />
-          ) : undefined
-        }
+        mark={task === undefined ? <UnresolvedMark /> : undefined}
         id={id}
         title={task?.title}
       />

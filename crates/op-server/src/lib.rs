@@ -1440,42 +1440,28 @@ async fn patch_task_of(
             // lands the branch back on its merge-base leaves no divergence cell, so a matrix lookup
             // would 404 a write that in fact succeeded — and its `updated` falls back to the
             // headline, the commit that already holds this exact content.
-            let (headline, branches, write_target, parent_title, children, refs, updated) = {
+            let detail = {
                 let index = writing.rebuilt_index().map_err(index_error)?;
-                // The index resolves a parent by key; the frontmatter holds the number the file
-                // layer names it by.
-                let parent = task
-                    .frontmatter
-                    .parent
-                    .as_deref()
-                    .and_then(|parent| abbreviation.format_ref(parent));
-                let (parent_title, children, refs) =
-                    index.hierarchy_context(&writing.name(), &id, parent.as_deref(), &task.body);
-                (
-                    index.headline_branch(&id).unwrap_or_default(),
-                    index.task_branch_states(&id),
-                    index.write_target(&id, Some(&branch)),
-                    parent_title,
-                    children,
-                    refs,
-                    index.task_updated_or_headline(&id, Some(&branch)),
-                )
-            };
-            let view = TaskView::from_task(id, &task, updated, abbreviation);
-            let detail = TaskDetail {
-                project: writing.name(),
-                id: view.id,
-                title: view.title,
-                metadata: view.metadata,
-                comments: op_index::comments_of(&view.body),
-                body: op_task::comment::strip(&view.body),
-                updated: view.updated,
-                headline,
-                branches,
-                write_target,
-                parent_title,
-                children,
-                refs,
+                let updated = index.task_updated_or_headline(&id, Some(&branch));
+                let view = TaskView::from_task(id, &task, updated, abbreviation);
+                let hierarchy = index.hierarchy_context(&writing.name(), &view);
+                TaskDetail {
+                    project: writing.name(),
+                    headline: index.headline_branch(&view.id).unwrap_or_default(),
+                    branches: index.task_branch_states(&view.id),
+                    write_target: index.write_target(&view.id, Some(&branch)),
+                    parent_title: hierarchy.parent_title,
+                    children: hierarchy.children,
+                    refs: hierarchy.refs,
+                    depends_on: hierarchy.depends_on,
+                    blocks: hierarchy.blocks,
+                    comments: op_index::comments_of(&view.body),
+                    body: op_task::comment::strip(&view.body),
+                    id: view.id,
+                    title: view.title,
+                    metadata: view.metadata,
+                    updated: view.updated,
+                }
             };
             Ok((branch, detail))
         })

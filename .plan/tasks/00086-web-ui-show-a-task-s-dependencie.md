@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: in_review
 created: 2026-08-25T12:47:10Z
 ---
 # Web UI: show a task's dependencies and dependents on the detail page
@@ -65,3 +65,9 @@ the page. Rename it `detailCursor`.
 - No mark on the list rows.
 - No way to set or clear a dependency from the UI.
 - No change to `openplan`.
+
+## Comments
+
+### 2026-08-25T13:35:17Z by Milan Suk via claude-code
+
+> TaskDetail.depends_on carries only the entries that resolve. TaskRef has no way to say "unresolved": it demands a title and a status, and inventing either would make a missing task wear one. The page therefore renders one row per entry of metadata.dependencies and looks each one up in depends_on, the way TaskBody already renders refs. An entry that resolves to nothing draws dashed, as the task asks. The client splits the section off an entry before that lookup; the daemon splits it on both sides of the wire.

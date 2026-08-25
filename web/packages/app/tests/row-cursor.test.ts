@@ -8,7 +8,7 @@ import {
   focusedRow,
   moved,
   rowCursor,
-  subtaskCursor,
+  detailCursor,
   withRows,
 } from "../src/lib/row-cursor"
 
@@ -126,31 +126,31 @@ it("the store notifies subscribers and drives the cursor", () => {
 })
 
 it("the subtask cursor starts a never-visited task unselected", () => {
-  subtaskCursor.activate("fresh-task", ["a", "b", "c"])
-  expect(subtaskCursor.getSnapshot().index).toBe(-1)
+  detailCursor.activate("fresh-task", ["a", "b", "c"])
+  expect(detailCursor.getSnapshot().index).toBe(-1)
 })
 
 it("the subtask cursor remembers each task's focused row across activations", () => {
-  subtaskCursor.activate("parent", ["p1", "p2", "p3"])
-  subtaskCursor.moveBy(1)
-  subtaskCursor.moveBy(1)
-  expect(focusedRow(subtaskCursor.getSnapshot())).toBe("p2")
+  detailCursor.activate("parent", ["p1", "p2", "p3"])
+  detailCursor.moveBy(1)
+  detailCursor.moveBy(1)
+  expect(focusedRow(detailCursor.getSnapshot())).toBe("p2")
 
-  subtaskCursor.activate("child", ["c1", "c2"])
-  expect(subtaskCursor.getSnapshot().index).toBe(-1)
+  detailCursor.activate("child", ["c1", "c2"])
+  expect(detailCursor.getSnapshot().index).toBe(-1)
 
-  subtaskCursor.activate("parent", ["p1", "p2", "p3"])
-  expect(focusedRow(subtaskCursor.getSnapshot())).toBe("p2")
+  detailCursor.activate("parent", ["p1", "p2", "p3"])
+  expect(focusedRow(detailCursor.getSnapshot())).toBe("p2")
 })
 
 it("the subtask cursor clamps a remembered row when the task lost children", () => {
-  subtaskCursor.activate("shrinking", ["a", "b", "c"])
-  subtaskCursor.focus(2)
-  subtaskCursor.activate("shrinking", ["a"])
-  expect(subtaskCursor.getSnapshot().index).toBe(0)
+  detailCursor.activate("shrinking", ["a", "b", "c"])
+  detailCursor.focus(2)
+  detailCursor.activate("shrinking", ["a"])
+  expect(detailCursor.getSnapshot().index).toBe(0)
 
-  subtaskCursor.activate("shrinking", [])
-  expect(subtaskCursor.getSnapshot().index).toBe(-1)
+  detailCursor.activate("shrinking", [])
+  expect(detailCursor.getSnapshot().index).toBe(-1)
 })
 
 it("clear dismisses an active selection but does not churn when already cleared", () => {
