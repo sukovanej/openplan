@@ -1,7 +1,9 @@
 const TASK_SEGMENT = "task"
+const TAGS_SEGMENT = "tags"
 
 export const BOARD_ROUTE = "/:project"
 export const TASK_ROUTE = `${BOARD_ROUTE}/${TASK_SEGMENT}/:id`
+export const TAGS_ROUTE = `${BOARD_ROUTE}/${TAGS_SEGMENT}`
 
 // Two stores can commit the same abbreviation, so a key names a task only inside its project. Every
 // task URL therefore carries the project, and every helper here takes it.
@@ -12,6 +14,10 @@ export interface TaskRoute {
 
 export function boardPath(project: string): string {
   return `/${encodeURIComponent(project)}`
+}
+
+export function tagsPath(project: string): string {
+  return `${boardPath(project)}/${TAGS_SEGMENT}`
 }
 
 export function taskPath(project: string, id: string, section?: string): string {

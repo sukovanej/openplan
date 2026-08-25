@@ -1,5 +1,5 @@
-import { MessageSquare } from "lucide-react"
-import { useEffect, useMemo, useRef, type MouseEvent, type Ref } from "react"
+import { MessageSquare, Tags } from "lucide-react"
+import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
 import type { Board, BoardRow } from "@open-planner/api-client"
@@ -12,6 +12,7 @@ import {
   StatusField,
   StatusGroupHeader,
   statusGroupLabel,
+  tagsPath,
   taskPath,
   TaskTags,
   TaskTimes,
@@ -56,10 +57,24 @@ function ProjectBoard({ project }: { project: string }) {
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }
-  return <BoardState board={board} title={project} />
+  return (
+    <BoardState
+      board={board}
+      title={project}
+      action={
+        <Link
+          to={tagsPath(project)}
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
+        >
+          <Tags className="size-3.5" />
+          Tags
+        </Link>
+      }
+    />
+  )
 }
 
-function BoardState({ board, title }: { board: QueryState<Board>; title: string }) {
+function BoardState({ board, title, action }: { board: QueryState<Board>; title: string; action?: ReactNode }) {
   switch (board._tag) {
     case "loading":
       return <ListSkeleton />
@@ -69,7 +84,7 @@ function BoardState({ board, title }: { board: QueryState<Board>; title: string 
       return board.value.groups.length === 0 ? (
         <EmptyState title="No tasks yet" detail="Create one with `openplan create`." />
       ) : (
-        <TaskGrid board={board.value} title={title} />
+        <TaskGrid board={board.value} title={title} action={action} />
       )
   }
 }
@@ -90,7 +105,7 @@ function sizingKeys(rows: ReadonlyArray<BoardRow>): ReadonlyArray<string> {
   return [...widest.values()]
 }
 
-function TaskGrid({ board, title }: { board: Board; title: string }) {
+function TaskGrid({ board, title, action }: { board: Board; title: string; action?: ReactNode }) {
   // The board arrives already grouped, ordered, and flattened; the cursor walks the concatenation of
   // every group's rows in that same visible order.
   const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
@@ -117,8 +132,9 @@ function TaskGrid({ board, title }: { board: Board; title: string }) {
       tabIndex={0}
       className="text-sm focus:outline-none"
     >
-      <PanelHeader>
+      <PanelHeader className="gap-3">
         <PanelTitle>{title}</PanelTitle>
+        {action !== undefined && <div className="ml-auto">{action}</div>}
       </PanelHeader>
       <PanelBody onMouseLeave={hoveredRow.clear}>
         {board.groups.map((group, groupIndex) => {

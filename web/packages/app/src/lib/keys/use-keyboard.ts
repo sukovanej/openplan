@@ -88,6 +88,7 @@ export function useKeyboard(): Keyboard {
       detail: {
         editParent: () => detailActions.emit("edit-parent"),
         addSubtask: () => detailActions.emit("add-subtask"),
+        editTags: () => detailActions.emit("edit-tags"),
         goToParent: () => detailActions.emit("go-parent"),
         escape: () => {
           const canGoBack = historyIndex() > entryIndex.current

@@ -1,4 +1,4 @@
-import { TriangleAlert } from "lucide-react"
+import { TriangleAlert, X } from "lucide-react"
 
 import type { Color, TagView } from "@open-planner/api-client"
 import { cn, Tag, Tooltip } from "@open-planner/ui"
@@ -30,18 +30,29 @@ const danglingReason = (name: string) =>
   `${name} is not a tag on this branch — it was created elsewhere, renamed, or deleted. Editing this task's tags drops it.`
 
 // `tag` is the registry entry the name resolves to, or `undefined` for a name this branch's registry
-// does not hold.
-export function TagChip({ name, tag }: { name: string; tag: TagView | undefined }) {
-  if (tag === undefined) {
-    return (
-      <Tooltip content={danglingReason(name)}>
-        <Tag className={cn(DANGLING, WHOLE_PIXELS)} dashed>
-          <TriangleAlert aria-hidden className="size-3 shrink-0" />
-          <span>{name}</span>
-        </Tag>
-      </Tooltip>
-    )
-  }
-  const chip = <Tag className={cn(paletteColor[tag.color], WHOLE_PIXELS)}>{tag.display}</Tag>
-  return tag.description === undefined ? chip : <Tooltip content={tag.description}>{chip}</Tooltip>
+// does not hold. `onRemove` turns the chip into an editable one: taking the tag off the task is the
+// only thing a chip does, and it is the only thing a dangling one can do.
+export function TagChip({ name, tag, onRemove }: { name: string; tag: TagView | undefined; onRemove?: () => void }) {
+  const label = tag?.display ?? name
+  const chip = (
+    <Tag
+      className={cn(tag === undefined ? DANGLING : paletteColor[tag.color], WHOLE_PIXELS)}
+      dashed={tag === undefined}
+    >
+      {tag === undefined && <TriangleAlert aria-hidden className="size-3 shrink-0" />}
+      <span>{label}</span>
+      {onRemove !== undefined && (
+        <button
+          type="button"
+          aria-label={`Remove ${label}`}
+          onClick={onRemove}
+          className="-mr-0.5 shrink-0 opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+        >
+          <X className="size-3" />
+        </button>
+      )}
+    </Tag>
+  )
+  const explains = tag === undefined ? danglingReason(name) : tag.description
+  return explains === undefined ? chip : <Tooltip content={explains}>{chip}</Tooltip>
 }

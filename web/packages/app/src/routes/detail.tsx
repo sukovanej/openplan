@@ -15,7 +15,6 @@ import {
   TaskBody,
   TaskIdentity,
   taskPath,
-  TaskTags,
   TaskTimes,
 } from "@open-planner/task-ui"
 import {
@@ -30,10 +29,11 @@ import {
   PanelTitle,
   Row,
   Section,
-  Tooltip,
 } from "@open-planner/ui"
 
+import { Blocked } from "../components/blocked"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
+import { TagsField } from "../components/tags-field"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
@@ -41,7 +41,6 @@ import { errorText } from "../lib/format"
 import { useAbbreviation } from "../lib/projects"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
-import { useTags } from "../lib/tags"
 import { taskMatches } from "../lib/task-search"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
@@ -65,17 +64,6 @@ function writeHere(task: TaskDetail | TaskListItem): WriteHere {
     branch: target.branch,
     blocked: target.writable ? undefined : `No writable worktree holds ${target.branch}, so this task cannot change.`,
   }
-}
-
-// Focusable, so the keyboard reaches the reason too: it replaces a control that had focus of its own.
-function Blocked({ reason }: { reason: string }) {
-  return (
-    <Tooltip content={reason}>
-      <span tabIndex={0} className="text-muted-foreground/70 text-xs italic">
-        read-only
-      </span>
-    </Tooltip>
-  )
 }
 
 export function DetailRoute() {
@@ -139,7 +127,6 @@ function TaskDetailView({
   onSelect: (branch: string | undefined) => void
 }) {
   const abbreviation = useAbbreviation(project)
-  const tags = useTags(project)
   const write = writeHere(detail ?? task)
   return (
     <Panel>
@@ -170,7 +157,14 @@ function TaskDetailView({
             problems={detail === null ? [] : problems(detail.metadata)}
           />
         </MetaLine>
-        <TaskTags metadata={task.metadata} tags={tags} className="mb-4" />
+        <TagsField
+          project={project}
+          id={task.id}
+          metadata={task.metadata}
+          branch={write.branch}
+          blocked={write.blocked}
+          className="mb-4"
+        />
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? (
           <BodySkeleton />

@@ -223,13 +223,16 @@ export function useMutationError(): unknown {
 // Run a write, then refresh the written project's reads and every open task detail of it so the
 // change shows at once — without waiting for the daemon's SSE echo (which also refreshes, and
 // covers external edits). A refused write refreshes too, so the view snaps back to what the server
-// actually holds.
+// actually holds. It resolves `false` when the server refused: the toast carries the reason, but a
+// caller that can follow a refusal with a different attempt — a forced tag delete — has to know.
 export function runMutation<A>(
   project: string,
   effect: Effect.Effect<A, unknown, HttpClient.HttpClient>,
-): Promise<void> {
+): Promise<boolean> {
   const refresh = () => {
     refreshBoards(project)
+    const tags = tagsQuery(project)
+    if (tags.hasListeners()) tags.refresh()
     for (const query of taskQueries.values()) {
       if (query.project === project) query.refresh()
     }
@@ -238,10 +241,12 @@ export function runMutation<A>(
     () => {
       mutationError.clear()
       refresh()
+      return true
     },
     (error: unknown) => {
       mutationError.report(error)
       refresh()
+      return false
     },
   )
 }

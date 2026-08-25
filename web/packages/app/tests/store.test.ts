@@ -119,8 +119,14 @@ describe("mutationError", () => {
   })
 
   it("resolves rather than rejecting, so a caller never needs its own catch", async () => {
-    await expect(runMutation("open-plan", Effect.fail(new Error("boom")))).resolves.toBeUndefined()
+    await expect(runMutation("open-plan", Effect.fail(new Error("boom")))).resolves.toBe(false)
     mutationError.clear()
+  })
+
+  // A refusal is the whole answer for most writes, but one that can be followed by a different
+  // attempt — a forced tag delete after the daemon refused the plain one — has to read the outcome.
+  it("says whether the write landed", async () => {
+    await expect(runMutation("open-plan", Effect.succeed("ok"))).resolves.toBe(true)
   })
 
   it("notifies subscribers on change and stops after unsubscribe", async () => {

@@ -67,6 +67,28 @@ describe("TagChip", () => {
     expect(hover(render(<TagChip name="backend" tag={view()} />))).toBeNull()
   })
 
+  describe("on a task whose tags can be edited", () => {
+    it("offers to take the tag off, named by what the chip shows", () => {
+      let removed = 0
+      const container = render(<TagChip name="backend" tag={view()} onRemove={() => removed++} />)
+      const remove = container.querySelector("button")!
+      expect(remove.getAttribute("aria-label")).toBe("Remove Backend")
+      act(() => remove.click())
+      expect(removed).toBe(1)
+    })
+
+    // Dropping the reference is the only thing a dangling chip can do, and the tooltip still says
+    // what an edit costs.
+    it("names a dangling reference by the raw name it carries", () => {
+      const container = render(<TagChip name="infra" tag={undefined} onRemove={() => {}} />)
+      expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("Remove infra")
+    })
+
+    it("stays inert without a remover", () => {
+      expect(render(<TagChip name="backend" tag={view()} />).querySelector("button")).toBeNull()
+    })
+  })
+
   describe("a name the registry does not hold", () => {
     it("falls back to the raw name, greyed and dashed rather than coloured", () => {
       const tag = chip(render(<TagChip name="infra" tag={undefined} />))
