@@ -102,8 +102,18 @@ describe("TagChip", () => {
     it("says where the tag went, and what an edit does to the reference", () => {
       vi.useFakeTimers()
       const text = hover(render(<TagChip name="infra" tag={undefined} />))?.textContent ?? ""
-      expect(text).toContain("infra is not a tag on this branch")
-      expect(text).toContain("drops it")
+      expect(text).toContain("infra is not a tag in this project's registry")
+      expect(text).toContain("drops the name")
+    })
+
+    // The version on screen often comes from a different branch than the one an edit writes to, so a
+    // chip that said "this branch" claimed something about the wrong one.
+    it('names the branch it was resolved against, rather than saying "this branch"', () => {
+      vi.useFakeTimers()
+      const text = hover(render(<TagChip name="ui" tag={undefined} branch="main" />))?.textContent ?? ""
+      expect(text).toContain("ui is not a tag on main")
+      expect(text).toContain("the branch an edit to this task writes to")
+      expect(text).not.toContain("this branch —")
     })
   })
 })

@@ -14,12 +14,14 @@ import { TagChip } from "./tag-chip"
 export function TaskTags({
   metadata,
   tags,
+  branch,
   onRemove,
   trailing,
   className,
 }: {
   metadata: Metadata
   tags: ReadonlyMap<string, TagView> | undefined
+  branch?: string
   onRemove?: (name: string) => void
   trailing?: ReactNode
   className?: string
@@ -34,6 +36,7 @@ export function TaskTags({
           key={name}
           name={name}
           tag={tags?.get(name)}
+          branch={branch}
           onRemove={onRemove === undefined ? undefined : () => onRemove(name)}
         />
       ))}

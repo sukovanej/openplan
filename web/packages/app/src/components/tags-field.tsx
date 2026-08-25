@@ -36,7 +36,8 @@ export function TagsField({
   // The registry a write is validated against is the one on the branch the write lands on, so a name
   // that branch holds is never mistaken for a dangling one and pruned away. A branch no worktree can
   // write has no registry to read either, so those chips fall back to the served worktree's.
-  const tags = useTags(project, blocked === undefined ? branch : undefined)
+  const registry = blocked === undefined ? branch : undefined
+  const tags = useTags(project, registry)
   const [adding, setAdding] = useState(false)
   // A tags write replaces the whole set, so a second one built from the set on screen would undo the
   // first. Nothing more is sent until this one has been answered.
@@ -64,6 +65,7 @@ export function TagsField({
     <TaskTags
       metadata={metadata}
       tags={tags}
+      branch={registry}
       onRemove={
         editable ? (name) => write(patchTask(project, id, { tags: tagsWithout(names, tags, name) }, branch)) : undefined
       }
