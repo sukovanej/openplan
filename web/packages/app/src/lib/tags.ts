@@ -5,13 +5,25 @@ import { fuzzyMatch } from "@open-planner/ui"
 
 import { tagsQuery, useQuery } from "./store"
 
-// `undefined` until the registry has been read, which a reader must not mistake for a registry that
-// holds nothing: every name would then read as dangling. `branch` must be the branch a tags write
-// would land on, so that what the chips call dangling is what the write would refuse.
-export function useTags(project: string, branch?: string): ReadonlyMap<string, TagView> | undefined {
+export interface Registry {
+  // `undefined` until the registry has been read, which a reader must not mistake for a registry
+  // that holds nothing: every name would then read as dangling.
+  readonly byName: ReadonlyMap<string, TagView> | undefined
+  // A registry that cannot be read is not one that is still loading. Both leave the names
+  // unresolvable, but only one of them is ever going to resolve, and a surface that treats them
+  // alike shows a task with tags as a task with none and says nothing about why.
+  readonly failed: boolean
+}
+
+// `branch` must be the branch a tags write would land on, so that what the chips call dangling is
+// what the write would refuse.
+export function useTags(project: string, branch?: string): Registry {
   const state = useQuery(useMemo(() => tagsQuery(project, branch), [project, branch]))
   return useMemo(
-    () => (state._tag === "success" ? new Map(state.value.map((tag) => [tag.name, tag])) : undefined),
+    () => ({
+      byName: state._tag === "success" ? new Map(state.value.map((tag) => [tag.name, tag])) : undefined,
+      failed: state._tag === "failure",
+    }),
     [state],
   )
 }

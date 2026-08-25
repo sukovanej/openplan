@@ -139,26 +139,21 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
 
   return (
     <Row variant="divided" last={last} className="flex flex-wrap items-center gap-3 px-2 py-2">
-      <div className="relative">
-        <Button
-          aria-label={`Recolour ${tag.display}`}
-          disabled={editing !== "no" && editing !== "recolouring"}
-          onClick={() => setEditing((open) => (open === "recolouring" ? "no" : "recolouring"))}
-          className="px-1.5 py-1.5 disabled:opacity-40"
-        >
-          <ColorDot color={tag.color} className="size-3.5" />
-        </Button>
-        {editing === "recolouring" && (
-          <Palette
-            value={tag.color}
-            onClose={() => setEditing("no")}
-            onPick={(color) => {
-              setEditing("no")
-              void runTagMutation(project, patchTag(project, tag.name, { color }))
-            }}
-          />
-        )}
-      </div>
+      {/* The dismiss-on-outside-click watches this wrapper, not the popover: with the button outside
+          it, pressing the button counted as an outside click, and the click that followed reopened
+          what the mousedown had just closed. */}
+      <Palette
+        open={editing === "recolouring"}
+        value={tag.color}
+        label={tag.display}
+        disabled={editing !== "no" && editing !== "recolouring"}
+        onToggle={() => setEditing((open) => (open === "recolouring" ? "no" : "recolouring"))}
+        onClose={() => setEditing("no")}
+        onPick={(color) => {
+          setEditing("no")
+          void runTagMutation(project, patchTag(project, tag.name, { color }))
+        }}
+      />
       {editing === "naming" ? (
         <TagForm project={project} tag={tag} onClose={() => setEditing("no")} />
       ) : (
@@ -199,25 +194,67 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
   )
 }
 
-function Palette({ value, onPick, onClose }: { value: Color; onPick: (color: Color) => void; onClose: () => void }) {
+function Palette({
+  open,
+  value,
+  label,
+  disabled,
+  onToggle,
+  onPick,
+  onClose,
+}: {
+  open: boolean
+  value: Color
+  label: string
+  disabled: boolean
+  onToggle: () => void
+  onPick: (color: Color) => void
+  onClose: () => void
+}) {
   const root = useRef<HTMLDivElement>(null)
+  const popover = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
+    if (!open) return
     const onDown = (event: MouseEvent) => {
       if (root.current !== null && !root.current.contains(event.target as Node)) onClose()
     }
     document.addEventListener("mousedown", onDown)
     return () => document.removeEventListener("mousedown", onDown)
-  }, [onClose])
+  }, [open, onClose])
+
+  // Opened with the mouse, the focus is still on the button, so Escape only reaches a handler the
+  // popover itself owns once the popover has taken the focus.
+  useEffect(() => {
+    if (open) popover.current?.focus()
+  }, [open])
 
   return (
     <div
       ref={root}
+      className="relative"
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose()
       }}
-      className="bg-popover absolute top-full left-0 z-30 mt-1.5 w-max rounded-md border p-2 shadow-md"
     >
-      <ColorPicker value={value} onPick={onPick} />
+      <Button
+        aria-label={`Recolour ${label}`}
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={onToggle}
+        className="px-1.5 py-1.5 disabled:opacity-40"
+      >
+        <ColorDot color={value} className="size-3.5" />
+      </Button>
+      {open && (
+        <div
+          ref={popover}
+          tabIndex={-1}
+          className="bg-popover absolute top-full left-0 z-30 mt-1.5 w-max rounded-md border p-2 shadow-md focus:outline-none"
+        >
+          <ColorPicker value={value} onPick={onPick} />
+        </div>
+      )}
     </div>
   )
 }
@@ -317,7 +354,12 @@ function TagForm({ project, tag, onClose }: { project: string; tag: TagView; onC
         placeholder="What it marks (optional)"
         className="min-w-0 flex-1"
       />
-      <Button type="submit" variant="accent" disabled={writing} className="disabled:opacity-40">
+      <Button
+        type="submit"
+        variant="accent"
+        disabled={display.trim() === "" || writing}
+        className="disabled:opacity-40"
+      >
         <Check className="size-3.5" />
         Save
       </Button>

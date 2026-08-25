@@ -81,8 +81,18 @@ function BoardState({ board, title, action }: { board: QueryState<Board>; title:
     case "failure":
       return <EmptyState title="Could not load tasks" detail={errorText(board.error)} />
     case "success":
+      // A project with no tasks keeps its panel, because the header is the only way to the tag
+      // registry — and a project with nothing in it is exactly where the first tag gets registered.
       return board.value.groups.length === 0 ? (
-        <EmptyState title="No tasks yet" detail="Create one with `openplan create`." />
+        <Panel>
+          <PanelHeader className="gap-3">
+            <PanelTitle>{title}</PanelTitle>
+            {action !== undefined && <div className="ml-auto">{action}</div>}
+          </PanelHeader>
+          <PanelBody className="p-6">
+            <EmptyState title="No tasks yet" detail="Create one with `openplan create`." />
+          </PanelBody>
+        </Panel>
       ) : (
         <TaskGrid board={board.value} title={title} action={action} />
       )
@@ -225,7 +235,7 @@ function TaskRow({
   const parent = parentOf(task.metadata)
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
-  const tags = useTags(task.project)
+  const { byName: tags } = useTags(task.project)
   const navigate = useNavigate()
 
   // The row opens its task from its own click rather than from a link stretched over it: an overlay

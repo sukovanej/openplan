@@ -192,7 +192,7 @@ function refreshTaskQueries(project: string, id: string): void {
   const exact = taskKey(project, id, undefined)
   const prefix = `${exact} `
   for (const [key, query] of taskQueries) {
-    if (key === exact || key.startsWith(prefix)) query.refresh()
+    if ((key === exact || key.startsWith(prefix)) && query.hasListeners()) query.refresh()
   }
 }
 
@@ -241,7 +241,7 @@ export function runMutation<A>(
   const refresh = () => {
     refreshBoards(project)
     for (const query of taskQueries.values()) {
-      if (query.project === project) query.refresh()
+      if (query.project === project && query.hasListeners()) query.refresh()
     }
   }
   return runtime.runPromise(effect).then(
@@ -267,7 +267,7 @@ export function runTagMutation<A>(
 ): Promise<unknown> {
   return runMutation(project, effect).then((refusal) => {
     for (const query of tagsQueries.values()) {
-      if (query.project === project) query.refresh()
+      if (query.project === project && query.hasListeners()) query.refresh()
     }
     return refusal
   })

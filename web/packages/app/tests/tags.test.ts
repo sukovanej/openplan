@@ -72,3 +72,30 @@ describe("the tag a typed name already spells", () => {
     expect(tagSpelled(all, "backend")).toBeUndefined()
   })
 })
+
+// A tags write replaces the whole set, so the field cannot build a second edit until the re-read the
+// first one triggered has landed. These are the two shapes of "it landed" the field waits on.
+describe("knowing a tags write has come back", () => {
+  const landedOnSet = (next: ReadonlyArray<string>) => (seen: ReadonlyArray<string>) =>
+    seen.length === next.length && new Set(seen).size === new Set([...seen, ...next]).size
+
+  it("waits for the set it sent, whatever order the store writes it in", () => {
+    const reached = landedOnSet(["backend", "wip"])
+    expect(reached(["backend"])).toBe(false)
+    expect(reached(["wip", "backend"])).toBe(true)
+  })
+
+  // Registering a tag cannot name the set in advance — the registry normalizes the name — so this
+  // waits on the shape instead: every name that survives the prune, and one more. It cannot tell
+  // which name arrived, only that one did, which is as much as the field needs to build the next
+  // edit on what the server actually holds.
+  it("waits on the surviving names plus one for a tag it cannot name yet", () => {
+    const kept = ["backend"]
+    const reached = (seen: ReadonlyArray<string>) =>
+      seen.length === kept.length + 1 && kept.every((name) => seen.includes(name))
+    expect(reached(["backend"])).toBe(false)
+    expect(reached(["front-end"])).toBe(false)
+    expect(reached(["backend", "front-end", "wip"])).toBe(false)
+    expect(reached(["backend", "front-end"])).toBe(true)
+  })
+})
