@@ -57,20 +57,22 @@
   --status-unreadable-surface: var(--status-unreadable);
   --status-unreadable-text: oklch(0.577 0.245 27.325);
 
-  /* The tag palette. One rung per colour, dark enough to read on the page in light mode and
-     light enough in dark mode, because a chip spends it on both its border and its text. */
-  --tag-slate: oklch(0.446 0.043 257.281);
-  --tag-red: oklch(0.577 0.245 27.325);
-  --tag-orange: oklch(0.646 0.222 41.116);
-  --tag-amber: oklch(0.666 0.179 58.318);
-  --tag-yellow: oklch(0.681 0.162 75.834);
-  --tag-green: oklch(0.627 0.194 149.214);
-  --tag-teal: oklch(0.6 0.118 184.704);
-  --tag-cyan: oklch(0.609 0.126 221.723);
-  --tag-blue: oklch(0.546 0.245 262.881);
-  --tag-indigo: oklch(0.511 0.262 276.966);
-  --tag-violet: oklch(0.541 0.281 293.009);
-  --tag-pink: oklch(0.592 0.249 0.584);
+  /* The tag palette. One rung per colour, which a chip spends on its text as well as on the wash
+     behind it — so light mode takes a deep rung that reads as ink on a near-white page, and dark
+     mode a light one. The bright hues have to go deepest: yellow and amber carry more luminance at
+     the same lightness than blue does, and a chip's text is 11px. */
+  --tag-slate: oklch(0.372 0.044 257.287);
+  --tag-red: oklch(0.505 0.213 27.518);
+  --tag-orange: oklch(0.47 0.157 37.304);
+  --tag-amber: oklch(0.473 0.137 46.201);
+  --tag-yellow: oklch(0.421 0.095 57.708);
+  --tag-green: oklch(0.448 0.119 151.328);
+  --tag-teal: oklch(0.437 0.078 188.216);
+  --tag-cyan: oklch(0.45 0.085 224.283);
+  --tag-blue: oklch(0.488 0.243 264.376);
+  --tag-indigo: oklch(0.457 0.24 277.023);
+  --tag-violet: oklch(0.491 0.27 292.581);
+  --tag-pink: oklch(0.525 0.223 3.958);
 }
 
 .dark {

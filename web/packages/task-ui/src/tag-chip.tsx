@@ -3,23 +3,24 @@ import { TriangleAlert, X } from "lucide-react"
 import type { Color, TagView } from "@open-planner/api-client"
 import { cn, Tag, Tooltip } from "@open-planner/ui"
 
-// A chip fills with its colour, so its ink is whatever reads on that fill rather than a theme
-// colour. Six of the palette are bright enough in light mode to need dark ink; in dark mode every
-// rung is a light one, where only dark ink reads. Tailwind emits only the class names it can read
-// literally in the source, so each colour spells out its own pair.
-const paletteFill: Record<Color, string> = {
-  slate: "bg-tag-slate text-white dark:text-black",
-  red: "bg-tag-red text-white dark:text-black",
-  orange: "bg-tag-orange text-black",
-  amber: "bg-tag-amber text-black",
-  yellow: "bg-tag-yellow text-black",
-  green: "bg-tag-green text-black",
-  teal: "bg-tag-teal text-black",
-  cyan: "bg-tag-cyan text-black",
-  blue: "bg-tag-blue text-white dark:text-black",
-  indigo: "bg-tag-indigo text-white dark:text-black",
-  violet: "bg-tag-violet text-white dark:text-black",
-  pink: "bg-tag-pink text-white dark:text-black",
+// A chip wears its colour as a wash behind the name rather than as a fill: at full strength the
+// twelve read as blocks of shouting on a light page. The ink stays the palette rung, which was tuned
+// to read on the page background — a 15% wash barely moves that, so both themes keep one recipe.
+// Tailwind emits only the class names it can read literally in the source, so each colour spells out
+// its own trio.
+const paletteChip: Record<Color, string> = {
+  slate: "bg-tag-slate/15 text-tag-slate border-tag-slate/30",
+  red: "bg-tag-red/15 text-tag-red border-tag-red/30",
+  orange: "bg-tag-orange/15 text-tag-orange border-tag-orange/30",
+  amber: "bg-tag-amber/15 text-tag-amber border-tag-amber/30",
+  yellow: "bg-tag-yellow/15 text-tag-yellow border-tag-yellow/30",
+  green: "bg-tag-green/15 text-tag-green border-tag-green/30",
+  teal: "bg-tag-teal/15 text-tag-teal border-tag-teal/30",
+  cyan: "bg-tag-cyan/15 text-tag-cyan border-tag-cyan/30",
+  blue: "bg-tag-blue/15 text-tag-blue border-tag-blue/30",
+  indigo: "bg-tag-indigo/15 text-tag-indigo border-tag-indigo/30",
+  violet: "bg-tag-violet/15 text-tag-violet border-tag-violet/30",
+  pink: "bg-tag-pink/15 text-tag-pink border-tag-pink/30",
 }
 
 // Chips are the tallest thing on a task row, so they decide its height — and a list row owes its
@@ -53,10 +54,7 @@ export function TagChip({
 }) {
   const label = tag?.display ?? name
   const chip = (
-    <Tag
-      className={cn(tag === undefined ? DANGLING : `${paletteFill[tag.color]} border-transparent`, WHOLE_PIXELS)}
-      dashed={tag === undefined}
-    >
+    <Tag className={cn(tag === undefined ? DANGLING : paletteChip[tag.color], WHOLE_PIXELS)} dashed={tag === undefined}>
       {tag === undefined && <TriangleAlert aria-hidden className="size-3 shrink-0" />}
       <span>{label}</span>
       {onRemove !== undefined && (

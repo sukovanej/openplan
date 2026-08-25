@@ -25,15 +25,16 @@ const hover = (container: HTMLElement) => {
 }
 
 describe("TagChip", () => {
-  it("shows the registry's display name, filled with the registry's colour", () => {
+  it("shows the registry's display name, washed with the registry's colour", () => {
     const tag = chip(render(<TagChip name="backend" tag={view()} />))
     expect(tag.textContent).toBe("Backend")
-    expect(tag.className).toContain("bg-tag-blue")
-    expect(tag.className).toContain("border-transparent")
+    expect(tag.className).toContain("bg-tag-blue/15")
+    expect(tag.className).toContain("text-tag-blue")
+    expect(tag.className).toContain("border-tag-blue/30")
   })
 
-  // The chip fills with its rung and inks whatever reads on it, and Tailwind emits only the class
-  // names it can read literally — so every colour owes the map a fill and an ink of its own.
+  // The chip spends one palette rung on a wash, the ink, and the border, and Tailwind emits only the
+  // class names it can read literally — so every colour owes the map a trio of its own.
   it("carries classes of its own for every colour in the palette", () => {
     const palette: ReadonlyArray<Color> = [
       "slate",
@@ -51,9 +52,9 @@ describe("TagChip", () => {
     ]
     for (const color of palette) {
       const tag = chip(render(<TagChip name="x" tag={view({ color })} />))
-      expect(tag.className).toContain(`bg-tag-${color}`)
-      // Ink is black wherever the fill is bright, and never the page's own text colour.
-      expect(tag.className).toMatch(/text-(white|black)/)
+      expect(tag.className).toContain(`bg-tag-${color}/15`)
+      expect(tag.className).toContain(`text-tag-${color}`)
+      expect(tag.className).toContain(`border-tag-${color}/30`)
     }
   })
 
