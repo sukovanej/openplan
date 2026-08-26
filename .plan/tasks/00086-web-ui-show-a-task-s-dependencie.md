@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-08-25T12:47:10Z
 ---
 # Web UI: show a task's dependencies and dependents on the detail page
