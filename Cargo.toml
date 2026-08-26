@@ -22,6 +22,7 @@ op-watch = { path = "crates/op-watch" }
 op-index = { path = "crates/op-index" }
 op-presence = { path = "crates/op-presence" }
 op-server = { path = "crates/op-server" }
+op-skills = { path = "crates/op-skills" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

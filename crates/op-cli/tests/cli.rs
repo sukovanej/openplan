@@ -17,6 +17,46 @@ fn openplan() -> Command {
     Command::new(env!("CARGO_BIN_EXE_openplan"))
 }
 
+#[test]
+fn setup_skills_installs_both_agents_by_default() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = openplan()
+        .arg("--root")
+        .arg(root.path())
+        .arg("setup-skills")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(
+        root.path()
+            .join(".claude/skills/task-management/SKILL.md")
+            .is_file()
+    );
+    assert!(
+        root.path()
+            .join(".agents/skills/task-management/SKILL.md")
+            .is_file()
+    );
+}
+
+#[test]
+fn setup_skills_can_target_one_agent() {
+    let root = tempfile::tempdir().unwrap();
+
+    let output = openplan()
+        .arg("--root")
+        .arg(root.path())
+        .args(["setup-skills", "--agent=codex"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(root.path().join(".agents/skills").is_dir());
+    assert!(!root.path().join(".claude").exists());
+}
+
 fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
