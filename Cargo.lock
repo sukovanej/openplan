@@ -2156,6 +2156,7 @@ dependencies = [
  "op-lint",
  "op-md",
  "op-server",
+ "op-skills",
  "op-store",
  "op-task",
  "op-watch",
@@ -2260,6 +2261,14 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
+]
+
+[[package]]
+name = "op-skills"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
 ]
 
 [[package]]

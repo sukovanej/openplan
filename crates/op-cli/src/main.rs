@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context as _, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use op_api::{
     BranchMark, ChangeKind, Comment, CreateComment, CreateTask, Field, FieldError, FieldUpdate,
     MatrixCell, Metadata, SearchHit, TaskListItem, TaskPatch, TaskTree, list_item_cmp,
@@ -46,6 +46,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Install or update the OpenPlan agent skills in this repository
+    SetupSkills {
+        /// Install skills for one agent; omit to install for all agents
+        #[arg(long, value_enum)]
+        agent: Option<Agent>,
+    },
     /// Create a task and print its new id
     Create {
         title: String,
@@ -195,6 +201,12 @@ enum Command {
     },
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum Agent {
+    Claude,
+    Codex,
+}
+
 #[derive(Subcommand)]
 enum TagCommand {
     /// Register a tag and print the name it normalizes to
@@ -289,6 +301,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
     // Every command works in the current directory unless told otherwise.
     let root = cli.root.as_deref().unwrap_or_else(|| Path::new("."));
     match cli.command {
+        Command::SetupSkills { agent } => {
+            let agents = match agent {
+                Some(Agent::Claude) => vec![op_skills::Agent::Claude],
+                Some(Agent::Codex) => vec![op_skills::Agent::Codex],
+                None => vec![op_skills::Agent::Claude, op_skills::Agent::Codex],
+            };
+            op_skills::setup(root, &agents)?;
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Create {
             title,
             parent,
