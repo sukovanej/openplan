@@ -629,6 +629,8 @@ pub struct CreateComment {
 // list in memory; `headline` names the branch the shown version resolves to. `parent_title`,
 // `children`, and `refs` carry the immediate hierarchy so the page renders from this one read.
 // `write_target` names where an edit of the shown version lands, and whether it can land there.
+// `depends_on` is what this task waits for, in the order the file lists it; `blocks` is every task
+// that waits for this one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskDetail {
     pub project: String,
@@ -649,6 +651,10 @@ pub struct TaskDetail {
     pub children: Vec<TaskChild>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<TaskRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<TaskRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocks: Vec<TaskRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>,
 }

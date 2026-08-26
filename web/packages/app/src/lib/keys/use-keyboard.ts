@@ -6,7 +6,7 @@ import { boardPath, taskRouteOf } from "@open-planner/task-ui"
 import { copyTaskId } from "../clipboard"
 import { copyTargetRow, hoveredRow } from "../copy-target"
 import { detailActions, escapeOutcome } from "../detail-actions"
-import { focusedRow, rowCursor, subtaskCursor } from "../row-cursor"
+import { detailCursor, focusedRow, rowCursor } from "../row-cursor"
 import { bindings } from "./bindings"
 import { Dispatcher } from "./dispatcher"
 import { historyIndex } from "./history"
@@ -45,7 +45,7 @@ export function useKeyboard(): Keyboard {
   const entryIndex = useRef(historyIndex())
 
   useEffect(() => {
-    const activeCursor = () => (live.current.scope === "detail" ? subtaskCursor : rowCursor)
+    const activeCursor = () => (live.current.scope === "detail" ? detailCursor : rowCursor)
     const context = (): RunContext => ({
       navigate: (to) => live.current.navigate(to),
       overlay: (name) => ({
@@ -64,7 +64,7 @@ export function useKeyboard(): Keyboard {
         // cursor hands the selection back, so it resumes from the hovered row and drops the hover.
         moveBy: (delta) => {
           const cursor = activeCursor()
-          const hovered = hoveredRow.among(cursor.getSnapshot().rows)
+          const hovered = hoveredRow.place(cursor.getSnapshot().rows)
           hoveredRow.clear()
           cursor.moveBy(delta, hovered)
         },
@@ -92,8 +92,8 @@ export function useKeyboard(): Keyboard {
         goToParent: () => detailActions.emit("go-parent"),
         escape: () => {
           const canGoBack = historyIndex() > entryIndex.current
-          const outcome = escapeOutcome(subtaskCursor.getSnapshot().index >= 0, canGoBack)
-          if (outcome === "clear-selection") subtaskCursor.clear()
+          const outcome = escapeOutcome(detailCursor.getSnapshot().index >= 0, canGoBack)
+          if (outcome === "clear-selection") detailCursor.clear()
           else if (outcome === "back") live.current.navigate(-1)
           else {
             // Nothing to go back to: leave for the board of the project the task belongs to, which

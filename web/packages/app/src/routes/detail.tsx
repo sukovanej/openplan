@@ -2,7 +2,7 @@ import { Pencil, Plus, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
-import type { Comment, TaskChild, TaskDetail, TaskListItem } from "@open-planner/api-client"
+import type { Comment, TaskDetail, TaskListItem } from "@open-planner/api-client"
 import {
   boardPath,
   BranchSwitcher,
@@ -16,6 +16,7 @@ import {
   TaskIdentity,
   taskPath,
   TaskTimes,
+  UnresolvedMark,
 } from "@open-planner/task-ui"
 import {
   Button,
@@ -37,14 +38,14 @@ import { TagsField } from "../components/tags-field"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
+import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { errorText } from "../lib/format"
 import { useAbbreviation } from "../lib/projects"
-import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
+import { detailCursor, useDetailCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
 import { taskMatches } from "../lib/task-search"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
-const NO_CHILDREN: ReadonlyArray<TaskChild> = []
 const NO_COMMENTS: ReadonlyArray<Comment> = []
 
 // Where an edit of the shown version lands, and what to say when it can land nowhere. The daemon
@@ -128,6 +129,10 @@ function TaskDetailView({
 }) {
   const abbreviation = useAbbreviation(project)
   const write = writeHere(detail ?? task)
+  // One cursor walks the three lists in document order, so `j`, `k` and Enter reach every row on the
+  // page. Each section renders a slice of it and offsets its own rows into it.
+  const rows = useMemo(() => detailRows(project, detail), [project, detail])
+  const { index } = useDetailCursor(taskPath(project, task.id), rows.paths)
   return (
     <Panel>
       <PanelHeader className="gap-2">
@@ -182,10 +187,13 @@ function TaskDetailView({
             data-keys-ignore
           />
         )}
+        <RefSection title="Depends on" rows={rows.dependsOn} cursor={index} />
+        <RefSection title="Blocks" rows={rows.blocks} cursor={index} />
         <SubtasksSection
           project={project}
           id={task.id}
-          items={detail?.children ?? NO_CHILDREN}
+          rows={rows.subtasks}
+          cursor={index}
           ready={detail !== null}
           write={write}
         />
@@ -377,18 +385,77 @@ function ParentPicker({
   )
 }
 
+// One list's rows, each carrying its own place in the page-wide cursor, so the sections agree on
+// nothing but the order `detailRows` numbered them in.
+function RowList({ rows, cursor }: { rows: ReadonlyArray<DetailRow>; cursor: number }) {
+  const activeRow = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    activeRow.current?.scrollIntoView({ block: "nearest" })
+  }, [cursor])
+
+  return (
+    <ul
+      className="space-y-0.5"
+      onMouseMove={() => {
+        if (cursor !== -1) detailCursor.clear()
+      }}
+      onMouseLeave={hoveredRow.clear}
+    >
+      {rows.map((row) => (
+        // A file may name the same dependency twice, so a row's place is the only unique key.
+        <li
+          key={row.at}
+          ref={row.at === cursor ? activeRow : undefined}
+          aria-selected={row.at === cursor}
+          onMouseMove={() => hoveredRow.enter(row.path, row.at)}
+          onMouseLeave={() => hoveredRow.leave(row.path, row.at)}
+        >
+          <Row
+            as={Link}
+            variant="option"
+            active={row.at === cursor}
+            hoverable
+            to={row.path}
+            onClick={() => detailCursor.focus(row.at)}
+          >
+            <TaskIdentity
+              status={row.status}
+              mark={row.unresolved ? <UnresolvedMark /> : undefined}
+              id={row.id}
+              title={row.title}
+            />
+          </Row>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// The two dependency directions. Neither carries an action, so an empty one has nothing to say and
+// stays hidden.
+function RefSection({ title, rows, cursor }: { title: string; rows: ReadonlyArray<DetailRow>; cursor: number }) {
+  if (rows.length === 0) return null
+  return (
+    <Section title={title} count={rows.length}>
+      <RowList rows={rows} cursor={cursor} />
+    </Section>
+  )
+}
+
 // The direct children below the task body, plus an inline add box that either pulls an existing task
 // in as a child or creates a fresh one.
 function SubtasksSection({
   project,
   id,
-  items,
+  rows,
+  cursor,
   ready,
   write,
 }: {
   project: string
   id: string
-  items: ReadonlyArray<TaskChild>
+  rows: ReadonlyArray<DetailRow>
+  cursor: number
   ready: boolean
   write: WriteHere
 }) {
@@ -400,17 +467,10 @@ function SubtasksSection({
     if (write.blocked !== undefined) setAdding(false)
   }, [write.blocked])
 
-  const childPaths = useMemo(() => items.map((child) => taskPath(project, child.id)), [project, items])
-  const { index } = useSubtaskCursor(taskPath(project, id), childPaths)
-  const activeRow = useRef<HTMLLIElement>(null)
-  useEffect(() => {
-    activeRow.current?.scrollIntoView({ block: "nearest" })
-  }, [index])
-
   return (
     <Section
       title="Subtasks"
-      count={items.length}
+      count={rows.length}
       action={
         write.blocked !== undefined ? (
           <Blocked reason={write.blocked} />
@@ -427,39 +487,12 @@ function SubtasksSection({
           <SubtaskPicker project={project} id={id} branch={write.branch} onClose={() => setAdding(false)} />
         </div>
       )}
-      {items.length === 0 ? (
+      {rows.length === 0 ? (
         ready ? (
           <p className="text-muted-foreground text-sm">No subtasks yet.</p>
         ) : null
       ) : (
-        <ul
-          className="space-y-0.5"
-          onMouseMove={() => {
-            if (index !== -1) subtaskCursor.clear()
-          }}
-          onMouseLeave={hoveredRow.clear}
-        >
-          {items.map((child, i) => (
-            <li
-              key={child.id}
-              ref={i === index ? activeRow : undefined}
-              aria-selected={i === index}
-              onMouseMove={() => hoveredRow.enter(childPaths[i])}
-              onMouseLeave={() => hoveredRow.leave(childPaths[i])}
-            >
-              <Row
-                as={Link}
-                variant="option"
-                active={i === index}
-                hoverable
-                to={childPaths[i]}
-                onClick={() => subtaskCursor.focus(i)}
-              >
-                <TaskIdentity status={child.status} id={child.id} title={child.title} />
-              </Row>
-            </li>
-          ))}
-        </ul>
+        <RowList rows={rows} cursor={cursor} />
       )}
     </Section>
   )

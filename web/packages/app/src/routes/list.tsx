@@ -160,6 +160,7 @@ function TaskGrid({ board, title, action }: { board: Board; title: string; actio
                     ref={i === index ? activeRow : undefined}
                     row={row}
                     path={paths[i]}
+                    at={i}
                     sizers={sizers}
                     guides={guides[groupIndex][j]}
                     active={i === index}
@@ -214,6 +215,7 @@ function TaskRow({
   ref,
   row,
   path,
+  at,
   sizers,
   guides,
   active,
@@ -224,6 +226,7 @@ function TaskRow({
   ref?: Ref<HTMLDivElement>
   row: BoardRow
   path: string
+  at: number
   sizers: ReadonlyArray<string>
   guides: RowGuides
   active: boolean
@@ -263,15 +266,15 @@ function TaskRow({
       // not count while the keyboard drives, or walking with `j` would hand rows it scrolls past
       // back to the pointer.
       onMouseEnter={() => {
-        if (hoverable) hoveredRow.enter(path)
+        if (hoverable) hoveredRow.enter(path, at)
       }}
       // Moving the pointer is what hands the current row back to it — and only over a row, so a
       // nudge across a group header or the scrollbar leaves the keyboard's row where it was.
       onMouseMove={() => {
-        hoveredRow.enter(path)
+        hoveredRow.enter(path, at)
         rowCursor.clear()
       }}
-      onMouseLeave={() => hoveredRow.leave(path)}
+      onMouseLeave={() => hoveredRow.leave(path, at)}
       // Wrapping lets the branches drop to a line of their own once the title has no room left
       // beside them, rather than the two columns overrunning each other.
       className="flex flex-wrap cursor-pointer items-start gap-y-2 py-3"

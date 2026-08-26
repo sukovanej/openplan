@@ -4,6 +4,7 @@ export { BranchTag } from "./branch-tag"
 export { CommentThread } from "./comment-thread"
 export {
   createdOf,
+  dependenciesOf,
   fieldFailure,
   fieldMessage,
   type FieldProblem,
@@ -25,10 +26,11 @@ export {
   tagsPath,
   TASK_ROUTE,
   taskPath,
+  taskReference,
   type TaskRoute,
   taskRouteOf,
 } from "./task-path"
-export { TaskIdentity } from "./task-identity"
+export { TaskIdentity, UnresolvedMark } from "./task-identity"
 export { TaskRefChip } from "./task-ref-chip"
 export { TaskTags } from "./task-tags"
 export { TaskTimes } from "./task-times"

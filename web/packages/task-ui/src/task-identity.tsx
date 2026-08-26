@@ -1,9 +1,15 @@
+import { CircleDashed } from "lucide-react"
 import type { ReactNode } from "react"
 
 import type { Field_Status } from "@open-planner/api-client"
 import { cn, FuzzyText } from "@open-planner/ui"
 
 import { StatusChip } from "./status"
+
+// A reference the store cannot resolve has no status to wear, so it leads with a mark of its own.
+export function UnresolvedMark() {
+  return <CircleDashed className="text-muted-foreground/60 size-4 shrink-0" aria-hidden />
+}
 
 // The same status mark, key and title everywhere a task names itself; only the two rungs — how big
 // the mark is and how small the key reads — differ between the surfaces that show it.

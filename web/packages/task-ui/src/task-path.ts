@@ -25,6 +25,14 @@ export function taskPath(project: string, id: string, section?: string): string 
   return section === undefined ? path : `${path}#${encodeURIComponent(section)}`
 }
 
+// A reference may aim at a section (`OPP-42#Design`). The task it names is the part before the `#`.
+export function taskReference(reference: string): { id: string; section: string | undefined } {
+  const hash = reference.indexOf("#")
+  return hash === -1
+    ? { id: reference, section: undefined }
+    : { id: reference.slice(0, hash), section: reference.slice(hash + 1) || undefined }
+}
+
 export function taskRouteOf(path: string): TaskRoute | undefined {
   const [, project, segment, rest] = path.split("/")
   if (project === undefined || project === "" || segment !== TASK_SEGMENT || rest === undefined) return undefined
