@@ -92,9 +92,13 @@ export const listTasks = (
     }),
   )
 
-// The tag registry of a project's served worktree, which every tag name on a task resolves against.
-export const listTags = (project: string): Effect.Effect<ReadonlyArray<Api.TagView>, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.listTags(project, undefined)).pipe(
+// The tag registry a tag name resolves against. `branch` names the worktree that holds it — the same
+// one a tags write is validated against — and omitting it reads the served worktree's.
+export const listTags = (
+  project: string,
+  branch?: string,
+): Effect.Effect<ReadonlyArray<Api.TagView>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.listTags(project, { params: { branch } })).pipe(
     Effect.catchTags({
       ListTags400: refusal,
       ListTags404: refusal,
@@ -102,6 +106,68 @@ export const listTags = (project: string): Effect.Effect<ReadonlyArray<Api.TagVi
       ListTags422: refusal,
       ListTags500: refusal,
       ListTags503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// A tag is registered in one worktree's `.plan/tags`, so `branch` names the worktree the write lands
+// in — the same one the tasks that reference it are written to.
+export const createTag = (
+  project: string,
+  input: Api.CreateTag,
+  branch?: string,
+): Effect.Effect<Api.TagView, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.createTag(project, { payload: input, params: { branch } })).pipe(
+    Effect.catchTags({
+      CreateTag400: refusal,
+      CreateTag404: refusal,
+      CreateTag409: refusal,
+      CreateTag422: refusal,
+      CreateTag500: refusal,
+      CreateTag503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// `name` renames the tag, which rewrites the `tags:` of every task on the branch that holds the old
+// name; `color` and `description` change the tag file alone.
+export const patchTag = (
+  project: string,
+  name: string,
+  patch: Api.TagPatch,
+  branch?: string,
+): Effect.Effect<Api.TagView, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) =>
+    client.patchTag(project, encodeURIComponent(name), { payload: patch, params: { branch } }),
+  ).pipe(
+    Effect.catchTags({
+      PatchTag400: refusal,
+      PatchTag404: refusal,
+      PatchTag409: refusal,
+      PatchTag422: refusal,
+      PatchTag500: refusal,
+      PatchTag503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// Without `force` the daemon refuses while tasks on this branch reference the tag, and says how many
+// do. With it the tag goes and those references are left dangling, so it is never sent unasked.
+export const deleteTag = (
+  project: string,
+  name: string,
+  force: boolean,
+  branch?: string,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) =>
+    client.deleteTag(project, encodeURIComponent(name), { params: { force, branch } }),
+  ).pipe(
+    Effect.catchTags({
+      DeleteTag400: refusal,
+      DeleteTag404: refusal,
+      DeleteTag409: refusal,
+      DeleteTag500: refusal,
+      DeleteTag503: refusal,
       HttpClientError: unexpected,
     }),
   )

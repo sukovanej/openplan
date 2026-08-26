@@ -15,7 +15,6 @@ import {
   TaskBody,
   TaskIdentity,
   taskPath,
-  TaskTags,
   TaskTimes,
 } from "@open-planner/task-ui"
 import {
@@ -30,10 +29,11 @@ import {
   PanelTitle,
   Row,
   Section,
-  Tooltip,
 } from "@open-planner/ui"
 
+import { Blocked } from "../components/blocked"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
+import { TagsField } from "../components/tags-field"
 import { createTask, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
@@ -41,7 +41,6 @@ import { errorText } from "../lib/format"
 import { useAbbreviation } from "../lib/projects"
 import { subtaskCursor, useSubtaskCursor } from "../lib/row-cursor"
 import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
-import { useTags } from "../lib/tags"
 import { taskMatches } from "../lib/task-search"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
@@ -65,17 +64,6 @@ function writeHere(task: TaskDetail | TaskListItem): WriteHere {
     branch: target.branch,
     blocked: target.writable ? undefined : `No writable worktree holds ${target.branch}, so this task cannot change.`,
   }
-}
-
-// Focusable, so the keyboard reaches the reason too: it replaces a control that had focus of its own.
-function Blocked({ reason }: { reason: string }) {
-  return (
-    <Tooltip content={reason}>
-      <span tabIndex={0} className="text-muted-foreground/70 text-xs italic">
-        read-only
-      </span>
-    </Tooltip>
-  )
 }
 
 export function DetailRoute() {
@@ -139,7 +127,6 @@ function TaskDetailView({
   onSelect: (branch: string | undefined) => void
 }) {
   const abbreviation = useAbbreviation(project)
-  const tags = useTags(project)
   const write = writeHere(detail ?? task)
   return (
     <Panel>
@@ -159,7 +146,20 @@ function TaskDetailView({
         </div>
       </PanelHeader>
       <PanelBody className="p-6">
-        <h1 className="mb-1.5 text-2xl font-semibold tracking-tight">{task.title}</h1>
+        {/* The tags sit level with the first line of the title: the row aligns to the top, and the
+            chips centre inside a box as tall as that line. They wrap inside half the row rather than
+            holding their width — a task carrying a handful of them squeezed the title to nothing. */}
+        <div className="mb-1.5 flex items-start justify-between gap-4">
+          <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
+          <TagsField
+            project={project}
+            id={task.id}
+            metadata={task.metadata}
+            branch={write.branch}
+            blocked={write.blocked}
+            className="min-h-8 max-w-[50%] justify-end"
+          />
+        </div>
         {/* `created` arrives with the full detail while `updated` is already on the seeded list item,
             so the line renders as soon as the header does and fills in rather than shifting the body
             twice. */}
@@ -170,7 +170,6 @@ function TaskDetailView({
             problems={detail === null ? [] : problems(detail.metadata)}
           />
         </MetaLine>
-        <TaskTags metadata={task.metadata} tags={tags} className="mb-4" />
         <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
         {body === undefined ? (
           <BodySkeleton />

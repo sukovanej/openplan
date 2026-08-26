@@ -25,15 +25,16 @@ const hover = (container: HTMLElement) => {
 }
 
 describe("TagChip", () => {
-  it("shows the registry's display name in the registry's colour", () => {
+  it("shows the registry's display name, washed with the registry's colour", () => {
     const tag = chip(render(<TagChip name="backend" tag={view()} />))
     expect(tag.textContent).toBe("Backend")
-    expect(tag.className).toContain("border-tag-blue")
+    expect(tag.className).toContain("bg-tag-blue/15")
     expect(tag.className).toContain("text-tag-blue")
+    expect(tag.className).toContain("border-tag-blue/30")
   })
 
-  // The chip spends one palette rung on both its border and its text, and Tailwind emits only the
-  // class names it can read literally — so every colour owes the map a pair of its own.
+  // The chip spends one palette rung on a wash, the ink, and the border, and Tailwind emits only the
+  // class names it can read literally — so every colour owes the map a trio of its own.
   it("carries classes of its own for every colour in the palette", () => {
     const palette: ReadonlyArray<Color> = [
       "slate",
@@ -51,8 +52,9 @@ describe("TagChip", () => {
     ]
     for (const color of palette) {
       const tag = chip(render(<TagChip name="x" tag={view({ color })} />))
-      expect(tag.className).toContain(`border-tag-${color}`)
+      expect(tag.className).toContain(`bg-tag-${color}/15`)
       expect(tag.className).toContain(`text-tag-${color}`)
+      expect(tag.className).toContain(`border-tag-${color}/30`)
     }
   })
 
@@ -65,6 +67,28 @@ describe("TagChip", () => {
   it("says nothing more about a tag its name already spells out", () => {
     vi.useFakeTimers()
     expect(hover(render(<TagChip name="backend" tag={view()} />))).toBeNull()
+  })
+
+  describe("on a task whose tags can be edited", () => {
+    it("offers to take the tag off, named by what the chip shows", () => {
+      let removed = 0
+      const container = render(<TagChip name="backend" tag={view()} onRemove={() => removed++} />)
+      const remove = container.querySelector("button")!
+      expect(remove.getAttribute("aria-label")).toBe("Remove Backend")
+      act(() => remove.click())
+      expect(removed).toBe(1)
+    })
+
+    // Dropping the reference is the only thing a dangling chip can do, and the tooltip still says
+    // what an edit costs.
+    it("names a dangling reference by the raw name it carries", () => {
+      const container = render(<TagChip name="infra" tag={undefined} onRemove={() => {}} />)
+      expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("Remove infra")
+    })
+
+    it("stays inert without a remover", () => {
+      expect(render(<TagChip name="backend" tag={view()} />).querySelector("button")).toBeNull()
+    })
   })
 
   describe("a name the registry does not hold", () => {
@@ -80,8 +104,18 @@ describe("TagChip", () => {
     it("says where the tag went, and what an edit does to the reference", () => {
       vi.useFakeTimers()
       const text = hover(render(<TagChip name="infra" tag={undefined} />))?.textContent ?? ""
-      expect(text).toContain("infra is not a tag on this branch")
-      expect(text).toContain("drops it")
+      expect(text).toContain("infra is not a tag in this project's registry")
+      expect(text).toContain("drops the name")
+    })
+
+    // The version on screen often comes from a different branch than the one an edit writes to, so a
+    // chip that said "this branch" claimed something about the wrong one.
+    it('names the branch it was resolved against, rather than saying "this branch"', () => {
+      vi.useFakeTimers()
+      const text = hover(render(<TagChip name="ui" tag={undefined} branch="main" />))?.textContent ?? ""
+      expect(text).toContain("ui is not a tag on main")
+      expect(text).toContain("the branch an edit to this task writes to")
+      expect(text).not.toContain("this branch —")
     })
   })
 })

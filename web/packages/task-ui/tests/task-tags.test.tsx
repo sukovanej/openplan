@@ -1,3 +1,4 @@
+import { act } from "react"
 import { describe, expect, it } from "vitest"
 
 import type { Field_Vec_String, Metadata, TagView } from "@open-planner/api-client"
@@ -43,5 +44,23 @@ describe("TaskTags", () => {
     expect(
       names(render(<TaskTags metadata={metadata({ kind: "invalid", message: "not a list" })} tags={registry()} />)),
     ).toEqual([])
+  })
+
+  it("names each chip's remover after the chip", () => {
+    const removed: Array<string> = []
+    const container = render(
+      <TaskTags metadata={metadata(["backend", "infra"])} tags={registry(backend)} onRemove={(n) => removed.push(n)} />,
+    )
+    const buttons = [...container.querySelectorAll("button")]
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Remove Backend", "Remove infra"])
+    act(() => buttons[1].click())
+    expect(removed).toEqual(["infra"])
+  })
+
+  // A task carrying no tags still needs somewhere to put the control that adds the first one.
+  it("keeps the row on screen for a trailing control, with or without chips", () => {
+    const add = <button type="button">Add tag</button>
+    expect(render(<TaskTags metadata={metadata([])} tags={registry()} trailing={add} />).textContent).toBe("Add tag")
+    expect(render(<TaskTags metadata={metadata([])} tags={undefined} trailing={add} />).textContent).toBe("Add tag")
   })
 })
