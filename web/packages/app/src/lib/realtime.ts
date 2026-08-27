@@ -2,7 +2,7 @@ import { Schema } from "effect"
 
 import { connectionStore } from "./connection"
 import { applyChange, ChangeEvent } from "./events"
-import { storeInvalidator } from "./store"
+import { queryInvalidator } from "./query-client"
 
 const decode = Schema.decodeUnknownSync(ChangeEvent)
 
@@ -25,8 +25,8 @@ function connect(): void {
     connectionStore.set("live")
     // Recover anything missed while disconnected: the projects that spell every id, then everything
     // currently on screen.
-    storeInvalidator.refreshProjects()
-    storeInvalidator.refreshVisible()
+    queryInvalidator.refreshProjects()
+    queryInvalidator.refreshVisible()
   }
 
   source.onmessage = (message: MessageEvent<string>) => {
@@ -41,7 +41,7 @@ function connect(): void {
       connectionStore.set("stopped")
       return
     }
-    applyChange(storeInvalidator, event)
+    applyChange(queryInvalidator, event)
   }
 
   // EventSource would silently auto-reconnect on its own schedule; close it so status and backoff

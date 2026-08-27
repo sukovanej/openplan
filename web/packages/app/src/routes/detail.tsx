@@ -1,8 +1,9 @@
+import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
-import type { Comment, TaskDetail, TaskListItem } from "@open-planner/api-client"
+import type { Board, Comment, TaskDetail, TaskListItem } from "@open-planner/api-client"
 import {
   boardPath,
   BranchSwitcher,
@@ -35,18 +36,33 @@ import {
 import { Blocked } from "../components/blocked"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { TagsField } from "../components/tags-field"
-import { createTask, patchTask, TaskNotFound } from "../lib/api"
+import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { errorText } from "../lib/format"
 import { useAbbreviation } from "../lib/projects"
+import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
-import { listItem, runMutation, taskQuery, tasksQuery, useQuery } from "../lib/store"
+import { runtime } from "../lib/runtime"
 import { taskMatches } from "../lib/task-search"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
 const NO_COMMENTS: ReadonlyArray<Comment> = []
+
+function boardTasks(board: Board): ReadonlyArray<TaskListItem> {
+  return board.groups.flatMap((group) => group.rows.map((row) => row.task))
+}
+
+function listItem(client: QueryClient, project: string, id: string): TaskListItem | undefined {
+  for (const key of [mergedBoardKey, boardKey(project)]) {
+    const board = client.getQueryData<Board>(key)
+    const found =
+      board === undefined ? undefined : boardTasks(board).find((task) => task.project === project && task.id === id)
+    if (found !== undefined) return found
+  }
+  return undefined
+}
 
 // Where an edit of the shown version lands, and what to say when it can land nowhere. The daemon
 // resolves the branch and reports whether a live worktree can take the write, so the page names that
@@ -69,6 +85,11 @@ function writeHere(task: TaskDetail | TaskListItem): WriteHere {
 
 export function DetailRoute() {
   const { project = "", id = "" } = useParams()
+  return <TaskRoute key={`${project}:${id}`} project={project} id={id} />
+}
+
+function TaskRoute({ project, id }: { project: string; id: string }) {
+  const client = useQueryClient()
   // The selected branch lives in the URL (`?branch=`), so it is shareable and resets to the
   // headline on navigation without a render lag; absent means the headline (current-worktree)
   // version.
@@ -77,28 +98,23 @@ export function DetailRoute() {
   const onSelect = (next: string | undefined) =>
     setParams(next === undefined ? {} : { branch: next }, { replace: true })
 
-  const task = useQuery(useMemo(() => taskQuery(project, id, branch), [project, id, branch]))
+  const task = useQuery({
+    queryKey: taskKey(project, id, branch),
+    queryFn: () => runtime.runPromise(getTask(project, id, branch)),
+    placeholderData: keepPreviousData,
+  })
 
-  // Switching branch mints a fresh query that starts in `loading`. Keep the last loaded version on
-  // screen while it resolves — a branch click updates the card in place instead of flashing the
-  // skeleton. Only a first load, or a different task, falls back to the skeleton. The project is
-  // half of what names a task, and this route does not remount when only the project changes, so
-  // holding the id alone would show one project's task under another project's URL.
-  const lastShown = useRef<{ project: string; id: string; value: TaskDetail } | null>(null)
-  if (task._tag === "success") lastShown.current = { project, id, value: task.value }
-
-  if (task._tag === "failure") {
+  if (task.isError) {
     return task.error instanceof TaskNotFound ? (
       <NotFound project={project} id={task.error.id} />
     ) : (
       <EmptyState title="Could not load task" detail={errorText(task.error)} />
     )
   }
-  const held = lastShown.current
-  const shown = task._tag === "success" ? task.value : held?.project === project && held.id === id ? held.value : null
+  const shown = task.data ?? null
   // The list cache already holds the header fields (title, status, branches); seed from it so the
   // header renders instantly and only the body and hierarchy stream in.
-  const seed = shown ?? listItem(project, id)
+  const seed = shown ?? listItem(client, project, id)
   if (seed === undefined) return <DetailSkeleton />
   return (
     <TaskDetailView
@@ -129,6 +145,7 @@ function TaskDetailView({
 }) {
   const abbreviation = useAbbreviation(project)
   const write = writeHere(detail ?? task)
+  const writeKey = `${write.branch ?? ""}:${write.blocked ?? ""}`
   // One cursor walks the three lists in document order, so `j`, `k` and Enter reach every row on the
   // page. Each section renders a slice of it and offsets its own rows into it.
   const rows = useMemo(() => detailRows(project, detail), [project, detail])
@@ -141,6 +158,7 @@ function TaskDetailView({
         </PanelTitle>
         <div className="ml-auto min-w-0">
           <HeaderParent
+            key={writeKey}
             project={project}
             id={task.id}
             parent={detail === null ? undefined : parentOf(detail.metadata)}
@@ -157,6 +175,7 @@ function TaskDetailView({
         <div className="mb-1.5 flex items-start justify-between gap-4">
           <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
           <TagsField
+            key={writeKey}
             project={project}
             id={task.id}
             metadata={task.metadata}
@@ -190,6 +209,7 @@ function TaskDetailView({
         <RefSection title="Depends on" rows={rows.dependsOn} cursor={index} />
         <RefSection title="Blocks" rows={rows.blocks} cursor={index} />
         <SubtasksSection
+          key={writeKey}
           project={project}
           id={task.id}
           rows={rows.subtasks}
@@ -279,11 +299,6 @@ function HeaderParent({
   useDetailAction("edit-parent", () => {
     if (write.blocked === undefined) setEditing(true)
   })
-  // A refresh can take the write target away while the picker stands open — another worktree took
-  // the branch, or a merge started there. Close it rather than leave a control that cannot land.
-  useEffect(() => {
-    if (write.blocked !== undefined) setEditing(false)
-  }, [write.blocked])
   useDetailAction("go-parent", () => {
     if (parent !== undefined && parentTitle !== undefined) navigate(taskPath(project, parent))
   })
@@ -338,11 +353,13 @@ function ParentPicker({
   branch: string | undefined
   onClose: () => void
 }) {
-  const tasks = useQuery(tasksQuery(project))
-  useEffect(() => {
-    tasksQuery(project).refresh()
-  }, [project])
-  const all = tasks._tag === "success" ? tasks.value : NO_TASKS
+  const tasks = useQuery({
+    queryKey: tasksKey(project),
+    queryFn: () => runtime.runPromise(listTasks(project)),
+    refetchOnMount: "always",
+  })
+  const { mutate } = useProjectMutation(project)
+  const all = tasks.data ?? NO_TASKS
 
   const buildOptions = useCallback(
     (query: string): ReadonlyArray<ComboOption> => {
@@ -359,19 +376,19 @@ function ParentPicker({
               Top level (no parent)
             </span>
           ),
-          onSelect: () => void runMutation(project, patchTask(project, id, { parent: null }, branch)),
+          onSelect: () => mutate(patchTask(project, id, { parent: null }, branch)),
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
         options.push({
           key: task.id,
           content: <ComboTaskRow task={task} indices={indices} />,
-          onSelect: () => void runMutation(project, patchTask(project, id, { parent: task.id }, branch)),
+          onSelect: () => mutate(patchTask(project, id, { parent: task.id }, branch)),
         })
       }
       return options
     },
-    [all, project, id, branch],
+    [all, project, id, branch, mutate],
   )
 
   return (
@@ -463,9 +480,6 @@ function SubtasksSection({
   useDetailAction("add-subtask", () => {
     if (write.blocked === undefined) setAdding(true)
   })
-  useEffect(() => {
-    if (write.blocked !== undefined) setAdding(false)
-  }, [write.blocked])
 
   return (
     <Section
@@ -512,11 +526,13 @@ function SubtaskPicker({
   branch: string | undefined
   onClose: () => void
 }) {
-  const tasks = useQuery(tasksQuery(project))
-  useEffect(() => {
-    tasksQuery(project).refresh()
-  }, [project])
-  const all = tasks._tag === "success" ? tasks.value : NO_TASKS
+  const tasks = useQuery({
+    queryKey: tasksKey(project),
+    queryFn: () => runtime.runPromise(listTasks(project)),
+    refetchOnMount: "always",
+  })
+  const { mutate } = useProjectMutation(project)
+  const all = tasks.data ?? NO_TASKS
 
   const buildOptions = useCallback(
     (query: string): ReadonlyArray<ComboOption> => {
@@ -534,7 +550,7 @@ function SubtaskPicker({
               </span>
             </span>
           ),
-          onSelect: () => void runMutation(project, createTask(project, { title: query, parent: id }, branch)),
+          onSelect: () => mutate(createTask(project, { title: query, parent: id }, branch)),
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
@@ -544,12 +560,12 @@ function SubtaskPicker({
           content: <ComboTaskRow task={task} indices={indices} />,
           // The parent's branch, not the child's: a parent the child's branch does not carry is no
           // parent at all there, so the pair has to move on the branch that holds the parent.
-          onSelect: () => void runMutation(project, patchTask(project, task.id, { parent: id }, branch)),
+          onSelect: () => mutate(patchTask(project, task.id, { parent: id }, branch)),
         })
       }
       return options
     },
-    [all, project, id, branch],
+    [all, project, id, branch, mutate],
   )
 
   return (

@@ -14,6 +14,7 @@
     "@open-planner/api-client": "workspace:*",
     "@open-planner/task-ui": "workspace:*",
     "@open-planner/ui": "workspace:*",
+    "@tanstack/react-query": "catalog:",
     "effect": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
