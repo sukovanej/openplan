@@ -1,6 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { Effect } from "effect"
-import type { HttpClient } from "effect/unstable/http"
+import { useQuery } from "@tanstack/react-query"
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
@@ -23,14 +21,15 @@ import {
 import { createTag, deleteTag, listTags, patchTag, TaskRejected } from "../lib/api"
 import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
-import { tagsKey } from "../lib/query-client"
+import { tagsKey, useProjectMutation } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { runtime } from "../lib/runtime"
 
 // This page holds no task rows, and the cursor is the board's — left as it was, `j` then Enter here
 // would open a task the reader can no longer see.
 const NO_ROWS: ReadonlyArray<string> = []
-type Write = Effect.Effect<unknown, unknown, HttpClient.HttpClient>
+const focusOnMount = (element: HTMLDivElement | null) => element?.focus()
+type ProjectMutation = ReturnType<typeof useProjectMutation>
 
 export function TagsRoute() {
   const { project = "" } = useParams()
@@ -74,7 +73,7 @@ export function TagsRoute() {
             ) : (
               <ul>
                 {tags.data.map((tag, index) => (
-                  <li key={tag.name}>
+                  <li key={`${tag.name}:${tag.display}:${tag.description ?? ""}`}>
                     <TagRow project={project} tag={tag} last={index === tags.data.length - 1} />
                   </li>
                 ))}
@@ -91,10 +90,7 @@ export function TagsRoute() {
 function NewTag({ project }: { project: string }) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
-  const mutation = useMutation({
-    mutationFn: (effect: Write) => runtime.runPromise(effect),
-    meta: { project },
-  })
+  const mutation = useProjectMutation(project)
   const trimmed = name.trim()
 
   const submit = () => {
@@ -145,14 +141,7 @@ type Editing = "no" | "naming" | "deleting" | "forcing" | "recolouring"
 
 function TagRow({ project, tag, last }: { project: string; tag: TagView; last: boolean }) {
   const [editing, setEditing] = useState<Editing>("no")
-  const mutation = useMutation({
-    mutationFn: (effect: Write) => runtime.runPromise(effect),
-    meta: { project },
-  })
-  // A refetch replaces the row's tag while a form stands open over the old one; close it rather than
-  // let a save write yesterday's name back.
-  useEffect(() => setEditing("no"), [tag.display, tag.description])
-
+  const mutation = useProjectMutation(project)
   return (
     <Row variant="divided" last={last} className="flex flex-wrap items-center gap-3 px-2 py-2">
       {/* The dismiss-on-outside-click watches this wrapper, not the popover: with the button outside
@@ -171,7 +160,7 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
         }}
       />
       {editing === "naming" ? (
-        <TagForm project={project} tag={tag} onClose={() => setEditing("no")} />
+        <TagForm project={project} tag={tag} mutation={mutation} onClose={() => setEditing("no")} />
       ) : (
         <>
           <TagChip name={tag.name} tag={tag} />
@@ -184,6 +173,7 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
               <DeleteConfirm
                 project={project}
                 tag={tag}
+                mutation={mutation}
                 forcing={editing === "forcing"}
                 onRefused={() => setEditing("forcing")}
                 onCancel={() => setEditing("no")}
@@ -228,7 +218,6 @@ function Palette({
   onClose: () => void
 }) {
   const root = useRef<HTMLDivElement>(null)
-  const popover = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -238,12 +227,6 @@ function Palette({
     document.addEventListener("mousedown", onDown)
     return () => document.removeEventListener("mousedown", onDown)
   }, [open, onClose])
-
-  // Opened with the mouse, the focus is still on the button, so Escape only reaches a handler the
-  // popover itself owns once the popover has taken the focus.
-  useEffect(() => {
-    if (open) popover.current?.focus()
-  }, [open])
 
   return (
     <div
@@ -264,7 +247,7 @@ function Palette({
       </Button>
       {open && (
         <div
-          ref={popover}
+          ref={focusOnMount}
           tabIndex={-1}
           className="bg-popover absolute top-full left-0 z-30 mt-1.5 w-max rounded-md border p-2 shadow-md focus:outline-none"
         >
@@ -283,20 +266,18 @@ const FORCE_COST = "The tag goes, and every task that still names it is left hol
 function DeleteConfirm({
   project,
   tag,
+  mutation,
   forcing,
   onRefused,
   onCancel,
 }: {
   project: string
   tag: TagView
+  mutation: ProjectMutation
   forcing: boolean
   onRefused: () => void
   onCancel: () => void
 }) {
-  const mutation = useMutation({
-    mutationFn: (effect: Write) => runtime.runPromise(effect),
-    meta: { project },
-  })
   const remove = () => {
     if (mutation.isPending) return
     mutation.mutate(deleteTag(project, tag.name, forcing), {
@@ -325,15 +306,19 @@ function DeleteConfirm({
 
 // A rename rewrites the `tags:` of every task on this branch that names the tag, so it is sent only
 // when the name really changed.
-function TagForm({ project, tag, onClose }: { project: string; tag: TagView; onClose: () => void }) {
+function TagForm({
+  project,
+  tag,
+  mutation,
+  onClose,
+}: {
+  project: string
+  tag: TagView
+  mutation: ProjectMutation
+  onClose: () => void
+}) {
   const [display, setDisplay] = useState(tag.display)
   const [description, setDescription] = useState(tag.description ?? "")
-  const mutation = useMutation({
-    mutationFn: (effect: Write) => runtime.runPromise(effect),
-    meta: { project },
-  })
-  const first = useRef<HTMLInputElement>(null)
-  useEffect(() => first.current?.focus(), [])
 
   const save = () => {
     const named = display.trim()
@@ -360,7 +345,7 @@ function TagForm({ project, tag, onClose }: { project: string; tag: TagView; onC
       className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
     >
       <TextInput
-        ref={first}
+        autoFocus
         value={display}
         onChange={(event) => setDisplay(event.target.value)}
         placeholder="Tag name"

@@ -4,19 +4,21 @@ import { useState } from "react"
 import { Toast } from "@open-planner/ui"
 
 import { errorText } from "../lib/format"
+import { projectMutationsKey } from "../lib/query-client"
 
 export function MutationError() {
   const mutations = useMutationState({
+    filters: {
+      mutationKey: projectMutationsKey,
+      predicate: (mutation) => mutation.state.status === "success" || mutation.state.status === "error",
+    },
     select: (mutation) => ({
       id: mutation.mutationId,
       error: mutation.state.error,
       status: mutation.state.status,
     }),
   })
-  const latest = mutations.reduce<(typeof mutations)[number] | undefined>(
-    (held, mutation) => (held === undefined || mutation.id > held.id ? mutation : held),
-    undefined,
-  )
+  const latest = mutations.at(-1)
   const [dismissed, setDismissed] = useState<number>()
   const error = latest?.status === "error" && latest.id !== dismissed ? latest.error : undefined
   return (

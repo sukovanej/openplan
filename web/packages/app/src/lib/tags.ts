@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query"
-import { useMemo } from "react"
 
 import type { TagView } from "@open-planner/api-client"
 import { fuzzyMatch } from "@open-planner/ui"
@@ -7,6 +6,9 @@ import { fuzzyMatch } from "@open-planner/ui"
 import { listTags } from "./api"
 import { tagsKey } from "./query-client"
 import { runtime } from "./runtime"
+
+const indexTags = (tags: ReadonlyArray<TagView>): ReadonlyMap<string, TagView> =>
+  new Map(tags.map((tag) => [tag.name, tag]))
 
 export interface Registry {
   // `undefined` until the registry has been read, which a reader must not mistake for a registry
@@ -21,17 +23,12 @@ export interface Registry {
 // `branch` must be the branch a tags write would land on, so that what the chips call dangling is
 // what the write would refuse.
 export function useTags(project: string, branch?: string): Registry {
-  const query = useQuery({
+  const { data, isError } = useQuery({
     queryKey: tagsKey(project, branch),
     queryFn: () => runtime.runPromise(listTags(project, branch)),
+    select: indexTags,
   })
-  return useMemo(
-    () => ({
-      byName: query.data === undefined ? undefined : new Map(query.data.map((tag) => [tag.name, tag])),
-      failed: query.isError,
-    }),
-    [query.data, query.isError],
-  )
+  return { byName: data, failed: isError }
 }
 
 // A tags write is validated as a whole set, so one name this branch's registry does not hold refuses

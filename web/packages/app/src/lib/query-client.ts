@@ -1,20 +1,16 @@
-import { MutationCache, QueryClient } from "@tanstack/react-query"
+import { QueryClient, useMutation, useQueryClient } from "@tanstack/react-query"
+import { Effect } from "effect"
+import type { HttpClient } from "effect/unstable/http"
 
 import type { Invalidator } from "./events"
+import { runtime } from "./runtime"
 
-interface ProjectMutationMeta extends Record<string, unknown> {
-  readonly project: string
-}
-
-declare module "@tanstack/react-query" {
-  interface Register {
-    mutationMeta: ProjectMutationMeta
-  }
-}
+export type Write = Effect.Effect<unknown, unknown, HttpClient.HttpClient>
 
 export const projectKey = (project: string) => ["project", project] as const
 export const projectsKey = ["projects"] as const
 export const mergedKey = ["merged"] as const
+export const projectMutationsKey = ["mutation", "project"] as const
 export const mergedBoardKey = [...mergedKey, "board"] as const
 export const boardKey = (project: string) => [...projectKey(project), "board"] as const
 export const tasksKey = (project: string) => [...projectKey(project), "tasks"] as const
@@ -27,16 +23,7 @@ export const taskKey = (project: string, id: string, branch?: string) =>
     ? ([...projectKey(project), "task", id] as const)
     : ([...projectKey(project), "task", id, branch] as const)
 
-const mutationCache = new MutationCache({
-  onSettled: (_data, _error, _variables, _result, mutation) => {
-    if (mutation.meta === undefined) return
-    void queryClient.invalidateQueries({ queryKey: projectKey(mutation.meta.project) })
-    void queryClient.invalidateQueries({ queryKey: mergedKey })
-  },
-})
-
 export const queryClient = new QueryClient({
-  mutationCache,
   defaultOptions: {
     queries: {
       staleTime: Infinity,
@@ -44,11 +31,21 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
     },
-    mutations: {
-      retry: false,
-    },
   },
 })
+
+export function useProjectMutation(project: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationKey: [...projectMutationsKey, project],
+    mutationFn: (effect: Write) => runtime.runPromise(effect),
+    onSettled: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: projectKey(project) }),
+        client.invalidateQueries({ queryKey: mergedKey }),
+      ]),
+  })
+}
 
 const invalidate = (queryKey: ReadonlyArray<unknown>) => {
   void queryClient.invalidateQueries({ queryKey })

@@ -1,4 +1,9 @@
-import { MutationObserver, QueryObserver } from "@tanstack/react-query"
+// @vitest-environment happy-dom
+
+import { QueryClientProvider, QueryObserver } from "@tanstack/react-query"
+import { Effect } from "effect"
+import { act, createElement } from "react"
+import { createRoot, type Root } from "react-dom/client"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -9,9 +14,33 @@ import {
   tagsKey,
   taskKey,
   tasksKey,
+  useProjectMutation,
 } from "../src/lib/query-client"
 
-afterEach(() => queryClient.clear())
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+let root: Root | undefined
+
+function mountMutation(project: string) {
+  let mutation!: ReturnType<typeof useProjectMutation>
+  const Harness = () => {
+    mutation = useProjectMutation(project)
+    return null
+  }
+  const mounted = createRoot(document.createElement("div"))
+  root = mounted
+  act(() => mounted.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness))))
+  return () => mutation
+}
+
+afterEach(() => {
+  if (root !== undefined) {
+    const mounted = root
+    act(() => mounted.unmount())
+    root = undefined
+  }
+  queryClient.clear()
+})
 
 describe("query keys", () => {
   it("separates projects and branches", () => {
@@ -69,16 +98,13 @@ describe("mutations", () => {
     const project = "open-plan"
     queryClient.setQueryData(boardKey(project), "project")
     queryClient.setQueryData(mergedBoardKey, "merged")
-    const observer = new MutationObserver(queryClient, {
-      mutationFn: async () => {
-        if (outcome === "failure") throw new Error("refused")
-      },
-      meta: { project },
-    })
+    const mutation = mountMutation(project)
 
-    const result = observer.mutate()
-    if (outcome === "failure") await expect(result).rejects.toThrow("refused")
-    else await result
+    await act(async () => {
+      const result = mutation().mutateAsync(outcome === "failure" ? Effect.fail(new Error("refused")) : Effect.void)
+      if (outcome === "failure") await expect(result).rejects.toThrow("refused")
+      else await result
+    })
 
     expect(queryClient.getQueryState(boardKey(project))?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(mergedBoardKey)?.isInvalidated).toBe(true)
