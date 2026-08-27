@@ -6,34 +6,55 @@ import { act, createElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { MutationError } from "../src/components/mutation-error"
 import {
   boardKey,
   mergedBoardKey,
   queryClient,
   queryInvalidator,
-  tagsKey,
   taskKey,
-  tasksKey,
   useProjectMutation,
 } from "../src/lib/query-client"
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let root: Root | undefined
+const subscriptions: Array<() => void> = []
 
-function mountMutation(project: string) {
+function observe(queryKey: ReadonlyArray<unknown>) {
+  let version = 0
+  const observer = new QueryObserver(queryClient, {
+    queryKey,
+    queryFn: async () => ++version,
+  })
+  subscriptions.push(observer.subscribe(() => {}))
+  return observer
+}
+
+function mountMutation(project: string, showErrors = false) {
   let mutation!: ReturnType<typeof useProjectMutation>
   const Harness = () => {
     mutation = useProjectMutation(project)
     return null
   }
-  const mounted = createRoot(document.createElement("div"))
+  const container = document.createElement("div")
+  const mounted = createRoot(container)
   root = mounted
-  act(() => mounted.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness))))
-  return () => mutation
+  act(() =>
+    mounted.render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(Harness),
+        showErrors ? createElement(MutationError) : undefined,
+      ),
+    ),
+  )
+  return { container, mutation: () => mutation }
 }
 
 afterEach(() => {
+  for (const unsubscribe of subscriptions.splice(0)) unsubscribe()
   if (root !== undefined) {
     const mounted = root
     act(() => mounted.unmount())
@@ -42,18 +63,8 @@ afterEach(() => {
   queryClient.clear()
 })
 
-describe("query keys", () => {
-  it("separates projects and branches", () => {
-    expect(boardKey("alpha")).not.toEqual(boardKey("beta"))
-    expect(tasksKey("alpha")).not.toEqual(tasksKey("beta"))
-    expect(tagsKey("alpha")).not.toEqual(tagsKey("alpha", "feature"))
-    expect(taskKey("alpha", "APP-1")).not.toEqual(taskKey("beta", "APP-1"))
-    expect(taskKey("alpha", "APP-1")).not.toEqual(taskKey("alpha", "APP-1", "feature"))
-  })
-})
-
 describe("invalidation", () => {
-  it("reloads an invalidated task when its next observer subscribes", async () => {
+  it("reloads a changed task when its detail opens again", async () => {
     const project = "deferred"
     const id = "DEF-1"
     let version = 0
@@ -63,14 +74,15 @@ describe("invalidation", () => {
     })
 
     const first = observer.subscribe(() => {})
+    subscriptions.push(first)
     await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(1))
     first()
 
     queryInvalidator.refreshTask(project, id)
-    await vi.waitFor(() => expect(queryClient.getQueryState(taskKey(project, id))?.isInvalidated).toBe(true))
     expect(version).toBe(1)
 
     const second = observer.subscribe(() => {})
+    subscriptions.push(second)
     await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(2))
 
     queryInvalidator.refreshTask(project, id)
@@ -78,27 +90,46 @@ describe("invalidation", () => {
     second()
   })
 
-  it("invalidates one project and the merged board", async () => {
-    queryClient.setQueryData(boardKey("alpha"), "alpha")
-    queryClient.setQueryData(boardKey("beta"), "beta")
-    queryClient.setQueryData(mergedBoardKey, "merged")
+  it("refreshes the changed project, or every project after a global change", async () => {
+    const alpha = observe(boardKey("alpha"))
+    const beta = observe(boardKey("beta"))
+    const merged = observe(mergedBoardKey)
+    await vi.waitFor(() => {
+      expect(alpha.getCurrentResult().data).toBe(1)
+      expect(beta.getCurrentResult().data).toBe(1)
+      expect(merged.getCurrentResult().data).toBe(1)
+    })
 
     queryInvalidator.refreshVisible("alpha")
 
     await vi.waitFor(() => {
-      expect(queryClient.getQueryState(boardKey("alpha"))?.isInvalidated).toBe(true)
-      expect(queryClient.getQueryState(mergedBoardKey)?.isInvalidated).toBe(true)
+      expect(alpha.getCurrentResult().data).toBe(2)
+      expect(merged.getCurrentResult().data).toBe(2)
     })
-    expect(queryClient.getQueryState(boardKey("beta"))?.isInvalidated).toBe(false)
+    expect(beta.getCurrentResult().data).toBe(1)
+
+    queryInvalidator.refreshVisible()
+
+    await vi.waitFor(() => {
+      expect(alpha.getCurrentResult().data).toBe(3)
+      expect(beta.getCurrentResult().data).toBe(2)
+      expect(merged.getCurrentResult().data).toBe(3)
+    })
   })
 })
 
 describe("mutations", () => {
-  it.each(["success", "failure"] as const)("invalidates project data after %s", async (outcome) => {
+  it.each(["success", "failure"] as const)("refreshes visible data after %s", async (outcome) => {
     const project = "open-plan"
-    queryClient.setQueryData(boardKey(project), "project")
-    queryClient.setQueryData(mergedBoardKey, "merged")
-    const mutation = mountMutation(project)
+    const board = observe(boardKey(project))
+    const other = observe(boardKey("other"))
+    const merged = observe(mergedBoardKey)
+    await vi.waitFor(() => {
+      expect(board.getCurrentResult().data).toBe(1)
+      expect(other.getCurrentResult().data).toBe(1)
+      expect(merged.getCurrentResult().data).toBe(1)
+    })
+    const mutation = mountMutation(project).mutation
 
     await act(async () => {
       const result = mutation().mutateAsync(outcome === "failure" ? Effect.fail(new Error("refused")) : Effect.void)
@@ -106,7 +137,30 @@ describe("mutations", () => {
       else await result
     })
 
-    expect(queryClient.getQueryState(boardKey(project))?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(mergedBoardKey)?.isInvalidated).toBe(true)
+    expect(board.getCurrentResult().data).toBe(2)
+    expect(merged.getCurrentResult().data).toBe(2)
+    expect(other.getCurrentResult().data).toBe(1)
+  })
+
+  it("shows, clears, and dismisses a refusal", async () => {
+    const { container, mutation } = mountMutation("open-plan", true)
+
+    await act(async () => {
+      await expect(mutation().mutateAsync(Effect.fail(new Error("first refusal")))).rejects.toThrow("first refusal")
+    })
+    await vi.waitFor(() => expect(container.textContent).toContain("first refusal"))
+
+    await act(async () => mutation().mutateAsync(Effect.void))
+    await vi.waitFor(() => expect(container.textContent).not.toContain("first refusal"))
+
+    await act(async () => {
+      await expect(mutation().mutateAsync(Effect.fail(new Error("second refusal")))).rejects.toThrow("second refusal")
+    })
+    await vi.waitFor(() => expect(container.textContent).toContain("second refusal"))
+
+    const dismiss = container.querySelector<HTMLElement>('[aria-label="Dismiss"]')
+    expect(dismiss).not.toBeNull()
+    act(() => dismiss?.click())
+    expect(container.textContent).not.toContain("second refusal")
   })
 })
