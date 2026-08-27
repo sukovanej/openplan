@@ -1,5 +1,22 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+
+const taskVersions = vi.hoisted(() => new Map<string, number>())
+
+vi.mock("../src/lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/lib/api")>()
+  const { Effect } = await import("effect")
+  return {
+    ...original,
+    getTask: (project: string, id: string, branch?: string) =>
+      Effect.sync(() => {
+        const key = [project, id, branch].filter((part) => part !== undefined).join(" ")
+        const version = (taskVersions.get(key) ?? 0) + 1
+        taskVersions.set(key, version)
+        return { version }
+      }),
+  }
+})
 
 import { TaskRejected } from "../src/lib/api"
 import {
@@ -63,6 +80,32 @@ describe("per-project queries", () => {
 })
 
 describe("invalidation", () => {
+  it("reloads an invalidated task when its next listener subscribes", async () => {
+    const project = "deferred"
+    const id = "DEF-1"
+    const key = `${project} ${id}`
+    const query = taskQuery(project, id)
+    const first = query.subscribe(() => {})
+    await settle()
+    expect(taskVersions.get(key)).toBe(1)
+
+    first()
+    storeInvalidator.refreshTask(project, id)
+    await settle()
+    expect(taskVersions.get(key)).toBe(1)
+
+    const second = query.subscribe(() => {})
+    await settle()
+    expect(taskVersions.get(key)).toBe(2)
+    expect(query.getSnapshot()).toEqual({ _tag: "success", value: { version: 2 } })
+
+    storeInvalidator.refreshTask(project, id)
+    await settle()
+    expect(taskVersions.get(key)).toBe(3)
+    expect(query.getSnapshot()).toEqual({ _tag: "success", value: { version: 3 } })
+    second()
+  })
+
   it("refreshes one project's reads and the merged ones, and leaves every other project alone", async () => {
     const alpha = counting("alpha")
     const beta = counting("beta")

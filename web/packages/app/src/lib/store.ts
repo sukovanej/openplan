@@ -29,6 +29,7 @@ export class Query<A> {
   private readonly listeners = new Set<() => void>()
   private started = false
   private inFlight = false
+  private invalid = false
   private token = 0
 
   constructor(
@@ -46,7 +47,7 @@ export class Query<A> {
     if (!this.started) {
       this.started = true
       this.load()
-    } else if (this.state._tag === "failure" && !this.inFlight) {
+    } else if (this.invalid || (this.state._tag === "failure" && !this.inFlight)) {
       this.load()
     }
     return () => {
@@ -61,10 +62,16 @@ export class Query<A> {
     if (this.started) this.load()
   }
 
+  readonly invalidate = (): void => {
+    if (this.hasListeners()) this.load()
+    else this.invalid = true
+  }
+
   // A run token discards a stale response that resolves after a newer refresh.
   private load(): void {
     const token = ++this.token
     this.inFlight = true
+    this.invalid = false
     runtime.runPromise(Effect.result(this.effect)).then(
       (result) =>
         this.settle(
@@ -192,7 +199,7 @@ function refreshTaskQueries(project: string, id: string): void {
   const exact = taskKey(project, id, undefined)
   const prefix = `${exact} `
   for (const [key, query] of taskQueries) {
-    if ((key === exact || key.startsWith(prefix)) && query.hasListeners()) query.refresh()
+    if (key === exact || key.startsWith(prefix)) query.invalidate()
   }
 }
 
