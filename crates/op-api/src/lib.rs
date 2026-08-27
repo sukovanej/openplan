@@ -67,6 +67,10 @@ pub fn body_from_keys(abbreviation: Abbreviation, body: &str) -> Result<String, 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ApiErrorBody {
     pub message: String,
+    // The members of each dependency cycle a request could not order. A client links the keys, which
+    // it cannot do with a sentence. Every other refusal sends the message alone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycles: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -1242,6 +1246,618 @@ fn emit_row<'a>(
             emit_row(kid, depth + 1, false, children_of, title_of, emitted, rows);
         }
     }
+}
+
+// Which tasks the flow grows from. Values of one field are alternatives, and the fields narrow each
+// other; an empty field puts no condition of its own. A named task carries its project, because two
+// stores can commit the same abbreviation and a bare key would then name two tasks.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FlowQuery {
+    pub projects: Vec<String>,
+    pub statuses: Vec<Status>,
+    pub tasks: Vec<(String, String)>,
+    pub tags: Vec<String>,
+}
+
+const SEED_STATUSES: [Status; 1] = [Status::Todo];
+
+impl FlowQuery {
+    fn seed_statuses(&self) -> &[Status] {
+        match self.statuses.is_empty() {
+            true => &SEED_STATUSES,
+            false => &self.statuses,
+        }
+    }
+
+    fn selects(&self, task: &TaskListItem) -> bool {
+        let by_project =
+            self.projects.is_empty() || self.projects.iter().any(|name| name == &task.project);
+        let by_status = task
+            .metadata
+            .status()
+            .is_some_and(|status| self.seed_statuses().contains(&status));
+        let by_key = self.tasks.is_empty()
+            || self
+                .tasks
+                .iter()
+                .any(|(project, id)| project == &task.project && id == &task.id);
+        let by_tag = self.tags.is_empty()
+            || task
+                .metadata
+                .tags()
+                .iter()
+                .any(|tag| self.tags.contains(tag));
+        by_project && by_status && by_key && by_tag
+    }
+}
+
+// The implementation order of one task set: a flat node list and the edges between the nodes. An
+// edge runs from the dependency to the task that waits for it, which is the direction the time runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Flow {
+    pub nodes: Vec<FlowNode>,
+    pub edges: Vec<FlowEdge>,
+}
+
+// A `leaf` is a task somebody implements, and it is the only kind that holds a place in the order. A
+// `box` is a parent: the flow draws it around its children and reads its span from them, so it takes
+// no place of its own. An `unresolved` node is a dependency that names no task of its project — the
+// raw text is all it has, and no work can complete it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FlowNode {
+    Leaf {
+        project: String,
+        id: String,
+        title: String,
+        status: Field<Status>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false)]
+        parent: Option<String>,
+        wave: usize,
+        position: usize,
+        blocks_count: usize,
+    },
+    Box {
+        project: String,
+        id: String,
+        title: String,
+        status: Field<Status>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false)]
+        parent: Option<String>,
+    },
+    Unresolved {
+        project: String,
+        id: String,
+    },
+}
+
+// No edge crosses a project, because a key resolves inside one store only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FlowEdge {
+    pub project: String,
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("dependencies form a cycle: {}", format_cycles(.cycles))]
+pub struct FlowCycles {
+    pub cycles: Vec<Vec<String>>,
+}
+
+fn format_cycles(cycles: &[Vec<String>]) -> String {
+    cycles
+        .iter()
+        .map(|cycle| {
+            let mut round: Vec<&str> = cycle.iter().map(String::as_str).collect();
+            round.extend(cycle.first().map(String::as_str));
+            round.join(" -> ")
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn is_remaining(task: &TaskListItem) -> bool {
+    !matches!(
+        task.metadata.status(),
+        Some(Status::Done) | Some(Status::Cancelled)
+    )
+}
+
+type TaskIndex<'a> = std::collections::HashMap<Coordinate<'a>, &'a TaskListItem>;
+type Members<'a> = std::collections::HashSet<Coordinate<'a>>;
+type Kids<'a> = std::collections::HashMap<Coordinate<'a>, Vec<&'a TaskListItem>>;
+
+// A dependency resolves inside its own project, and a `#section` suffix aims at a part of a task
+// rather than at another task.
+fn dependency_target<'a>(
+    index: &TaskIndex<'a>,
+    task: &'a TaskListItem,
+    dependency: &'a str,
+) -> Option<&'a TaskListItem> {
+    index
+        .get(&(task.project.as_str(), op_task::ref_target(dependency)))
+        .copied()
+}
+
+fn parent_task<'a>(index: &TaskIndex<'a>, task: &'a TaskListItem) -> Option<&'a TaskListItem> {
+    index.get(&parent_coordinate(task)?).copied()
+}
+
+impl Flow {
+    pub fn build(tasks: &[TaskListItem], query: &FlowQuery) -> Result<Flow, FlowCycles> {
+        let index: TaskIndex<'_> = tasks.iter().map(|task| (coordinate(task), task)).collect();
+        let mut children_of: Kids<'_> = std::collections::HashMap::new();
+        for task in tasks {
+            if let Some(parent) = parent_coordinate(task) {
+                children_of.entry(parent).or_default().push(task);
+            }
+        }
+
+        let included = grow(tasks, query, &index, &children_of);
+        let members: Vec<&TaskListItem> = tasks
+            .iter()
+            .filter(|task| included.contains(&coordinate(task)))
+            .collect();
+        let family = Family::build(&members, &included);
+        let leaves: Vec<&TaskListItem> = members
+            .iter()
+            .copied()
+            .filter(|task| !family.holds(task))
+            .collect();
+
+        let layout = Layout::build(leaves, &included, &family, &index)?;
+        let (edges, unresolved) = wire(&members, &index);
+        Ok(Flow {
+            nodes: nodes(&layout, &family, &index, &unresolved),
+            edges,
+        })
+    }
+}
+
+// The seeds and what the flow needs around them: what each included task waits for, the parent chain
+// above it, and the children a parent has left. The three rules feed each other until nothing new
+// arrives, so the whole reachable neighbourhood lands in the set and no depth bounds it. A task
+// nobody can complete any more — `done` or `cancelled` — enters as a parent only: a finished
+// dependency is not work, and a finished child is not part of the box.
+fn grow<'a>(
+    tasks: &'a [TaskListItem],
+    query: &FlowQuery,
+    index: &TaskIndex<'a>,
+    children_of: &Kids<'a>,
+) -> Members<'a> {
+    let mut included = std::collections::HashSet::new();
+    let mut queue: Vec<&TaskListItem> = tasks.iter().filter(|task| query.selects(task)).collect();
+    while let Some(task) = queue.pop() {
+        if !included.insert(coordinate(task)) {
+            continue;
+        }
+        for dependency in remaining_dependencies(task) {
+            if let Some(target) = dependency_target(index, task, dependency)
+                && is_remaining(target)
+            {
+                queue.push(target);
+            }
+        }
+        if let Some(parent) = parent_task(index, task) {
+            queue.push(parent);
+        }
+        for child in children_of.get(&coordinate(task)).into_iter().flatten() {
+            if is_remaining(child) {
+                queue.push(child);
+            }
+        }
+    }
+    included
+}
+
+// Which task the flow puts each task under, and which tasks each one holds. A parent whose children
+// all dropped out holds none, so it reads as a plain node. A corrupt pair of files can make a task
+// its own ancestor: neither task can hold the other, so both stand alone here instead of vanishing
+// into a box that contains itself. The board keeps such a task visible for the same reason.
+struct Family<'a> {
+    parent: std::collections::HashMap<Coordinate<'a>, Coordinate<'a>>,
+    kids: Kids<'a>,
+}
+
+impl<'a> Family<'a> {
+    fn build(members: &[&'a TaskListItem], included: &Members<'a>) -> Family<'a> {
+        let mut parent: std::collections::HashMap<Coordinate<'a>, Coordinate<'a>> = members
+            .iter()
+            .filter_map(|task| Some((coordinate(task), parent_coordinate(task)?)))
+            .filter(|(_, above)| included.contains(above))
+            .collect();
+        let looping: Vec<Coordinate<'a>> = parent
+            .keys()
+            .copied()
+            .filter(|task| climbs_back(*task, &parent))
+            .collect();
+        for task in looping {
+            parent.remove(&task);
+        }
+
+        let mut kids: Kids<'a> = std::collections::HashMap::new();
+        for task in members {
+            if let Some(above) = parent.get(&coordinate(task)).copied() {
+                kids.entry(above).or_default().push(task);
+            }
+        }
+        Family { parent, kids }
+    }
+
+    fn holds(&self, task: &'a TaskListItem) -> bool {
+        self.kids.contains_key(&coordinate(task))
+    }
+
+    fn under(&self, task: &'a TaskListItem) -> Option<Coordinate<'a>> {
+        self.parent.get(&coordinate(task)).copied()
+    }
+
+    fn above(&self, task: &'a TaskListItem, index: &TaskIndex<'a>) -> Vec<&'a TaskListItem> {
+        let mut out = Vec::new();
+        let mut at = coordinate(task);
+        while let Some(above) = self.parent.get(&at).copied() {
+            let Some(parent) = index.get(&above).copied() else {
+                break;
+            };
+            out.push(parent);
+            at = above;
+        }
+        out
+    }
+}
+
+fn climbs_back<'a>(
+    start: Coordinate<'a>,
+    parent: &std::collections::HashMap<Coordinate<'a>, Coordinate<'a>>,
+) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    let mut at = start;
+    while let Some(above) = parent.get(&at).copied() {
+        if above == start {
+            return true;
+        }
+        if !seen.insert(above) {
+            return false;
+        }
+        at = above;
+    }
+    false
+}
+
+// A task nobody can complete any more declares nothing that can still block work, so its
+// dependencies leave the flow with it.
+fn remaining_dependencies(task: &TaskListItem) -> &[String] {
+    match is_remaining(task) {
+        true => task.metadata.dependencies(),
+        false => &[],
+    }
+}
+
+// Every leaf under a task, and the task itself when it is a leaf. A dependency on a box waits for
+// each of these, and the box spans the waves they land in.
+fn leaves_under<'a>(task: &'a TaskListItem, family: &Family<'a>) -> Vec<&'a TaskListItem> {
+    let Some(children) = family.kids.get(&coordinate(task)) else {
+        return vec![task];
+    };
+    let mut out = Vec::new();
+    let mut stack: Vec<&TaskListItem> = children.clone();
+    let mut seen = std::collections::HashSet::from([coordinate(task)]);
+    while let Some(node) = stack.pop() {
+        if !seen.insert(coordinate(node)) {
+            continue;
+        }
+        match family.kids.get(&coordinate(node)) {
+            Some(children) => stack.extend(children.iter().copied()),
+            None => out.push(node),
+        }
+    }
+    out
+}
+
+// Where each leaf sits: the wave it belongs to, the order inside that wave, and how much work waits
+// for it.
+struct Layout<'a> {
+    leaves: Vec<&'a TaskListItem>,
+    waves: Vec<Vec<usize>>,
+    blocks: Vec<usize>,
+}
+
+impl<'a> Layout<'a> {
+    fn build(
+        leaves: Vec<&'a TaskListItem>,
+        included: &Members<'a>,
+        family: &Family<'a>,
+        index: &TaskIndex<'a>,
+    ) -> Result<Layout<'a>, FlowCycles> {
+        let place: std::collections::HashMap<Coordinate<'a>, usize> = leaves
+            .iter()
+            .enumerate()
+            .map(|(at, leaf)| (coordinate(leaf), at))
+            .collect();
+        let successors = waits_for(&leaves, included, family, index, &place);
+        let wave_of = layer(&successors).map_err(|cycles| FlowCycles {
+            cycles: cycle_ids(cycles, &leaves),
+        })?;
+        let blocks = blocks_counts(&successors, &wave_of);
+
+        let depth = wave_of.iter().copied().max().map_or(0, |last| last + 1);
+        let mut waves = vec![Vec::new(); depth];
+        for (leaf, wave) in wave_of.iter().copied().enumerate() {
+            waves[wave].push(leaf);
+        }
+        for wave in &mut waves {
+            wave.sort_by(|a, b| {
+                blocks[*b].cmp(&blocks[*a]).then_with(|| {
+                    rank_cmp(
+                        leaves[*a].metadata.rank(),
+                        leaves[*b].metadata.rank(),
+                        || {
+                            id_cmp(&leaves[*a].id, &leaves[*b].id)
+                                .then_with(|| leaves[*a].project.cmp(&leaves[*b].project))
+                        },
+                    )
+                })
+            });
+        }
+        Ok(Layout {
+            leaves,
+            waves,
+            blocks,
+        })
+    }
+}
+
+// Which leaves wait for which. A child inherits the dependencies of its parents, so nothing inside a
+// box starts before the box may start; a dependency on a box waits for each leaf inside it. An
+// unresolved dependency adds no edge here: no work completes it, so it must not push the task that
+// names it into a later wave.
+fn waits_for<'a>(
+    leaves: &[&'a TaskListItem],
+    included: &Members<'a>,
+    family: &Family<'a>,
+    index: &TaskIndex<'a>,
+    place: &std::collections::HashMap<Coordinate<'a>, usize>,
+) -> Vec<Vec<usize>> {
+    let mut successors = vec![std::collections::BTreeSet::new(); leaves.len()];
+    for (at, leaf) in leaves.iter().enumerate() {
+        for source in std::iter::once(*leaf).chain(family.above(leaf, index)) {
+            for dependency in remaining_dependencies(source) {
+                let Some(target) = dependency_target(index, source, dependency) else {
+                    continue;
+                };
+                if !included.contains(&coordinate(target)) {
+                    continue;
+                }
+                for blocker in leaves_under(target, family) {
+                    if let Some(from) = place.get(&coordinate(blocker)) {
+                        successors[*from].insert(at);
+                    }
+                }
+            }
+        }
+    }
+    successors
+        .into_iter()
+        .map(|targets| targets.into_iter().collect())
+        .collect()
+}
+
+// Longest-path layering: a task lands one wave behind the last thing it waits for, so a person can
+// start wave `k` once wave `k-1` is complete. The members of a cycle never come ready, and the
+// request fails on them rather than answering with an order that does not exist.
+fn layer(successors: &[Vec<usize>]) -> Result<Vec<usize>, Vec<Vec<usize>>> {
+    let mut waiting = vec![0usize; successors.len()];
+    for targets in successors {
+        for target in targets {
+            waiting[*target] += 1;
+        }
+    }
+    let mut wave = vec![0usize; successors.len()];
+    let mut ready: std::collections::BTreeSet<usize> = waiting
+        .iter()
+        .enumerate()
+        .filter(|(_, count)| **count == 0)
+        .map(|(at, _)| at)
+        .collect();
+    let mut layered = 0;
+    while let Some(node) = ready.pop_first() {
+        layered += 1;
+        for target in &successors[node] {
+            wave[*target] = wave[*target].max(wave[node] + 1);
+            waiting[*target] -= 1;
+            if waiting[*target] == 0 {
+                ready.insert(*target);
+            }
+        }
+    }
+    match layered == successors.len() {
+        true => Ok(wave),
+        false => Err(rings(
+            waiting
+                .iter()
+                .enumerate()
+                .filter(|(_, count)| **count > 0)
+                .map(|(at, _)| at)
+                .collect(),
+            successors,
+        )),
+    }
+}
+
+// The cycles among the leaves layering could not reach. The walk follows one step at a time until it
+// meets a task it stands on already, which closes a cycle. It then cuts that one step and walks
+// again, so a second cycle through a task of the first one still gets its own report; a walk that
+// runs out of steps drops the task it stopped on. Each round cuts a step or drops a task, so the
+// search ends. Two cycles over the same tasks read as one report, because the report names the
+// members and both would name the same ones.
+fn rings(left: Vec<usize>, successors: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let mut left: std::collections::BTreeSet<usize> = left.into_iter().collect();
+    let mut cut: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+    let mut named: std::collections::HashSet<std::collections::BTreeSet<usize>> =
+        std::collections::HashSet::new();
+    let mut cycles = Vec::new();
+    while let Some(start) = left.first().copied() {
+        let mut path = Vec::new();
+        let mut standing: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
+        let mut current = start;
+        loop {
+            if let Some(first) = standing.get(&current).copied() {
+                let cycle = path.split_off(first);
+                cut.insert((cycle[cycle.len() - 1], current));
+                if named.insert(cycle.iter().copied().collect()) {
+                    cycles.push(cycle);
+                }
+                break;
+            }
+            standing.insert(current, path.len());
+            path.push(current);
+            let step = successors[current]
+                .iter()
+                .copied()
+                .find(|next| left.contains(next) && !cut.contains(&(current, *next)));
+            match step {
+                Some(next) => current = next,
+                None => {
+                    left.remove(&current);
+                    break;
+                }
+            }
+        }
+    }
+    cycles
+}
+
+// The cycle as keys, turned so the lowest key opens it. The report then reads the same whichever
+// member the walk happened to start from.
+fn cycle_ids(cycles: Vec<Vec<usize>>, leaves: &[&TaskListItem]) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = cycles
+        .into_iter()
+        .map(|cycle| {
+            let first = (0..cycle.len())
+                .min_by(|a, b| id_cmp(&leaves[cycle[*a]].id, &leaves[cycle[*b]].id))
+                .unwrap_or_default();
+            cycle
+                .iter()
+                .cycle()
+                .skip(first)
+                .take(cycle.len())
+                .map(|node| leaves[*node].id.clone())
+                .collect()
+        })
+        .collect();
+    out.sort_by(|a, b| id_cmp(&a[0], &b[0]));
+    out
+}
+
+// How much work waits for each leaf, directly or through another leaf. It is the first sort key
+// inside a wave, so the task that unblocks the most work leads it. A leaf waits only behind lower
+// waves, so counting from the last wave back gives each leaf its followers already counted.
+fn blocks_counts(successors: &[Vec<usize>], wave_of: &[usize]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..successors.len()).collect();
+    order.sort_by_key(|node| std::cmp::Reverse(wave_of[*node]));
+    let mut waiting: Vec<std::collections::HashSet<usize>> =
+        vec![std::collections::HashSet::new(); successors.len()];
+    for node in order {
+        let mut all = std::collections::HashSet::new();
+        for target in &successors[node] {
+            all.insert(*target);
+            all.extend(waiting[*target].iter().copied());
+        }
+        waiting[node] = all;
+    }
+    waiting.into_iter().map(|all| all.len()).collect()
+}
+
+// The edges the flow draws: the dependencies each included task declares, as the file declares them.
+// An inherited dependency draws none of its own — the arrow lands on the box, and the box holds the
+// child. A dependency that is complete draws nothing at all.
+fn wire<'a>(
+    members: &[&'a TaskListItem],
+    index: &TaskIndex<'a>,
+) -> (Vec<FlowEdge>, Vec<(&'a str, &'a str)>) {
+    let mut edges = Vec::new();
+    let mut unresolved = std::collections::BTreeSet::new();
+    for task in members {
+        for dependency in remaining_dependencies(task) {
+            let from = match dependency_target(index, task, dependency) {
+                Some(target) if is_remaining(target) => target.id.clone(),
+                Some(_) => continue,
+                None => {
+                    unresolved.insert((task.project.as_str(), dependency.as_str()));
+                    dependency.clone()
+                }
+            };
+            edges.push(FlowEdge {
+                project: task.project.clone(),
+                from,
+                to: task.id.clone(),
+            });
+        }
+    }
+    edges.sort_by(|a, b| {
+        a.project
+            .cmp(&b.project)
+            .then_with(|| id_cmp(&a.to, &b.to))
+            .then_with(|| id_cmp(&a.from, &b.from))
+    });
+    edges.dedup();
+    (edges, unresolved.into_iter().collect())
+}
+
+// The nodes in reading order: wave by wave, and each box before the first leaf it holds. An
+// unresolved node sits at the end, because it belongs to no wave.
+fn nodes<'a>(
+    layout: &Layout<'a>,
+    family: &Family<'a>,
+    index: &TaskIndex<'a>,
+    unresolved: &[(&str, &str)],
+) -> Vec<FlowNode> {
+    let mut out = Vec::new();
+    let mut emitted = std::collections::HashSet::new();
+    for (wave, members) in layout.waves.iter().enumerate() {
+        for (position, leaf) in members.iter().copied().enumerate() {
+            let task = layout.leaves[leaf];
+            for parent in family.above(task, index).into_iter().rev() {
+                if emitted.insert(coordinate(parent)) {
+                    out.push(FlowNode::Box {
+                        project: parent.project.clone(),
+                        id: parent.id.clone(),
+                        title: parent.title.clone(),
+                        status: parent.metadata.status_field(),
+                        parent: parent_in_flow(parent, family),
+                    });
+                }
+            }
+            emitted.insert(coordinate(task));
+            out.push(FlowNode::Leaf {
+                project: task.project.clone(),
+                id: task.id.clone(),
+                title: task.title.clone(),
+                status: task.metadata.status_field(),
+                parent: parent_in_flow(task, family),
+                wave,
+                position,
+                blocks_count: layout.blocks[leaf],
+            });
+        }
+    }
+    for (project, id) in unresolved {
+        out.push(FlowNode::Unresolved {
+            project: (*project).to_owned(),
+            id: (*id).to_owned(),
+        });
+    }
+    out
+}
+
+// A parent the flow does not hold is a parent the client cannot draw a box for. The store can name
+// one that no file defines, and a node pointing at it would read as a box that never arrives.
+fn parent_in_flow<'a>(task: &'a TaskListItem, family: &Family<'a>) -> Option<String> {
+    family.under(task).map(|(_, id)| id.to_owned())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

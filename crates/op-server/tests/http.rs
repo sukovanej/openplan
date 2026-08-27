@@ -1860,14 +1860,17 @@ fn the_openapi_spec_documents_every_json_api_route() {
         "/api/projects/{project}/tasks/{id}",
         "/api/projects/{project}/board",
         "/api/board",
+        "/api/flow",
         "/health",
     ] {
         assert!(paths.contains_key(route), "{route} missing from the spec");
     }
-    assert!(
-        spec["components"]["schemas"].get("Board").is_some(),
-        "the board's schema must reach the spec the web client is generated from"
-    );
+    for schema in ["Board", "Flow"] {
+        assert!(
+            spec["components"]["schemas"].get(schema).is_some(),
+            "{schema} must reach the spec the web client is generated from"
+        );
+    }
 }
 
 // Every refusal a caller can act on must be documented with its `ApiErrorBody`: the generated web
@@ -1885,6 +1888,11 @@ fn the_openapi_spec_documents_every_refusal_with_its_reason() {
         ("post", "/api/projects/{project}/tasks", "409"),
         ("post", "/api/projects/{project}/tasks", "500"),
         ("get", "/api/board", "500"),
+        ("get", "/api/flow", "400"),
+        ("get", "/api/flow", "404"),
+        ("get", "/api/flow", "422"),
+        ("get", "/api/flow", "500"),
+        ("get", "/api/flow", "503"),
         ("get", "/api/projects/{project}/board", "400"),
         ("get", "/api/projects/{project}/board", "404"),
         ("get", "/api/projects/{project}/board", "500"),

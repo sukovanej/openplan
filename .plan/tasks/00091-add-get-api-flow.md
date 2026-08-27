@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_review
 created: 2026-08-27T11:13:36Z
 parent: ./00090-compute-and-show-the-implementat.md
 ---
@@ -140,3 +140,74 @@ in the message text alone: the web view would have to parse a sentence to link t
 
 Put the computation in `op-api`, next to `Board::build`. Put the route and the `utoipa` path in
 `op-server`. Put the tests in `crates/op-api/tests/`.
+
+## Comments
+
+### 2026-08-27T17:55:16Z by Milan Suk via claude-code
+
+> Decisions the task left open:
+>
+> - The four query fields narrow each other, and the default `status=todo` is one of them. So
+>   `?project=open-plan&task=OPP-42` finds no seed while OPP-42 is `in_progress`; the caller
+>   must add `&status=in_progress`. The task says the names combine with AND and that the
+>   default is `todo`, and I kept both rules with no special case for `task`. Tell me if a
+>   named task must instead override the status default.
+> - A `cancelled` dependency counts as satisfied, like a `done` one. The task names only
+>   `done`, but the child rule drops both, and no work waits for a cancelled task.
+> - A named project must answer. An unknown name gives 404 and a blocked one 503, like every
+>   other project route. A request that names no project skips a project it cannot read, as
+>   the merged board does.
+> - An unknown query parameter gives 400. A typo would otherwise return the whole store and
+>   read as an answer.
+> - The endpoint refuses no unknown task key. `?project=x&task=OPP-999` returns an empty flow.
+> - The nodes come wave by wave, and each box comes before the first leaf it holds. The edges
+>   sort by project, then by the key they point to. The task fixes no order, and the tests need
+>   one.
+> - A cycle report holds one member list for each cycle, turned so the lowest key opens it. Two
+>   cycles put both lists in `cycles` and both paths in the message, separated by `;`.
+>
+> Not done here: `web/packages/api-client` still comes from the old spec. The generator needs
+> `pnpm install` in the worktree, and [[./00092-draw-the-implementation-flow-dia.md]] is the
+> task that reads the client. Run `mise run generate-web-client` there.
+>
+> Verified: 33 new tests (23 in op-api, 10 in op-server), 652 in the workspace, clippy and fmt
+> clean, `openplan lint` clean. I also ran the endpoint against this repository's own store on
+> a scratch daemon: `/api/flow` puts OPP-91 in wave 0 and OPP-92 in wave 1 inside the OPP-90
+> box, `?task=` without `?project=` gives 400, and the tag filter returns an empty flow.
+
+### 2026-08-27T18:20:23Z by Milan Suk via claude-code
+
+> Code review: I took six findings and refused seven.
+>
+> Fixed:
+> - A parent cycle made every member a box with no leaf, so `nodes` sent none of them while
+>   `wire` still sent their edges — arrows from ids that were not in the response. One
+>   `Family` relation now holds the parent link the flow uses. It drops the link of a task
+>   that climbs back to itself, so both tasks stand alone, as the board keeps them.
+> - A finished parent still passed its dependencies to its live children, which pushed them
+>   into a later wave and pulled unrelated tasks in. `remaining_dependencies` now returns
+>   nothing for a `done` or `cancelled` task, in the growth, in the layering and in the edges.
+> - `?project=x&project=x` read the store twice and sent every task as two nodes with
+>   contradictory counts. A repeated value of any name is dropped now.
+> - The cycle walk reported one cycle for each tangle. It cuts the step that closed the cycle
+>   and walks again, so two cycles through one task both get a report.
+> - `the_openapi_spec_documents_every_json_api_route` and its refusal twin did not name
+>   `/api/flow`. Both do now, including the 422.
+> - `parent_in_flow` unwrapped a nested `Option`, and `cycle_ids` sorted with a branch for an
+>   empty cycle that `rings` cannot make. Both are gone.
+>
+> Refused, with the reason:
+> - The 422 body carries bare keys, not project-key pairs. The task fixes that shape.
+> - A cycle in one project fails the whole request. OPP-90 says a cycle in the loaded graph
+>   fails the request, and one request loads every project.
+> - `/api/flow` refuses `fresh` and `branch`. The task names four parameters, and the flow
+>   reads the branch aggregate on purpose.
+> - The project loop repeats the merged board's loop. The two differ: a named project fails the
+>   request, and an unnamed one drops out. A shared helper would need a flag for that.
+> - `tests/flow.rs` repeats the test harness of `tests/projects.rs`. `tests/http.rs` already
+>   holds a second copy; a common module is one change for all three, not for this task.
+> - `blocks_counts` holds a set for each leaf and `leaves_under` re-walks a box. OPP-90 says
+>   the graph is small and forbids a cache.
+>
+> 657 tests pass, clippy and fmt are clean, and the endpoint answers the same for this
+> repository's own store.
