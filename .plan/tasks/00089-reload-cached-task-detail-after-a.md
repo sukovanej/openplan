@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-08-27T06:56:14Z
 ---
 # Reload cached task detail after an unmounted change
