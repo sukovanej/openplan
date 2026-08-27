@@ -29,3 +29,7 @@ Add a regression test for this sequence: load a task query, unsubscribe, invalid
 ### 2026-08-27T07:02:10Z by Milan Suk via codex
 
 > Added the regression test only. It fails after the second subscription because the task loader stays at version 1 instead of returning version 2. Type checking, linting, and formatting pass. The cache fix is not implemented.
+
+### 2026-08-27T08:16:14Z by Milan Suk via codex
+
+> The approved fix now replaces the full custom query and mutation layer with TanStack Query. Keep a small taskKey helper, inline query options at useQuery call sites, and include useMutation in the migration.

@@ -1,3 +1,6 @@
+import { useMutation, useQuery } from "@tanstack/react-query"
+import { Effect } from "effect"
+import type { HttpClient } from "effect/unstable/http"
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
@@ -17,21 +20,26 @@ import {
   Tooltip,
 } from "@open-planner/ui"
 
-import { createTag, deleteTag, patchTag, TaskRejected } from "../lib/api"
+import { createTag, deleteTag, listTags, patchTag, TaskRejected } from "../lib/api"
 import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { tagsKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
-import { runTagMutation, tagsQuery, useQuery } from "../lib/store"
+import { runtime } from "../lib/runtime"
 
 // This page holds no task rows, and the cursor is the board's — left as it was, `j` then Enter here
 // would open a task the reader can no longer see.
 const NO_ROWS: ReadonlyArray<string> = []
+type Write = Effect.Effect<unknown, unknown, HttpClient.HttpClient>
 
 export function TagsRoute() {
   const { project = "" } = useParams()
   const projects = useProjects()
   const known = useProject(project)
-  const tags = useQuery(tagsQuery(project))
+  const tags = useQuery({
+    queryKey: tagsKey(project),
+    queryFn: () => runtime.runPromise(listTags(project)),
+  })
   useRowCursor(NO_ROWS)
 
   // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
@@ -54,20 +62,20 @@ export function TagsRoute() {
       <PanelBody className="p-6">
         {/* The read and the writes resolve the same worktree, so a registry that cannot be read is a
             registry that cannot be written either — offering the form would only produce a toast. */}
-        {tags._tag === "failure" ? (
+        {tags.isError ? (
           <EmptyState title="Could not load tags" detail={errorText(tags.error)} />
-        ) : tags._tag === "loading" ? (
+        ) : tags.isPending ? (
           <SkeletonList count={3} className="h-10 w-full" />
         ) : (
           <>
             <NewTag project={project} />
-            {tags.value.length === 0 ? (
+            {tags.data.length === 0 ? (
               <p className="text-muted-foreground text-sm">No tags yet. Register one above.</p>
             ) : (
               <ul>
-                {tags.value.map((tag, index) => (
+                {tags.data.map((tag, index) => (
                   <li key={tag.name}>
-                    <TagRow project={project} tag={tag} last={index === tags.value.length - 1} />
+                    <TagRow project={project} tag={tag} last={index === tags.data.length - 1} />
                   </li>
                 ))}
               </ul>
@@ -83,21 +91,20 @@ export function TagsRoute() {
 function NewTag({ project }: { project: string }) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
-  const [writing, setWriting] = useState(false)
+  const mutation = useMutation({
+    mutationFn: (effect: Write) => runtime.runPromise(effect),
+    meta: { project },
+  })
   const trimmed = name.trim()
 
   const submit = () => {
-    if (trimmed === "" || writing) return
+    if (trimmed === "" || mutation.isPending) return
     const described = description.trim()
-    setWriting(true)
-    void runTagMutation(
-      project,
-      createTag(project, { name: trimmed, description: described === "" ? undefined : described }),
-    ).then((refusal) => {
-      setWriting(false)
-      if (refusal !== undefined) return
-      setName("")
-      setDescription("")
+    mutation.mutate(createTag(project, { name: trimmed, description: described === "" ? undefined : described }), {
+      onSuccess: () => {
+        setName("")
+        setDescription("")
+      },
     })
   }
 
@@ -121,7 +128,12 @@ function NewTag({ project }: { project: string }) {
         placeholder="What it marks (optional)"
         className="min-w-0 flex-1"
       />
-      <Button type="submit" variant="accent" disabled={trimmed === "" || writing} className="disabled:opacity-40">
+      <Button
+        type="submit"
+        variant="accent"
+        disabled={trimmed === "" || mutation.isPending}
+        className="disabled:opacity-40"
+      >
         <Plus className="size-3.5" />
         Register tag
       </Button>
@@ -133,6 +145,10 @@ type Editing = "no" | "naming" | "deleting" | "forcing" | "recolouring"
 
 function TagRow({ project, tag, last }: { project: string; tag: TagView; last: boolean }) {
   const [editing, setEditing] = useState<Editing>("no")
+  const mutation = useMutation({
+    mutationFn: (effect: Write) => runtime.runPromise(effect),
+    meta: { project },
+  })
   // A refetch replaces the row's tag while a form stands open over the old one; close it rather than
   // let a save write yesterday's name back.
   useEffect(() => setEditing("no"), [tag.display, tag.description])
@@ -151,7 +167,7 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
         onClose={() => setEditing("no")}
         onPick={(color) => {
           setEditing("no")
-          void runTagMutation(project, patchTag(project, tag.name, { color }))
+          mutation.mutate(patchTag(project, tag.name, { color }))
         }}
       />
       {editing === "naming" ? (
@@ -277,17 +293,20 @@ function DeleteConfirm({
   onRefused: () => void
   onCancel: () => void
 }) {
-  const [writing, setWriting] = useState(false)
+  const mutation = useMutation({
+    mutationFn: (effect: Write) => runtime.runPromise(effect),
+    meta: { project },
+  })
   const remove = () => {
-    if (writing) return
-    setWriting(true)
-    void runTagMutation(project, deleteTag(project, tag.name, forcing)).then((refusal) => {
-      setWriting(false)
-      if (!forcing && refusal instanceof TaskRejected && refusal.status === 409) onRefused()
+    if (mutation.isPending) return
+    mutation.mutate(deleteTag(project, tag.name, forcing), {
+      onError: (error) => {
+        if (!forcing && error instanceof TaskRejected && error.status === 409) onRefused()
+      },
     })
   }
   const confirm = (
-    <Button variant="danger" onClick={remove} disabled={writing} className="text-danger disabled:opacity-40">
+    <Button variant="danger" onClick={remove} disabled={mutation.isPending} className="text-danger disabled:opacity-40">
       <Check className="size-3.5" />
       {forcing ? "Delete anyway" : "Delete"}
     </Button>
@@ -309,25 +328,24 @@ function DeleteConfirm({
 function TagForm({ project, tag, onClose }: { project: string; tag: TagView; onClose: () => void }) {
   const [display, setDisplay] = useState(tag.display)
   const [description, setDescription] = useState(tag.description ?? "")
-  const [writing, setWriting] = useState(false)
+  const mutation = useMutation({
+    mutationFn: (effect: Write) => runtime.runPromise(effect),
+    meta: { project },
+  })
   const first = useRef<HTMLInputElement>(null)
   useEffect(() => first.current?.focus(), [])
 
   const save = () => {
     const named = display.trim()
-    if (named === "" || writing) return
+    if (named === "" || mutation.isPending) return
     const described = description.trim()
-    setWriting(true)
-    void runTagMutation(
-      project,
+    mutation.mutate(
       patchTag(project, tag.name, {
         name: named === tag.display ? undefined : named,
         description: described === (tag.description ?? "") ? undefined : described === "" ? null : described,
       }),
-    ).then((refusal) => {
-      setWriting(false)
-      if (refusal === undefined) onClose()
-    })
+      { onSuccess: onClose },
+    )
   }
 
   return (
@@ -357,7 +375,7 @@ function TagForm({ project, tag, onClose }: { project: string; tag: TagView; onC
       <Button
         type="submit"
         variant="accent"
-        disabled={display.trim() === "" || writing}
+        disabled={display.trim() === "" || mutation.isPending}
         className="disabled:opacity-40"
       >
         <Check className="size-3.5" />

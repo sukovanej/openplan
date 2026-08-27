@@ -1,3 +1,4 @@
+import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 import { MessageSquare, Tags } from "lucide-react"
 import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
@@ -20,11 +21,13 @@ import {
 import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@open-planner/ui"
 
 import { ListSkeleton } from "../components/states"
+import { getBoard, getMergedBoard } from "../lib/api"
 import { hoveredRow } from "../lib/copy-target"
 import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { boardKey, mergedBoardKey } from "../lib/query-client"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
-import { boardQuery, mergedBoardQuery, useQuery, type QueryState } from "../lib/store"
+import { runtime } from "../lib/runtime"
 import { useTags } from "../lib/tags"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
 
@@ -37,7 +40,10 @@ export function ListRoute() {
 
 function MergedBoard() {
   const projects = useProjects()
-  const board = useQuery(mergedBoardQuery)
+  const board = useQuery({
+    queryKey: mergedBoardKey,
+    queryFn: () => runtime.runPromise(getMergedBoard),
+  })
   if (projects !== undefined && projects.length === 0) {
     return <EmptyState title="No projects yet" detail="Register a repository with `openplan project add`." />
   }
@@ -47,7 +53,10 @@ function MergedBoard() {
 function ProjectBoard({ project }: { project: string }) {
   const projects = useProjects()
   const known = useProject(project)
-  const board = useQuery(boardQuery(project))
+  const board = useQuery({
+    queryKey: boardKey(project),
+    queryFn: () => runtime.runPromise(getBoard(project)),
+  })
   // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
   // the daemon has answered.
   if (projects !== undefined && known === undefined) {
@@ -74,29 +83,24 @@ function ProjectBoard({ project }: { project: string }) {
   )
 }
 
-function BoardState({ board, title, action }: { board: QueryState<Board>; title: string; action?: ReactNode }) {
-  switch (board._tag) {
-    case "loading":
-      return <ListSkeleton />
-    case "failure":
-      return <EmptyState title="Could not load tasks" detail={errorText(board.error)} />
-    case "success":
-      // A project with no tasks keeps its panel, because the header is the only way to the tag
-      // registry — and a project with nothing in it is exactly where the first tag gets registered.
-      return board.value.groups.length === 0 ? (
-        <Panel>
-          <PanelHeader className="gap-3">
-            <PanelTitle>{title}</PanelTitle>
-            {action !== undefined && <div className="ml-auto">{action}</div>}
-          </PanelHeader>
-          <PanelBody className="p-6">
-            <EmptyState title="No tasks yet" detail="Create one with `openplan create`." />
-          </PanelBody>
-        </Panel>
-      ) : (
-        <TaskGrid board={board.value} title={title} action={action} />
-      )
-  }
+function BoardState({ board, title, action }: { board: UseQueryResult<Board>; title: string; action?: ReactNode }) {
+  if (board.isPending) return <ListSkeleton />
+  if (board.isError) return <EmptyState title="Could not load tasks" detail={errorText(board.error)} />
+  // A project with no tasks keeps its panel, because the header is the only way to the tag registry
+  // and a project with nothing in it is exactly where the first tag gets registered.
+  return board.data.groups.length === 0 ? (
+    <Panel>
+      <PanelHeader className="gap-3">
+        <PanelTitle>{title}</PanelTitle>
+        {action !== undefined && <div className="ml-auto">{action}</div>}
+      </PanelHeader>
+      <PanelBody className="p-6">
+        <EmptyState title="No tasks yet" detail="Create one with `openplan create`." />
+      </PanelBody>
+    </Panel>
+  ) : (
+    <TaskGrid board={board.data} title={title} action={action} />
+  )
 }
 
 const rowDomId = (path: string) => `task-row-${path}`

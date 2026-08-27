@@ -1,3 +1,4 @@
+import { useMutation } from "@tanstack/react-query"
 import { Effect } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { Plus } from "lucide-react"
@@ -9,7 +10,7 @@ import { Button, type ComboOption, Combobox, FuzzyText, Tooltip } from "@open-pl
 
 import { createTag, patchTask } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
-import { runMutation, runTagMutation } from "../lib/store"
+import { runtime } from "../lib/runtime"
 import { tagMatches, tagsWith, tagsWithout, tagSpelled, useTags } from "../lib/tags"
 import { Blocked } from "./blocked"
 
@@ -63,6 +64,10 @@ export function TagsField({
   const [writing, setWriting] = useState(false)
   const landed = useRef<Landed | null>(null)
   const broken = unreadable(metadata)
+  const { mutate } = useMutation({
+    mutationFn: (effect: Write) => runtime.runPromise(effect),
+    meta: { project },
+  })
 
   useDetailAction("edit-tags", () => {
     if (blocked === undefined && broken === undefined && !writing) setAdding(true)
@@ -80,22 +85,27 @@ export function TagsField({
     }
   }, [names])
 
-  const track = useCallback((reached: Landed, done: Promise<unknown>) => {
+  const start = useCallback((reached: Landed) => {
     landed.current = reached
     setWriting(true)
-    void done.then((refusal) => {
-      if (refusal === undefined) return
-      landed.current = null
-      setWriting(false)
-    })
+  }, [])
+  const stop = useCallback(() => {
+    landed.current = null
+    setWriting(false)
   }, [])
   const write = useCallback(
-    (reached: Landed, effect: Write) => track(reached, runMutation(project, effect)),
-    [project, track],
+    (reached: Landed, effect: Write) => {
+      start(reached)
+      mutate(effect, { onError: stop })
+    },
+    [mutate, start, stop],
   )
   const register = useCallback(
-    (reached: Landed, effect: Write) => track(reached, runTagMutation(project, effect)),
-    [project, track],
+    (reached: Landed, effect: Write) => {
+      start(reached)
+      mutate(effect, { onError: stop })
+    },
+    [mutate, start, stop],
   )
   const close = useCallback(() => setAdding(false), [])
 
