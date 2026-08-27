@@ -131,19 +131,33 @@ async fn a_project_parameter_leaves_the_other_project_out() {
 }
 
 #[tokio::test]
-async fn the_seeds_are_the_todo_tasks_until_a_status_says_otherwise() {
+async fn the_seeds_are_every_unfinished_task_until_a_status_narrows_them() {
     let (_alpha, _beta, state) = two_projects();
     todo(&state, "alpha", "alpha one", &[]).await;
     create(&state, "alpha", json!({ "title": "alpha two" })).await;
+    let done = create(&state, "alpha", json!({ "title": "alpha three" })).await;
+    let closed = send(
+        &state,
+        "PATCH",
+        &format!("/api/projects/alpha/tasks/{done}"),
+        Some(json!({ "status": "done" })),
+    )
+    .await;
+    assert_eq!(closed.status(), StatusCode::OK);
 
     assert_eq!(
         waves(&flow(&state, "").await).len(),
-        1,
-        "the backlog task is no seed"
+        2,
+        "the todo task and the backlog task seed, the done task does not"
     );
     assert_eq!(
         waves(&flow(&state, "?status=backlog").await),
         vec![("alpha".to_owned(), "AAA-2".to_owned(), 0)]
+    );
+    assert_eq!(
+        waves(&flow(&state, "?status=done").await),
+        vec![("alpha".to_owned(), "AAA-3".to_owned(), 0)],
+        "a caller who asks for a finished task gets it"
     );
     assert_eq!(
         waves(&flow(&state, "?status=todo&status=backlog").await).len(),

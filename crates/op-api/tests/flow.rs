@@ -78,6 +78,14 @@ fn flow(builds: Vec<Build>) -> Flow {
     Flow::build(&tasks(builds), &FlowQuery::default()).expect("no cycle")
 }
 
+fn seeded(builds: Vec<Build>, statuses: Vec<Status>) -> Flow {
+    let query = FlowQuery {
+        statuses,
+        ..FlowQuery::default()
+    };
+    Flow::build(&tasks(builds), &query).expect("no cycle")
+}
+
 fn kind(node: &FlowNode) -> &'static str {
     match node {
         FlowNode::Leaf { .. } => "leaf",
@@ -219,11 +227,14 @@ fn a_box_with_no_remaining_child_is_a_plain_node() {
 
 #[test]
 fn a_backlog_child_of_an_included_parent_joins_the_box() {
-    let flow = flow(vec![
-        task("OPP-40", Status::Todo),
-        task("OPP-41", Status::Todo).parent("OPP-40"),
-        task("OPP-44", Status::Backlog).parent("OPP-40"),
-    ]);
+    let flow = seeded(
+        vec![
+            task("OPP-40", Status::Todo),
+            task("OPP-41", Status::Todo).parent("OPP-40"),
+            task("OPP-44", Status::Backlog).parent("OPP-40"),
+        ],
+        vec![Status::Todo],
+    );
 
     assert_eq!(
         kinds(&flow),
@@ -313,41 +324,52 @@ fn the_key_orders_the_rest_by_its_number() {
 }
 
 #[test]
-fn no_parameter_seeds_every_todo_task_of_every_project() {
+fn no_parameter_seeds_every_unfinished_task_of_every_project() {
     let flow = flow(vec![
         task("OPP-1", Status::Todo),
         task("OPP-2", Status::InProgress),
-        task("WEB-1", Status::Todo).project("two"),
+        task("OPP-3", Status::Done),
+        task("OPP-4", Status::Cancelled),
+        task("WEB-1", Status::Backlog).project("two"),
     ]);
 
-    assert_eq!(ids(&flow), ["OPP-1", "WEB-1"]);
+    assert_eq!(ids(&flow), ["OPP-1", "WEB-1", "OPP-2"]);
 }
 
 #[test]
-fn a_status_replaces_the_default_seed_status() {
-    let query = FlowQuery {
-        statuses: vec![Status::InProgress],
-        ..FlowQuery::default()
-    };
-    let flow = Flow::build(
-        &tasks(vec![
+fn a_status_narrows_the_seeds_to_itself() {
+    let flow = seeded(
+        vec![
             task("OPP-1", Status::Todo),
             task("OPP-2", Status::InProgress),
-        ]),
-        &query,
-    )
-    .expect("no cycle");
+        ],
+        vec![Status::InProgress],
+    );
+
+    assert_eq!(ids(&flow), ["OPP-2"]);
+}
+
+// A finished task seeds nothing on its own, and a caller who asks for one gets it.
+#[test]
+fn a_named_status_takes_a_finished_task_too() {
+    let flow = seeded(
+        vec![task("OPP-1", Status::Todo), task("OPP-2", Status::Done)],
+        vec![Status::Done],
+    );
 
     assert_eq!(ids(&flow), ["OPP-2"]);
 }
 
 #[test]
 fn the_growth_takes_a_dependency_of_any_status() {
-    let flow = flow(vec![
-        task("OPP-1", Status::Todo).needs(&["OPP-2"]),
-        task("OPP-2", Status::Backlog).needs(&["OPP-3"]),
-        task("OPP-3", Status::InReview),
-    ]);
+    let flow = seeded(
+        vec![
+            task("OPP-1", Status::Todo).needs(&["OPP-2"]),
+            task("OPP-2", Status::Backlog).needs(&["OPP-3"]),
+            task("OPP-3", Status::InReview),
+        ],
+        vec![Status::Todo],
+    );
 
     assert_eq!(ids(&flow), ["OPP-3", "OPP-2", "OPP-1"]);
 }
@@ -533,11 +555,14 @@ fn a_task_in_a_parent_cycle_reports_no_parent() {
 
 #[test]
 fn a_finished_parent_blocks_nothing_it_declared() {
-    let flow = flow(vec![
-        task("OPP-40", Status::Done).needs(&["OPP-60"]),
-        task("OPP-41", Status::Todo).parent("OPP-40"),
-        task("OPP-60", Status::Backlog),
-    ]);
+    let flow = seeded(
+        vec![
+            task("OPP-40", Status::Done).needs(&["OPP-60"]),
+            task("OPP-41", Status::Todo).parent("OPP-40"),
+            task("OPP-60", Status::Backlog),
+        ],
+        vec![Status::Todo],
+    );
 
     assert_eq!(place(&flow, "OPP-41"), (0, 0, 0));
     assert!(

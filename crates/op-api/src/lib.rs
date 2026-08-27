@@ -1259,23 +1259,20 @@ pub struct FlowQuery {
     pub tags: Vec<String>,
 }
 
-const SEED_STATUSES: [Status; 1] = [Status::Todo];
-
 impl FlowQuery {
-    fn seed_statuses(&self) -> &[Status] {
-        match self.statuses.is_empty() {
-            true => &SEED_STATUSES,
-            false => &self.statuses,
-        }
-    }
-
     fn selects(&self, task: &TaskListItem) -> bool {
         let by_project =
             self.projects.is_empty() || self.projects.iter().any(|name| name == &task.project);
-        let by_status = task
-            .metadata
-            .status()
-            .is_some_and(|status| self.seed_statuses().contains(&status));
+        // With no status named, every task that somebody can still implement is a seed. A finished
+        // task seeds nothing, because the flow orders the work that is left; a file whose status
+        // does not parse is work, and it stays visible.
+        let by_status = match self.statuses.is_empty() {
+            true => is_remaining(task),
+            false => task
+                .metadata
+                .status()
+                .is_some_and(|status| self.statuses.contains(&status)),
+        };
         let by_key = self.tasks.is_empty()
             || self
                 .tasks

@@ -1088,7 +1088,7 @@ async fn get_merged_board(State(state): State<AppState>) -> Result<Json<Board>, 
     path = "/api/flow",
     params(
         ("project" = Option<Vec<String>>, Query, description = "Project name; omit to take every project the daemon serves"),
-        ("status" = Option<Vec<Status>>, Query, description = "Seed status; the default is todo"),
+        ("status" = Option<Vec<Status>>, Query, description = "Seed status; omit it to seed every task that is not done or cancelled"),
         ("task" = Option<Vec<String>>, Query, description = "Task key; it needs a project"),
         ("tag" = Option<Vec<String>>, Query, description = "Tag name")
     ),

@@ -17,14 +17,15 @@ Each parameter repeats. Parameters with different names combine with AND. Values
 with OR.
 
 - `project` — a project name.
-- `status` — a seed status. The default is `todo`.
+- `status` — a seed status. With no `status`, each task that is not `done` and not
+  `cancelled` is a seed.
 - `task` — a task key, for example `OPP-42`.
 - `tag` — a tag name.
 
 A `task` parameter needs a `project` parameter. Refuse a `task` without a `project`: two stores can
 commit the same abbreviation, so a bare key names no single task.
 
-A request with no parameter selects each `todo` task in each project.
+A request with no parameter selects each unfinished task in each project.
 
 ```
 GET /api/flow
@@ -211,3 +212,17 @@ Put the computation in `op-api`, next to `Board::build`. Put the route and the `
 >
 > 657 tests pass, clippy and fmt are clean, and the endpoint answers the same for this
 > repository's own store.
+
+### 2026-08-27T18:29:54Z by Milan Suk via claude-code
+
+> You removed the `todo` default from the status filter.
+>
+> With no `status`, a seed is now every task that is not `done` and not `cancelled`. A finished
+> task seeds nothing, because the flow orders the work that is left, and a bare `/api/flow` would
+> otherwise send this repository's ninety finished tasks. A caller who wants one asks for it:
+> `?status=done` still works.
+>
+> So `?project=open-plan&task=OPP-42` now finds OPP-42 in any unfinished status. A `done` task
+> still needs `&status=done`.
+>
+> I updated the Query section of this task, because it carried the old rule.
