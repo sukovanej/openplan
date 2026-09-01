@@ -86,6 +86,7 @@ export function useKeyboard(): Keyboard {
         },
       },
       detail: {
+        showFlow: () => detailActions.emit("show-flow"),
         editParent: () => detailActions.emit("edit-parent"),
         addSubtask: () => detailActions.emit("add-subtask"),
         editTags: () => detailActions.emit("edit-tags"),

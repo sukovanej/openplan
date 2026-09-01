@@ -15,13 +15,22 @@ export {
   tagsOf,
 } from "./metadata"
 export { ParentLink } from "./parent-link"
-export { StatusChip, StatusField, StatusGroupHeader, statusGroupLabel, StatusIcon, statusLabel } from "./status"
+export {
+  statusBorder,
+  StatusChip,
+  StatusField,
+  StatusGroupHeader,
+  statusGroupLabel,
+  StatusIcon,
+  statusLabel,
+} from "./status"
 export { TagChip } from "./tag-chip"
 export { ColorDot, ColorPicker, TAG_COLORS } from "./tag-palette"
 export { TaskBody } from "./task-body"
 export {
   BOARD_ROUTE,
   boardPath,
+  FLOW_ROUTE,
   TAGS_ROUTE,
   tagsPath,
   TASK_ROUTE,

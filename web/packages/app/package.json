@@ -17,6 +17,7 @@
     "@open-planner/task-ui": "workspace:*",
     "@open-planner/ui": "workspace:*",
     "@tanstack/react-query": "catalog:",
+    "@xyflow/react": "catalog:",
     "effect": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",

@@ -10,8 +10,8 @@ export function isOverlayScope(scope: Scope): scope is OverlayName {
   return (OVERLAY_NAMES as ReadonlyArray<string>).includes(scope)
 }
 
-// Which consumer the palette opens on. `home` is the seat the general command interface will take;
-// until it ships the only consumer registered there is search, so `home` lands where `search` does.
+// Which consumer the palette opens on. `home` is the general command interface: the commands the app
+// answers for, and the tasks a query finds. `search` is the task search alone.
 export type PaletteTarget = "home" | "search"
 
 export type KeySpec = string | ReadonlyArray<string>
@@ -37,6 +37,7 @@ export interface CopyControls {
 }
 
 export interface DetailControls {
+  readonly showFlow: () => void
   readonly editParent: () => void
   readonly addSubtask: () => void
   readonly editTags: () => void

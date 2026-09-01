@@ -16,3 +16,23 @@
     @apply bg-background text-foreground font-sans;
   }
 }
+
+/* React Flow paints from its own variables, so the diagram takes the app's palette here rather than
+   in a wrapper that would have to restate every rule the library ships. */
+.react-flow {
+  --xy-edge-stroke: var(--color-muted-foreground);
+  --xy-edge-stroke-width: 1.5;
+  --xy-background-pattern-dots-color: var(--color-border);
+  --xy-controls-button-background-color: var(--color-background);
+  --xy-controls-button-background-color-hover: var(--color-muted);
+  --xy-controls-button-border-color: var(--color-border);
+  --xy-controls-button-color: var(--color-muted-foreground);
+  --xy-controls-button-color-hover: var(--color-foreground);
+  --xy-attribution-background-color: transparent;
+}
+
+/* An edge meets a node at its handle, which React Flow measures from the DOM. It keeps its box and
+   loses its paint. */
+.react-flow__handle {
+  opacity: 0;
+}

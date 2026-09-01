@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, X } from "lucide-react"
+import { Pencil, Plus, Waypoints, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
@@ -40,6 +40,7 @@ import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/
 import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
+import { taskFlowPath } from "../lib/flow-selection"
 import { errorText } from "../lib/format"
 import { useAbbreviation } from "../lib/projects"
 import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
@@ -159,7 +160,8 @@ function TaskDetailView({
           <PanelTitle>
             <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
           </PanelTitle>
-          <div className="ml-auto min-w-0">
+          <FlowAction project={project} id={task.id} />
+          <div className="min-w-0">
             <HeaderParent
               key={writeKey}
               project={project}
@@ -241,6 +243,23 @@ function TaskDetailView({
         )}
       </aside>
     </div>
+  )
+}
+
+// What blocks this task, as a picture rather than a list of links: the flow of the task alone, which
+// grows to hold everything it waits for.
+function FlowAction({ project, id }: { project: string; id: string }) {
+  const navigate = useNavigate()
+  const to = taskFlowPath(project, id)
+  useDetailAction("show-flow", () => navigate(to))
+  return (
+    <Link
+      to={to}
+      className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
+    >
+      <Waypoints className="size-3.5" />
+      Flow
+    </Link>
   )
 }
 

@@ -5,49 +5,61 @@ import { cn, Tooltip } from "@open-planner/ui"
 
 import { fieldValue, statusField } from "./metadata"
 
-const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; header: string }> = {
+const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; header: string; border: string }> = {
   backlog: {
     label: "Backlog",
     icon: CircleEllipsis,
     mark: "text-status-backlog",
     header: "bg-status-backlog-surface/8 border-status-backlog-surface/20 text-status-backlog-text/80",
+    border: "border-l-status-backlog",
   },
   todo: {
     label: "Todo",
     icon: Clock,
     mark: "text-status-todo",
     header: "bg-status-todo-surface/8 border-status-todo-surface/20 text-status-todo-text/80",
+    border: "border-l-status-todo",
   },
   in_progress: {
     label: "In progress",
     icon: CircleDot,
     mark: "text-status-in-progress",
     header: "bg-status-in-progress-surface/8 border-status-in-progress-surface/20 text-status-in-progress-text/80",
+    border: "border-l-status-in-progress",
   },
   in_review: {
     label: "In review",
     icon: Eye,
     mark: "text-status-in-review",
     header: "bg-status-in-review-surface/8 border-status-in-review-surface/20 text-status-in-review-text/80",
+    border: "border-l-status-in-review",
   },
   done: {
     label: "Done",
     icon: CircleCheck,
     mark: "text-status-done",
     header: "bg-status-done-surface/8 border-status-done-surface/20 text-status-done-text/80",
+    border: "border-l-status-done",
   },
   cancelled: {
     label: "Cancelled",
     icon: CircleX,
     mark: "text-status-cancelled",
     header: "bg-status-cancelled-surface/8 border-status-cancelled-surface/20 text-status-cancelled-text/80",
+    border: "border-l-status-cancelled",
   },
 }
 
 const UNREADABLE_HEADER =
   "bg-status-unreadable-surface/8 border-status-unreadable-surface/20 text-status-unreadable-text/80"
+const UNREADABLE_BORDER = "border-l-status-unreadable"
 
 export const statusLabel = (status: Status): string => styles[status].label
+
+// The status as a coloured left edge, for a surface that carries no room for the icon. A status that
+// could not be read wears the unreadable mark's colour, as the icon does.
+export const statusBorder = (status: Status | undefined): string =>
+  status === undefined ? UNREADABLE_BORDER : styles[status].border
 
 export function StatusIcon({ status, className }: { status: Status; className?: string }) {
   const { icon: Icon, label, mark } = styles[status]

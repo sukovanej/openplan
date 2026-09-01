@@ -12,6 +12,10 @@ export const projectsKey = ["projects"] as const
 export const mergedKey = ["merged"] as const
 export const projectMutationsKey = ["mutation", "project"] as const
 export const mergedBoardKey = [...mergedKey, "board"] as const
+// The flow spans every project a query names, so it lives beside the merged board rather than under
+// one project.
+export const flowsKey = [...mergedKey, "flow"] as const
+export const flowKey = (query: string) => [...flowsKey, query] as const
 export const boardKey = (project: string) => [...projectKey(project), "board"] as const
 export const tasksKey = (project: string) => [...projectKey(project), "tasks"] as const
 export const tagsKey = (project: string, branch?: string) =>
@@ -57,6 +61,7 @@ export const queryInvalidator: Invalidator = {
     invalidate(boardKey(project))
     invalidate(tasksKey(project))
     invalidate(mergedBoardKey)
+    invalidate(flowsKey)
   },
   refreshTask: (project, id) => invalidate(taskKey(project, id)),
   refreshVisible: (project) => {
