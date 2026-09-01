@@ -27,6 +27,7 @@ catalog:
   tailwind-merge: 3.6.0
   lucide-react: 1.24.0
   "@xyflow/react": 12.11.5
+  elkjs: 0.12.0
 
   "@types/hast": 3.0.5
   "@types/react": 19.2.17

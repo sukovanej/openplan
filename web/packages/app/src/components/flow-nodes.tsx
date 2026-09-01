@@ -1,11 +1,11 @@
-import { Handle, type Node, type NodeProps, Position } from "@xyflow/react"
+import { BaseEdge, type Edge, type EdgeProps, Handle, type Node, type NodeProps, Position } from "@xyflow/react"
 import { Link } from "react-router-dom"
 
 import type { FlowNode } from "@open-planner/api-client"
 import { fieldValue, statusBorder, StatusMark, taskPath, UnresolvedMark } from "@open-planner/task-ui"
 import { cn } from "@open-planner/ui"
 
-import { BOX_HEADER } from "../lib/flow-layout"
+import { BOX_HEADER, type Point } from "../lib/flow-layout"
 
 type Leaf = Extract<FlowNode, { kind: "leaf" }>
 type Box = Extract<FlowNode, { kind: "box" }>
@@ -14,6 +14,7 @@ type Unresolved = Extract<FlowNode, { kind: "unresolved" }>
 export type LeafFlowNode = Node<{ task: Leaf }, "leaf">
 export type BoxFlowNode = Node<{ task: Box }, "box">
 export type UnresolvedFlowNode = Node<{ reference: Unresolved }, "unresolved">
+export type RoutedFlowEdge = Edge<{ points: ReadonlyArray<Point> }, "routed">
 
 // A handle is where an edge meets a node. React Flow measures it from the DOM, so it stays in the
 // layout and only its paint goes.
@@ -79,4 +80,30 @@ export function UnresolvedFlowCard({ data }: NodeProps<UnresolvedFlowNode>) {
       </div>
     </>
   )
+}
+
+const CORNER = 10
+
+// The turns the layout engine chose, rounded. React Flow would otherwise draw a line of its own
+// between the two handles, and that line is the one that runs over the nodes in between.
+function corners(points: ReadonlyArray<Point>): string {
+  if (points.length === 0) return ""
+  const [first, ...rest] = points
+  let path = `M ${first.x} ${first.y}`
+  for (let at = 1; at < points.length - 1; at++) {
+    const from = points[at - 1]
+    const turn = points[at]
+    const to = points[at + 1]
+    const back = Math.min(CORNER, Math.hypot(turn.x - from.x, turn.y - from.y) / 2)
+    const on = Math.min(CORNER, Math.hypot(to.x - turn.x, to.y - turn.y) / 2)
+    const enter = { x: turn.x + Math.sign(from.x - turn.x) * back, y: turn.y + Math.sign(from.y - turn.y) * back }
+    const leave = { x: turn.x + Math.sign(to.x - turn.x) * on, y: turn.y + Math.sign(to.y - turn.y) * on }
+    path += ` L ${enter.x} ${enter.y} Q ${turn.x} ${turn.y} ${leave.x} ${leave.y}`
+  }
+  const last = rest[rest.length - 1] ?? first
+  return `${path} L ${last.x} ${last.y}`
+}
+
+export function RoutedFlowLine({ data, markerEnd, style }: EdgeProps<RoutedFlowEdge>) {
+  return <BaseEdge path={corners(data?.points ?? [])} markerEnd={markerEnd} style={style} />
 }

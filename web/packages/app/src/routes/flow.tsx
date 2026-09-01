@@ -4,19 +4,21 @@ import {
   BackgroundVariant,
   Controls,
   type Edge,
+  type EdgeTypes,
   MarkerType,
   type Node,
   type NodeTypes,
   ReactFlow,
+  useReactFlow,
 } from "@xyflow/react"
-import { useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 
 import type { Flow } from "@open-planner/api-client"
 import { FLOW_ROUTE } from "@open-planner/task-ui"
 import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, Skeleton } from "@open-planner/ui"
 
-import { BoxFlowCard, LeafFlowCard, UnresolvedFlowCard } from "../components/flow-nodes"
+import { BoxFlowCard, LeafFlowCard, RoutedFlowLine, UnresolvedFlowCard } from "../components/flow-nodes"
 import { FlowCycles, getFlow } from "../lib/api"
 import { type FlowLayout, layoutFlow } from "../lib/flow-layout"
 import { describeSelection, readSelection, selectionParams, selectsEveryTask } from "../lib/flow-selection"
@@ -38,6 +40,12 @@ const NODE_TYPES: NodeTypes = {
   unresolved: UnresolvedFlowCard,
 }
 
+const EDGE_TYPES: EdgeTypes = { routed: RoutedFlowLine }
+
+// A card stops being readable below this, so the graph never shrinks past it. Whatever is left over
+// the reader pans to.
+const MIN_ZOOM = 0.5
+
 export function FlowRoute() {
   const [params] = useSearchParams()
   const query = params.toString()
@@ -46,6 +54,8 @@ export function FlowRoute() {
     queryKey: flowKey(selectionParams(selection).toString()),
     queryFn: () => runtime.runPromise(getFlow(selection)),
   })
+  const page = useRef<HTMLDivElement>(null)
+  const shape = usePageShape(page)
   useRowCursor(NO_ROWS)
 
   return (
@@ -61,14 +71,31 @@ export function FlowRoute() {
           </Link>
         )}
       </PanelHeader>
-      <PanelBody className="overflow-hidden">
-        <FlowState flow={flow} />
+      <PanelBody ref={page} className="overflow-hidden">
+        <FlowState flow={flow} shape={shape} />
       </PanelBody>
     </Panel>
   )
 }
 
-function FlowState({ flow }: { flow: UseQueryResult<Flow> }) {
+// The islands are packed to the shape of the box they are drawn in, so the whole graph fills it
+// rather than running off one edge.
+function usePageShape(page: React.RefObject<HTMLDivElement | null>): number {
+  const [shape, setShape] = useState(1.8)
+  useEffect(() => {
+    const box = page.current
+    if (box === null) return
+    const watch = new ResizeObserver(() => {
+      const { width, height } = box.getBoundingClientRect()
+      if (width > 0 && height > 0) setShape(Math.round((width / height) * 10) / 10)
+    })
+    watch.observe(box)
+    return () => watch.disconnect()
+  }, [page])
+  return shape
+}
+
+function FlowState({ flow, shape }: { flow: UseQueryResult<Flow>; shape: number }) {
   if (flow.isPending) return <Skeleton className="m-6 h-[calc(100%-3rem)]" />
   if (flow.isError) {
     return (
@@ -88,28 +115,41 @@ function FlowState({ flow }: { flow: UseQueryResult<Flow> }) {
       </div>
     )
   }
-  return <Diagram flow={flow.data} />
+  return <Diagram flow={flow.data} shape={shape} />
 }
 
 function round(cycle: ReadonlyArray<string>): string {
   return [...cycle, cycle[0]].join(" → ")
 }
 
-function Diagram({ flow }: { flow: Flow }) {
+function Diagram({ flow, shape }: { flow: Flow; shape: number }) {
   const { resolved } = useTheme()
-  const layout = useMemo(() => layoutFlow(flow), [flow])
-  const nodes = useMemo(() => reactFlowNodes(layout), [layout])
-  const edges = useMemo(() => reactFlowEdges(layout), [layout])
+  const [layout, setLayout] = useState<FlowLayout>()
+
+  // The old drawing stays up while the engine runs, so a refetch does not blank the page.
+  useEffect(() => {
+    let live = true
+    void layoutFlow(flow, shape).then((next) => {
+      if (live) setLayout(next)
+    })
+    return () => {
+      live = false
+    }
+  }, [flow, shape])
+
+  const nodes = useMemo(() => (layout === undefined ? [] : reactFlowNodes(layout)), [layout])
+  const edges = useMemo(() => (layout === undefined ? [] : reactFlowEdges(layout)), [layout])
+  if (layout === undefined) return <Skeleton className="m-6 h-[calc(100%-3rem)]" />
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
       nodeTypes={NODE_TYPES}
+      edgeTypes={EDGE_TYPES}
       colorMode={resolved}
       fitView
-      // A flow of two nodes would otherwise fill the box at the largest zoom the reader can reach.
-      fitViewOptions={{ maxZoom: 1, padding: 0.15 }}
-      minZoom={0.08}
+      fitViewOptions={{ maxZoom: 1, padding: 0.06 }}
+      minZoom={MIN_ZOOM}
       maxZoom={1.6}
       // The layout comes from the endpoint, so a node holds still and answers the click that opens
       // its task. React Flow gives a node pointer events only while it is selectable.
@@ -118,10 +158,25 @@ function Diagram({ flow }: { flow: Flow }) {
       deleteKeyCode={null}
       className="h-full w-full"
     >
+      <Refit on={shape} />
       <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
       <Controls showInteractive={false} />
     </ReactFlow>
   )
+}
+
+// A resize reshapes the packing, which leaves the old viewport pointing at nothing.
+function Refit({ on }: { on: number }) {
+  const flow = useReactFlow()
+  const first = useRef(true)
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    void flow.fitView({ maxZoom: 1, padding: 0.06 })
+  }, [on, flow])
+  return null
 }
 
 function reactFlowNodes(layout: FlowLayout): Array<Node> {
@@ -144,7 +199,10 @@ function reactFlowEdges(layout: FlowLayout): Array<Edge> {
     id: edge.key,
     source: edge.source,
     target: edge.target,
-    type: "smoothstep",
+    type: "routed",
+    data: { points: edge.points },
     markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+    // An edge that leaves a box has to paint over it.
+    zIndex: 1000,
   }))
 }

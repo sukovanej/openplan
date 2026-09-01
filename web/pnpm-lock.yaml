@@ -63,6 +63,9 @@ catalogs:
     effect:
       specifier: 4.0.0-beta.98
       version: 4.0.0-beta.98
+    elkjs:
+      specifier: 0.12.0
+      version: 0.12.0
     happy-dom:
       specifier: 20.10.6
       version: 20.10.6
@@ -177,6 +180,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98
+      elkjs:
+        specifier: 'catalog:'
+        version: 0.12.0
       lucide-react:
         specifier: 'catalog:'
         version: 1.24.0(react@19.2.7)
@@ -1389,6 +1395,9 @@ packages:
 
   effect@4.0.0-beta.98:
     resolution: {integrity: sha512-oz+bsG5h+6RNrw4t5GMfQrk/xBS8ROoqkYsuvRhBr5O7mCOrpvH/hbw+QrDzvKIpX4HJClwm86F94c87W0sJxg==}
+
+  elkjs@0.12.0:
+    resolution: {integrity: sha512-YZcKynxVxYoKIOEpywEPwCFdg+BTbxQRNf3pbwdDCvc8O3kQD8bmIwSxKU1eOTVc4Xo+VG9Te+575mlfvOrhEQ==}
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
@@ -3136,6 +3145,8 @@ snapshots:
       toml: 4.1.2
       uuid: 14.0.1
       yaml: 2.9.0
+
+  elkjs@0.12.0: {}
 
   emoji-regex@8.0.0: {}
 
