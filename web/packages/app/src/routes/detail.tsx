@@ -246,8 +246,7 @@ function TaskDetailView({
   )
 }
 
-// What blocks this task, as a picture rather than a list of links: the flow of the task alone, which
-// grows to hold everything it waits for.
+// The flow of this task alone, which grows to hold everything the task waits for.
 function FlowAction({ project, id }: { project: string; id: string }) {
   const navigate = useNavigate()
   const to = taskFlowPath(project, id)

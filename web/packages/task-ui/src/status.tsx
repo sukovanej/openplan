@@ -81,11 +81,10 @@ export const statusText = (value: string): string => styles[value as Status]?.la
 export const statusBorder = (status: Status | undefined): string =>
   status === undefined ? UNREADABLE_BORDER : styles[status].border
 
-// A box wears `statusFaint`, the lighter of the two, so a card that lies on it reads as the nearer
-// thing.
 export const statusSurface = (status: Status | undefined): string =>
   status === undefined ? UNREADABLE_SURFACE : styles[status].surface
 
+// The lighter of the two. A box wears it, so a card that lies on the box reads as the nearer thing.
 export const statusFaint = (status: Status | undefined): string =>
   status === undefined ? UNREADABLE_FAINT : styles[status].faint
 

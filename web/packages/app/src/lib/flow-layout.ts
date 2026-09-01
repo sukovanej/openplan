@@ -2,13 +2,13 @@ import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api"
 
 import type { Flow, FlowEdge, FlowNode } from "@open-planner/api-client"
 
-export const NODE_WIDTH = 244
+const NODE_WIDTH = 244
 export const BOX_HEADER = 30
 // The card is drawn with these numbers as well as measured by them, so the two cannot drift apart.
 export const TITLE_SIZE = 14
 export const TITLE_LINE = 19
-export const CARD_BORDER = 1
-export const TITLE_INSET = 24 + 16 + 10 + CARD_BORDER * 2
+const CARD_BORDER = 1
+const TITLE_INSET = 24 + 16 + 10 + CARD_BORDER * 2
 export const CARD_PAD = 8
 export const KEY_LINE = 16
 const MIN_CARD_HEIGHT = 60
@@ -19,11 +19,11 @@ const ISLAND_GAP = 48
 // The waves run down, so ELK reads the layer of a node from the y it is given. The stride only has
 // to be taller than any card; the spacing it lays out is its own.
 const LAYER_STRIDE = 500
-// An unresolved node belongs to no wave. It takes the layer left of the first, which no task holds.
+// An unresolved node belongs to no wave. It takes the layer above the first, which no task holds.
 const GUTTER = -1
 
 // A box does not inherit the spacing of the graph it sits in, so every box repeats it. Without this
-// the cards inside a box sit at ELK's own default and the columns there read tighter than the rest.
+// the cards inside a box sit at ELK's own default and the rows there read tighter than the rest.
 const SPACING: Record<string, string> = {
   "elk.spacing.nodeNode": "28",
   "elk.spacing.edgeNode": "20",
@@ -36,7 +36,7 @@ const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.direction": "DOWN",
   "elk.edgeRouting": "ORTHOGONAL",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-  // The endpoint owns the order, so ELK reads each layer from the x of its node rather than
+  // The endpoint owns the order, so ELK reads each layer from the y of its node rather than
   // computing a layering of its own. A box still takes a block of layers of its own, so a task
   // beside a box draws after the whole box rather than level with the child of its own wave.
   "elk.layered.layering.strategy": "INTERACTIVE",
@@ -198,7 +198,7 @@ function family(flow: Flow): Family {
 
 // A parent that climbs back to itself would walk for ever. The endpoint drops such a link, so this
 // only turns a broken response into a slightly wrong picture.
-function ancestorOf(key: string, parentOf: ReadonlyMap<string, string>): string {
+function rootOf(key: string, parentOf: ReadonlyMap<string, string>): string {
   const seen = new Set([key])
   let at = key
   for (let up = parentOf.get(at); up !== undefined && !seen.has(up); up = parentOf.get(at)) {
@@ -214,9 +214,8 @@ function ancestorsOf(key: string, parentOf: ReadonlyMap<string, string>): Set<st
   return seen
 }
 
-// The deepest box that holds both ends of an edge. ELK reads the coordinates of an edge against the
-// node it is declared in, and an edge declared above the box that holds its own ends is routed
-// around that box.
+// ELK reads the coordinates of an edge against the node it is declared in, and an edge declared
+// above the box that holds both of its ends is routed around that box.
 function containerOf(edge: FlowEdge, parentOf: ReadonlyMap<string, string>): string | undefined {
   const above = ancestorsOf(flowNodeKey(edge.project, edge.from), parentOf)
   for (const at of ancestorsOf(flowNodeKey(edge.project, edge.to), parentOf)) {
@@ -231,8 +230,8 @@ function waveOf(entry: Entry): number {
 }
 
 interface Island {
-  readonly entries: ReadonlyArray<Entry>
-  readonly edges: ReadonlyArray<FlowEdge>
+  readonly entries: Array<Entry>
+  readonly edges: Array<FlowEdge>
 }
 
 // Two tasks with no path between them say nothing about each other, so each island is laid out on
@@ -245,8 +244,8 @@ function islands(tree: Family, edges: ReadonlyArray<FlowEdge>): ReadonlyArray<Is
     return at
   }
   for (const edge of edges) {
-    const from = ancestorOf(flowNodeKey(edge.project, edge.from), tree.parentOf)
-    const to = ancestorOf(flowNodeKey(edge.project, edge.to), tree.parentOf)
+    const from = rootOf(flowNodeKey(edge.project, edge.from), tree.parentOf)
+    const to = rootOf(flowNodeKey(edge.project, edge.to), tree.parentOf)
     if (owner.has(from) && owner.has(to)) owner.set(find(from), find(to))
   }
   const grouped = new Map<string, Island>()
@@ -254,11 +253,10 @@ function islands(tree: Family, edges: ReadonlyArray<FlowEdge>): ReadonlyArray<Is
     const key = find(entry.key)
     const held = grouped.get(key)
     if (held === undefined) grouped.set(key, { entries: [entry], edges: [] })
-    else (held.entries as Array<Entry>).push(entry)
+    else held.entries.push(entry)
   }
   for (const edge of edges) {
-    const island = grouped.get(find(ancestorOf(flowNodeKey(edge.project, edge.from), tree.parentOf)))
-    if (island !== undefined) (island.edges as Array<FlowEdge>).push(edge)
+    grouped.get(find(rootOf(flowNodeKey(edge.project, edge.from), tree.parentOf)))?.edges.push(edge)
   }
   return [...grouped.values()]
 }

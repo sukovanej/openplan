@@ -33,10 +33,10 @@ export function BranchTag({
   )
 }
 
-const statusText = (status: BranchState["status"]): string => fieldValue(status) ?? "unreadable"
+const branchStatusText = (status: BranchState["status"]): string => fieldValue(status) ?? "unreadable"
 
 function branchTitle(branch: BranchState, headline: boolean): string {
-  const notes: Array<string> = [statusText(branch.status)]
+  const notes: Array<string> = [branchStatusText(branch.status)]
   if (headline) notes.push("latest")
   if (branch.kind !== "base") notes.push(branch.kind)
   if (branch.dirty) notes.push("uncommitted")

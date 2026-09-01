@@ -81,7 +81,6 @@ const unexpected = (error: HttpClientError.HttpClientError) =>
       : error,
   )
 
-// Each name of the query repeats, so the four fields are lists.
 export const getFlow = (
   selection: FlowSelection,
 ): Effect.Effect<Api.Flow, ApiError | FlowCycles, HttpClient.HttpClient> =>

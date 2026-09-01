@@ -30,14 +30,9 @@ export function selectionParams(selection: FlowSelection): URLSearchParams {
   return params
 }
 
-export function flowPath(selection: FlowSelection): string {
-  const query = selectionParams(selection).toString()
-  return query === "" ? FLOW_ROUTE : `${FLOW_ROUTE}?${query}`
-}
-
 // A key needs its project, because two stores can commit the same abbreviation.
 export function taskFlowPath(project: string, id: string): string {
-  return flowPath({ ...EVERY_TASK, projects: [project], tasks: [id] })
+  return `${FLOW_ROUTE}?${selectionParams({ ...EVERY_TASK, projects: [project], tasks: [id] })}`
 }
 
 export function selectsEveryTask(selection: FlowSelection): boolean {

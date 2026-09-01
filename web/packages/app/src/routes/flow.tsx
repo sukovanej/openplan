@@ -78,12 +78,12 @@ export function FlowRoute() {
   )
 }
 
-// The islands are packed to the shape of the box they are drawn in, so the whole graph fills it
-// rather than running off one edge. The first shape is read before anything is drawn, because a
-// guess would draw the whole graph once and then move every island. A drag of the window edge
-// settles first, because the engine runs on this thread.
+// A drag of the window edge settles first, because the layout engine runs on this thread.
 const SETTLE_MS = 200
 
+// The islands are packed to the shape of the box they are drawn in, so the whole graph fills it
+// rather than running off one edge. The first shape is read before anything is drawn, because a
+// guess would draw the whole graph once and then move every island.
 function usePageBox(page: React.RefObject<HTMLDivElement | null>): PageBox | undefined {
   const [box, setBox] = useState<PageBox>()
   useLayoutEffect(() => {
@@ -179,6 +179,7 @@ function Diagram({ flow, box }: { flow: Flow; box: PageBox }) {
       </div>
     )
   }
+  const fitted = fitViewport(drawn.layout.bounds, box, MIN_ZOOM, 1)
   return (
     <ReactFlow
       nodes={nodes}
@@ -186,7 +187,7 @@ function Diagram({ flow, box }: { flow: Flow; box: PageBox }) {
       nodeTypes={NODE_TYPES}
       edgeTypes={EDGE_TYPES}
       colorMode={resolved}
-      defaultViewport={fitViewport(drawn.layout.bounds, box, MIN_ZOOM, 1)}
+      defaultViewport={fitted}
       minZoom={MIN_ZOOM}
       maxZoom={1.6}
       // The layout comes from the endpoint, so a node holds still and answers the click that opens
@@ -196,7 +197,7 @@ function Diagram({ flow, box }: { flow: Flow; box: PageBox }) {
       deleteKeyCode={null}
       className="h-full w-full"
     >
-      <Refit on={drawn.shape} to={fitViewport(drawn.layout.bounds, box, MIN_ZOOM, 1)} />
+      <Refit on={drawn.shape} to={fitted} />
       <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
       <Controls showInteractive={false} />
     </ReactFlow>

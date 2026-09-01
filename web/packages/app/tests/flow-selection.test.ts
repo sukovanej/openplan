@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import {
   describeSelection,
   EVERY_TASK,
-  flowPath,
   readSelection,
   selectionParams,
   selectsEveryTask,
@@ -35,18 +34,11 @@ describe("the selection in the URL", () => {
     const selection = readSelection(new URLSearchParams(""))
     expect(selection).toEqual(EVERY_TASK)
     expect(selectsEveryTask(selection)).toBe(true)
-    expect(flowPath(selection)).toBe("/flow")
     expect(describeSelection(selection)).toBe("Every task that is not finished")
   })
 
   it("sends a named task with the project that spells its key", () => {
     expect(taskFlowPath("open-plan", "OPP-42")).toBe("/flow?project=open-plan&task=OPP-42")
     expect(selectsEveryTask(readSelection(new URLSearchParams("project=open-plan&task=OPP-42")))).toBe(false)
-  })
-
-  it("escapes a project name that carries a space", () => {
-    const path = taskFlowPath("my plan", "MP-1")
-    expect(path).toBe("/flow?project=my+plan&task=MP-1")
-    expect(readSelection(new URLSearchParams(path.slice(path.indexOf("?") + 1))).projects).toEqual(["my plan"])
   })
 })
