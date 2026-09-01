@@ -18,6 +18,7 @@ interface Harness {
   readonly overlay: { open: number; close: number; toggle: number }
   readonly closed: Array<OverlayName>
   readonly opened: Array<PaletteTarget>
+  readonly went: Array<"back">
   readonly detail: {
     showFlow: number
     editParent: number
@@ -41,9 +42,11 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const overlay = { open: 0, close: 0, toggle: 0 }
   const closed: Array<OverlayName> = []
   const opened: Array<PaletteTarget> = []
+  const went: Array<"back"> = []
   const detail = { showFlow: 0, editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 }
   const context = (): RunContext => ({
     navigate: (to) => navigations.push(to),
+    back: () => void went.push("back"),
     overlay: (name) => ({
       open: () => void overlay.open++,
       close: () => {
@@ -93,6 +96,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   return {
     navigations,
     copied,
+    went,
     overlay,
     closed,
     opened,
@@ -247,6 +251,15 @@ describe("scope resolution", () => {
     h.setScope("detail")
     press("Escape")
     expect(h.detail.escape).toBe(1)
+    h.detach()
+  })
+
+  it("takes Escape back from the flow, and leaves the detail handler alone there", () => {
+    const h = mount()
+    h.setScope("flow")
+    press("Escape")
+    expect(h.went).toEqual(["back"])
+    expect(h.detail.escape).toBe(0)
     h.detach()
   })
 

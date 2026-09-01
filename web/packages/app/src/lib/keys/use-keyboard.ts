@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { boardPath, taskRouteOf } from "@open-planner/task-ui"
+import { boardPath, FLOW_ROUTE, taskRouteOf } from "@open-planner/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { copyTargetRow, hoveredRow } from "../copy-target"
@@ -13,6 +13,7 @@ import { historyIndex } from "./history"
 import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types"
 
 function routeScope(pathname: string): RouteScope {
+  if (pathname === FLOW_ROUTE) return "flow"
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
 }
 
@@ -46,8 +47,10 @@ export function useKeyboard(): Keyboard {
 
   useEffect(() => {
     const activeCursor = () => (live.current.scope === "detail" ? detailCursor : rowCursor)
+    const canGoBack = () => historyIndex() > entryIndex.current
     const context = (): RunContext => ({
       navigate: (to) => live.current.navigate(to),
+      back: () => (canGoBack() ? live.current.navigate(-1) : live.current.navigate("/")),
       overlay: (name) => ({
         open: () => setActiveOverlay(name),
         close: () => setActiveOverlay((open) => (open === name ? null : open)),
@@ -92,8 +95,7 @@ export function useKeyboard(): Keyboard {
         editTags: () => detailActions.emit("edit-tags"),
         goToParent: () => detailActions.emit("go-parent"),
         escape: () => {
-          const canGoBack = historyIndex() > entryIndex.current
-          const outcome = escapeOutcome(detailCursor.getSnapshot().index >= 0, canGoBack)
+          const outcome = escapeOutcome(detailCursor.getSnapshot().index >= 0, canGoBack())
           if (outcome === "clear-selection") detailCursor.clear()
           else if (outcome === "back") live.current.navigate(-1)
           else {

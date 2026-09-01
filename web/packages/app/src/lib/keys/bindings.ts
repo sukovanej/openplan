@@ -39,6 +39,14 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.detail.escape(),
   },
   {
+    id: "flow.back",
+    keys: "Escape",
+    scope: "flow",
+    label: "Back",
+    group: "Navigation",
+    run: (ctx) => ctx.back(),
+  },
+  {
     id: "go.list",
     keys: ["g", "l"],
     scope: "global",
