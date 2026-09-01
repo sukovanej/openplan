@@ -151,61 +151,75 @@ function TaskDetailView({
   const rows = useMemo(() => detailRows(project, detail), [project, detail])
   const { index } = useDetailCursor(taskPath(project, task.id), rows.paths)
   return (
-    <Panel>
-      <PanelHeader className="gap-2">
-        <PanelTitle>
-          <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
-        </PanelTitle>
-        <div className="ml-auto min-w-0">
-          <HeaderParent
-            key={writeKey}
-            project={project}
-            id={task.id}
-            parent={detail === null ? undefined : parentOf(detail.metadata)}
-            parentTitle={detail?.parent_title}
-            ready={detail !== null}
-            write={write}
-          />
-        </div>
-      </PanelHeader>
-      <PanelBody className="p-6">
-        {/* The tags sit level with the first line of the title: the row aligns to the top, and the
-            chips centre inside a box as tall as that line. They wrap inside half the row rather than
-            holding their width — a task carrying a handful of them squeezed the title to nothing. */}
-        <div className="mb-1.5 flex items-start justify-between gap-4">
-          <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
-          <TagsField
-            key={writeKey}
-            project={project}
-            id={task.id}
-            metadata={task.metadata}
-            branch={write.branch}
-            blocked={write.blocked}
-            className="min-h-8 max-w-[50%] justify-end"
-          />
-        </div>
-        {/* `created` arrives with the full detail while `updated` is already on the seeded list item,
-            so the line renders as soon as the header does and fills in rather than shifting the body
-            twice. */}
-        <MetaLine className="mb-4 h-4">
-          <TaskTimes
-            created={detail === null ? undefined : createdOf(detail.metadata)}
-            updated={task.updated}
-            problems={detail === null ? [] : problems(detail.metadata)}
-          />
-        </MetaLine>
-        <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
-        {body === undefined ? (
-          <BodySkeleton />
-        ) : (
-          <TaskBody
-            project={project}
-            markdown={stripTitle(body)}
-            refs={detail?.refs}
-            abbreviation={abbreviation}
-            data-keys-ignore
-          />
-        )}
+    // Each column scrolls on its own, so the box keeps its frame and its header stays where it is
+    // while the body runs. Stacked, the two are one page and the page scrolls instead.
+    <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
+      <Panel className="h-auto min-w-0 lg:h-full lg:w-[59rem]">
+        <PanelHeader className="gap-2">
+          <PanelTitle>
+            <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
+          </PanelTitle>
+          <div className="ml-auto min-w-0">
+            <HeaderParent
+              key={writeKey}
+              project={project}
+              id={task.id}
+              parent={detail === null ? undefined : parentOf(detail.metadata)}
+              parentTitle={detail?.parent_title}
+              ready={detail !== null}
+              write={write}
+            />
+          </div>
+        </PanelHeader>
+        <PanelBody className="p-6">
+          {/* The tags sit level with the first line of the title: the row aligns to the top, and the
+              chips centre inside a box as tall as that line. They wrap inside half the row rather
+              than holding their width — a task carrying a handful of them squeezed the title to
+              nothing. */}
+          <div className="mb-1.5 flex items-start justify-between gap-4">
+            <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
+            <TagsField
+              key={writeKey}
+              project={project}
+              id={task.id}
+              metadata={task.metadata}
+              branch={write.branch}
+              blocked={write.blocked}
+              className="min-h-8 max-w-[50%] justify-end"
+            />
+          </div>
+          {/* `created` arrives with the full detail while `updated` is already on the seeded list
+              item, so the line renders as soon as the header does and fills in rather than shifting
+              the body twice. */}
+          <MetaLine className="mb-4 h-4">
+            <TaskTimes
+              created={detail === null ? undefined : createdOf(detail.metadata)}
+              updated={task.updated}
+              problems={detail === null ? [] : problems(detail.metadata)}
+            />
+          </MetaLine>
+          <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
+          {/* The box is as wide as the reading measure, so the text fills it and the rule over an
+              `h2` bleeds back over the padding to divide the whole box. */}
+          {body === undefined ? (
+            <BodySkeleton />
+          ) : (
+            <TaskBody
+              project={project}
+              markdown={stripTitle(body)}
+              refs={detail?.refs}
+              abbreviation={abbreviation}
+              className="prose-h2:-mx-6 prose-h2:px-6"
+              data-keys-ignore
+            />
+          )}
+        </PanelBody>
+      </Panel>
+      {/* The relations and the comment log stand beside the task and share the width it leaves.
+          Narrow enough and they drop under it instead. None of them wears a frame: a section leads
+          with the rule that separates it from the one above, and the first has nothing above it to
+          separate from. */}
+      <aside className="min-w-0 lg:min-w-80 lg:flex-1 lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
         <RefSection title="Depends on" rows={rows.dependsOn} cursor={index} />
         <RefSection title="Blocks" rows={rows.blocks} cursor={index} />
         <SubtasksSection
@@ -225,8 +239,8 @@ function TaskDetailView({
             abbreviation={abbreviation}
           />
         )}
-      </PanelBody>
-    </Panel>
+      </aside>
+    </div>
   )
 }
 

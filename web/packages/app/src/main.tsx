@@ -13,6 +13,8 @@ import { ListRoute } from "./routes/list"
 import { TagsRoute } from "./routes/tags"
 
 import "@fontsource-variable/geist/index.css"
+import "@fontsource-variable/geist-mono/index.css"
+import "@fontsource-variable/source-serif-4/index.css"
 import "./index.css"
 
 const router = createBrowserRouter([
