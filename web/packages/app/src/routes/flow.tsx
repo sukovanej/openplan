@@ -16,9 +16,9 @@ import type { Flow } from "@open-planner/api-client"
 import { FLOW_ROUTE } from "@open-planner/task-ui"
 import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, Skeleton } from "@open-planner/ui"
 
-import { BoxFlowCard, LeafFlowCard, UnresolvedFlowCard, WaveFlowLabel } from "../components/flow-nodes"
+import { BoxFlowCard, LeafFlowCard, UnresolvedFlowCard } from "../components/flow-nodes"
 import { FlowCycles, getFlow } from "../lib/api"
-import { type FlowLayout, layoutFlow, NODE_WIDTH, WAVE_HEADER_HEIGHT } from "../lib/flow-layout"
+import { type FlowLayout, layoutFlow } from "../lib/flow-layout"
 import { describeSelection, readSelection, selectionParams, selectsEveryTask } from "../lib/flow-selection"
 import { errorText } from "../lib/format"
 import { flowKey } from "../lib/query-client"
@@ -36,10 +36,7 @@ const NODE_TYPES: NodeTypes = {
   leaf: LeafFlowCard,
   box: BoxFlowCard,
   unresolved: UnresolvedFlowCard,
-  wave: WaveFlowLabel,
 }
-
-const WAVE_LABEL_GAP = 14
 
 export function FlowRoute() {
   const [params] = useSearchParams()
@@ -128,17 +125,7 @@ function Diagram({ flow }: { flow: Flow }) {
 }
 
 function reactFlowNodes(layout: FlowLayout): Array<Node> {
-  const waves: Array<Node> = layout.columns.map((column) => ({
-    id: `wave ${column.key}`,
-    type: "wave",
-    data: { wave: column.wave },
-    position: { x: column.x, y: -(WAVE_HEADER_HEIGHT + WAVE_LABEL_GAP) },
-    width: NODE_WIDTH,
-    height: WAVE_HEADER_HEIGHT,
-    selectable: false,
-    zIndex: 0,
-  }))
-  const placed: Array<Node> = layout.nodes.map((node) => ({
+  return layout.nodes.map((node) => ({
     id: node.key,
     type: node.node.kind,
     data: node.node.kind === "unresolved" ? { reference: node.node } : { task: node.node },
@@ -150,7 +137,6 @@ function reactFlowNodes(layout: FlowLayout): Array<Node> {
     // A box holds its children, so it has to paint under them.
     zIndex: node.depth + 1,
   }))
-  return [...waves, ...placed]
 }
 
 function reactFlowEdges(layout: FlowLayout): Array<Edge> {

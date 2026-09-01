@@ -22,6 +22,7 @@ export {
   StatusGroupHeader,
   statusGroupLabel,
   StatusIcon,
+  StatusMark,
   statusLabel,
 } from "./status"
 export { TagChip } from "./tag-chip"

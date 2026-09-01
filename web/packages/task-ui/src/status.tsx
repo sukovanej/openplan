@@ -11,53 +11,53 @@ const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; he
     icon: CircleEllipsis,
     mark: "text-status-backlog",
     header: "bg-status-backlog-surface/8 border-status-backlog-surface/20 text-status-backlog-text/80",
-    border: "border-l-status-backlog",
+    border: "border-status-backlog",
   },
   todo: {
     label: "Todo",
     icon: Clock,
     mark: "text-status-todo",
     header: "bg-status-todo-surface/8 border-status-todo-surface/20 text-status-todo-text/80",
-    border: "border-l-status-todo",
+    border: "border-status-todo",
   },
   in_progress: {
     label: "In progress",
     icon: CircleDot,
     mark: "text-status-in-progress",
     header: "bg-status-in-progress-surface/8 border-status-in-progress-surface/20 text-status-in-progress-text/80",
-    border: "border-l-status-in-progress",
+    border: "border-status-in-progress",
   },
   in_review: {
     label: "In review",
     icon: Eye,
     mark: "text-status-in-review",
     header: "bg-status-in-review-surface/8 border-status-in-review-surface/20 text-status-in-review-text/80",
-    border: "border-l-status-in-review",
+    border: "border-status-in-review",
   },
   done: {
     label: "Done",
     icon: CircleCheck,
     mark: "text-status-done",
     header: "bg-status-done-surface/8 border-status-done-surface/20 text-status-done-text/80",
-    border: "border-l-status-done",
+    border: "border-status-done",
   },
   cancelled: {
     label: "Cancelled",
     icon: CircleX,
     mark: "text-status-cancelled",
     header: "bg-status-cancelled-surface/8 border-status-cancelled-surface/20 text-status-cancelled-text/80",
-    border: "border-l-status-cancelled",
+    border: "border-status-cancelled",
   },
 }
 
 const UNREADABLE_HEADER =
   "bg-status-unreadable-surface/8 border-status-unreadable-surface/20 text-status-unreadable-text/80"
-const UNREADABLE_BORDER = "border-l-status-unreadable"
+const UNREADABLE_BORDER = "border-status-unreadable"
 
 export const statusLabel = (status: Status): string => styles[status].label
 
-// The status as a coloured left edge, for a surface that carries no room for the icon. A status that
-// could not be read wears the unreadable mark's colour, as the icon does.
+// The status as the colour of a whole frame. A status that could not be read wears the unreadable
+// mark's colour, as the icon does.
 export const statusBorder = (status: Status | undefined): string =>
   status === undefined ? UNREADABLE_BORDER : styles[status].border
 
@@ -72,22 +72,27 @@ export function StatusIcon({ status, className }: { status: Status; className?: 
 
 const UNREADABLE = "Status could not be read"
 
-function UnreadableStatus({ className }: { className?: string }) {
-  return (
-    <Tooltip content={UNREADABLE}>
-      <CircleAlert className={cn("size-5 text-status-unreadable", className)} aria-label={UNREADABLE} />
-    </Tooltip>
-  )
-}
-
 // A status that could not be read gets its own mark, so a broken file never wears a status it does
 // not claim.
-export function StatusChip({ status, className }: { status: Field_Status | undefined; className?: string }) {
+function markOf(status: Field_Status | undefined): { label: string; icon: LucideIcon; tint: string } {
   const value = status === undefined ? undefined : fieldValue(status)
-  return value === undefined ? (
-    <UnreadableStatus className={className} />
-  ) : (
-    <StatusIcon status={value} className={className} />
+  if (value === undefined) return { label: UNREADABLE, icon: CircleAlert, tint: "text-status-unreadable" }
+  const { label, icon, mark } = styles[value]
+  return { label, icon, tint: mark }
+}
+
+// The mark with no tooltip over it. The tooltip hangs off the viewport, which a transformed ancestor
+// (the flow diagram's) makes it miss, so a surface that transforms takes this one.
+export function StatusMark({ status, className }: { status: Field_Status | undefined; className?: string }) {
+  const { icon: Icon, label, tint } = markOf(status)
+  return <Icon className={cn("size-5", tint, className)} aria-label={label} />
+}
+
+export function StatusChip({ status, className }: { status: Field_Status | undefined; className?: string }) {
+  return (
+    <Tooltip content={markOf(status).label}>
+      <StatusMark status={status} className={className} />
+    </Tooltip>
   )
 }
 

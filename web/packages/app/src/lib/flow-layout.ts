@@ -3,7 +3,6 @@ import type { Flow, FlowNode } from "@open-planner/api-client"
 export const NODE_WIDTH = 244
 export const NODE_HEIGHT = 60
 export const COLUMN_STRIDE = NODE_WIDTH + 76
-export const WAVE_HEADER_HEIGHT = 20
 
 const ROW_GAP = 14
 const BOX_PAD = 12
@@ -29,16 +28,9 @@ export interface PlacedEdge {
   readonly target: string
 }
 
-export interface WaveColumn {
-  readonly key: string
-  readonly wave: number | undefined
-  readonly x: number
-}
-
 export interface FlowLayout {
   readonly nodes: ReadonlyArray<PlacedNode>
   readonly edges: ReadonlyArray<PlacedEdge>
-  readonly columns: ReadonlyArray<WaveColumn>
 }
 
 // A key is unique inside one project only, so a node is named by the pair. A task id holds no
@@ -173,17 +165,6 @@ function draw(entry: Entry, top: number, depth: number, parent: string | undefin
   return draft.rect
 }
 
-function columns(flow: Flow): ReadonlyArray<WaveColumn> {
-  const waves = new Set<number>()
-  let gutter = false
-  for (const node of flow.nodes) {
-    if (node.kind === "leaf") waves.add(node.wave)
-    if (node.kind === "unresolved") gutter = true
-  }
-  const numbered = [...waves].sort((a, b) => a - b).map((wave) => ({ key: String(wave), wave, x: columnX(wave) }))
-  return gutter ? [{ key: "unresolved", wave: undefined, x: columnX(GUTTER) }, ...numbered] : numbered
-}
-
 export function layoutFlow(flow: Flow): FlowLayout {
   const roots = family(flow)
   for (const root of roots) measure(root)
@@ -212,6 +193,5 @@ export function layoutFlow(flow: Flow): FlowLayout {
       source: flowNodeKey(edge.project, edge.from),
       target: flowNodeKey(edge.project, edge.to),
     })),
-    columns: columns(flow),
   }
 }

@@ -77,15 +77,13 @@ describe("the grid", () => {
     expect(at(placed, "OPP-1").top).toBeLessThan(at(placed, "OPP-2").top)
   })
 
-  it("names one column for each wave, and a gutter for the nodes that have none", () => {
+  it("puts a node with no wave in a gutter left of the first one", () => {
     const flow: Flow = {
       nodes: [leaf("OPP-1", 0, 0), leaf("OPP-2", 1, 0), unresolved("WEB-7")],
       edges: [edge("WEB-7", "OPP-2")],
     }
-    const { columns } = layoutFlow(flow)
-    expect(columns.map((column) => column.wave)).toEqual([undefined, 0, 1])
-    expect(columns[0].x).toBeLessThan(columns[1].x)
-    expect(at(frames(flow), "WEB-7").left).toBe(columns[0].x)
+    const placed = frames(flow)
+    expect(at(placed, "WEB-7").right).toBeLessThan(columnX(0))
   })
 })
 
