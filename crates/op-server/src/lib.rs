@@ -18,9 +18,9 @@ use axum::{
 };
 use op_api::{
     Abbreviation, ApiErrorBody, Board, BranchComments, BranchState, ChangeEvent, ChangeKind,
-    Comment, CreateComment, CreateTag, CreateTask, DaemonInfo, KeyError, Matrix, ProjectView,
-    RegisterProject, RenameProject, SearchHit, TagPatch, TagView, TaskBranches, TaskDetail,
-    TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
+    Comment, CreateComment, CreateTag, CreateTask, DaemonInfo, Flow, FlowCycles, FlowQuery,
+    KeyError, Matrix, ProjectView, RegisterProject, RenameProject, SearchHit, Status, TagPatch,
+    TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -305,6 +305,7 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(get_matrix))
         .routes(routes!(get_board))
         .routes(routes!(get_merged_board))
+        .routes(routes!(get_flow))
         .routes(routes!(search_project))
         .routes(routes!(search_all))
         .routes(routes!(get_task, patch_task, delete_task))
@@ -643,6 +644,7 @@ struct CreatedTask {
 struct ApiError {
     status: StatusCode,
     message: String,
+    cycles: Vec<Vec<String>>,
 }
 
 impl ApiError {
@@ -650,6 +652,7 @@ impl ApiError {
         Self {
             status,
             message: message.into(),
+            cycles: Vec::new(),
         }
     }
 
@@ -710,6 +713,18 @@ impl From<StoreError> for ApiError {
     }
 }
 
+// A cycle is the request's answer, not a fault of the daemon: the files name an order that cannot
+// exist, and only an edit to them can change it.
+impl From<FlowCycles> for ApiError {
+    fn from(err: FlowCycles) -> Self {
+        Self {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            message: err.to_string(),
+            cycles: err.cycles,
+        }
+    }
+}
+
 impl From<KeyError> for ApiError {
     fn from(err: KeyError) -> Self {
         Self::bad_request(err.to_string())
@@ -742,6 +757,7 @@ impl IntoResponse for ApiError {
             self.status,
             Json(ApiErrorBody {
                 message: self.message,
+                cycles: self.cycles,
             }),
         )
             .into_response()
@@ -1061,6 +1077,120 @@ async fn get_merged_board(State(state): State<AppState>) -> Result<Json<Board>, 
     .await
     .map_err(join_error)?;
     Ok(Json(board))
+}
+
+// The implementation order of the tasks a query selects, across every project it names. It is not a
+// read of one project: one request can name several, and the waves are global, so wave 1 means "you
+// can start this now" for all of them. Each parameter repeats; the repeats of one name are
+// alternatives, and two names narrow each other.
+#[utoipa::path(
+    get,
+    path = "/api/flow",
+    params(
+        ("project" = Option<Vec<String>>, Query, description = "Project name; omit to take every project the daemon serves"),
+        ("status" = Option<Vec<Status>>, Query, description = "Seed status; omit it to seed every task that is not done or cancelled"),
+        ("task" = Option<Vec<String>>, Query, description = "Task key; it needs a project"),
+        ("tag" = Option<Vec<String>>, Query, description = "Tag name")
+    ),
+    responses(
+        (status = 200, description = "The nodes of the flow and the edges between them", body = Flow),
+        (status = 400, description = "The query names an unknown parameter, an unknown status, or a task without a project", body = ApiErrorBody),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 422, description = "The dependencies of the selected tasks form a cycle", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "A named project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn get_flow(
+    State(state): State<AppState>,
+    Query(parameters): Query<Vec<(String, String)>>,
+) -> Result<Json<Flow>, ApiError> {
+    let query = flow_query(&parameters)?;
+    let named = !query.projects.is_empty();
+    let projects: Vec<Arc<Project>> = match named {
+        true => query
+            .projects
+            .iter()
+            .map(|name| project_of(&state, name))
+            .collect::<Result<_, _>>()?,
+        false => state
+            .projects()
+            .into_iter()
+            .filter(|project| project.blocked().is_none())
+            .collect(),
+    };
+
+    let flow = tokio::task::spawn_blocking(move || -> Result<Flow, ApiError> {
+        let mut tasks = Vec::new();
+        for project in projects {
+            // One project's index mutex at a time, for the reason the merged board takes them one at
+            // a time: a rebuild holds it for a full branch walk. A project the caller named answers
+            // or fails the request; the rest drop out of an answer about every project, as they drop
+            // off the merged board.
+            match project
+                .read_index()
+                .map(|index| index.aggregated_tasks(&project.name()))
+            {
+                Ok(mut items) => tasks.append(&mut items),
+                Err(err) if named => return Err(index_error(err)),
+                Err(_) => {}
+            }
+        }
+        Ok(Flow::build(&tasks, &query)?)
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(flow))
+}
+
+// One name of the query string can repeat, which `serde_urlencoded` cannot put into a struct field.
+// The pairs arrive in the order they were written, and each name collects its own values.
+fn flow_query(parameters: &[(String, String)]) -> Result<FlowQuery, ApiError> {
+    let mut query = FlowQuery::default();
+    let mut keys = Vec::new();
+    // A repeat of one value is the same alternative twice. Kept, it would read a project's store
+    // twice and send every task of it as two nodes.
+    let once = |values: &mut Vec<String>, value: &String| {
+        if !values.contains(value) {
+            values.push(value.clone());
+        }
+    };
+    for (name, value) in parameters {
+        match name.as_str() {
+            "project" => once(&mut query.projects, value),
+            "status" => {
+                let status = value
+                    .parse::<Status>()
+                    .map_err(|err| ApiError::bad_request(err.to_string()))?;
+                if !query.statuses.contains(&status) {
+                    query.statuses.push(status);
+                }
+            }
+            "task" => once(&mut keys, value),
+            "tag" => once(&mut query.tags, value),
+            _ => {
+                return Err(ApiError::bad_request(format!(
+                    "unknown query parameter: {name}"
+                )));
+            }
+        }
+    }
+    if !keys.is_empty() && query.projects.is_empty() {
+        return Err(ApiError::bad_request(
+            "a task parameter needs a project parameter: two stores can commit the same \
+             abbreviation, so a key alone names no task",
+        ));
+    }
+    query.tasks = query
+        .projects
+        .iter()
+        .flat_map(|project| {
+            keys.iter()
+                .map(|key| (project.clone(), key.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    Ok(query)
 }
 
 #[utoipa::path(
