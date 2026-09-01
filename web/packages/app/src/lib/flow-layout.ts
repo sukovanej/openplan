@@ -4,11 +4,11 @@ import type { Flow, FlowEdge, FlowNode } from "@open-planner/api-client"
 
 export const NODE_WIDTH = 244
 export const BOX_HEADER = 30
-// The title runs to as many lines as it needs, so a card is as tall as its own words. These are the
-// numbers the card is drawn with as well as measured by, so the two cannot drift apart.
+// The card is drawn with these numbers as well as measured by them, so the two cannot drift apart.
 export const TITLE_SIZE = 14
 export const TITLE_LINE = 19
-export const TITLE_INSET = 50
+export const CARD_BORDER = 1
+export const TITLE_INSET = 24 + 16 + 10 + CARD_BORDER * 2
 export const CARD_PAD = 8
 export const KEY_LINE = 16
 const MIN_CARD_HEIGHT = 60
@@ -37,7 +37,8 @@ const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.edgeRouting": "ORTHOGONAL",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
   // The endpoint owns the order, so ELK reads each layer from the x of its node rather than
-  // computing a layering of its own. The picture and the `wave` field then cannot disagree.
+  // computing a layering of its own. A box still takes a block of layers of its own, so a task
+  // beside a box draws after the whole box rather than level with the child of its own wave.
   "elk.layered.layering.strategy": "INTERACTIVE",
   ...SPACING,
   "elk.padding": "[top=4,left=4,bottom=4,right=4]",
@@ -93,25 +94,30 @@ function measurer(): CanvasRenderingContext2D | null {
 const widthOf = (text: string): number => measurer()?.measureText(text).width ?? text.length * TITLE_SIZE * 0.5
 
 function titleLines(title: string, width: number): number {
+  const space = widthOf(" ")
   let lines = 1
-  let line = ""
+  let used = 0
   for (const word of title.split(/\s+/).filter((word) => word !== "")) {
-    const next = line === "" ? word : `${line} ${word}`
-    if (widthOf(next) <= width || line === "") {
-      line = next
+    const wide = widthOf(word)
+    if (used > 0 && used + space + wide > width) {
+      lines += 1
+      used = 0
+    }
+    // A word wider than the card breaks inside itself rather than running out of the frame.
+    if (wide > width) {
+      const rows = Math.ceil(wide / width)
+      lines += rows - 1
+      used = wide - (rows - 1) * width
       continue
     }
-    lines += 1
-    line = word
+    used += used === 0 ? wide : space + wide
   }
-  // A word wider than the card breaks inside itself rather than running out of the frame.
-  const longest = Math.max(...title.split(/\s+/).map((word) => Math.ceil(widthOf(word) / width)), 1)
-  return lines + longest - 1
+  return lines
 }
 
 export function cardHeight(title: string): number {
   const lines = titleLines(title, NODE_WIDTH - TITLE_INSET)
-  return Math.max(MIN_CARD_HEIGHT, CARD_PAD * 2 + KEY_LINE + lines * TITLE_LINE)
+  return Math.max(MIN_CARD_HEIGHT, CARD_BORDER * 2 + CARD_PAD * 2 + KEY_LINE + lines * TITLE_LINE)
 }
 
 interface Entry {
@@ -152,21 +158,30 @@ function family(flow: Flow): Family {
   return { roots, parentOf }
 }
 
+// A parent that climbs back to itself would walk for ever. The endpoint drops such a link, so this
+// only turns a broken response into a slightly wrong picture.
 function ancestorOf(key: string, parentOf: ReadonlyMap<string, string>): string {
+  const seen = new Set([key])
   let at = key
-  for (let up = parentOf.get(at); up !== undefined; up = parentOf.get(at)) at = up
+  for (let up = parentOf.get(at); up !== undefined && !seen.has(up); up = parentOf.get(at)) {
+    at = up
+    seen.add(at)
+  }
   return at
+}
+
+function ancestorsOf(key: string, parentOf: ReadonlyMap<string, string>): Set<string> {
+  const seen = new Set<string>()
+  for (let at = parentOf.get(key); at !== undefined && !seen.has(at); at = parentOf.get(at)) seen.add(at)
+  return seen
 }
 
 // The deepest box that holds both ends of an edge. ELK reads the coordinates of an edge against the
 // node it is declared in, and an edge declared above the box that holds its own ends is routed
 // around that box.
 function containerOf(edge: FlowEdge, parentOf: ReadonlyMap<string, string>): string | undefined {
-  const above = new Set<string>()
-  for (let at = parentOf.get(flowNodeKey(edge.project, edge.from)); at !== undefined; at = parentOf.get(at)) {
-    above.add(at)
-  }
-  for (let at = parentOf.get(flowNodeKey(edge.project, edge.to)); at !== undefined; at = parentOf.get(at)) {
+  const above = ancestorsOf(flowNodeKey(edge.project, edge.from), parentOf)
+  for (const at of ancestorsOf(flowNodeKey(edge.project, edge.to), parentOf)) {
     if (above.has(at)) return at
   }
   return undefined
@@ -177,9 +192,14 @@ function waveOf(entry: Entry): number {
   return Math.min(...entry.children.map(waveOf))
 }
 
+interface Island {
+  readonly entries: ReadonlyArray<Entry>
+  readonly edges: ReadonlyArray<FlowEdge>
+}
+
 // Two tasks with no path between them say nothing about each other, so each island is laid out on
 // its own and the islands are packed into the shape of the page.
-function islands(tree: Family, edges: ReadonlyArray<FlowEdge>): ReadonlyArray<ReadonlyArray<Entry>> {
+function islands(tree: Family, edges: ReadonlyArray<FlowEdge>): ReadonlyArray<Island> {
   const owner = new Map<string, string>(tree.roots.map((entry) => [entry.key, entry.key]))
   const find = (key: string): string => {
     let at = key
@@ -191,12 +211,16 @@ function islands(tree: Family, edges: ReadonlyArray<FlowEdge>): ReadonlyArray<Re
     const to = ancestorOf(flowNodeKey(edge.project, edge.to), tree.parentOf)
     if (owner.has(from) && owner.has(to)) owner.set(find(from), find(to))
   }
-  const grouped = new Map<string, Array<Entry>>()
+  const grouped = new Map<string, Island>()
   for (const entry of tree.roots) {
     const key = find(entry.key)
     const held = grouped.get(key)
-    if (held === undefined) grouped.set(key, [entry])
-    else held.push(entry)
+    if (held === undefined) grouped.set(key, { entries: [entry], edges: [] })
+    else (held.entries as Array<Entry>).push(entry)
+  }
+  for (const edge of edges) {
+    const island = grouped.get(find(ancestorOf(flowNodeKey(edge.project, edge.from), tree.parentOf)))
+    if (island !== undefined) (island.edges as Array<FlowEdge>).push(edge)
   }
   return [...grouped.values()]
 }
@@ -228,15 +252,15 @@ function elkNode(entry: Entry, into: Map<string, ElkNode>): ElkNode {
 
 const ROOT = "root"
 
-function graphOf(island: ReadonlyArray<Entry>, edges: ReadonlyArray<FlowEdge>, tree: Family): ElkNode {
+function graphOf(island: Island, tree: Family): ElkNode {
   const byKey = new Map<string, ElkNode>()
   const graph: ElkNode = {
     id: ROOT,
     layoutOptions: LAYOUT_OPTIONS,
-    children: island.map((entry) => elkNode(entry, byKey)),
+    children: island.entries.map((entry) => elkNode(entry, byKey)),
     edges: [],
   }
-  for (const edge of edges) {
+  for (const edge of island.edges) {
     const source = flowNodeKey(edge.project, edge.from)
     const target = flowNodeKey(edge.project, edge.to)
     if (!byKey.has(source) || !byKey.has(target)) continue
@@ -279,14 +303,14 @@ function shelve(sizes: ReadonlyArray<Size>, limit: number): Shelved {
   return { places, width, height: y + shelf }
 }
 
-// The islands go into rows as wide as the page is shaped, so the whole graph reads at one zoom
-// instead of running off the bottom in a single column.
+// A single column of islands would run off the bottom of the page, so the widest shelf that still
+// matches the shape of the page wins.
 export function pack(sizes: ReadonlyArray<Size>, aspectRatio: number): ReadonlyArray<Point> {
   if (sizes.length === 0) return []
   const widest = Math.max(...sizes.map((size) => size.width))
   const spread = sizes.reduce((sum, size) => sum + size.width + ISLAND_GAP, 0)
   const tries = 32
-  let best = shelve(sizes, widest)
+  let best: Shelved | undefined
   let missed = Infinity
   for (let step = 0; step <= tries; step++) {
     const shelved = shelve(sizes, widest + ((spread - widest) * step) / tries)
@@ -296,7 +320,7 @@ export function pack(sizes: ReadonlyArray<Size>, aspectRatio: number): ReadonlyA
       best = shelved
     }
   }
-  return best.places
+  return best!.places
 }
 
 interface Collected {
@@ -350,9 +374,15 @@ type Engine = { layout: (graph: ElkNode) => Promise<ElkNode> }
 
 let started: Promise<Engine> | undefined
 
-// About 1.5 MB of layout engine, fetched when a reader opens the flow rather than with the app.
+// About 1.5 MB of layout engine, fetched when a reader opens the flow rather than with the app. A
+// fetch that fails is forgotten, so the next visit asks again instead of holding a rejected promise.
 function engine(): Promise<Engine> {
-  started ??= import("elkjs/lib/elk.bundled.js").then((module) => new module.default())
+  started ??= import("elkjs/lib/elk.bundled.js")
+    .then((module) => new module.default())
+    .catch((failure: unknown) => {
+      started = undefined
+      throw failure
+    })
   return started
 }
 
@@ -369,9 +399,7 @@ export async function layoutFlow(flow: Flow, aspectRatio: number): Promise<FlowL
   for (const root of tree.roots) indexEntries(root, entries)
 
   const elk = await engine()
-  const laid = await Promise.all(
-    islands(tree, flow.edges).map((island) => elk.layout(graphOf(island, flow.edges, tree))),
-  )
+  const laid = await Promise.all(islands(tree, flow.edges).map((island) => elk.layout(graphOf(island, tree))))
   const places = pack(
     laid.map((graph) => ({ width: graph.width ?? 0, height: graph.height ?? 0 })),
     aspectRatio,

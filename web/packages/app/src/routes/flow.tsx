@@ -79,18 +79,28 @@ export function FlowRoute() {
 }
 
 // The islands are packed to the shape of the box they are drawn in, so the whole graph fills it
-// rather than running off one edge.
+// rather than running off one edge. A drag of the window edge settles before the engine runs, which
+// it does on this thread.
+const SETTLE_MS = 200
+
 function usePageShape(page: React.RefObject<HTMLDivElement | null>): number {
   const [shape, setShape] = useState(1.8)
   useEffect(() => {
     const box = page.current
     if (box === null) return
+    let settle: ReturnType<typeof setTimeout> | undefined
     const watch = new ResizeObserver(() => {
-      const { width, height } = box.getBoundingClientRect()
-      if (width > 0 && height > 0) setShape(Math.round((width / height) * 10) / 10)
+      clearTimeout(settle)
+      settle = setTimeout(() => {
+        const { width, height } = box.getBoundingClientRect()
+        if (width > 0 && height > 0) setShape(Math.round((width / height) * 10) / 10)
+      }, SETTLE_MS)
     })
     watch.observe(box)
-    return () => watch.disconnect()
+    return () => {
+      clearTimeout(settle)
+      watch.disconnect()
+    }
   }, [page])
   return shape
 }
@@ -122,24 +132,43 @@ function round(cycle: ReadonlyArray<string>): string {
   return [...cycle, cycle[0]].join(" → ")
 }
 
+interface Drawing {
+  readonly layout: FlowLayout
+  readonly shape: number
+}
+
 function Diagram({ flow, shape }: { flow: Flow; shape: number }) {
   const { resolved } = useTheme()
-  const [layout, setLayout] = useState<FlowLayout>()
+  const [drawn, setDrawn] = useState<Drawing>()
+  const [failure, setFailure] = useState<unknown>()
 
   // The old drawing stays up while the engine runs, so a refetch does not blank the page.
   useEffect(() => {
     let live = true
-    void layoutFlow(flow, shape).then((next) => {
-      if (live) setLayout(next)
-    })
+    layoutFlow(flow, shape).then(
+      (layout) => {
+        if (live) setDrawn({ layout, shape })
+      },
+      (error: unknown) => {
+        if (live) setFailure(error)
+      },
+    )
     return () => {
       live = false
     }
   }, [flow, shape])
 
-  const nodes = useMemo(() => (layout === undefined ? [] : reactFlowNodes(layout)), [layout])
-  const edges = useMemo(() => (layout === undefined ? [] : reactFlowEdges(layout)), [layout])
-  if (layout === undefined) return <Skeleton className="m-6 h-[calc(100%-3rem)]" />
+  const nodes = useMemo(() => (drawn === undefined ? [] : reactFlowNodes(drawn.layout)), [drawn])
+  const edges = useMemo(() => (drawn === undefined ? [] : reactFlowEdges(drawn.layout)), [drawn])
+  if (drawn === undefined) {
+    return failure === undefined ? (
+      <Skeleton className="m-6 h-[calc(100%-3rem)]" />
+    ) : (
+      <div className="p-6">
+        <EmptyState title="Could not draw the flow" detail={errorText(failure)} />
+      </div>
+    )
+  }
   return (
     <ReactFlow
       nodes={nodes}
@@ -158,14 +187,15 @@ function Diagram({ flow, shape }: { flow: Flow; shape: number }) {
       deleteKeyCode={null}
       className="h-full w-full"
     >
-      <Refit on={shape} />
+      <Refit on={drawn.shape} />
       <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
       <Controls showInteractive={false} />
     </ReactFlow>
   )
 }
 
-// A resize reshapes the packing, which leaves the old viewport pointing at nothing.
+// A resize reshapes the packing, which leaves the old viewport pointing at nothing. It waits for the
+// drawing that answers the new shape, because the engine runs after the shape has already changed.
 function Refit({ on }: { on: number }) {
   const flow = useReactFlow()
   const first = useRef(true)
@@ -201,7 +231,9 @@ function reactFlowEdges(layout: FlowLayout): Array<Edge> {
     target: edge.target,
     type: "routed",
     data: { points: edge.points },
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+    // React Flow paints a marker in a colour of its own unless it is told one, and that colour is
+    // not the one the line beside it takes from the theme.
+    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: "var(--color-muted-foreground)" },
     // An edge that leaves a box has to paint over it.
     zIndex: 1000,
   }))

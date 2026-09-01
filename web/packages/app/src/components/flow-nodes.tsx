@@ -24,13 +24,13 @@ export type BoxFlowNode = Node<{ task: Box }, "box">
 export type UnresolvedFlowNode = Node<{ reference: Unresolved }, "unresolved">
 export type RoutedFlowEdge = Edge<{ points: ReadonlyArray<Point> }, "routed">
 
-// A handle is where an edge meets a node. React Flow measures it from the DOM, so it stays in the
-// layout and only its paint goes.
+// A handle is where an edge meets a node. React Flow measures it from the DOM, so it keeps its box
+// and index.css takes its paint away.
 function Sides() {
   return (
     <>
-      <Handle type="target" position={Position.Left} isConnectable={false} className="opacity-0" />
-      <Handle type="source" position={Position.Right} isConnectable={false} className="opacity-0" />
+      <Handle type="target" position={Position.Left} isConnectable={false} />
+      <Handle type="source" position={Position.Right} isConnectable={false} />
     </>
   )
 }

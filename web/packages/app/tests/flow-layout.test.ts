@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest"
 
 import type { Flow, FlowNode } from "@open-planner/api-client"
 
-import { cardHeight, flowNodeKey, type FlowLayout, layoutFlow, pack, type PlacedNode } from "../src/lib/flow-layout"
+import {
+  cardHeight,
+  flowNodeKey,
+  type FlowLayout,
+  layoutFlow,
+  pack,
+  type PlacedNode,
+  TITLE_LINE,
+} from "../src/lib/flow-layout"
 
 const PROJECT = "open-plan"
 const PAGE = 1.8
@@ -222,6 +230,11 @@ describe("a card grows with its title", () => {
 
   it("gives a long title more room than a short one", () => {
     expect(cardHeight(long)).toBeGreaterThan(cardHeight(short))
+  })
+
+  it("counts the lines of every word too wide for the card, not just the widest", () => {
+    const wide = "x".repeat(60)
+    expect(cardHeight(`${wide} ${wide}`)).toBeGreaterThan(cardHeight(wide) + TITLE_LINE)
   })
 
   it("holds a short title at the smallest card", () => {

@@ -54,15 +54,16 @@ function searchProvider(open: (to: string) => void): PaletteProvider {
   }
 }
 
-// The general command interface: the commands the app answers for, and the tasks a query finds,
-// in one list.
+// The general command interface: the commands the app answers for, and the tasks a query finds, in
+// one list. A search the daemon refuses takes the tasks with it and leaves the commands, which need
+// no daemon to run.
 function homeProvider(open: (to: string) => void): PaletteProvider {
   return {
     id: "home",
     placeholder: "Search tasks or run a command",
     idleLabel: "Type to search titles, bodies, and frontmatter",
     emptyLabel: "No matching command or task",
-    items: async (query) => [...commandItems(query, open), ...(await searchItems(query, open))],
+    items: async (query) => [...commandItems(query, open), ...(await searchItems(query, open).catch(() => []))],
   }
 }
 

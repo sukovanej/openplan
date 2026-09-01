@@ -1,8 +1,8 @@
-import { FLOW_ROUTE } from "@open-planner/task-ui"
+import { FLOW_ROUTE, statusText } from "@open-planner/task-ui"
 
-// What the flow shows. Each field is a list, because the endpoint takes each name more than once:
-// the values of one name are alternatives, and two names narrow each other. The whole selection
-// lives in the URL, so a reader can bookmark a flow and share it.
+// Each field is a list, because the endpoint takes each name more than once: the values of one name
+// are alternatives, and two names narrow each other. The whole selection lives in the URL, so a
+// reader can bookmark a flow and share it.
 export interface FlowSelection {
   readonly projects: ReadonlyArray<string>
   readonly statuses: ReadonlyArray<string>
@@ -41,7 +41,7 @@ export function taskFlowPath(project: string, id: string): string {
 }
 
 export function selectsEveryTask(selection: FlowSelection): boolean {
-  return selectionParams(selection).toString() === ""
+  return [selection.projects, selection.statuses, selection.tasks, selection.tags].every((named) => named.length === 0)
 }
 
 export function describeSelection(selection: FlowSelection): string {
@@ -49,7 +49,7 @@ export function describeSelection(selection: FlowSelection): string {
     ...selection.tasks,
     ...selection.projects,
     ...selection.tags.map((tag) => `#${tag}`),
-    ...selection.statuses,
+    ...selection.statuses.map(statusText),
   ]
   return parts.length === 0 ? "Every task that is not finished" : parts.join(" · ")
 }

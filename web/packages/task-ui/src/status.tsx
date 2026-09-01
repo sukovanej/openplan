@@ -73,13 +73,16 @@ const UNREADABLE_FAINT = "bg-status-unreadable-surface/6"
 
 export const statusLabel = (status: Status): string => styles[status].label
 
-// The status as the colour of a whole frame. A status that could not be read wears the unreadable
-// mark's colour, as the icon does.
+// A status off the wire, which a URL can spell any way at all. One the store does not know reads
+// back as it was written, so a reader sees what they typed.
+export const statusText = (value: string): string => styles[value as Status]?.label ?? value
+
+// A status that could not be read wears the unreadable mark's colour, as the icon does.
 export const statusBorder = (status: Status | undefined): string =>
   status === undefined ? UNREADABLE_BORDER : styles[status].border
 
-// The same colour as a wash behind a whole surface. `statusFaint` is the one a box wears, so a card
-// that lies on it still reads as the nearer thing.
+// A box wears `statusFaint`, the lighter of the two, so a card that lies on it reads as the nearer
+// thing.
 export const statusSurface = (status: Status | undefined): string =>
   status === undefined ? UNREADABLE_SURFACE : styles[status].surface
 

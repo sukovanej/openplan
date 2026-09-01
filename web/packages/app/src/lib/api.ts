@@ -81,8 +81,7 @@ const unexpected = (error: HttpClientError.HttpClientError) =>
       : error,
   )
 
-// The order the tasks a selection names must be implemented in, across every project it names. Each
-// name repeats, so the four fields are lists.
+// Each name of the query repeats, so the four fields are lists.
 export const getFlow = (
   selection: FlowSelection,
 ): Effect.Effect<Api.Flow, ApiError | FlowCycles, HttpClient.HttpClient> =>

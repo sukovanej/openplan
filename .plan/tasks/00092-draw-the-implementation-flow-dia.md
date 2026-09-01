@@ -37,6 +37,10 @@ Rejected alternatives:
 The waves run from left to right. Each wave is a column. The arrows then read as "the time moves to
 the right". A node is wide, so a column stacks the nodes better than a row does.
 
+A box takes a block of columns of its own, so a task outside a box draws after the whole box and not
+level with the child that shares its wave. Each arrow still runs from left to right, and a task is
+still drawn after every task it waits for.
+
 Two tasks with no path between them make separate islands. Each island is laid out on its own, and
 the islands are packed into rows that fill the shape of the page. A pile of unblocked tasks then
 reads across the page instead of running off the bottom.
@@ -143,3 +147,40 @@ the OpenAPI spec.
 >
 > Verified: 278 web tests, oxlint and oxfmt clean, `openplan lint` clean, and the page checked in a
 > browser in both themes — a click on a card opens its task, and a 700x500 window clamps at 0.5.
+
+### 2026-09-01T11:25:51Z by Milan Suk via claude-code
+
+> A code review found a claim in this task that the drawing does not keep, and I corrected the task
+> rather than the drawing.
+>
+> The claim: "the wave is the column", globally. ELK reads each layer from the wave, so this holds
+> between two free tasks. It does not hold across a box. ELK gives a box a block of layers of its own
+> and draws every task outside it after the whole block. I reproduced it: a box holding waves 0 to 3,
+> beside a free task of wave 1, puts the free task to the right of the box's wave-3 child. A reader
+> could take the free task for later work.
+>
+> I kept ELK, because the two rules the drawing must not break — nothing overlaps, and the whole graph
+> fits one page — need it, and because the weaker rule that survives is the one a reader uses: each
+> arrow runs left to right, and a task is drawn after every task it waits for. The wave number is no
+> longer on the page, so no column claims a number it cannot keep. The Layout section now says this.
+>
+> The alternative, if the column rule matters more than the two rules above: draw a box as a frame
+> around children that stay on a global grid, instead of as a node the engine lays out. That is the
+> grid this task started with, and it is what forced the engine in the first place.
+>
+> Fixed from the same review:
+>
+> - `Refit` fitted the viewport to the packing it was replacing. The engine runs after the shape
+>   changes, so the refit now waits for the drawing that answers the new shape.
+> - A resize started a fresh layout on every 0.1 of aspect ratio. ELK runs on this thread, so a drag
+>   of the window edge queued blocking layouts. The shape settles for 200 ms first.
+> - A failed fetch of the engine was cached for the life of the tab, so `/flow` stayed a skeleton for
+>   ever. A failure is forgotten now, and the page says it could not draw.
+> - `cardHeight` counted the lines of only the widest over-wide word, and it left the card's border
+>   out of both the text width and the height. A title of two very long words overflowed its card.
+> - A search the daemon refused took the palette's commands down with it.
+> - The arrowhead painted in React Flow's own grey while its line took the theme's.
+> - The help overlay listed "Esc — Back" twice, once for the detail page and once for the flow.
+>
+> Refused: `/flow` takes a name out of the `/:project` namespace, so a project named `flow` is
+> unreachable. OPP-91 fixes the path, and the parent task puts the flow above the projects on purpose.

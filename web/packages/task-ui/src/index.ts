@@ -26,6 +26,7 @@ export {
   StatusMark,
   statusLabel,
   statusSurface,
+  statusText,
 } from "./status"
 export { TagChip } from "./tag-chip"
 export { ColorDot, ColorPicker, TAG_COLORS } from "./tag-palette"

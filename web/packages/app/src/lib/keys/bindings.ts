@@ -42,7 +42,7 @@ export const bindings: ReadonlyArray<Binding> = [
     id: "flow.back",
     keys: "Escape",
     scope: "flow",
-    label: "Back",
+    label: "Leave the flow",
     group: "Navigation",
     run: (ctx) => ctx.back(),
   },
