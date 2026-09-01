@@ -67,9 +67,47 @@ export interface PlacedEdge {
   readonly points: ReadonlyArray<Point>
 }
 
+export interface Frame {
+  readonly left: number
+  readonly top: number
+  readonly right: number
+  readonly bottom: number
+}
+
 export interface FlowLayout {
   readonly nodes: ReadonlyArray<PlacedNode>
   readonly edges: ReadonlyArray<PlacedEdge>
+  readonly bounds: Frame
+}
+
+export interface PageBox {
+  readonly width: number
+  readonly height: number
+}
+
+export interface Viewport {
+  readonly x: number
+  readonly y: number
+  readonly zoom: number
+}
+
+const FIT_MARGIN = 0.03
+
+// The drawing is framed here rather than by React Flow, which fits a frame after it has already
+// painted one at the zoom it started with.
+export function fitViewport(bounds: Frame, page: PageBox, minZoom: number, maxZoom: number): Viewport {
+  const width = Math.max(bounds.right - bounds.left, 1)
+  const height = Math.max(bounds.bottom - bounds.top, 1)
+  const room = 1 - FIT_MARGIN * 2
+  const zoom = Math.min(
+    maxZoom,
+    Math.max(minZoom, Math.min((page.width * room) / width, (page.height * room) / height)),
+  )
+  return {
+    x: (page.width - width * zoom) / 2 - bounds.left * zoom,
+    y: (page.height - height * zoom) / 2 - bounds.top * zoom,
+    zoom,
+  }
 }
 
 // A key is unique inside one project only, so a node is named by the pair. A task id holds no
@@ -411,5 +449,19 @@ export async function layoutFlow(flow: Flow, aspectRatio: number): Promise<FlowL
     for (const child of graph.children ?? []) collect(child, entries, undefined, 0, places[at], out)
     wires(graph, out)
   })
-  return { nodes: out.nodes, edges: out.edges }
+  return { nodes: out.nodes, edges: out.edges, bounds: boundsOf(out) }
+}
+
+function boundsOf(out: Collected): Frame {
+  const frames = out.nodes.map((node) => {
+    const origin = out.origins.get(node.key)!
+    return { left: origin.x, top: origin.y, right: origin.x + node.width, bottom: origin.y + node.height }
+  })
+  if (frames.length === 0) return { left: 0, top: 0, right: 0, bottom: 0 }
+  return frames.reduce((a, b) => ({
+    left: Math.min(a.left, b.left),
+    top: Math.min(a.top, b.top),
+    right: Math.max(a.right, b.right),
+    bottom: Math.max(a.bottom, b.bottom),
+  }))
 }

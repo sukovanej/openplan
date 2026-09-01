@@ -11,7 +11,7 @@ import {
   ReactFlow,
   useReactFlow,
 } from "@xyflow/react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 
 import type { Flow } from "@open-planner/api-client"
@@ -20,7 +20,7 @@ import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, Skeleton } from 
 
 import { BoxFlowCard, LeafFlowCard, RoutedFlowLine, UnresolvedFlowCard } from "../components/flow-nodes"
 import { FlowCycles, getFlow } from "../lib/api"
-import { type FlowLayout, layoutFlow } from "../lib/flow-layout"
+import { fitViewport, type FlowLayout, layoutFlow, type PageBox, type Viewport } from "../lib/flow-layout"
 import { describeSelection, readSelection, selectionParams, selectsEveryTask } from "../lib/flow-selection"
 import { errorText } from "../lib/format"
 import { flowKey } from "../lib/query-client"
@@ -55,7 +55,7 @@ export function FlowRoute() {
     queryFn: () => runtime.runPromise(getFlow(selection)),
   })
   const page = useRef<HTMLDivElement>(null)
-  const shape = usePageShape(page)
+  const box = usePageBox(page)
   useRowCursor(NO_ROWS)
 
   return (
@@ -72,41 +72,50 @@ export function FlowRoute() {
         )}
       </PanelHeader>
       <PanelBody ref={page} className="overflow-hidden">
-        <FlowState flow={flow} shape={shape} />
+        <FlowState flow={flow} box={box} />
       </PanelBody>
     </Panel>
   )
 }
 
 // The islands are packed to the shape of the box they are drawn in, so the whole graph fills it
-// rather than running off one edge. A drag of the window edge settles before the engine runs, which
-// it does on this thread.
+// rather than running off one edge. The first shape is read before anything is drawn, because a
+// guess would draw the whole graph once and then move every island. A drag of the window edge
+// settles first, because the engine runs on this thread.
 const SETTLE_MS = 200
 
-function usePageShape(page: React.RefObject<HTMLDivElement | null>): number {
-  const [shape, setShape] = useState(1.8)
-  useEffect(() => {
-    const box = page.current
-    if (box === null) return
+function usePageBox(page: React.RefObject<HTMLDivElement | null>): PageBox | undefined {
+  const [box, setBox] = useState<PageBox>()
+  useLayoutEffect(() => {
+    const element = page.current
+    if (element === null) return
+    const read = () => {
+      const { width, height } = element.getBoundingClientRect()
+      if (width > 0 && height > 0) {
+        setBox((held) => (held?.width === width && held.height === height ? held : { width, height }))
+      }
+    }
+    read()
     let settle: ReturnType<typeof setTimeout> | undefined
     const watch = new ResizeObserver(() => {
       clearTimeout(settle)
-      settle = setTimeout(() => {
-        const { width, height } = box.getBoundingClientRect()
-        if (width > 0 && height > 0) setShape(Math.round((width / height) * 10) / 10)
-      }, SETTLE_MS)
+      settle = setTimeout(read, SETTLE_MS)
     })
-    watch.observe(box)
+    watch.observe(element)
     return () => {
       clearTimeout(settle)
       watch.disconnect()
     }
   }, [page])
-  return shape
+  return box
 }
 
-function FlowState({ flow, shape }: { flow: UseQueryResult<Flow>; shape: number }) {
-  if (flow.isPending) return <Skeleton className="m-6 h-[calc(100%-3rem)]" />
+// The packing only has to follow the shape of the page, so a resize of a few pixels reuses the
+// drawing it already has.
+const shapeOf = (box: PageBox): number => Math.round((box.width / box.height) * 10) / 10
+
+function FlowState({ flow, box }: { flow: UseQueryResult<Flow>; box: PageBox | undefined }) {
+  if (flow.isPending || box === undefined) return <Skeleton className="m-6 h-[calc(100%-3rem)]" />
   if (flow.isError) {
     return (
       <div className="p-6">
@@ -125,7 +134,7 @@ function FlowState({ flow, shape }: { flow: UseQueryResult<Flow>; shape: number 
       </div>
     )
   }
-  return <Diagram flow={flow.data} shape={shape} />
+  return <Diagram flow={flow.data} box={box} />
 }
 
 function round(cycle: ReadonlyArray<string>): string {
@@ -137,7 +146,8 @@ interface Drawing {
   readonly shape: number
 }
 
-function Diagram({ flow, shape }: { flow: Flow; shape: number }) {
+function Diagram({ flow, box }: { flow: Flow; box: PageBox }) {
+  const shape = shapeOf(box)
   const { resolved } = useTheme()
   const [drawn, setDrawn] = useState<Drawing>()
   const [failure, setFailure] = useState<unknown>()
@@ -176,8 +186,7 @@ function Diagram({ flow, shape }: { flow: Flow; shape: number }) {
       nodeTypes={NODE_TYPES}
       edgeTypes={EDGE_TYPES}
       colorMode={resolved}
-      fitView
-      fitViewOptions={{ maxZoom: 1, padding: 0.06 }}
+      defaultViewport={fitViewport(drawn.layout.bounds, box, MIN_ZOOM, 1)}
       minZoom={MIN_ZOOM}
       maxZoom={1.6}
       // The layout comes from the endpoint, so a node holds still and answers the click that opens
@@ -187,7 +196,7 @@ function Diagram({ flow, shape }: { flow: Flow; shape: number }) {
       deleteKeyCode={null}
       className="h-full w-full"
     >
-      <Refit on={drawn.shape} />
+      <Refit on={drawn.shape} to={fitViewport(drawn.layout.bounds, box, MIN_ZOOM, 1)} />
       <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
       <Controls showInteractive={false} />
     </ReactFlow>
@@ -196,15 +205,17 @@ function Diagram({ flow, shape }: { flow: Flow; shape: number }) {
 
 // A resize reshapes the packing, which leaves the old viewport pointing at nothing. It waits for the
 // drawing that answers the new shape, because the engine runs after the shape has already changed.
-function Refit({ on }: { on: number }) {
+function Refit({ on, to }: { on: number; to: Viewport }) {
   const flow = useReactFlow()
   const first = useRef(true)
+  const target = useRef(to)
+  target.current = to
   useEffect(() => {
     if (first.current) {
       first.current = false
       return
     }
-    void flow.fitView({ maxZoom: 1, padding: 0.06 })
+    void flow.setViewport(target.current)
   }, [on, flow])
   return null
 }
