@@ -22,6 +22,15 @@ const LAYER_STRIDE = NODE_WIDTH + 1
 // An unresolved node belongs to no wave. It takes the layer left of the first, which no task holds.
 const GUTTER = -1
 
+// A box does not inherit the spacing of the graph it sits in, so every box repeats it. Without this
+// the cards inside a box sit at ELK's own default and the columns there read tighter than the rest.
+const SPACING: Record<string, string> = {
+  "elk.spacing.nodeNode": "24",
+  "elk.spacing.edgeNode": "20",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "104",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "24",
+}
+
 const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",
   "elk.direction": "RIGHT",
@@ -30,10 +39,7 @@ const LAYOUT_OPTIONS: Record<string, string> = {
   // The endpoint owns the order, so ELK reads each layer from the x of its node rather than
   // computing a layering of its own. The picture and the `wave` field then cannot disagree.
   "elk.layered.layering.strategy": "INTERACTIVE",
-  "elk.spacing.nodeNode": "24",
-  "elk.spacing.edgeNode": "20",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "104",
-  "elk.layered.spacing.edgeNodeBetweenLayers": "24",
+  ...SPACING,
   "elk.padding": "[top=4,left=4,bottom=4,right=4]",
 }
 
@@ -211,6 +217,7 @@ function elkNode(entry: Entry, into: Map<string, ElkNode>): ElkNode {
           x,
           y: 0,
           layoutOptions: {
+            ...SPACING,
             "elk.padding": `[top=${BOX_HEADER},left=${BOX_PAD},bottom=${BOX_PAD},right=${BOX_PAD}]`,
           },
           children: entry.children.map((child) => elkNode(child, into)),
