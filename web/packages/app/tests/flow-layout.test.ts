@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest"
 
 import type { Flow, FlowNode } from "@open-planner/api-client"
 
-import { flowNodeKey, type FlowLayout, layoutFlow, pack, type PlacedNode } from "../src/lib/flow-layout"
+import { cardHeight, flowNodeKey, type FlowLayout, layoutFlow, pack, type PlacedNode } from "../src/lib/flow-layout"
 
 const PROJECT = "open-plan"
 const PAGE = 1.8
 
-function leaf(id: string, wave: number, position: number, parent?: string): FlowNode {
-  return { kind: "leaf", project: PROJECT, id, title: id, status: "todo", parent, wave, position, blocks_count: 0 }
+function leaf(id: string, wave: number, position: number, parent?: string, title = id): FlowNode {
+  return { kind: "leaf", project: PROJECT, id, title, status: "todo", parent, wave, position, blocks_count: 0 }
 }
 
 function box(id: string, parent?: string): FlowNode {
@@ -212,6 +212,27 @@ describe("nothing overlaps", () => {
     const layout = await layoutFlow(flow, PAGE)
     expect(crossings(layout)).toEqual([])
     expect(collisions(layout)).toEqual([])
+  })
+})
+
+describe("a card grows with its title", () => {
+  const short = "Ship it"
+  const long =
+    "Section-level markdown editing of task bodies, from the engine through the CLI and the API to the web editor"
+
+  it("gives a long title more room than a short one", () => {
+    expect(cardHeight(long)).toBeGreaterThan(cardHeight(short))
+  })
+
+  it("holds a short title at the smallest card", () => {
+    expect(cardHeight(short)).toBe(cardHeight(""))
+  })
+
+  it("draws the card as tall as the layout measured it", async () => {
+    const flow: Flow = { nodes: [leaf("OPP-1", 0, 0), leaf("OPP-2", 0, 1, undefined, long)], edges: [] }
+    const placed = (await layoutFlow(flow, PAGE)).nodes
+    expect(placed.find((node) => node.node.id === "OPP-2")!.height).toBe(cardHeight(long))
+    expect(placed.find((node) => node.node.id === "OPP-1")!.height).toBe(cardHeight("OPP-1"))
   })
 })
 

@@ -3,8 +3,16 @@ import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api"
 import type { Flow, FlowEdge, FlowNode } from "@open-planner/api-client"
 
 export const NODE_WIDTH = 244
-export const NODE_HEIGHT = 60
 export const BOX_HEADER = 30
+// The title runs to as many lines as it needs, so a card is as tall as its own words. These are the
+// numbers the card is drawn with as well as measured by, so the two cannot drift apart.
+export const TITLE_SIZE = 14
+export const TITLE_LINE = 19
+export const TITLE_INSET = 50
+export const CARD_PAD = 8
+export const KEY_LINE = 16
+const MIN_CARD_HEIGHT = 60
+const TITLE_FONT = `${TITLE_SIZE}px "Geist Variable", ui-sans-serif, system-ui, sans-serif`
 
 const BOX_PAD = 12
 const ISLAND_GAP = 48
@@ -22,10 +30,10 @@ const LAYOUT_OPTIONS: Record<string, string> = {
   // The endpoint owns the order, so ELK reads each layer from the x of its node rather than
   // computing a layering of its own. The picture and the `wave` field then cannot disagree.
   "elk.layered.layering.strategy": "INTERACTIVE",
-  "elk.spacing.nodeNode": "20",
-  "elk.spacing.edgeNode": "18",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "56",
-  "elk.layered.spacing.edgeNodeBetweenLayers": "18",
+  "elk.spacing.nodeNode": "24",
+  "elk.spacing.edgeNode": "20",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "104",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "24",
   "elk.padding": "[top=4,left=4,bottom=4,right=4]",
 }
 
@@ -64,6 +72,41 @@ export function flowNodeKey(project: string, id: string): string {
 }
 
 const edgeKey = (edge: FlowEdge): string => `${edge.project} ${edge.from} ${edge.to}`
+
+let ruler: CanvasRenderingContext2D | null | undefined
+
+function measurer(): CanvasRenderingContext2D | null {
+  if (ruler === undefined) {
+    ruler = (typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d")) ?? null
+    if (ruler !== null) ruler.font = TITLE_FONT
+  }
+  return ruler
+}
+
+// Off a canvas — a test, a server — half the type size is close enough to keep the geometry sane.
+const widthOf = (text: string): number => measurer()?.measureText(text).width ?? text.length * TITLE_SIZE * 0.5
+
+function titleLines(title: string, width: number): number {
+  let lines = 1
+  let line = ""
+  for (const word of title.split(/\s+/).filter((word) => word !== "")) {
+    const next = line === "" ? word : `${line} ${word}`
+    if (widthOf(next) <= width || line === "") {
+      line = next
+      continue
+    }
+    lines += 1
+    line = word
+  }
+  // A word wider than the card breaks inside itself rather than running out of the frame.
+  const longest = Math.max(...title.split(/\s+/).map((word) => Math.ceil(widthOf(word) / width)), 1)
+  return lines + longest - 1
+}
+
+export function cardHeight(title: string): number {
+  const lines = titleLines(title, NODE_WIDTH - TITLE_INSET)
+  return Math.max(MIN_CARD_HEIGHT, CARD_PAD * 2 + KEY_LINE + lines * TITLE_LINE)
+}
 
 interface Entry {
   readonly key: string
@@ -156,7 +199,13 @@ function elkNode(entry: Entry, into: Map<string, ElkNode>): ElkNode {
   const x = waveOf(entry) * LAYER_STRIDE
   const node: ElkNode =
     entry.children.length === 0
-      ? { id: entry.key, x, y: 0, width: NODE_WIDTH, height: NODE_HEIGHT }
+      ? {
+          id: entry.key,
+          x,
+          y: 0,
+          width: NODE_WIDTH,
+          height: entry.node.kind === "leaf" ? cardHeight(entry.node.title) : MIN_CARD_HEIGHT,
+        }
       : {
           id: entry.key,
           x,
@@ -269,7 +318,7 @@ function collect(
     x: parent === undefined ? at.x : (node.x ?? 0),
     y: parent === undefined ? at.y : (node.y ?? 0),
     width: node.width ?? NODE_WIDTH,
-    height: node.height ?? NODE_HEIGHT,
+    height: node.height ?? MIN_CARD_HEIGHT,
   })
   for (const child of node.children ?? []) collect(child, entries, node.id, depth + 1, at, out)
 }
@@ -306,6 +355,8 @@ function indexEntries(entry: Entry, into: Map<string, Entry>): void {
 }
 
 export async function layoutFlow(flow: Flow, aspectRatio: number): Promise<FlowLayout> {
+  // The card is measured in the font it is drawn in, which the browser may still be fetching.
+  if (typeof document !== "undefined") await document.fonts?.ready
   const tree = family(flow)
   const entries = new Map<string, Entry>()
   for (const root of tree.roots) indexEntries(root, entries)
