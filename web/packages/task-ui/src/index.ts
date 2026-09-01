@@ -18,12 +18,14 @@ export { ParentLink } from "./parent-link"
 export {
   statusBorder,
   StatusChip,
+  statusFaint,
   StatusField,
   StatusGroupHeader,
   statusGroupLabel,
   StatusIcon,
   StatusMark,
   statusLabel,
+  statusSurface,
 } from "./status"
 export { TagChip } from "./tag-chip"
 export { ColorDot, ColorPicker, TAG_COLORS } from "./tag-palette"

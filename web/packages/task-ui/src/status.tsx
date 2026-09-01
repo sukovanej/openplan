@@ -5,13 +5,18 @@ import { cn, Tooltip } from "@open-planner/ui"
 
 import { fieldValue, statusField } from "./metadata"
 
-const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; header: string; border: string }> = {
+const styles: Record<
+  Status,
+  { label: string; icon: LucideIcon; mark: string; header: string; border: string; surface: string; faint: string }
+> = {
   backlog: {
     label: "Backlog",
     icon: CircleEllipsis,
     mark: "text-status-backlog",
     header: "bg-status-backlog-surface/8 border-status-backlog-surface/20 text-status-backlog-text/80",
     border: "border-status-backlog",
+    surface: "bg-status-backlog-surface/12",
+    faint: "bg-status-backlog-surface/6",
   },
   todo: {
     label: "Todo",
@@ -19,6 +24,8 @@ const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; he
     mark: "text-status-todo",
     header: "bg-status-todo-surface/8 border-status-todo-surface/20 text-status-todo-text/80",
     border: "border-status-todo",
+    surface: "bg-status-todo-surface/12",
+    faint: "bg-status-todo-surface/6",
   },
   in_progress: {
     label: "In progress",
@@ -26,6 +33,8 @@ const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; he
     mark: "text-status-in-progress",
     header: "bg-status-in-progress-surface/8 border-status-in-progress-surface/20 text-status-in-progress-text/80",
     border: "border-status-in-progress",
+    surface: "bg-status-in-progress-surface/12",
+    faint: "bg-status-in-progress-surface/6",
   },
   in_review: {
     label: "In review",
@@ -33,6 +42,8 @@ const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; he
     mark: "text-status-in-review",
     header: "bg-status-in-review-surface/8 border-status-in-review-surface/20 text-status-in-review-text/80",
     border: "border-status-in-review",
+    surface: "bg-status-in-review-surface/12",
+    faint: "bg-status-in-review-surface/6",
   },
   done: {
     label: "Done",
@@ -40,6 +51,8 @@ const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; he
     mark: "text-status-done",
     header: "bg-status-done-surface/8 border-status-done-surface/20 text-status-done-text/80",
     border: "border-status-done",
+    surface: "bg-status-done-surface/12",
+    faint: "bg-status-done-surface/6",
   },
   cancelled: {
     label: "Cancelled",
@@ -47,12 +60,16 @@ const styles: Record<Status, { label: string; icon: LucideIcon; mark: string; he
     mark: "text-status-cancelled",
     header: "bg-status-cancelled-surface/8 border-status-cancelled-surface/20 text-status-cancelled-text/80",
     border: "border-status-cancelled",
+    surface: "bg-status-cancelled-surface/12",
+    faint: "bg-status-cancelled-surface/6",
   },
 }
 
 const UNREADABLE_HEADER =
   "bg-status-unreadable-surface/8 border-status-unreadable-surface/20 text-status-unreadable-text/80"
 const UNREADABLE_BORDER = "border-status-unreadable"
+const UNREADABLE_SURFACE = "bg-status-unreadable-surface/12"
+const UNREADABLE_FAINT = "bg-status-unreadable-surface/6"
 
 export const statusLabel = (status: Status): string => styles[status].label
 
@@ -60,6 +77,14 @@ export const statusLabel = (status: Status): string => styles[status].label
 // mark's colour, as the icon does.
 export const statusBorder = (status: Status | undefined): string =>
   status === undefined ? UNREADABLE_BORDER : styles[status].border
+
+// The same colour as a wash behind a whole surface. `statusFaint` is the one a box wears, so a card
+// that lies on it still reads as the nearer thing.
+export const statusSurface = (status: Status | undefined): string =>
+  status === undefined ? UNREADABLE_SURFACE : styles[status].surface
+
+export const statusFaint = (status: Status | undefined): string =>
+  status === undefined ? UNREADABLE_FAINT : styles[status].faint
 
 export function StatusIcon({ status, className }: { status: Status; className?: string }) {
   const { icon: Icon, label, mark } = styles[status]

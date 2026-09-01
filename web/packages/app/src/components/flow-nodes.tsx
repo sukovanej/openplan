@@ -2,7 +2,15 @@ import { BaseEdge, type Edge, type EdgeProps, Handle, type Node, type NodeProps,
 import { Link } from "react-router-dom"
 
 import type { FlowNode } from "@open-planner/api-client"
-import { fieldValue, statusBorder, StatusMark, taskPath, UnresolvedMark } from "@open-planner/task-ui"
+import {
+  fieldValue,
+  statusBorder,
+  statusFaint,
+  StatusMark,
+  statusSurface,
+  taskPath,
+  UnresolvedMark,
+} from "@open-planner/task-ui"
 import { cn } from "@open-planner/ui"
 
 import { BOX_HEADER, CARD_PAD, KEY_LINE, type Point, TITLE_LINE, TITLE_SIZE } from "../lib/flow-layout"
@@ -32,28 +40,33 @@ export function LeafFlowCard({ data }: NodeProps<LeafFlowNode>) {
   return (
     <>
       <Sides />
-      <Link
-        to={taskPath(task.project, task.id)}
-        style={{ paddingTop: CARD_PAD, paddingBottom: CARD_PAD }}
-        className={cn(
-          "bg-card hover:bg-muted/40 flex h-full w-full items-center gap-2.5 rounded-md border px-3 transition-colors",
-          statusBorder(fieldValue(task.status)),
-        )}
-      >
-        <StatusMark status={task.status} className="size-4 shrink-0" />
-        <span className="flex min-w-0 flex-col">
-          <span style={{ lineHeight: `${KEY_LINE}px` }} className="text-muted-foreground text-[11px] tabular-nums">
-            {task.id}
+      {/* The wash is thin enough to read text through, so an opaque card lies under it rather than
+          the dotted ground of the page. */}
+      <div className="bg-card h-full w-full rounded-md">
+        <Link
+          to={taskPath(task.project, task.id)}
+          style={{ paddingTop: CARD_PAD, paddingBottom: CARD_PAD }}
+          className={cn(
+            "hover:brightness-110 flex h-full w-full items-center gap-2.5 rounded-md border px-3 transition-[filter]",
+            statusBorder(fieldValue(task.status)),
+            statusSurface(fieldValue(task.status)),
+          )}
+        >
+          <StatusMark status={task.status} className="size-4 shrink-0" />
+          <span className="flex min-w-0 flex-col">
+            <span style={{ lineHeight: `${KEY_LINE}px` }} className="text-muted-foreground text-[11px] tabular-nums">
+              {task.id}
+            </span>
+            {/* The layout measured this text to size the card, so it wraps here and never clips. */}
+            <span
+              style={{ fontSize: TITLE_SIZE, lineHeight: `${TITLE_LINE}px` }}
+              className="text-foreground/90 break-words"
+            >
+              {task.title}
+            </span>
           </span>
-          {/* The layout measured this text to size the card, so it wraps here and never clips. */}
-          <span
-            style={{ fontSize: TITLE_SIZE, lineHeight: `${TITLE_LINE}px` }}
-            className="text-foreground/90 break-words"
-          >
-            {task.title}
-          </span>
-        </span>
-      </Link>
+        </Link>
+      </div>
     </>
   )
 }
@@ -63,7 +76,13 @@ export function BoxFlowCard({ data }: NodeProps<BoxFlowNode>) {
   return (
     <>
       <Sides />
-      <div className={cn("bg-muted/20 h-full w-full rounded-lg border", statusBorder(fieldValue(task.status)))}>
+      <div
+        className={cn(
+          "h-full w-full rounded-lg border",
+          statusBorder(fieldValue(task.status)),
+          statusFaint(fieldValue(task.status)),
+        )}
+      >
         <Link
           to={taskPath(task.project, task.id)}
           style={{ height: BOX_HEADER }}
