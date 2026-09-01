@@ -27,7 +27,7 @@ const GUTTER = -1
 const SPACING: Record<string, string> = {
   "elk.spacing.nodeNode": "24",
   "elk.spacing.edgeNode": "20",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "104",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "68",
   "elk.layered.spacing.edgeNodeBetweenLayers": "24",
 }
 
