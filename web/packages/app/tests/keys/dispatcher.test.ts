@@ -18,7 +18,15 @@ interface Harness {
   readonly overlay: { open: number; close: number; toggle: number }
   readonly closed: Array<OverlayName>
   readonly opened: Array<PaletteTarget>
-  readonly detail: { editParent: number; addSubtask: number; editTags: number; goToParent: number; escape: number }
+  readonly went: Array<"back">
+  readonly detail: {
+    showFlow: number
+    editParent: number
+    addSubtask: number
+    editTags: number
+    goToParent: number
+    escape: number
+  }
   setScope: (scope: RouteScope) => void
   setPath: (pathname: string) => void
   setOverlay: (name: OverlayName | null) => void
@@ -34,9 +42,11 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const overlay = { open: 0, close: 0, toggle: 0 }
   const closed: Array<OverlayName> = []
   const opened: Array<PaletteTarget> = []
-  const detail = { editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 }
+  const went: Array<"back"> = []
+  const detail = { showFlow: 0, editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 }
   const context = (): RunContext => ({
     navigate: (to) => navigations.push(to),
+    back: () => void went.push("back"),
     overlay: (name) => ({
       open: () => void overlay.open++,
       close: () => {
@@ -67,6 +77,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
       },
     },
     detail: {
+      showFlow: () => void detail.showFlow++,
       editParent: () => void detail.editParent++,
       addSubtask: () => void detail.addSubtask++,
       editTags: () => void detail.editTags++,
@@ -85,6 +96,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   return {
     navigations,
     copied,
+    went,
     overlay,
     closed,
     opened,
@@ -242,18 +254,27 @@ describe("scope resolution", () => {
     h.detach()
   })
 
+  it("takes Escape back from the flow, and leaves the detail handler alone there", () => {
+    const h = mount()
+    h.setScope("flow")
+    press("Escape")
+    expect(h.went).toEqual(["back"])
+    expect(h.detail.escape).toBe(0)
+    h.detach()
+  })
+
   it("triggers parent, subtask, and tag edits only on the detail route", () => {
     const h = mount()
     press("p")
     press("s")
     press("t")
-    expect(h.detail).toEqual({ editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 })
+    expect(h.detail).toEqual({ showFlow: 0, editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 })
 
     h.setScope("detail")
     press("p")
     press("s")
     press("t")
-    expect(h.detail).toEqual({ editParent: 1, addSubtask: 1, editTags: 1, goToParent: 0, escape: 0 })
+    expect(h.detail).toEqual({ showFlow: 0, editParent: 1, addSubtask: 1, editTags: 1, goToParent: 0, escape: 0 })
     h.detach()
   })
 

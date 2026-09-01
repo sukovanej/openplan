@@ -1,4 +1,7 @@
+import { Waypoints } from "lucide-react"
 import { Link, Outlet } from "react-router-dom"
+
+import { FLOW_ROUTE } from "@open-planner/task-ui"
 
 import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"
@@ -20,7 +23,14 @@ export function App() {
           </Link>
           <ProjectSwitcher />
           <ConnectionStatus />
-          <ThemeToggle className="ml-auto" />
+          <Link
+            to={FLOW_ROUTE}
+            className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
+          >
+            <Waypoints className="size-3.5" />
+            Flow
+          </Link>
+          <ThemeToggle />
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-hidden px-4 py-4">

@@ -1,3 +1,5 @@
+import { FLOW_ROUTE } from "@open-planner/task-ui"
+
 import type { Binding } from "./types"
 
 export const bindings: ReadonlyArray<Binding> = [
@@ -37,6 +39,14 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.detail.escape(),
   },
   {
+    id: "flow.back",
+    keys: "Escape",
+    scope: "flow",
+    label: "Leave the flow",
+    group: "Navigation",
+    run: (ctx) => ctx.back(),
+  },
+  {
     id: "go.list",
     keys: ["g", "l"],
     scope: "global",
@@ -45,12 +55,28 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.navigate("/"),
   },
   {
+    id: "go.flow",
+    keys: ["g", "f"],
+    scope: "global",
+    label: "Go to the flow",
+    group: "Navigation",
+    run: (ctx) => ctx.navigate(FLOW_ROUTE),
+  },
+  {
     id: "go.parent",
     keys: ["g", "p"],
     scope: "detail",
     label: "Go to parent",
     group: "Navigation",
     run: (ctx) => ctx.detail.goToParent(),
+  },
+  {
+    id: "detail.flow",
+    keys: "f",
+    scope: "detail",
+    label: "Show the flow of this task",
+    group: "Task",
+    run: (ctx) => ctx.detail.showFlow(),
   },
   {
     id: "detail.parent",

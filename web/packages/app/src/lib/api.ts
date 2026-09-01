@@ -4,6 +4,8 @@ import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse
 
 import * as Api from "@open-planner/api-client"
 
+import type { FlowSelection } from "./flow-selection"
+
 export class TaskNotFound extends Data.TaggedError("TaskNotFound")<{
   readonly id: string
 }> {}
@@ -15,6 +17,13 @@ export class TaskRejected extends Data.TaggedError("TaskRejected")<{
   readonly message: string
 }> {}
 
+// A flow the daemon cannot order, with the members of each cycle it found. The keys carry no
+// project, so the view names them rather than linking them.
+export class FlowCycles extends Data.TaggedError("FlowCycles")<{
+  readonly message: string
+  readonly cycles: ReadonlyArray<ReadonlyArray<string>>
+}> {}
+
 export type ApiError = TaskNotFound | TaskRejected | HttpClientError.HttpClientError | Schema.SchemaError
 
 // "" in the browser (same-origin, relative). Tests supply an absolute base because node's
@@ -23,15 +32,16 @@ export const ApiBaseUrl = Context.Reference<string>("app/ApiBaseUrl", {
   defaultValue: () => "",
 })
 
-const reason = (body: unknown, status: number): string =>
+const asBody = (body: unknown, status: number): Api.ApiErrorBody =>
   typeof body === "object" && body !== null && typeof (body as Api.ApiErrorBody).message === "string"
-    ? (body as Api.ApiErrorBody).message
-    : `request failed with status ${status}`
+    ? (body as Api.ApiErrorBody)
+    : { message: `request failed with status ${status}` }
 
 // The daemon answers every refusal with an `ApiErrorBody`, and the generated client decodes exactly
 // that to raise its typed errors. A failure body from anywhere else — a proxy's HTML page, an empty
 // body from a dead connection — would decode-fail instead, losing the status along with it, so
-// rewrite it into the documented shape and keep the status the thing that decides what happened.
+// rewrite it into the documented shape and keep the status the thing that decides what happened. A
+// body that already carries a message passes through whole, because a route can add a field to it.
 const asReason = HttpClient.transformResponse(
   Effect.flatMap((response: HttpClientResponse.HttpClientResponse) =>
     response.status < 400
@@ -41,7 +51,7 @@ const asReason = HttpClient.transformResponse(
           (body) =>
             HttpClientResponse.fromWeb(
               response.request,
-              new Response(JSON.stringify({ message: reason(body, response.status) }), {
+              new Response(JSON.stringify(asBody(body, response.status)), {
                 status: response.status,
                 headers: { "content-type": "application/json" },
               }),
@@ -69,6 +79,32 @@ const unexpected = (error: HttpClientError.HttpClientError) =>
           message: `request failed with status ${error.reason.response.status}`,
         })
       : error,
+  )
+
+export const getFlow = (
+  selection: FlowSelection,
+): Effect.Effect<Api.Flow, ApiError | FlowCycles, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) =>
+    client.getFlow({
+      params: {
+        project: selection.projects,
+        // The daemon is what knows the status names, and it refuses one it cannot read with a 400
+        // that says so; a client-side list of them would be a second place to keep them in step.
+        status: selection.statuses as ReadonlyArray<Api.Status>,
+        task: selection.tasks,
+        tag: selection.tags,
+      },
+    }),
+  ).pipe(
+    Effect.catchTags({
+      GetFlow400: refusal,
+      GetFlow404: refusal,
+      GetFlow422: (error) =>
+        Effect.fail(new FlowCycles({ message: error.cause.message, cycles: error.cause.cycles ?? [] })),
+      GetFlow500: refusal,
+      GetFlow503: refusal,
+      HttpClientError: unexpected,
+    }),
   )
 
 export const listProjects: Effect.Effect<

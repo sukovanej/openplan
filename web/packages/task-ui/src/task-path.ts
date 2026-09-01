@@ -1,6 +1,10 @@
 const TASK_SEGMENT = "task"
 const TAGS_SEGMENT = "tags"
 
+// The flow is not a read of one project: one query can name several, so it sits above them all and
+// carries its whole selection in the query string.
+export const FLOW_ROUTE = "/flow"
+
 export const BOARD_ROUTE = "/:project"
 export const TASK_ROUTE = `${BOARD_ROUTE}/${TASK_SEGMENT}/:id`
 export const TAGS_ROUTE = `${BOARD_ROUTE}/${TAGS_SEGMENT}`
