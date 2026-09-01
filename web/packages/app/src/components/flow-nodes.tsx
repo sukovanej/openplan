@@ -29,8 +29,8 @@ export type RoutedFlowEdge = Edge<{ points: ReadonlyArray<Point> }, "routed">
 function Sides() {
   return (
     <>
-      <Handle type="target" position={Position.Left} isConnectable={false} />
-      <Handle type="source" position={Position.Right} isConnectable={false} />
+      <Handle type="target" position={Position.Top} isConnectable={false} />
+      <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </>
   )
 }

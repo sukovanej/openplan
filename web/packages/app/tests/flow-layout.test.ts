@@ -109,33 +109,33 @@ function collisions(layout: FlowLayout): Array<string> {
 }
 
 describe("the drawing", () => {
-  it("puts a task to the right of everything it waits for", async () => {
+  it("puts a task below everything it waits for", async () => {
     const flow: Flow = {
       nodes: [leaf("OPP-1", 0, 0), leaf("OPP-2", 1, 0), leaf("OPP-3", 2, 0)],
       edges: [edge("OPP-1", "OPP-2"), edge("OPP-2", "OPP-3")],
     }
     const placed = frames(await layoutFlow(flow, PAGE))
-    expect(at(placed, "OPP-1").right).toBeLessThan(at(placed, "OPP-2").left)
-    expect(at(placed, "OPP-2").right).toBeLessThan(at(placed, "OPP-3").left)
+    expect(at(placed, "OPP-1").bottom).toBeLessThan(at(placed, "OPP-2").top)
+    expect(at(placed, "OPP-2").bottom).toBeLessThan(at(placed, "OPP-3").top)
   })
 
-  it("keeps two tasks of one wave in the same column", async () => {
+  it("keeps two tasks of one wave on the same row", async () => {
     const flow: Flow = {
       nodes: [leaf("OPP-1", 0, 0), leaf("OPP-2", 0, 1), leaf("OPP-3", 1, 0)],
       edges: [edge("OPP-1", "OPP-3"), edge("OPP-2", "OPP-3")],
     }
     const placed = frames(await layoutFlow(flow, PAGE))
-    expect(at(placed, "OPP-1").left).toBe(at(placed, "OPP-2").left)
-    expect(at(placed, "OPP-1").left).toBeLessThan(at(placed, "OPP-3").left)
+    expect(at(placed, "OPP-1").top).toBe(at(placed, "OPP-2").top)
+    expect(at(placed, "OPP-1").top).toBeLessThan(at(placed, "OPP-3").top)
   })
 
-  it("leaves a node with no wave to the left of the task that names it", async () => {
+  it("leaves a node with no wave above the task that names it", async () => {
     const flow: Flow = {
       nodes: [leaf("OPP-1", 0, 0), unresolved("OPP-99")],
       edges: [edge("OPP-99", "OPP-1")],
     }
     const placed = frames(await layoutFlow(flow, PAGE))
-    expect(at(placed, "OPP-99").right).toBeLessThan(at(placed, "OPP-1").left)
+    expect(at(placed, "OPP-99").bottom).toBeLessThan(at(placed, "OPP-1").top)
   })
 
   it("holds each child inside its box", async () => {

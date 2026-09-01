@@ -34,12 +34,12 @@ Rejected alternatives:
 
 ## Layout
 
-The waves run from left to right. Each wave is a column. The arrows then read as "the time moves to
-the right". A node is wide, so a column stacks the nodes better than a row does.
+The waves run from top to bottom. Each wave is a row. The arrows then read as "the time moves down".
+A card is wide, so a row holds more of them across a page than a column holds down one.
 
-A box takes a block of columns of its own, so a task outside a box draws after the whole box and not
-level with the child that shares its wave. Each arrow still runs from left to right, and a task is
-still drawn after every task it waits for.
+A box takes a block of rows of its own, so a task beside a box draws below the whole box and not
+level with the child that shares its wave. Each arrow still runs downwards, and a task is still
+drawn after every task it waits for.
 
 Two tasks with no path between them make separate islands. Each island is laid out on its own, and
 the islands are packed into rows that fill the shape of the page. A pile of unblocked tasks then

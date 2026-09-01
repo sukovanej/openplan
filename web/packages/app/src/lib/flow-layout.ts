@@ -16,24 +16,24 @@ const TITLE_FONT = `${TITLE_SIZE}px "Geist Variable", ui-sans-serif, system-ui, 
 
 const BOX_PAD = 12
 const ISLAND_GAP = 48
-// ELK reads the layer of a node from the x it is given, so the stride only has to keep two waves
-// apart. The width it lays out is its own.
-const LAYER_STRIDE = NODE_WIDTH + 1
+// The waves run down, so ELK reads the layer of a node from the y it is given. The stride only has
+// to be taller than any card; the spacing it lays out is its own.
+const LAYER_STRIDE = 500
 // An unresolved node belongs to no wave. It takes the layer left of the first, which no task holds.
 const GUTTER = -1
 
 // A box does not inherit the spacing of the graph it sits in, so every box repeats it. Without this
 // the cards inside a box sit at ELK's own default and the columns there read tighter than the rest.
 const SPACING: Record<string, string> = {
-  "elk.spacing.nodeNode": "24",
+  "elk.spacing.nodeNode": "28",
   "elk.spacing.edgeNode": "20",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "68",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "48",
   "elk.layered.spacing.edgeNodeBetweenLayers": "24",
 }
 
 const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",
-  "elk.direction": "RIGHT",
+  "elk.direction": "DOWN",
   "elk.edgeRouting": "ORTHOGONAL",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
   // The endpoint owns the order, so ELK reads each layer from the x of its node rather than
@@ -264,20 +264,20 @@ function islands(tree: Family, edges: ReadonlyArray<FlowEdge>): ReadonlyArray<Is
 }
 
 function elkNode(entry: Entry, into: Map<string, ElkNode>): ElkNode {
-  const x = waveOf(entry) * LAYER_STRIDE
+  const y = waveOf(entry) * LAYER_STRIDE
   const node: ElkNode =
     entry.children.length === 0
       ? {
           id: entry.key,
-          x,
-          y: 0,
+          x: 0,
+          y,
           width: NODE_WIDTH,
           height: entry.node.kind === "leaf" ? cardHeight(entry.node.title) : MIN_CARD_HEIGHT,
         }
       : {
           id: entry.key,
-          x,
-          y: 0,
+          x: 0,
+          y,
           layoutOptions: {
             ...SPACING,
             "elk.padding": `[top=${BOX_HEADER},left=${BOX_PAD},bottom=${BOX_PAD},right=${BOX_PAD}]`,
