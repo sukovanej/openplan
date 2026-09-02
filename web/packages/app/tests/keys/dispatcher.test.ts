@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { taskPath, taskRouteOf } from "@open-planner/task-ui"
 
-import { copyTargetRow, hoveredRow } from "../../src/lib/copy-target"
+import { taskFlowPath } from "../../src/lib/flow-selection"
 import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
 import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
 import type { Binding, OverlayName, PaletteTarget, RouteScope, RunContext } from "../../src/lib/keys/types"
 import { focusedRow, rowCursor } from "../../src/lib/row-cursor"
+import { hoveredRow, targetRow } from "../../src/lib/row-target"
 
 const PROJECT = "open-plan"
 
@@ -20,7 +21,6 @@ interface Harness {
   readonly opened: Array<PaletteTarget>
   readonly went: Array<"back">
   readonly detail: {
-    showFlow: number
     editParent: number
     addSubtask: number
     editTags: number
@@ -43,7 +43,12 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const closed: Array<OverlayName> = []
   const opened: Array<PaletteTarget> = []
   const went: Array<"back"> = []
-  const detail = { showFlow: 0, editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 }
+  const detail = { editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 }
+  const targetTask = () => {
+    const cursor = rowCursor.getSnapshot()
+    const row = targetRow(hoveredRow.among(cursor.rows), focusedRow(cursor), pathname)
+    return row === undefined ? undefined : taskRouteOf(row)
+  }
   const context = (): RunContext => ({
     navigate: (to) => navigations.push(to),
     back: () => void went.push("back"),
@@ -69,15 +74,17 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
         return focusedRow(cursor) ?? hoveredRow.among(cursor.rows)
       },
     },
-    copy: {
-      taskId: () => {
-        const cursor = rowCursor.getSnapshot()
-        const row = copyTargetRow(hoveredRow.among(cursor.rows), focusedRow(cursor), pathname)
-        copied.push(row === undefined ? undefined : taskRouteOf(row)?.id)
+    task: {
+      copyId: () => {
+        const task = targetTask()
+        copied.push(task?.id)
+      },
+      showFlow: () => {
+        const task = targetTask()
+        if (task !== undefined) navigations.push(taskFlowPath(task.project, task.id))
       },
     },
     detail: {
-      showFlow: () => void detail.showFlow++,
       editParent: () => void detail.editParent++,
       addSubtask: () => void detail.addSubtask++,
       editTags: () => void detail.editTags++,
@@ -242,6 +249,60 @@ describe("row cursor is live on both the list and detail routes", () => {
   })
 })
 
+describe("f shows the flow of the task at hand", () => {
+  it("opens the flow of the selected row on a list", () => {
+    const h = mount()
+    rowCursor.setRows(paths("12", "13"))
+    rowCursor.moveBy(1)
+
+    press("f")
+    expect(h.navigations).toEqual([taskFlowPath(PROJECT, "12")])
+    h.detach()
+  })
+
+  it("takes the hovered row ahead of the selected one", () => {
+    const h = mount()
+    rowCursor.setRows(paths("12", "13"))
+    rowCursor.moveBy(1)
+    hoveredRow.enter(path("13"), 1)
+
+    press("f")
+    expect(h.navigations).toEqual([taskFlowPath(PROJECT, "13")])
+    h.detach()
+  })
+
+  it("falls back to the open task on the detail route", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("28"))
+
+    press("f")
+    expect(h.navigations).toEqual([taskFlowPath(PROJECT, "28")])
+    h.detach()
+  })
+
+  it("does nothing when no row and no task is at hand", () => {
+    const h = mount()
+    h.setScope("flow")
+    h.setPath("/flow")
+
+    press("f")
+    expect(h.navigations).toEqual([])
+    h.detach()
+  })
+
+  it("leaves the g-f chord to the whole flow", () => {
+    const h = mount()
+    rowCursor.setRows(paths("12"))
+    rowCursor.moveBy(1)
+
+    press("g")
+    press("f")
+    expect(h.navigations).toEqual(["/flow"])
+    h.detach()
+  })
+})
+
 describe("scope resolution", () => {
   it("routes Escape to the detail-view handler only on the detail route", () => {
     const h = mount()
@@ -268,13 +329,13 @@ describe("scope resolution", () => {
     press("p")
     press("s")
     press("t")
-    expect(h.detail).toEqual({ showFlow: 0, editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 })
+    expect(h.detail).toEqual({ editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 })
 
     h.setScope("detail")
     press("p")
     press("s")
     press("t")
-    expect(h.detail).toEqual({ showFlow: 0, editParent: 1, addSubtask: 1, editTags: 1, goToParent: 0, escape: 0 })
+    expect(h.detail).toEqual({ editParent: 1, addSubtask: 1, editTags: 1, goToParent: 0, escape: 0 })
     h.detach()
   })
 

@@ -26,7 +26,9 @@ export const hoveredRow = {
   },
 }
 
-export function copyTargetRow(
+// The row a shortcut acts on: the one under the pointer, then the selected one, then the task the
+// route itself names.
+export function targetRow(
   hoveredRow: string | undefined,
   focusedRow: string | undefined,
   routeRow: string | undefined,

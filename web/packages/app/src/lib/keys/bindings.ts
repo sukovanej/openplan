@@ -71,14 +71,6 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.detail.goToParent(),
   },
   {
-    id: "detail.flow",
-    keys: "f",
-    scope: "detail",
-    label: "Show the flow of this task",
-    group: "Task",
-    run: (ctx) => ctx.detail.showFlow(),
-  },
-  {
     id: "detail.parent",
     keys: "p",
     scope: "detail",
@@ -103,12 +95,20 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.detail.editTags(),
   },
   {
+    id: "task.flow",
+    keys: "f",
+    scope: "global",
+    label: "Show the flow of this task",
+    group: "Task",
+    run: (ctx) => ctx.task.showFlow(),
+  },
+  {
     id: "task.copy-id",
     keys: "mod+.",
     scope: "global",
     label: "Copy task id",
     group: "Task",
-    run: (ctx) => ctx.copy.taskId(),
+    run: (ctx) => ctx.task.copyId(),
   },
   {
     id: "palette.home",

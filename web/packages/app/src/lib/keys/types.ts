@@ -32,12 +32,13 @@ export interface PaletteControls {
   readonly open: (target: PaletteTarget) => void
 }
 
-export interface CopyControls {
-  readonly taskId: () => void
+// The task at hand, which is the row under the pointer, the selected row, or the open detail.
+export interface TaskControls {
+  readonly copyId: () => void
+  readonly showFlow: () => void
 }
 
 export interface DetailControls {
-  readonly showFlow: () => void
   readonly editParent: () => void
   readonly addSubtask: () => void
   readonly editTags: () => void
@@ -52,7 +53,7 @@ export interface RunContext {
   readonly overlay: (name: OverlayName) => OverlayControls
   readonly palette: PaletteControls
   readonly cursor: CursorControls
-  readonly copy: CopyControls
+  readonly task: TaskControls
   readonly detail: DetailControls
 }
 
