@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-09-02T09:36:42Z
 ---
 # The f shortcut opens the flow of the task at hand
