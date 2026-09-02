@@ -1,0 +1,27 @@
+name: Set up openplan
+description: Install the openplan binary and put it on PATH
+
+inputs:
+  version:
+    description: The release to install, for example 0.0.1. Omit it to take the latest release.
+    required: false
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: Install openplan
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        OPENPLAN_NO_MODIFY_PATH: "1"
+      run: |
+        set -euo pipefail
+        repo=https://github.com/sukovanej/open-plan/releases
+        if [ "$VERSION" = latest ]; then
+          url="$repo/latest/download/openplan-installer.sh"
+        else
+          url="$repo/download/v${VERSION#v}/openplan-installer.sh"
+        fi
+        curl --proto '=https' --tlsv1.2 -LsSf "$url" | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"

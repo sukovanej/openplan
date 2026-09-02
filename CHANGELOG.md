@@ -1,0 +1,27 @@
+# Changelog
+
+All notable changes to open-plan are in this file.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
+the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.0.1](https://github.com/sukovanej/open-plan/releases/tag/v0.0.1) - 2026-08-27
+
+The first release.
+
+### Added
+
+- The `openplan` binary. It creates, lists, searches, shows, moves, tags,
+  comments on, and deletes the tasks in `.plan/tasks/`.
+- A background daemon. It serves a realtime API and the web UI on
+  `127.0.0.1:7373`. One daemon serves every repository on the machine.
+- The web UI. It shows the task list, the task detail with editable markdown
+  sections, dependencies, tags, comments, and the task-by-branch matrix.
+- Branch-aware reads. `search` and the matrix find tasks on every local branch
+  and worktree.
+- `openplan lint`. It checks frontmatter, references, cycles, and duplicate
+  numbers, and it never starts a daemon.
+- `openplan merge-driver`. Git merges `.plan/**.md` files with it.
+- `openplan setup-skills`. It installs the agent skills in a repository.
+- Binaries for macOS (Apple silicon and Intel) and Linux (x86_64 and arm64),
+  with a one-line installer.

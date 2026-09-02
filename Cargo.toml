@@ -3,11 +3,12 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 rust-version = "1.85"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/milansuk/open-planner"
+license = "MIT"
+repository = "https://github.com/sukovanej/open-plan"
+publish = false
 
 [workspace.dependencies]
 op-claude = { path = "crates/op-claude" }
@@ -65,3 +66,26 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# Config for 'dist'
+[workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The release only makes sense for a tag, so a pull request runs no dist job.
+pr-run-mode = "skip"
+# The installers to generate for each app
+installers = ["shell"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+github-build-setup = "../build-setup.yml"
+# Path that installers should place binaries in
+install-path = "~/.local/bin"
+# Whether to install an updater program
+install-updater = false
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

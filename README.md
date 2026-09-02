@@ -3,6 +3,27 @@
 Local-first, file-based task manager for humans and AI agents, in plain markdown.
 Design and work items in [.plan/tasks/](.plan/tasks/).
 
+## Install
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/sukovanej/open-plan/releases/latest/download/openplan-installer.sh | sh
+```
+
+The installer puts `openplan` in `~/.local/bin` and adds that directory to your shell profile.
+`OPENPLAN_INSTALL_DIR` picks another directory, and `OPENPLAN_NO_MODIFY_PATH=1` keeps the
+profile untouched. Releases carry binaries for macOS (Apple silicon and Intel) and Linux
+(x86_64 and arm64). Windows is not supported yet. Every archive and its checksum is on the
+[releases page](https://github.com/sukovanej/open-plan/releases).
+
+In GitHub Actions:
+
+```yaml
+- uses: sukovanej/open-plan/.github/actions/setup@v0.0.1
+  with:
+    version: 0.0.1   # omit for the latest release
+- run: openplan lint
+```
+
 ## Build
 
 ```sh
@@ -37,7 +58,7 @@ The daemon respawns itself from its own executable, so the binary that starts it
 keeps serving. Installing and restarting together is what keeps the daemon and the checkout the
 same build.
 
-Without installing, run it from the checkout as `cargo run -p op-cli -- <args>`:
+Without installing, run it from the checkout as `cargo run -p openplan -- <args>`:
 
 ```sh
 openplan list                       # tasks in ./.plan
@@ -55,6 +76,42 @@ and never starts a daemon. One daemon serves every repository on the machine: th
 a repository registers it, and `openplan project` manages the registry. `OPENPLAN_HOME` picks the
 daemon's state directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
 
+## Release
+
+The product version is `version` in `[workspace.package]`, and it follows
+[semver](https://semver.org). Every crate takes it, and `openplan --version` prints it.
+`mise` installs `cargo-dist` and `cargo-edit` from `[tools]` in `mise.toml`.
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com). Write each section by
+hand. cargo-dist takes the GitHub Release notes from the section for the version, so this file
+is what users read on the release page.
+
+```md
+## [0.0.2] - 2026-09-10
+
+### Added
+- The lines you want users to read.
+```
+
+Then bump on a branch:
+
+```sh
+mise run release 0.0.2       # bump the version, commit
+```
+
+The task stops when `CHANGELOG.md` has no section for the version. Merge that commit into
+`main`, then tag it:
+
+```sh
+git tag v0.0.2 && git push origin v0.0.2
+```
+
+The tag starts `.github/workflows/release.yml`. It builds each target, makes the archives, the
+checksums, and the installer, and publishes a GitHub Release.
+[cargo-dist](https://axodotdev.github.io/cargo-dist/) generates that workflow from
+`[workspace.metadata.dist]` in `Cargo.toml`. After a change there, run `dist init --yes` and
+commit the result.
+
 ## License
 
-MIT OR Apache-2.0.
+MIT. See [LICENSE](LICENSE).
