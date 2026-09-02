@@ -98,7 +98,7 @@ export const bindings: ReadonlyArray<Binding> = [
     id: "task.flow",
     keys: "f",
     scope: "global",
-    label: "Show the flow of this task",
+    label: "Show the flow of the task at hand",
     group: "Task",
     run: (ctx) => ctx.task.showFlow(),
   },

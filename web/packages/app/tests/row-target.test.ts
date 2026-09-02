@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { hoveredRow, targetRow } from "../src/lib/row-target"
+import { taskPath } from "@open-planner/task-ui"
+
+import type { CursorState } from "../src/lib/row-cursor"
+import { hoveredRow, taskAtHand } from "../src/lib/row-target"
 
 beforeEach(() => {
   hoveredRow.clear()
@@ -44,20 +47,24 @@ describe("hovered row", () => {
   })
 })
 
-describe("targetRow", () => {
+describe("the task at hand", () => {
+  const path = (id: string) => taskPath("open-plan", id)
+  const cursor = (index: number): CursorState => ({ rows: [path("12"), path("13")], index })
+
   it("prefers the hovered row over both the cursor and the route", () => {
-    expect(targetRow("12", "13", "14")).toBe("12")
+    hoveredRow.enter(path("13"), 1)
+    expect(taskAtHand(cursor(0), path("28"))).toEqual({ project: "open-plan", id: "13" })
   })
 
   it("falls back to the keyboard cursor when nothing is hovered", () => {
-    expect(targetRow(undefined, "13", "14")).toBe("13")
+    expect(taskAtHand(cursor(0), path("28"))).toEqual({ project: "open-plan", id: "12" })
   })
 
   it("falls back to the route's own task when neither hover nor cursor is set", () => {
-    expect(targetRow(undefined, undefined, "14")).toBe("14")
+    expect(taskAtHand(cursor(-1), path("28"))).toEqual({ project: "open-plan", id: "28" })
   })
 
-  it("resolves to nothing when there is no candidate at all", () => {
-    expect(targetRow(undefined, undefined, undefined)).toBeUndefined()
+  it("resolves to no task on a route that names none", () => {
+    expect(taskAtHand(cursor(-1), "/flow")).toBeUndefined()
   })
 })

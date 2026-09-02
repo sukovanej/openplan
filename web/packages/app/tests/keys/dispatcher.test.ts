@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { taskPath, taskRouteOf } from "@open-planner/task-ui"
+import { taskPath } from "@open-planner/task-ui"
 
 import { taskFlowPath } from "../../src/lib/flow-selection"
 import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
 import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
 import type { Binding, OverlayName, PaletteTarget, RouteScope, RunContext } from "../../src/lib/keys/types"
-import { focusedRow, rowCursor } from "../../src/lib/row-cursor"
-import { hoveredRow, targetRow } from "../../src/lib/row-target"
+import { detailCursor, focusedRow, liveCursor, rowCursor } from "../../src/lib/row-cursor"
+import { hoveredRow, taskAtHand } from "../../src/lib/row-target"
 
 const PROJECT = "open-plan"
 
@@ -33,6 +33,8 @@ interface Harness {
   detach: () => void
 }
 
+let mounted: Harness | undefined
+
 function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   let scope: RouteScope = "list"
   let pathname = "/"
@@ -44,11 +46,8 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const opened: Array<PaletteTarget> = []
   const went: Array<"back"> = []
   const detail = { editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 }
-  const targetTask = () => {
-    const cursor = rowCursor.getSnapshot()
-    const row = targetRow(hoveredRow.among(cursor.rows), focusedRow(cursor), pathname)
-    return row === undefined ? undefined : taskRouteOf(row)
-  }
+  const activeCursor = () => liveCursor(scope)
+  const targetTask = () => taskAtHand(activeCursor().getSnapshot(), pathname)
   const context = (): RunContext => ({
     navigate: (to) => navigations.push(to),
     back: () => void went.push("back"),
@@ -65,12 +64,13 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     },
     cursor: {
       moveBy: (delta) => {
-        const hovered = hoveredRow.place(rowCursor.getSnapshot().rows)
+        const cursor = activeCursor()
+        const hovered = hoveredRow.place(cursor.getSnapshot().rows)
         hoveredRow.clear()
-        rowCursor.moveBy(delta, hovered)
+        cursor.moveBy(delta, hovered)
       },
       focusedRow: () => {
-        const cursor = rowCursor.getSnapshot()
+        const cursor = activeCursor().getSnapshot()
         return focusedRow(cursor) ?? hoveredRow.among(cursor.rows)
       },
     },
@@ -100,7 +100,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     chordTimeoutMs: 1000,
   })
   const detach = dispatcher.attach(window)
-  return {
+  mounted = {
     navigations,
     copied,
     went,
@@ -113,6 +113,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     setOverlay: (next) => void (activeOverlay = next),
     detach,
   }
+  return mounted
 }
 
 // A row is named by its task's path, which is what the cursor holds and what opening it navigates
@@ -126,11 +127,14 @@ function press(key: string, target: EventTarget = window, init: KeyboardEventIni
 
 beforeEach(() => {
   rowCursor.setRows([])
+  detailCursor.activate("", [])
   hoveredRow.clear()
   document.body.innerHTML = ""
 })
 
 afterEach(() => {
+  mounted?.detach()
+  mounted = undefined
   vi.useRealTimers()
 })
 
@@ -145,7 +149,6 @@ describe("chord buffering", () => {
     press("g")
     press("l")
     expect(h.navigations).toEqual(["/", "/"])
-    h.detach()
   })
 
   it("resets a partial chord after the timeout so a late second key does nothing", () => {
@@ -155,7 +158,6 @@ describe("chord buffering", () => {
     vi.advanceTimersByTime(1000)
     press("l")
     expect(h.navigations).toEqual([])
-    h.detach()
   })
 
   it("a stray key mid-chord does not fire and does not strand the buffer", () => {
@@ -166,13 +168,12 @@ describe("chord buffering", () => {
     press("g")
     press("l")
     expect(h.navigations).toEqual(["/"])
-    h.detach()
   })
 })
 
 describe("input scoping", () => {
   it("ignores single-key bindings while focus is in an editable element", () => {
-    const h = mount()
+    mount()
     rowCursor.setRows(paths("a", "b", "c"))
     const input = document.createElement("input")
     document.body.append(input)
@@ -183,7 +184,6 @@ describe("input scoping", () => {
 
     press("j", document.body)
     expect(rowCursor.getSnapshot().index).toBe(0)
-    h.detach()
   })
 
   it("yields Enter to a focused button or link instead of hijacking its native activation", () => {
@@ -199,7 +199,6 @@ describe("input scoping", () => {
 
     press("Enter", document.body)
     expect(h.navigations).toEqual([path("a")])
-    h.detach()
   })
 
   it("still delivers a command-modified key from an editable element", () => {
@@ -210,13 +209,12 @@ describe("input scoping", () => {
 
     press("k", input, { metaKey: true })
     expect(h.opened).toEqual(["home"])
-    h.detach()
   })
 })
 
 describe("cursor clamping", () => {
   it("k at the first row and j at the last row are no-ops", () => {
-    const h = mount()
+    mount()
     rowCursor.setRows(paths("a", "b", "c"))
 
     press("k")
@@ -229,7 +227,6 @@ describe("cursor clamping", () => {
     expect(rowCursor.getSnapshot().index).toBe(2)
     press("j")
     expect(rowCursor.getSnapshot().index).toBe(2)
-    h.detach()
   })
 })
 
@@ -237,15 +234,14 @@ describe("row cursor is live on both the list and detail routes", () => {
   it("moves and opens from j/k/Enter while on a task detail page", () => {
     const h = mount()
     h.setScope("detail")
-    rowCursor.setRows(paths("a", "b", "c"))
+    detailCursor.activate(path("a"), paths("a", "b", "c"))
 
     press("j")
     press("j")
-    expect(rowCursor.getSnapshot().index).toBe(1)
+    expect(detailCursor.getSnapshot().index).toBe(1)
 
     press("Enter")
     expect(h.navigations).toEqual([path("b")])
-    h.detach()
   })
 })
 
@@ -256,8 +252,7 @@ describe("f shows the flow of the task at hand", () => {
     rowCursor.moveBy(1)
 
     press("f")
-    expect(h.navigations).toEqual([taskFlowPath(PROJECT, "12")])
-    h.detach()
+    expect(h.navigations).toEqual(["/flow?project=open-plan&task=12"])
   })
 
   it("takes the hovered row ahead of the selected one", () => {
@@ -268,7 +263,6 @@ describe("f shows the flow of the task at hand", () => {
 
     press("f")
     expect(h.navigations).toEqual([taskFlowPath(PROJECT, "13")])
-    h.detach()
   })
 
   it("falls back to the open task on the detail route", () => {
@@ -278,7 +272,19 @@ describe("f shows the flow of the task at hand", () => {
 
     press("f")
     expect(h.navigations).toEqual([taskFlowPath(PROJECT, "28")])
-    h.detach()
+  })
+
+  it("takes a selected subtask ahead of the open task, and the detail cursor ahead of the list one", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("28"))
+    rowCursor.setRows(paths("12"))
+    rowCursor.moveBy(1)
+    detailCursor.activate(path("28"), paths("41", "42"))
+    press("j")
+
+    press("f")
+    expect(h.navigations).toEqual([taskFlowPath(PROJECT, "41")])
   })
 
   it("does nothing when no row and no task is at hand", () => {
@@ -288,7 +294,6 @@ describe("f shows the flow of the task at hand", () => {
 
     press("f")
     expect(h.navigations).toEqual([])
-    h.detach()
   })
 
   it("leaves the g-f chord to the whole flow", () => {
@@ -299,7 +304,6 @@ describe("f shows the flow of the task at hand", () => {
     press("g")
     press("f")
     expect(h.navigations).toEqual(["/flow"])
-    h.detach()
   })
 })
 
@@ -312,7 +316,6 @@ describe("scope resolution", () => {
     h.setScope("detail")
     press("Escape")
     expect(h.detail.escape).toBe(1)
-    h.detach()
   })
 
   it("takes Escape back from the flow, and leaves the detail handler alone there", () => {
@@ -321,7 +324,6 @@ describe("scope resolution", () => {
     press("Escape")
     expect(h.went).toEqual(["back"])
     expect(h.detail.escape).toBe(0)
-    h.detach()
   })
 
   it("triggers parent, subtask, and tag edits only on the detail route", () => {
@@ -336,7 +338,6 @@ describe("scope resolution", () => {
     press("s")
     press("t")
     expect(h.detail).toEqual({ editParent: 1, addSubtask: 1, editTags: 1, goToParent: 0, escape: 0 })
-    h.detach()
   })
 
   it("distinguishes the g-p chord (go to parent) from a bare p (edit parent)", () => {
@@ -349,7 +350,6 @@ describe("scope resolution", () => {
 
     press("p")
     expect(h.detail).toMatchObject({ goToParent: 1, editParent: 1 })
-    h.detach()
   })
 
   it("suppresses route and global bindings while the help overlay is open", () => {
@@ -367,7 +367,6 @@ describe("scope resolution", () => {
     expect(h.overlay.close).toBe(1)
     press("?")
     expect(h.overlay.close).toBe(2)
-    h.detach()
   })
 
   it("copies an id from either route, and not while the overlay is open", () => {
@@ -386,7 +385,6 @@ describe("scope resolution", () => {
     h.setOverlay("help")
     press(".", window, { metaKey: true })
     expect(h.copied).toEqual(["12", "28"])
-    h.detach()
   })
 
   it("copies the hovered row ahead of the keyboard selection, from Ctrl as well as Cmd", () => {
@@ -398,7 +396,6 @@ describe("scope resolution", () => {
     press(".", window, { metaKey: true })
     press(".", window, { ctrlKey: true })
     expect(h.copied).toEqual(["13", "13"])
-    h.detach()
   })
 
   it("copies the row j moved to, not the one the pointer was left resting on", () => {
@@ -409,11 +406,10 @@ describe("scope resolution", () => {
     press("j")
     press(".", window, { metaKey: true })
     expect(h.copied).toEqual(["14"])
-    h.detach()
   })
 
   it("j resumes from the hovered row, and from the first row when nothing is hovered", () => {
-    const h = mount()
+    mount()
     rowCursor.setRows(paths("12", "13", "14"))
     hoveredRow.enter(path("13"), 1)
     press("j")
@@ -422,7 +418,6 @@ describe("scope resolution", () => {
     rowCursor.clear()
     press("j")
     expect(focusedRow(rowCursor.getSnapshot())).toBe(path("12"))
-    h.detach()
   })
 
   it("Enter opens the hovered row, which reads as the current one", () => {
@@ -432,7 +427,6 @@ describe("scope resolution", () => {
 
     press("Enter")
     expect(h.navigations).toEqual([path("13")])
-    h.detach()
   })
 
   it("copies while a picker input has focus, where bare keys are left to the field", () => {
@@ -445,14 +439,12 @@ describe("scope resolution", () => {
 
     press(".", input, { metaKey: true })
     expect(h.copied).toEqual(["12"])
-    h.detach()
   })
 
   it("resolves to no target when nothing is hovered, selected, or open", () => {
     const h = mount()
     press(".", window, { metaKey: true })
     expect(h.copied).toEqual([undefined])
-    h.detach()
   })
 
   it("matches a Cmd+. event against the authored mod+. token", () => {
@@ -465,7 +457,6 @@ describe("scope resolution", () => {
     const h = mount()
     press("?")
     expect(h.overlay.toggle).toBe(1)
-    h.detach()
   })
 
   it("opens the palette on home from Cmd+K and on search from /", () => {
@@ -473,7 +464,6 @@ describe("scope resolution", () => {
     press("k", window, { metaKey: true })
     press("/")
     expect(h.opened).toEqual(["home", "search"])
-    h.detach()
   })
 
   it("leaves / to a text field rather than opening the palette over it", () => {
@@ -484,7 +474,6 @@ describe("scope resolution", () => {
 
     press("/", input)
     expect(h.opened).toEqual([])
-    h.detach()
   })
 
   it("Escape closes the palette, and the help overlay's keys stay out of its scope", () => {
@@ -496,6 +485,5 @@ describe("scope resolution", () => {
 
     press("Escape")
     expect(h.closed).toEqual(["palette"])
-    h.detach()
   })
 })

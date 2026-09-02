@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { boardPath, FLOW_ROUTE, type TaskRoute, taskRouteOf } from "@open-planner/task-ui"
+import { boardPath, FLOW_ROUTE, taskRouteOf } from "@open-planner/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
 import { taskFlowPath } from "../flow-selection"
-import { detailCursor, focusedRow, rowCursor } from "../row-cursor"
-import { hoveredRow, targetRow } from "../row-target"
+import { detailCursor, focusedRow, liveCursor } from "../row-cursor"
+import { hoveredRow, taskAtHand } from "../row-target"
 import { bindings } from "./bindings"
 import { Dispatcher } from "./dispatcher"
 import { historyIndex } from "./history"
@@ -36,7 +36,7 @@ export function useKeyboard(): Keyboard {
   live.current = { navigate, pathname, scope, activeOverlay }
 
   // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
-  // route would stay the copy target on the next one.
+  // route would stay the task at hand on the next one.
   useEffect(() => {
     hoveredRow.clear()
   }, [pathname])
@@ -47,12 +47,8 @@ export function useKeyboard(): Keyboard {
   const entryIndex = useRef(historyIndex())
 
   useEffect(() => {
-    const activeCursor = () => (live.current.scope === "detail" ? detailCursor : rowCursor)
-    const targetTask = (): TaskRoute | undefined => {
-      const cursor = activeCursor().getSnapshot()
-      const row = targetRow(hoveredRow.among(cursor.rows), focusedRow(cursor), live.current.pathname)
-      return row === undefined ? undefined : taskRouteOf(row)
-    }
+    const activeCursor = () => liveCursor(live.current.scope)
+    const targetTask = () => taskAtHand(activeCursor().getSnapshot(), live.current.pathname)
     const canGoBack = () => historyIndex() > entryIndex.current
     const context = (): RunContext => ({
       navigate: (to) => live.current.navigate(to),

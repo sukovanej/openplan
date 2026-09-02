@@ -375,6 +375,36 @@ fn the_growth_takes_a_dependency_of_any_status() {
 }
 
 #[test]
+fn a_key_seeds_the_flow_whatever_the_status_of_the_task() {
+    let query = FlowQuery {
+        tasks: vec![("one".to_owned(), "OPP-1".to_owned())],
+        ..FlowQuery::default()
+    };
+    let flow = Flow::build(
+        &tasks(vec![
+            task("OPP-1", Status::Done),
+            task("OPP-2", Status::Cancelled),
+        ]),
+        &query,
+    )
+    .expect("no cycle");
+
+    assert_eq!(ids(&flow), ["OPP-1"]);
+}
+
+#[test]
+fn a_named_status_still_narrows_a_named_key() {
+    let query = FlowQuery {
+        tasks: vec![("one".to_owned(), "OPP-1".to_owned())],
+        statuses: vec![Status::Todo],
+        ..FlowQuery::default()
+    };
+    let flow = Flow::build(&tasks(vec![task("OPP-1", Status::Done)]), &query).expect("no cycle");
+
+    assert_eq!(ids(&flow), [] as [&str; 0]);
+}
+
+#[test]
 fn the_flow_does_not_grow_towards_what_waits_for_a_seed() {
     let query = FlowQuery {
         tasks: vec![("one".to_owned(), "OPP-1".to_owned())],

@@ -32,7 +32,6 @@ export interface PaletteControls {
   readonly open: (target: PaletteTarget) => void
 }
 
-// The task at hand, which is the row under the pointer, the selected row, or the open detail.
 export interface TaskControls {
   readonly copyId: () => void
   readonly showFlow: () => void
