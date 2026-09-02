@@ -37,7 +37,6 @@ import { Blocked } from "../components/blocked"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { TagsField } from "../components/tags-field"
 import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
-import { hoveredRow } from "../lib/copy-target"
 import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { taskFlowPath } from "../lib/flow-selection"
@@ -45,6 +44,7 @@ import { errorText } from "../lib/format"
 import { useAbbreviation } from "../lib/projects"
 import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
+import { hoveredRow } from "../lib/row-target"
 import { runtime } from "../lib/runtime"
 import { taskMatches } from "../lib/task-search"
 
@@ -248,12 +248,9 @@ function TaskDetailView({
 
 // The flow of this task alone, which grows to hold everything the task waits for.
 function FlowAction({ project, id }: { project: string; id: string }) {
-  const navigate = useNavigate()
-  const to = taskFlowPath(project, id)
-  useDetailAction("show-flow", () => navigate(to))
   return (
     <Link
-      to={to}
+      to={taskFlowPath(project, id)}
       className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
     >
       <Waypoints className="size-3.5" />

@@ -22,11 +22,11 @@ import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, Pane
 
 import { ListSkeleton } from "../components/states"
 import { getBoard, getMergedBoard } from "../lib/api"
-import { hoveredRow } from "../lib/copy-target"
 import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
 import { boardKey, mergedBoardKey } from "../lib/query-client"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
+import { hoveredRow } from "../lib/row-target"
 import { runtime } from "../lib/runtime"
 import { useTags } from "../lib/tags"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"

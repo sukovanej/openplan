@@ -33,10 +33,12 @@ impl FlowQuery {
             self.projects.is_empty() || self.projects.iter().any(|name| name == &task.project);
         // With no status named, every task that somebody can still implement is a seed. A finished
         // task seeds nothing, because the flow orders the work that is left; a file whose status
-        // does not parse is work, and it stays visible.
-        let by_status = match self.statuses.is_empty() {
-            true => is_remaining(task),
-            false => task
+        // does not parse is work, and it stays visible. A key names one task on purpose, so that
+        // task seeds the flow whatever its status.
+        let by_status = match (self.statuses.is_empty(), self.tasks.is_empty()) {
+            (true, true) => is_remaining(task),
+            (true, false) => true,
+            (false, _) => task
                 .metadata
                 .status()
                 .is_some_and(|status| self.statuses.contains(&status)),
