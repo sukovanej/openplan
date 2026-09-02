@@ -20,7 +20,7 @@ function keyLabel(token: string): string {
   const parts = token.split("+")
   const base = parts.pop() ?? token
   const named = KEY_LABELS[base] ?? (base.length === 1 ? base.toUpperCase() : base)
-  return [...parts.map((part) => MODIFIER_LABELS[part] ?? part), named].join(APPLE ? "" : "+")
+  return [...parts.map((part) => MODIFIER_LABELS[part] ?? part), named].join(" + ")
 }
 
 export function Kbd({ token, className }: { token: string; className?: string }) {
