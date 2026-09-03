@@ -181,6 +181,64 @@ fn hits_are_ordered_by_id_as_numbers() {
 }
 
 #[test]
+fn a_key_hit_leads_a_title_hit_and_a_title_hit_leads_a_body_hit() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(
+        root,
+        1,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Name the zeppelin\n",
+    );
+    task(
+        root,
+        2,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Fly it\n\nA zeppelin needs a mast.\n",
+    );
+    task(
+        root,
+        3,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Land it\n",
+    );
+    commit(root, "three tasks");
+
+    assert_eq!(
+        ids(&built(root), "zeppelin"),
+        vec![key(1), key(2)],
+        "the title leads the body"
+    );
+}
+
+#[test]
+fn a_key_hit_leads_a_task_that_only_names_that_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(
+        root,
+        1,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A parent\n",
+    );
+    task(
+        root,
+        2,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# OPP-3 in the title\n",
+    );
+    task(
+        root,
+        3,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00001-task-1.md\n---\n# A child\n",
+    );
+    commit(root, "three tasks");
+
+    assert_eq!(
+        ids(&built(root), "OPP-3"),
+        vec![key(3), key(2)],
+        "the task the key names leads the task whose title only mentions it"
+    );
+}
+
+#[test]
 fn text_only_a_branch_carries_matches_and_names_that_branch() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
