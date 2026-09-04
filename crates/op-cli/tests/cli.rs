@@ -1768,6 +1768,32 @@ fn lint_clean_project_exits_zero() {
 }
 
 #[test]
+fn lint_counts_the_files_it_checked() {
+    let dir = lint_store();
+    write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
+    write(&dir.path().join(".plan/tasks/00002-clean.md"), VALID);
+    std::fs::create_dir_all(dir.path().join(".plan/tags")).unwrap();
+    write(
+        &dir.path().join(".plan/tags/backend.md"),
+        "---\ncolor: cyan\n---\n# backend\n",
+    );
+
+    let all = run_lint(dir.path(), &[]);
+    let report = combined(&all);
+    assert!(
+        report.contains("checked 3 files, found 0 problems"),
+        "a clean run must count every task and tag file: {report}"
+    );
+
+    let one = run_lint(dir.path(), &["OPP-1"]);
+    let report = combined(&one);
+    assert!(
+        report.contains("checked 1 file, found 0 problems"),
+        "a targeted run must count the targets: {report}"
+    );
+}
+
+#[test]
 fn lint_seeded_defect_exits_nonzero_and_prints_it() {
     let dir = lint_store();
     write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
