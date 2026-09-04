@@ -4,8 +4,8 @@ use std::path::Path;
 
 use op_api::{
     BranchComments, BranchMark, BranchState, ChangeKind, Comment, Matrix, MatrixCell, Metadata,
-    SearchHit, TaskBranches, TaskChild, TaskDetail, TaskListItem, TaskRef, TaskSummary,
-    TaskVersion, TaskView, WriteTarget, id_cmp, list_item_cmp, updated_field,
+    SearchHit, SearchMatch, TaskBranches, TaskChild, TaskDetail, TaskListItem, TaskRef,
+    TaskSummary, TaskVersion, TaskView, WriteTarget, id_cmp, list_item_cmp, updated_field,
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{Config, RawTask, Store, StoreError};
@@ -70,9 +70,21 @@ struct Version {
     title: String,
     metadata: Metadata,
     comment_count: usize,
-    // Everything a search reads — title, body, and the frontmatter fields — lowercased once here,
-    // so a query tests one `contains` per version instead of re-casing every field per keystroke.
-    haystack: String,
+    haystack: Haystack,
+}
+
+// Everything a search reads, lowercased once here so a query re-cases no field per keystroke. Split
+// where the ranking cuts: a title hit outranks one that only the body or the frontmatter carries.
+#[derive(Debug, Clone)]
+struct Haystack {
+    title: String,
+    rest: String,
+}
+
+#[derive(Debug)]
+struct Matched<'a> {
+    matched: SearchMatch,
+    branches: BTreeSet<&'a str>,
 }
 
 // How one task stands on one branch: the blob its effective text hashes to — the live working copy
@@ -711,35 +723,58 @@ impl Index {
             return Vec::new();
         }
         let needle = query.to_lowercase();
-        let mut matched: HashMap<&str, BTreeSet<&str>> = HashMap::new();
+        let mut matched: HashMap<&str, Matched> = HashMap::new();
         for (branch, versions) in &self.branch_versions {
             for (id, version) in versions {
-                // The id names the file, not the blob, so it is absent from the cached parse and is
-                // tested here instead. A palette where a key does not find its own task is the one
-                // thing a reader will type first.
-                let hit = id.to_lowercase().contains(&needle)
-                    || self
-                        .parsed(version)
-                        .is_some_and(|parsed| parsed.haystack.contains(&needle));
-                if hit {
-                    matched.entry(id).or_default().insert(branch);
-                }
+                let Some(found) = self.matched(id, version, &needle) else {
+                    continue;
+                };
+                let entry = matched.entry(id).or_insert(Matched {
+                    matched: found,
+                    branches: BTreeSet::new(),
+                });
+                // The strongest reason the task matches anywhere is the one that ranks the row,
+                // because the row stands for the task rather than for one branch's version of it.
+                entry.matched = entry.matched.min(found);
+                entry.branches.insert(branch);
             }
         }
-        self.aggregated_tasks(project)
+        let mut hits: Vec<SearchHit> = self
+            .aggregated_tasks(project)
             .into_iter()
             .filter_map(|task| {
-                let branches = matched.get(task.id.as_str())?;
+                let matched = matched.get(task.id.as_str())?;
                 // The headline branch is the version every other read answers with, so a hit names
                 // it whenever its text matches too; only a match that lives nowhere else names
                 // another branch.
-                let branch = match branches.contains(task.headline.as_str()) {
+                let branch = match matched.branches.contains(task.headline.as_str()) {
                     true => task.headline.clone(),
-                    false => (*branches.first()?).to_owned(),
+                    false => (*matched.branches.first()?).to_owned(),
                 };
-                Some(SearchHit { task, branch })
+                Some(SearchHit {
+                    task,
+                    branch,
+                    matched: matched.matched,
+                })
             })
-            .collect()
+            .collect();
+        // A stable sort, so the id order `aggregated_tasks` hands out survives inside each rank.
+        hits.sort_by_key(|hit| hit.matched);
+        hits
+    }
+
+    // The id names the file, not the blob, so it is absent from the cached parse and is tested
+    // here instead. A palette where a key does not find its own task is the one thing a reader
+    // will type first.
+    fn matched(&self, id: &str, version: &BranchVersion, needle: &str) -> Option<SearchMatch> {
+        if id.to_lowercase().contains(needle) {
+            return Some(SearchMatch::Key);
+        }
+        let haystack = &self.parsed(version)?.haystack;
+        if haystack.title.contains(needle) {
+            return Some(SearchMatch::Title);
+        }
+        haystack.rest.contains(needle).then_some(SearchMatch::Text)
     }
 
     pub fn current_branch(&self) -> Option<&str> {
@@ -1343,21 +1378,24 @@ fn parse_version(bytes: &[u8], abbreviation: Abbreviation) -> Version {
     }
 }
 
-fn haystack(title: &str, body: &str, metadata: &Metadata) -> String {
-    let mut text = format!("{title}\n{body}\n");
+fn haystack(title: &str, body: &str, metadata: &Metadata) -> Haystack {
+    let mut rest = format!("{body}\n");
     if let Some(status) = metadata.status() {
-        text.push_str(status.as_str());
-        text.push('\n');
+        rest.push_str(status.as_str());
+        rest.push('\n');
     }
     if let Some(parent) = metadata.parent() {
-        text.push_str(parent);
-        text.push('\n');
+        rest.push_str(parent);
+        rest.push('\n');
     }
     for dependency in metadata.dependencies() {
-        text.push_str(dependency);
-        text.push('\n');
+        rest.push_str(dependency);
+        rest.push('\n');
     }
-    text.to_lowercase()
+    Haystack {
+        title: title.to_lowercase(),
+        rest: rest.to_lowercase(),
+    }
 }
 
 fn task_ref(item: &TaskListItem) -> TaskRef {

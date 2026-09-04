@@ -178,6 +178,17 @@ pub struct WriteTarget {
     pub writable: bool,
 }
 
+// Which part of a task the query matched, and the order the hits come back in. A reader who types a
+// key wants that task, not every task that names it, so the strongest match leads. Named apart from
+// a task's `rank`, which is the order somebody set on the board.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchMatch {
+    Key,
+    Title,
+    Text,
+}
+
 // One task a search matched, with the branch whose version of it matched. The task itself is the
 // aggregated row every other list read answers with, so a hit renders exactly like a list row;
 // `branch` is what the hit adds — where the matching text lives, which is the headline branch
@@ -186,6 +197,7 @@ pub struct WriteTarget {
 pub struct SearchHit {
     pub task: TaskListItem,
     pub branch: String,
+    pub matched: SearchMatch,
 }
 
 // Where a task sits. Two stores can commit the same abbreviation, so every map in the merged board

@@ -93,6 +93,8 @@ export type RegisterProject = { readonly path: string }
 export const RegisterProject = Schema.Struct({ path: Schema.String })
 export type RenameProject = { readonly name: string }
 export const RenameProject = Schema.Struct({ name: Schema.String })
+export type SearchMatch = "key" | "title" | "text"
+export const SearchMatch = Schema.Literals(["key", "title", "text"])
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
 export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
@@ -368,8 +370,8 @@ export const BoardRow = Schema.Struct({
   parent_title: Schema.optionalKey(Schema.String),
   task: TaskListItem,
 })
-export type SearchHit = { readonly branch: string; readonly task: TaskListItem }
-export const SearchHit = Schema.Struct({ branch: Schema.String, task: TaskListItem })
+export type SearchHit = { readonly branch: string; readonly matched: SearchMatch; readonly task: TaskListItem }
+export const SearchHit = Schema.Struct({ branch: Schema.String, matched: SearchMatch, task: TaskListItem })
 export type MatrixCell = {
   readonly blob_oid: string
   readonly branch: string
