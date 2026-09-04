@@ -2211,6 +2211,7 @@ version = "0.1.0"
 dependencies = [
  "op-git",
  "op-md",
+ "op-skills",
  "op-store",
  "op-task",
  "serde",

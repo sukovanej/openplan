@@ -43,6 +43,7 @@ pub enum Code {
     DuplicateNumber,
     TagName,
     TagColor,
+    Skill,
 }
 
 impl Code {
@@ -64,6 +65,7 @@ impl Code {
             Code::DuplicateNumber => "duplicate-number",
             Code::TagName => "tag-name",
             Code::TagColor => "tag-color",
+            Code::Skill => "skill",
         }
     }
 }

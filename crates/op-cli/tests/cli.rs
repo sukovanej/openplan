@@ -1955,6 +1955,101 @@ fn lint_reports_and_repairs_a_tag_file_by_its_path() {
 }
 
 #[test]
+fn lint_reports_and_repairs_a_skill_file_by_its_path() {
+    let dir = lint_store();
+    let skill = dir.path().join(".claude/skills/task-management/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    write(&skill, "hand-written\n");
+
+    let reported = run_lint(dir.path(), &[".claude/skills/task-management/SKILL.md"]);
+    assert!(
+        !reported.status.success(),
+        "a skill target must be resolvable, not rejected as naming no file; output: {}",
+        combined(&reported)
+    );
+    assert!(
+        combined(&reported).contains("error[skill]: skill task-management differs"),
+        "the edited skill must be reported: {}",
+        combined(&reported)
+    );
+
+    let fixed = run_lint(
+        dir.path(),
+        &[".claude/skills/task-management/SKILL.md", "--fix"],
+    );
+    assert!(
+        fixed.status.success(),
+        "--fix must write the binary's skill back and re-check clean; output: {}",
+        combined(&fixed)
+    );
+    assert!(
+        std::fs::read_to_string(&skill)
+            .unwrap()
+            .starts_with("---\nname: task-management\n"),
+        "the repaired file must hold the skill the binary carries"
+    );
+
+    write(&skill, "hand-written again\n");
+    let whole_store = run_lint(dir.path(), &["--fix"]);
+    assert!(
+        whole_store.status.success(),
+        "an untargeted --fix must repair the skill too; output: {}",
+        combined(&whole_store)
+    );
+}
+
+// A pre-commit hook names the paths the commit touched, and a deleted skill file is one of them.
+// The target has to resolve to the skill the binary knows even where the checkout is reached
+// through a symlink, which is how a canonicalized store root and a raw target spelling differ.
+#[test]
+fn lint_targets_a_missing_skill_through_a_symlinked_path() {
+    let dir = lint_store();
+    let installed = openplan()
+        .arg("--root")
+        .arg(dir.path())
+        .args(["setup-skills", "--agent=claude"])
+        .output()
+        .unwrap();
+    assert!(installed.status.success(), "stderr: {}", stderr(&installed));
+    std::fs::remove_file(dir.path().join(".claude/skills/task-comments/SKILL.md")).unwrap();
+
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(dir.path(), &link).unwrap();
+    let target = link.join(".claude/skills/task-comments/SKILL.md");
+
+    let out = run_lint(dir.path(), &[target.to_str().unwrap()]);
+    assert!(
+        combined(&out).contains("error[skill]: skill task-comments is missing"),
+        "the missing skill must be reported through the aliased spelling: {}",
+        combined(&out)
+    );
+}
+
+// `lint` reads the skills under the store root it discovers, so an install run from a subdirectory
+// has to write them there — otherwise lint reports as missing what the user just installed.
+#[test]
+fn setup_skills_installs_at_the_store_root() {
+    let dir = lint_store();
+    let sub = dir.path().join("crates/op-cli");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    let installed = openplan()
+        .arg("--root")
+        .arg(&sub)
+        .args(["setup-skills", "--agent=claude"])
+        .output()
+        .unwrap();
+
+    assert!(installed.status.success(), "stderr: {}", stderr(&installed));
+    assert!(dir.path().join(".claude/skills").is_dir());
+    assert!(!sub.join(".claude").exists());
+    assert!(
+        run_lint(dir.path(), &[]).status.success(),
+        "what setup-skills installed must lint clean"
+    );
+}
+
+#[test]
 fn lint_lints_this_repos_own_plan_cleanly() {
     // The workspace root holds `.plan/`; CARGO_MANIFEST_DIR is this crate under `crates/`.
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
