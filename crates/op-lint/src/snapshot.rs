@@ -22,12 +22,29 @@ pub struct TagFile {
     pub tag: PartialTag,
 }
 
+// One skill the binary installs, as the repository holds it. `source` is `None` when the file is
+// absent, which an agent that has a skills directory reads as a skill it does not have.
+#[derive(Debug, Clone)]
+pub struct SkillFile {
+    pub name: &'static str,
+    pub path: PathBuf,
+    pub source: Option<String>,
+    pub expected: &'static str,
+}
+
+impl SkillFile {
+    pub fn matches(&self) -> bool {
+        self.source.as_deref() == Some(self.expected)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Snapshot {
     root: PathBuf,
     abbreviation: Abbreviation,
     files: Vec<TaskFile>,
     tags: Vec<TagFile>,
+    skills: Vec<SkillFile>,
 }
 
 impl Snapshot {
@@ -43,7 +60,8 @@ impl Snapshot {
             .collect();
         Ok(
             Self::from_files(store.root(), store.abbreviation(), sources)
-                .with_tags(read_markdown(&store.tags_dir())?),
+                .with_tags(read_markdown(&store.tags_dir())?)
+                .with_installed_skills(),
         )
     }
 
@@ -75,6 +93,7 @@ impl Snapshot {
             abbreviation,
             files,
             tags: Vec::new(),
+            skills: Vec::new(),
         }
     }
 
@@ -95,6 +114,27 @@ impl Snapshot {
         self
     }
 
+    // Only an agent that already has a skills directory holds skills; installing them is what
+    // `openplan setup-skills` does, and a repository that never asked for them owes the binary
+    // nothing.
+    pub fn with_installed_skills(mut self) -> Self {
+        let mut skills = Vec::new();
+        for agent in op_skills::installed(&self.root) {
+            for skill in op_skills::SKILLS {
+                let path = agent.skill_path(&self.root, skill);
+                skills.push(SkillFile {
+                    name: skill.name,
+                    source: std::fs::read_to_string(&path).ok(),
+                    expected: skill.contents,
+                    path,
+                });
+            }
+        }
+        skills.sort_by(|a, b| a.path.cmp(&b.path));
+        self.skills = skills;
+        self
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -109,6 +149,10 @@ impl Snapshot {
 
     pub fn tags(&self) -> &[TagFile] {
         &self.tags
+    }
+
+    pub fn skills(&self) -> &[SkillFile] {
+        &self.skills
     }
 
     // The file a number resolves to, lowest path first as the store does — two files claiming one

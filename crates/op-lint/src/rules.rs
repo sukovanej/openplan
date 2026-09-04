@@ -6,10 +6,11 @@ use op_task::tag::{NAME_RULE, normalize_name};
 use op_task::{FieldError, PartialFrontmatter, PartialMetadata, sorted_set};
 
 use crate::diagnostic::{Code, Diagnostic, Span};
-use crate::snapshot::{Snapshot, TagFile, TaskFile, github_slug};
+use crate::snapshot::{SkillFile, Snapshot, TagFile, TaskFile, github_slug};
 
 pub type TaskRule = fn(&Snapshot, &TaskFile, &mut Sink);
 pub type TagRule = fn(&Snapshot, &TagFile, &mut Sink);
+pub type SkillRule = fn(&Snapshot, &SkillFile, &mut Sink);
 pub type StoreRule = fn(&Snapshot, &mut Sink);
 
 #[derive(Debug, Default)]
@@ -51,6 +52,8 @@ pub const TAG_RULES: &[TagRule] = &[
     tag_color_in_palette,
     tag_single_title,
 ];
+
+pub const SKILL_RULES: &[SkillRule] = &[skill_matches_binary];
 
 pub const STORE_RULES: &[StoreRule] = &[parent_cycles, dependency_cycles, unique_numbers];
 
@@ -872,6 +875,18 @@ fn tag_single_title(_snapshot: &Snapshot, file: &TagFile, sink: &mut Sink) {
             "a tag needs exactly one non-empty title, which is its display name",
         ));
     }
+}
+
+fn skill_matches_binary(_snapshot: &Snapshot, file: &SkillFile, sink: &mut Sink) {
+    if file.matches() {
+        return;
+    }
+    let message = if file.source.is_none() {
+        format!("skill {} is missing", file.name)
+    } else {
+        format!("skill {} differs from the openplan binary", file.name)
+    };
+    sink.emit(Diagnostic::error(Code::Skill, file.path.clone(), message).mark_fixable());
 }
 
 fn resolved_parent(snapshot: &Snapshot, file: &TaskFile) -> Option<u64> {

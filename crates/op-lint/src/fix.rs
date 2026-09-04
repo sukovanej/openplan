@@ -8,7 +8,7 @@ use op_task::{
 };
 
 use crate::rules::{canonical_tags, field_region, value_region};
-use crate::snapshot::{Snapshot, TagFile, TaskFile};
+use crate::snapshot::{SkillFile, Snapshot, TagFile, TaskFile};
 
 // Where `created:` backfill draws its answer: the author time of the first commit that added a path.
 // An uncommitted file has no answer and stays unfixable.
@@ -48,6 +48,15 @@ pub fn file_fixes(snapshot: &Snapshot, file: &TaskFile, created: &dyn CreatedSou
 
 pub fn tag_fixes(file: &TagFile) -> Vec<Fix> {
     color_fix(file).into_iter().collect()
+}
+
+// A skill file carries no user content to preserve, so its repair replaces the whole file rather
+// than splicing it.
+pub fn write_skill(file: &SkillFile) -> std::io::Result<()> {
+    if let Some(dir) = file.path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&file.path, file.expected)
 }
 
 pub fn apply(source: &str, fixes: &[Fix]) -> String {

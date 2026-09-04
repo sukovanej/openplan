@@ -1955,6 +1955,50 @@ fn lint_reports_and_repairs_a_tag_file_by_its_path() {
 }
 
 #[test]
+fn lint_reports_and_repairs_a_skill_file_by_its_path() {
+    let dir = lint_store();
+    let skill = dir.path().join(".claude/skills/task-management/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    write(&skill, "hand-written\n");
+
+    let reported = run_lint(dir.path(), &[".claude/skills/task-management/SKILL.md"]);
+    assert!(
+        !reported.status.success(),
+        "a skill target must be resolvable, not rejected as naming no file; output: {}",
+        combined(&reported)
+    );
+    assert!(
+        combined(&reported).contains("skill"),
+        "the edited skill must be reported: {}",
+        combined(&reported)
+    );
+
+    let fixed = run_lint(
+        dir.path(),
+        &[".claude/skills/task-management/SKILL.md", "--fix"],
+    );
+    assert!(
+        fixed.status.success(),
+        "--fix must write the binary's skill back and re-check clean; output: {}",
+        combined(&fixed)
+    );
+    assert!(
+        std::fs::read_to_string(&skill)
+            .unwrap()
+            .starts_with("---\nname: task-management\n"),
+        "the repaired file must hold the skill the binary carries"
+    );
+
+    write(&skill, "hand-written again\n");
+    let whole_store = run_lint(dir.path(), &["--fix"]);
+    assert!(
+        whole_store.status.success(),
+        "an untargeted --fix must repair the skill too; output: {}",
+        combined(&whole_store)
+    );
+}
+
+#[test]
 fn lint_lints_this_repos_own_plan_cleanly() {
     // The workspace root holds `.plan/`; CARGO_MANIFEST_DIR is this crate under `crates/`.
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))

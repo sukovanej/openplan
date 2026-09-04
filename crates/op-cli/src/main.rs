@@ -923,7 +923,7 @@ fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCo
             println!("{diagnostic}");
         }
         let checked = selected.as_ref().map_or_else(
-            || snapshot.files().len() + snapshot.tags().len(),
+            || snapshot.files().len() + snapshot.tags().len() + snapshot.skills().len(),
             |set| set.len(),
         );
         println!(
@@ -952,6 +952,11 @@ fn apply_fixes(
         op_lint::fix_store(store, &created)?;
         return Ok(());
     };
+    for skill in snapshot.skills() {
+        if selected.contains(&canonical(&skill.path)) && !skill.matches() {
+            op_lint::write_skill(skill)?;
+        }
+    }
     let fixed = op_lint::fix(snapshot, &created);
     for file in snapshot.files() {
         if !selected.contains(&canonical(&file.path)) {
@@ -994,7 +999,7 @@ fn lint_target_paths(
         // A target that resolves to nothing would filter every diagnostic away and pass, so a stale
         // key or a path spelled against the wrong directory has to stop the run instead.
         let Some(path) = lint_target_path(snapshot, store, target) else {
-            bail!("no task or tag file matches {target}");
+            bail!("no task, tag, or skill file matches {target}");
         };
         set.insert(path);
     }
@@ -1014,6 +1019,7 @@ fn lint_target_path(snapshot: &Snapshot, store: &Store, target: &str) -> Option<
         .iter()
         .map(|file| &file.path)
         .chain(snapshot.tags().iter().map(|tag| &tag.path))
+        .chain(snapshot.skills().iter().map(|skill| &skill.path))
         .map(|path| canonical(path))
         .find(|path| spellings.contains(path))
 }

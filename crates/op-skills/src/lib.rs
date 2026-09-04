@@ -10,20 +10,28 @@ pub enum Agent {
 }
 
 impl Agent {
-    fn skills_dir(self, root: &Path) -> PathBuf {
+    pub const ALL: [Agent; 2] = [Agent::Claude, Agent::Codex];
+
+    pub fn skills_dir(self, root: &Path) -> PathBuf {
         match self {
             Self::Claude => root.join(".claude/skills"),
             Self::Codex => root.join(".agents/skills"),
         }
     }
+
+    pub fn skill_path(self, root: &Path, skill: &Skill) -> PathBuf {
+        self.skills_dir(root).join(skill.name).join(FILE_NAME)
+    }
 }
 
-struct Skill {
-    name: &'static str,
-    contents: &'static str,
+pub struct Skill {
+    pub name: &'static str,
+    pub contents: &'static str,
 }
 
-const SKILLS: &[Skill] = &[
+const FILE_NAME: &str = "SKILL.md";
+
+pub const SKILLS: &[Skill] = &[
     Skill {
         name: "task-comments",
         contents: include_str!("../skills/task-comments/SKILL.md"),
@@ -38,17 +46,25 @@ const SKILLS: &[Skill] = &[
     },
 ];
 
+pub fn installed(root: &Path) -> Vec<Agent> {
+    Agent::ALL
+        .into_iter()
+        .filter(|agent| agent.skills_dir(root).is_dir())
+        .collect()
+}
+
 pub fn setup(root: &Path, agents: &[Agent]) -> Result<()> {
     for agent in agents {
-        let skills_dir = agent.skills_dir(root);
         for skill in SKILLS {
-            let skill_dir = skills_dir.join(skill.name);
-            fs::create_dir_all(&skill_dir)
-                .with_context(|| format!("create {}", skill_dir.display()))?;
-            let path = skill_dir.join("SKILL.md");
-            fs::write(&path, skill.contents)
-                .with_context(|| format!("write {}", path.display()))?;
+            write(&agent.skill_path(root, skill), skill.contents)?;
         }
     }
     Ok(())
+}
+
+pub fn write(path: &Path, contents: &str) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    }
+    fs::write(path, contents).with_context(|| format!("write {}", path.display()))
 }
