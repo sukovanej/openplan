@@ -57,16 +57,13 @@ daemon's state directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 
 
 ### Desktop window
 
-`openplan-gui` is a Tauri window on the daemon's web UI. It starts the daemon when none runs, and
-leaves it running when the window closes.
-
 ```sh
-mise run gui     # SPA → release binary → daemon restarted on it → the window
+mise run gui     # the window on the running daemon, starting one when none runs
 ```
 
-The window loads `http://127.0.0.1:<port>/`, so it shows the SPA the daemon serves and bundles no
-second copy. `OPENPLAN_BIN` names the `openplan` binary to start the daemon with, for a window that
-finds none on PATH.
+It loads `http://127.0.0.1:<port>/`, so it shows the SPA the daemon serves. Run `mise run install`
+after a change to the SPA. `OPENPLAN_BIN` names the `openplan` binary to start the daemon with,
+`CARGO_HOME` moves the cargo directory it searches.
 
 ### Icons
 
@@ -75,9 +72,6 @@ finds none on PATH.
 ```sh
 mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
 ```
-
-mise installs `resvg` for that task. Only macOS rebuilds `icon.icns`, because only macOS carries
-`iconutil` and builds the `.app` that holds it.
 
 ## License
 

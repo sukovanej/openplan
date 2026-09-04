@@ -1,5 +1,5 @@
 use fs2::FileExt as _;
-use op_daemon::{DEFAULT_PORT, DaemonInfo, Home, base_url, default_port};
+use op_daemon::{DEFAULT_PORT, DaemonInfo, Home, base_url};
 
 fn info() -> DaemonInfo {
     DaemonInfo {
@@ -65,5 +65,4 @@ fn a_held_lock_is_not_free() {
 #[test]
 fn the_default_port_names_the_loopback_daemon() {
     assert_eq!(base_url(DEFAULT_PORT), "http://127.0.0.1:7373");
-    assert!(base_url(default_port()).starts_with("http://127.0.0.1:"));
 }

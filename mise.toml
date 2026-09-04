@@ -26,9 +26,10 @@ run = [
   "pnpm exec oxfmt src/index.ts",
 ]
 
+# No `depends = ["install"]`: that restarts the daemon the CLI and the merge driver share, and
+# opening a window is no reason to take it down. Run `install` yourself after a change to the SPA.
 [tasks.gui]
-description = "Build the SPA into the daemon, restart it, and open the desktop window on it"
-depends = ["install"]
+description = "Open the desktop window on the running daemon, starting one when none runs"
 run = "cargo run -p openplan-gui"
 
 [tasks.icons]
