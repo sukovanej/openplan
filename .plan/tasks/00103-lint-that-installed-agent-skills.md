@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-09-04T10:55:09Z
 ---
 # Lint that installed agent skills match the binary
