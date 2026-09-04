@@ -5,27 +5,13 @@ description: Every task carries an append-only comment log, written with `openpl
 
 # Commenting on a task
 
-The log is what a reader gets when the chat is gone and the pull request is
-closed. It is append-only: you never take an entry back.
+The log is append-only, and it is what a reader gets when the chat is gone and
+the pull request is closed.
 
-## Write no entry
+Most tasks get no entry. Write one only when the fact passes both tests:
 
-No entry is the default. Most tasks close with an empty log, and that is
-correct. Set `in_review` with no entry.
-
-One entry is the usual maximum. Write a second entry only when a second fact
-passes both tests below.
-
-## The two tests
-
-A fact gets an entry only when it passes both:
-
-1. A person reads the task file, the diff, and the commit message, and still
-   does not have the fact.
-2. The fact changes what the next person does.
-
-A fact that only explains the work you delivered fails test 2. The diff carries
-that work.
+1. The task file, the diff, and the commit message all lose it.
+2. It changes what the next person does.
 
 **Write an entry for:**
 
@@ -34,14 +20,14 @@ that work.
 - a stop before the end: what is done, what is not
 - a decision or a limit that binds a later task, when the code does not show it
 
-**Never for:** progress (the status field), a summary of the diff (the commit and
-the pull request), the specification (edit the body), a question for a user who
-is here (ask them), line-level review talk (the pull request), a report that the
-work is complete or that the tests pass, a manual check that a test repeats, a
-doubt that you resolved, your thoughts during the work.
+**Never for:** progress (the status field), a summary of the diff (the commit),
+the specification (edit the body), a question for a user who is here (ask them),
+line-level review talk (the pull request), a report that the work is complete or
+that the tests pass, a manual check that a test repeats, a doubt you resolved,
+your thoughts during the work.
 
-Write at the moment the fact appears. Comment on the task the fact belongs to,
-not the task you have open. Keep the entry to one or two lines.
+Keep an entry to one or two lines. Write it when the fact appears, on the task
+the fact belongs to.
 
 ```sh
 openplan comments OPP-42                    # read; --json, --all-branches
