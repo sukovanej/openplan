@@ -68,6 +68,17 @@ The window loads `http://127.0.0.1:<port>/`, so it shows the SPA the daemon serv
 second copy. `OPENPLAN_BIN` names the `openplan` binary to start the daemon with, for a window that
 finds none on PATH.
 
+### Icons
+
+`assets/icon.svg` is the only source. Edit it, then rasterize:
+
+```sh
+mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
+```
+
+mise installs `resvg` for that task. Only macOS rebuilds `icon.icns`, because only macOS carries
+`iconutil` and builds the `.app` that holds it.
+
 ## License
 
 MIT OR Apache-2.0.
