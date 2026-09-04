@@ -8,11 +8,12 @@ use std::path::PathBuf;
 use op_store::{Store, StoreError};
 
 pub use diagnostic::{Code, Diagnostic, Position, Severity, Span};
-pub use fix::{CreatedSource, Fix, Uncommitted, apply, file_fixes, fix, tag_fixes, write_skill};
+pub use fix::{CreatedSource, Fix, Uncommitted, apply, file_fixes, fix, tag_fixes};
+pub use op_skills::SkillFile;
 pub use rules::{
     SKILL_RULES, STORE_RULES, Sink, SkillRule, StoreRule, TAG_RULES, TASK_RULES, TagRule, TaskRule,
 };
-pub use snapshot::{SkillFile, Snapshot, TagFile, TaskFile, github_slug};
+pub use snapshot::{Snapshot, TagFile, TaskFile, github_slug};
 
 pub fn lint(snapshot: &Snapshot) -> Vec<Diagnostic> {
     let mut sink = Sink::new();
@@ -61,7 +62,7 @@ pub fn fix_store(store: &Store, created: &dyn CreatedSource) -> Result<Vec<PathB
     }
     for skill in snapshot.skills() {
         if !skill.matches() {
-            write_skill(skill)?;
+            op_skills::install(skill)?;
             changed.push(skill.path.clone());
         }
     }

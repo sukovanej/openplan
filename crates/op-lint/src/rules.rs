@@ -2,11 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 
+use op_skills::SkillFile;
 use op_task::tag::{NAME_RULE, normalize_name};
 use op_task::{FieldError, PartialFrontmatter, PartialMetadata, sorted_set};
 
 use crate::diagnostic::{Code, Diagnostic, Span};
-use crate::snapshot::{SkillFile, Snapshot, TagFile, TaskFile, github_slug};
+use crate::snapshot::{Snapshot, TagFile, TaskFile, github_slug};
 
 pub type TaskRule = fn(&Snapshot, &TaskFile, &mut Sink);
 pub type TagRule = fn(&Snapshot, &TagFile, &mut Sink);

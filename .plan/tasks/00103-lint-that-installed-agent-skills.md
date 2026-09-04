@@ -26,3 +26,7 @@ checked-in copies of `crates/op-skills/skills/` in sync.
 ### 2026-09-04T11:01:24Z by Milan Suk via claude-code
 
 > The rule reads only the skills the binary carries, and only for an agent that already has a skills directory. A repository keeps its own skills next to them, and an agent that never ran `setup-skills` gets no report.
+
+### 2026-09-04T11:17:57Z by Milan Suk via claude-code
+
+> A skill the binary drops keeps its installed copy. The rule reads the skills the binary carries now, and nothing on disk says which files `setup-skills` wrote before, so a renamed or deleted skill leaves an orphan that lint never reports and `--fix` never removes. To close it, `setup-skills` must record what it wrote.

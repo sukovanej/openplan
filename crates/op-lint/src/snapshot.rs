@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use op_skills::SkillFile;
 use op_store::{Store, StoreError};
 use op_task::tag::{PartialTag, parse_partial as parse_partial_tag};
 use op_task::{Abbreviation, PartialTask, file_id, parse_partial};
@@ -20,22 +21,6 @@ pub struct TagFile {
     pub path: PathBuf,
     pub source: String,
     pub tag: PartialTag,
-}
-
-// One skill the binary installs, as the repository holds it. `source` is `None` when the file is
-// absent, which an agent that has a skills directory reads as a skill it does not have.
-#[derive(Debug, Clone)]
-pub struct SkillFile {
-    pub name: &'static str,
-    pub path: PathBuf,
-    pub source: Option<String>,
-    pub expected: &'static str,
-}
-
-impl SkillFile {
-    pub fn matches(&self) -> bool {
-        self.source.as_deref() == Some(self.expected)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +46,7 @@ impl Snapshot {
         Ok(
             Self::from_files(store.root(), store.abbreviation(), sources)
                 .with_tags(read_markdown(&store.tags_dir())?)
-                .with_installed_skills(),
+                .with_skills(op_skills::installed(store.root())?),
         )
     }
 
@@ -117,21 +102,9 @@ impl Snapshot {
     // Only an agent that already has a skills directory holds skills; installing them is what
     // `openplan setup-skills` does, and a repository that never asked for them owes the binary
     // nothing.
-    pub fn with_installed_skills(mut self) -> Self {
-        let mut skills = Vec::new();
-        for agent in op_skills::installed(&self.root) {
-            for skill in op_skills::SKILLS {
-                let path = agent.skill_path(&self.root, skill);
-                skills.push(SkillFile {
-                    name: skill.name,
-                    source: std::fs::read_to_string(&path).ok(),
-                    expected: skill.contents,
-                    path,
-                });
-            }
-        }
-        skills.sort_by(|a, b| a.path.cmp(&b.path));
+    pub fn with_skills(mut self, skills: Vec<SkillFile>) -> Self {
         self.skills = skills;
+        self.skills.sort_by(|a, b| a.path.cmp(&b.path));
         self
     }
 
