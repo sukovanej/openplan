@@ -4,8 +4,8 @@ use std::path::Path;
 
 use op_api::{
     BranchComments, BranchMark, BranchState, ChangeKind, Comment, Matrix, MatrixCell, Metadata,
-    SearchHit, TaskBranches, TaskChild, TaskDetail, TaskListItem, TaskRef, TaskSummary,
-    TaskVersion, TaskView, WriteTarget, id_cmp, list_item_cmp, updated_field,
+    SearchHit, SearchMatch, TaskBranches, TaskChild, TaskDetail, TaskListItem, TaskRef,
+    TaskSummary, TaskVersion, TaskView, WriteTarget, id_cmp, list_item_cmp, updated_field,
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{Config, RawTask, Store, StoreError};
@@ -81,16 +81,9 @@ struct Haystack {
     rest: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Rank {
-    Key,
-    Title,
-    Rest,
-}
-
 #[derive(Debug)]
 struct Matched<'a> {
-    rank: Rank,
+    matched: SearchMatch,
     branches: BTreeSet<&'a str>,
 }
 
@@ -733,20 +726,20 @@ impl Index {
         let mut matched: HashMap<&str, Matched> = HashMap::new();
         for (branch, versions) in &self.branch_versions {
             for (id, version) in versions {
-                let Some(rank) = self.rank(id, version, &needle) else {
+                let Some(found) = self.matched(id, version, &needle) else {
                     continue;
                 };
                 let entry = matched.entry(id).or_insert(Matched {
-                    rank,
+                    matched: found,
                     branches: BTreeSet::new(),
                 });
                 // The strongest reason the task matches anywhere is the one that ranks the row,
                 // because the row stands for the task rather than for one branch's version of it.
-                entry.rank = entry.rank.min(rank);
+                entry.matched = entry.matched.min(found);
                 entry.branches.insert(branch);
             }
         }
-        let mut hits: Vec<(Rank, SearchHit)> = self
+        let mut hits: Vec<SearchHit> = self
             .aggregated_tasks(project)
             .into_iter()
             .filter_map(|task| {
@@ -758,26 +751,30 @@ impl Index {
                     true => task.headline.clone(),
                     false => (*matched.branches.first()?).to_owned(),
                 };
-                Some((matched.rank, SearchHit { task, branch }))
+                Some(SearchHit {
+                    task,
+                    branch,
+                    matched: matched.matched,
+                })
             })
             .collect();
         // A stable sort, so the id order `aggregated_tasks` hands out survives inside each rank.
-        hits.sort_by_key(|(rank, _)| *rank);
-        hits.into_iter().map(|(_, hit)| hit).collect()
+        hits.sort_by_key(|hit| hit.matched);
+        hits
     }
 
     // The id names the file, not the blob, so it is absent from the cached parse and is tested
     // here instead. A palette where a key does not find its own task is the one thing a reader
     // will type first.
-    fn rank(&self, id: &str, version: &BranchVersion, needle: &str) -> Option<Rank> {
+    fn matched(&self, id: &str, version: &BranchVersion, needle: &str) -> Option<SearchMatch> {
         if id.to_lowercase().contains(needle) {
-            return Some(Rank::Key);
+            return Some(SearchMatch::Key);
         }
         let haystack = &self.parsed(version)?.haystack;
         if haystack.title.contains(needle) {
-            return Some(Rank::Title);
+            return Some(SearchMatch::Title);
         }
-        haystack.rest.contains(needle).then_some(Rank::Rest)
+        haystack.rest.contains(needle).then_some(SearchMatch::Text)
     }
 
     pub fn current_branch(&self) -> Option<&str> {

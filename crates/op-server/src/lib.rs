@@ -1248,6 +1248,10 @@ async fn search_all(
                 hits.append(&mut found);
             }
         }
+        // Each index ranks its own hits, so the concatenation has to be ranked again for a key hit
+        // in a later project to lead a body hit in an earlier one. Stable, so a rank keeps the
+        // project order and the id order inside each project.
+        hits.sort_by_key(|hit| hit.matched);
         hits
     })
     .await
