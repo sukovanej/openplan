@@ -3623,6 +3623,7 @@ dependencies = [
  "anyhow",
  "fs2",
  "op-api",
+ "op-client",
  "serde_json",
  "tempfile",
 ]

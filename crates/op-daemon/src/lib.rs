@@ -30,6 +30,19 @@ pub fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
+// A live daemon answers /health with its own identity; requiring the pid to match daemon.json
+// rejects a stale record whose port was recycled by an unrelated service.
+pub fn serves(client: &op_client::Client, info: &DaemonInfo) -> bool {
+    client
+        .health(&base_url(info.port))
+        .is_some_and(|live| live.pid == info.pid)
+}
+
+pub fn serving(home: &Home, client: &op_client::Client) -> Option<DaemonInfo> {
+    let info = home.read_info()?;
+    serves(client, &info).then_some(info)
+}
+
 pub struct Home {
     dir: PathBuf,
 }

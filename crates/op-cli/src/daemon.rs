@@ -94,7 +94,7 @@ impl Control {
         }
 
         match self.home.read_info() {
-            Some(info) if self.serves_identity(&info) => {
+            Some(info) if op_daemon::serves(&self.client, &info) => {
                 let uptime = fmt_uptime(now_unix().saturating_sub(info.started_at));
                 println!(
                     "running (pid {}, port {}, up {}, v{})",
@@ -144,7 +144,8 @@ impl Control {
             return Ok(StopOutcome::RemovedStale { pid: info.pid });
         }
 
-        let clean = self.serves_identity(&info) && self.client.shutdown(&base_url(info.port));
+        let clean =
+            op_daemon::serves(&self.client, &info) && self.client.shutdown(&base_url(info.port));
         if !clean {
             signal_term(info.pid)?;
         }
@@ -208,16 +209,7 @@ impl Control {
     }
 
     fn healthy_info(&self) -> Option<DaemonInfo> {
-        let info = self.home.read_info()?;
-        self.serves_identity(&info).then_some(info)
-    }
-
-    // A live daemon answers /health with its own identity; requiring the pid to match
-    // daemon.json rejects a stale record whose port was recycled by an unrelated service.
-    fn serves_identity(&self, info: &DaemonInfo) -> bool {
-        self.client
-            .health(&base_url(info.port))
-            .is_some_and(|live| live.pid == info.pid)
+        op_daemon::serving(&self.home, &self.client)
     }
 
     fn poll_ready(&self, deadline: Instant) -> Result<DaemonInfo> {

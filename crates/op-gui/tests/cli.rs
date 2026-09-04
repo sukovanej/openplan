@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use openplan_gui::cli::{BINARY, Search};
+use openplan_gui::cli::{BINARY, Missing, Search};
 
 fn search() -> Search {
     Search {
         named: None,
         resources: None,
         path_dirs: Vec::new(),
-        cargo_home: None,
+        cargo_bin: None,
     }
 }
 
@@ -26,7 +26,7 @@ fn places_run_from_the_override_to_the_cargo_directory() {
         named: Some(PathBuf::from("/named/openplan")),
         resources: Some(PathBuf::from("/bundle/Resources")),
         path_dirs: vec![PathBuf::from("/usr/bin"), PathBuf::from("/usr/local/bin")],
-        cargo_home: Some(PathBuf::from("/home/me/.cargo/bin")),
+        cargo_bin: Some(PathBuf::from("/home/me/.cargo/bin")),
     };
 
     assert_eq!(
@@ -61,16 +61,49 @@ fn find_takes_the_first_runnable_place() {
         ..search()
     };
 
-    assert_eq!(search.find(), Some(wanted));
+    assert_eq!(search.find(), Ok(wanted));
 }
 
 #[test]
-fn find_answers_none_when_no_place_holds_a_binary() {
+fn find_takes_the_override_over_every_other_place() {
     let dir = tempfile::tempdir().unwrap();
+    let wanted = executable(dir.path(), "named");
     let search = Search {
-        named: Some(dir.path().join(BINARY)),
+        named: Some(wanted.clone()),
+        path_dirs: vec![dir.path().to_path_buf()],
+        ..search()
+    };
+    executable(dir.path(), BINARY);
+
+    assert_eq!(search.find(), Ok(wanted));
+}
+
+// An override that names nothing runnable must be reported, never passed over in favour of a
+// binary the caller did not ask for.
+#[test]
+fn a_broken_override_refuses_instead_of_falling_through() {
+    let dir = tempfile::tempdir().unwrap();
+    let named = dir.path().join("typo");
+    executable(dir.path(), BINARY);
+    let search = Search {
+        named: Some(named.clone()),
+        path_dirs: vec![dir.path().to_path_buf()],
         ..search()
     };
 
-    assert_eq!(search.find(), None);
+    assert_eq!(search.find(), Err(Missing::Override(named)));
+}
+
+#[test]
+fn find_reports_every_place_it_looked_when_none_holds_a_binary() {
+    let dir = tempfile::tempdir().unwrap();
+    let search = Search {
+        path_dirs: vec![dir.path().to_path_buf()],
+        ..search()
+    };
+
+    assert_eq!(
+        search.find(),
+        Err(Missing::Anywhere(vec![dir.path().join(BINARY)]))
+    );
 }

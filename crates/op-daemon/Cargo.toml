@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 op-api.workspace = true
+op-client.workspace = true
 anyhow.workspace = true
 fs2.workspace = true
 serde_json.workspace = true

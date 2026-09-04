@@ -4,11 +4,17 @@ use std::path::{Path, PathBuf};
 pub const BINARY: &str = "openplan";
 pub const OVERRIDE: &str = "OPENPLAN_BIN";
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum Missing {
+    Override(PathBuf),
+    Anywhere(Vec<PathBuf>),
+}
+
 pub struct Search {
     pub named: Option<PathBuf>,
     pub resources: Option<PathBuf>,
     pub path_dirs: Vec<PathBuf>,
-    pub cargo_home: Option<PathBuf>,
+    pub cargo_bin: Option<PathBuf>,
 }
 
 impl Search {
@@ -19,7 +25,9 @@ impl Search {
             path_dirs: std::env::var_os("PATH")
                 .map(|path| std::env::split_paths(&path).collect())
                 .unwrap_or_default(),
-            cargo_home: var_path("HOME").map(|home| home.join(".cargo").join("bin")),
+            cargo_bin: var_path("CARGO_HOME")
+                .or_else(|| var_path("HOME").map(|home| home.join(".cargo")))
+                .map(|cargo| cargo.join("bin")),
         }
     }
 
@@ -34,12 +42,23 @@ impl Search {
                 .map(|dir| dir.join("bin").join(BINARY)),
         );
         places.extend(self.path_dirs.iter().map(|dir| dir.join(BINARY)));
-        places.extend(self.cargo_home.iter().map(|dir| dir.join(BINARY)));
+        places.extend(self.cargo_bin.iter().map(|dir| dir.join(BINARY)));
         places
     }
 
-    pub fn find(&self) -> Option<PathBuf> {
-        self.places().into_iter().find(|place| runnable(place))
+    // An override that names nothing runnable is a mistake to report, never a reason to start a
+    // different binary than the one the caller asked for.
+    pub fn find(&self) -> Result<PathBuf, Missing> {
+        if let Some(named) = &self.named {
+            return runnable(named)
+                .then(|| named.clone())
+                .ok_or_else(|| Missing::Override(named.clone()));
+        }
+        let places = self.places();
+        match places.iter().find(|place| runnable(place)) {
+            Some(found) => Ok(found.clone()),
+            None => Err(Missing::Anywhere(places)),
+        }
     }
 }
 
