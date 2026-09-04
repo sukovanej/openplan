@@ -922,6 +922,16 @@ fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCo
         for diagnostic in &shown {
             println!("{diagnostic}");
         }
+        let checked = selected.as_ref().map_or_else(
+            || snapshot.files().len() + snapshot.tags().len(),
+            |set| set.len(),
+        );
+        println!(
+            "checked {checked} file{}, found {} problem{}",
+            plural(checked),
+            shown.len(),
+            plural(shown.len())
+        );
     }
     Ok(if shown.is_empty() {
         ExitCode::SUCCESS
