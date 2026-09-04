@@ -24,7 +24,8 @@ use op_store::Store;
 use op_task::tag::Color;
 use op_task::{Status, Timestamp, rank};
 
-use daemon::{Control, Home};
+use daemon::Control;
+use op_daemon::Home;
 use plan::Plan;
 
 #[derive(Parser)]
@@ -266,7 +267,7 @@ enum ProjectCommand {
 enum ServerCommand {
     /// Start the daemon detached; a no-op if one is already running
     Start {
-        #[arg(long, default_value_t = daemon::default_port())]
+        #[arg(long, default_value_t = op_daemon::default_port())]
         port: u16,
         /// Run in the foreground instead of detaching (also used internally)
         #[arg(long)]
@@ -276,7 +277,7 @@ enum ServerCommand {
     Stop,
     /// Stop the running daemon, then start a fresh one
     Restart {
-        #[arg(long, default_value_t = daemon::default_port())]
+        #[arg(long, default_value_t = op_daemon::default_port())]
         port: u16,
     },
     /// Report daemon status without starting it

@@ -17,6 +17,7 @@ op-git.workspace = true
 op-lint.workspace = true
 op-api.workspace = true
 op-client.workspace = true
+op-daemon.workspace = true
 op-watch.workspace = true
 op-server.workspace = true
 op-md.workspace = true

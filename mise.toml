@@ -25,3 +25,8 @@ run = [
   "pnpm --silent exec openapigen -s openapi.json -f httpclient -n TasksClient > src/index.ts",
   "pnpm exec oxfmt src/index.ts",
 ]
+
+[tasks.gui]
+description = "Build the SPA into the daemon, restart it, and open the desktop window on it"
+depends = ["install"]
+run = "cargo run -p openplan-gui"

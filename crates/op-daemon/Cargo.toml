@@ -1,0 +1,20 @@
+[package]
+name = "op-daemon"
+description = "The machine daemon's home directory: paths, lock files, and the recorded daemon.json"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+op-api.workspace = true
+anyhow.workspace = true
+fs2.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

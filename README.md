@@ -55,6 +55,19 @@ and never starts a daemon. One daemon serves every repository on the machine: th
 a repository registers it, and `openplan project` manages the registry. `OPENPLAN_HOME` picks the
 daemon's state directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
 
+### Desktop window
+
+`openplan-gui` is a Tauri window on the daemon's web UI. It starts the daemon when none runs, and
+leaves it running when the window closes.
+
+```sh
+mise run gui     # SPA → release binary → daemon restarted on it → the window
+```
+
+The window loads `http://127.0.0.1:<port>/`, so it shows the SPA the daemon serves and bundles no
+second copy. `OPENPLAN_BIN` names the `openplan` binary to start the daemon with, for a window that
+finds none on PATH.
+
 ## License
 
 MIT OR Apache-2.0.

@@ -1,0 +1,28 @@
+[package]
+name = "openplan-gui"
+description = "A desktop window on the openplan daemon's web UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "openplan-gui"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+op-client.workspace = true
+op-daemon.workspace = true
+tauri.workspace = true
+tauri-plugin-dialog.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

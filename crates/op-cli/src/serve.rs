@@ -6,7 +6,7 @@ use op_server::{AppState, ProjectRegistry, REGISTRY_FILE, open_projects};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
-use crate::daemon::{DaemonInfo, Home, now_unix};
+use op_daemon::{DaemonInfo, Home, now_unix};
 
 pub async fn run(home: Home, port: u16) -> Result<()> {
     tracing_subscriber::fmt()
