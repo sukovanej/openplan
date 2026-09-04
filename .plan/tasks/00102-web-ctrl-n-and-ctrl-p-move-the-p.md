@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-09-04T10:21:30Z
 ---
 # Web: ctrl + n and ctrl + p move the palette selection
