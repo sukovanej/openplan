@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import type { TagView } from "@open-planner/api-client"
+import type { TagView } from "@openplan/api-client"
 
 import { tagMatches, tagSpelled, tagsWith, tagsWithout } from "../src/lib/tags"
 

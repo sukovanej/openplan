@@ -1,5 +1,5 @@
-import type { BranchState, ChangeKind } from "@open-planner/api-client"
-import { cn } from "@open-planner/ui"
+import type { BranchState, ChangeKind } from "@openplan/api-client"
+import { cn } from "@openplan/ui"
 
 import { BranchTag } from "./branch-tag"
 

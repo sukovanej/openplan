@@ -2,7 +2,7 @@ import { expect, it } from "vitest"
 
 import { splitTaskRefs, taskLinkPlugins } from "../src/task-links"
 
-const split = (value: string) => splitTaskRefs(value, { project: "open-plan", abbreviation: "OPP" })
+const split = (value: string) => splitTaskRefs(value, { project: "openplan", abbreviation: "OPP" })
 
 it("returns null when there is no reference", () => {
   expect(split("plain text with no refs")).toBeNull()
@@ -13,7 +13,7 @@ it("links a reference naming the target file", () => {
     { type: "text", value: "see " },
     {
       type: "link",
-      url: "/open-plan/task/OPP-42",
+      url: "/openplan/task/OPP-42",
       title: null,
       children: [{ type: "text", value: "./00042-ship-login-page.md" }],
     },
@@ -24,7 +24,7 @@ it("links a reference naming the target file", () => {
 it("links a key", () => {
   expect(split("see [[OPP-42]] first")).toEqual([
     { type: "text", value: "see " },
-    { type: "link", url: "/open-plan/task/OPP-42", title: null, children: [{ type: "text", value: "OPP-42" }] },
+    { type: "link", url: "/openplan/task/OPP-42", title: null, children: [{ type: "text", value: "OPP-42" }] },
     { type: "text", value: " first" },
   ])
 })
@@ -32,9 +32,9 @@ it("links a key", () => {
 it("links every reference in a line", () => {
   const nodes = split("[[./00001-a.md]] and [[OPP-2]]")
   expect(nodes?.map((n) => (n.type === "link" ? n.url : n.value))).toEqual([
-    "/open-plan/task/OPP-1",
+    "/openplan/task/OPP-1",
     " and ",
-    "/open-plan/task/OPP-2",
+    "/openplan/task/OPP-2",
   ])
 })
 
@@ -43,7 +43,7 @@ it("keeps the section suffix in the label and encodes it in the hash", () => {
   expect(nodes).toEqual([
     {
       type: "link",
-      url: "/open-plan/task/OPP-3#Store%20DTOs",
+      url: "/openplan/task/OPP-3#Store%20DTOs",
       title: null,
       children: [{ type: "text", value: "./00003-store-dtos.md#Store DTOs" }],
     },
@@ -52,12 +52,12 @@ it("keeps the section suffix in the label and encodes it in the hash", () => {
 
 it("keeps the section suffix on a key too", () => {
   const nodes = split("[[OPP-3#Design]]")
-  expect(nodes?.[0].type === "link" && nodes[0].url).toBe("/open-plan/task/OPP-3#Design")
+  expect(nodes?.[0].type === "link" && nodes[0].url).toBe("/openplan/task/OPP-3#Design")
 })
 
 it("reads the id out of the leading digits, whatever the slug says", () => {
   const nodes = split("[[./00042-a-stale-title.md]]")
-  expect(nodes?.[0].type === "link" && nodes[0].url).toBe("/open-plan/task/OPP-42")
+  expect(nodes?.[0].type === "link" && nodes[0].url).toBe("/openplan/task/OPP-42")
 })
 
 it("leaves text that names no task untouched", () => {
@@ -83,14 +83,14 @@ it("leaves a bare number, a padded key, and a foreign key as plain text", () => 
 // linked rather than something linked wrongly; the body re-renders once it lands.
 it("links nothing while the abbreviation is unknown", () => {
   expect(
-    splitTaskRefs("see [[OPP-42]] and [[./00001-a.md]]", { project: "open-plan", abbreviation: undefined }),
+    splitTaskRefs("see [[OPP-42]] and [[./00001-a.md]]", { project: "openplan", abbreviation: undefined }),
   ).toBeNull()
 })
 
 // unified is handed `[attacher, options]` and calls the attacher to get the transformer; passing a
 // transformer straight into `remarkPlugins` would have it invoked with no tree at all.
 it("attaches as a remark plugin that rewrites the tree in place", () => {
-  const [attacher, options] = taskLinkPlugins({ project: "open-plan", abbreviation: "OPP" })
+  const [attacher, options] = taskLinkPlugins({ project: "openplan", abbreviation: "OPP" })
   const transform = attacher(options)
   const tree = {
     type: "root",
@@ -99,6 +99,6 @@ it("attaches as a remark plugin that rewrites the tree in place", () => {
   transform(tree)
   expect(tree.children[0].children).toEqual([
     { type: "text", value: "see " },
-    { type: "link", url: "/open-plan/task/OPP-42", title: null, children: [{ type: "text", value: "OPP-42" }] },
+    { type: "link", url: "/openplan/task/OPP-42", title: null, children: [{ type: "text", value: "OPP-42" }] },
   ])
 })

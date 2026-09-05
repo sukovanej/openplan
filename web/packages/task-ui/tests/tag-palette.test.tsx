@@ -1,7 +1,7 @@
 import { act } from "react"
 import { describe, expect, it } from "vitest"
 
-import type { Color } from "@open-planner/api-client"
+import type { Color } from "@openplan/api-client"
 
 import { ColorPicker, TAG_COLORS } from "../src/tag-palette"
 import { render } from "./render"

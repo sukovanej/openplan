@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 
-import type { ProjectView } from "@open-planner/api-client"
+import type { ProjectView } from "@openplan/api-client"
 
 import { listProjects } from "./api"
 import { projectsKey } from "./query-client"

@@ -49,11 +49,10 @@ pub enum StoreError {
     TagNotFound { name: String },
     #[error("tag already exists: {name}")]
     TagExists { name: String },
-    #[error(
-        "tag {name} is used by {count} task(s) on this branch; pass --force to delete it and leave \
-         those references dangling"
-    )]
+    #[error("tag {name} is used by {count} task(s) on this branch")]
     TagReferenced { name: String, count: usize },
+    #[error("tag {name} is not registered on this branch")]
+    TagUnregistered { name: String },
     #[error("not a task reference: {reference:?}; {}", op_task::REFERENCE_EXPECTED)]
     InvalidRef { reference: String },
     #[error("{0}")]
@@ -434,9 +433,7 @@ impl Store {
             let registered = self.tag_names()?;
             for tag in &new.tags {
                 if !registered.contains(tag) {
-                    return Err(StoreError::Invalid(format!(
-                        "tag {tag} does not exist; register it with `openplan tag create \"{tag}\"`"
-                    )));
+                    return Err(StoreError::TagUnregistered { name: tag.clone() });
                 }
             }
         }

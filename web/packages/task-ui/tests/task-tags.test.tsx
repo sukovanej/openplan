@@ -1,7 +1,7 @@
 import { act } from "react"
 import { describe, expect, it } from "vitest"
 
-import type { Field_Vec_String, Metadata, TagView } from "@open-planner/api-client"
+import type { Field_Vec_String, Metadata, TagView } from "@openplan/api-client"
 
 import { TaskTags } from "../src/task-tags"
 import { render } from "./render"

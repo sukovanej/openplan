@@ -1,4 +1,4 @@
-import { FLOW_ROUTE } from "@open-planner/task-ui"
+import { FLOW_ROUTE } from "@openplan/task-ui"
 
 import type { Binding } from "./types"
 

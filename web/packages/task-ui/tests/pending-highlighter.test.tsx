@@ -11,7 +11,7 @@ it("renders a fence plain until the highlighter is built", async () => {
   expect(highlightToHast("const a = 1", "typescript")).toBeNull()
 
   const markdown = "```ts\nconst a = 1\n```"
-  const root = render(<TaskBody project="open-plan" abbreviation="OPP" markdown={markdown} />)
+  const root = render(<TaskBody project="openplan" abbreviation="OPP" markdown={markdown} />)
   const plain = root.querySelector("pre code")!
   expect(root.querySelector(".shiki")).toBeNull()
   expect(plain.className).toBe("language-ts")

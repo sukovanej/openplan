@@ -1,7 +1,7 @@
 import { Monitor, Moon, Sun } from "lucide-react"
 import type * as React from "react"
 
-import { type IconToggleOption, IconToggleGroup } from "@open-planner/ui"
+import { type IconToggleOption, IconToggleGroup } from "@openplan/ui"
 
 import { type ThemePreference, useTheme } from "../lib/theme"
 

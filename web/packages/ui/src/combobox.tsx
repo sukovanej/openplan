@@ -3,6 +3,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, 
 
 import { cn } from "./cn"
 import { Row } from "./row"
+import { useDismissOnOutsideClick } from "./use-dismiss"
 
 export interface ComboOption {
   readonly key: string
@@ -56,14 +57,7 @@ export function Combobox({
   useEffect(() => {
     if (inline) listRef.current?.scrollIntoView({ block: "nearest" })
   }, [inline, options])
-  useEffect(() => {
-    if (onClose === undefined) return
-    const onDown = (event: MouseEvent) => {
-      if (rootRef.current !== null && !rootRef.current.contains(event.target as Node)) onClose()
-    }
-    document.addEventListener("mousedown", onDown)
-    return () => document.removeEventListener("mousedown", onDown)
-  }, [onClose])
+  useDismissOnOutsideClick(rootRef, onClose)
 
   const choose = (index: number) => {
     const option = options[index]

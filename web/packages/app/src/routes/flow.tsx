@@ -14,9 +14,9 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 
-import type { Flow } from "@open-planner/api-client"
-import { FLOW_ROUTE } from "@open-planner/task-ui"
-import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, Skeleton } from "@open-planner/ui"
+import type { Flow } from "@openplan/api-client"
+import { FLOW_ROUTE } from "@openplan/task-ui"
+import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, Skeleton } from "@openplan/ui"
 
 import { BoxFlowCard, LeafFlowCard, RoutedFlowLine, UnresolvedFlowCard } from "../components/flow-nodes"
 import { FlowCycles, getFlow } from "../lib/api"

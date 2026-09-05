@@ -2421,7 +2421,8 @@ fn tag_delete_refuses_a_referenced_tag_until_it_is_forced() {
     let refused = run(&dir, &["tag", "delete", "backend", "--yes"]);
     assert!(!refused.status.success(), "stdout: {}", stdout(&refused));
     assert!(
-        stderr(&refused).contains("--force"),
+        stderr(&refused)
+            .contains("tag backend is used by 1 task(s) on this branch; pass --force to delete it"),
         "the refusal says how to override it: {}",
         stderr(&refused)
     );
@@ -2544,8 +2545,13 @@ fn create_with_an_unknown_tag_names_the_command_that_registers_it() {
     let out = run(&dir, &["create", "Wire the parser", "--tag", "wip"]);
 
     assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    // The daemon states the fact and names the refusal; the command that answers it is this
+    // binary's own spelling, so this binary is what adds it.
     assert!(
-        stderr(&out).contains("openplan tag create"),
+        stderr(&out).contains(
+            "tag wip is not registered on this branch; register it with `openplan tag create \
+             <name>`"
+        ),
         "the refusal says how to register the tag: {}",
         stderr(&out)
     );

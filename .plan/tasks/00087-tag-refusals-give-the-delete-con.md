@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-08-26T07:12:36Z
 parent: ./00012-tags-registered-labels-name-colo.md
 ---
@@ -29,8 +29,8 @@ uses only the browser reads a flag name for a button they pressed.
 
 ## Acceptance criteria
 
-- [ ] A delete that a reference count refuses is distinguishable from a delete
+- [x] A delete that a reference count refuses is distinguishable from a delete
       that a worktree refuses, by status or by field.
-- [ ] `openplan tag delete` still prints the `--force` hint.
-- [ ] No `op-store` message names a CLI flag or a CLI command.
-- [ ] The web UI offers a forced delete only after a reference count.
+- [x] `openplan tag delete` still prints the `--force` hint.
+- [x] No `op-store` message names a CLI flag or a CLI command.
+- [x] The web UI offers a forced delete only after a reference count.

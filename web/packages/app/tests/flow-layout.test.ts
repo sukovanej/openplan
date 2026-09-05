@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import type { Flow, FlowNode } from "@open-planner/api-client"
+import type { Flow, FlowNode } from "@openplan/api-client"
 
 import {
   cardHeight,
@@ -12,7 +12,7 @@ import {
   TITLE_LINE,
 } from "../src/lib/flow-layout"
 
-const PROJECT = "open-plan"
+const PROJECT = "openplan"
 const PAGE = 1.8
 
 function leaf(id: string, wave: number, position: number, parent?: string, title = id): FlowNode {

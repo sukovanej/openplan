@@ -1,7 +1,7 @@
 import { CornerLeftUp } from "lucide-react"
 import { Link } from "react-router-dom"
 
-import { MetaItem, Tooltip } from "@open-planner/ui"
+import { MetaItem, Tooltip } from "@openplan/ui"
 
 import { taskPath } from "./task-path"
 

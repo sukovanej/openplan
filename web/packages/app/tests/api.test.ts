@@ -2,9 +2,18 @@ import { expect, it } from "@effect/vitest"
 import { Effect, Result } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/unstable/http"
 
-import { ApiBaseUrl, createTask, getTask, listTasks, patchTask, TaskNotFound, TaskRejected } from "../src/lib/api"
+import {
+  ApiBaseUrl,
+  createTask,
+  deleteTag,
+  getTask,
+  listTasks,
+  patchTask,
+  TaskNotFound,
+  TaskRejected,
+} from "../src/lib/api"
 
-const PROJECT = "open-plan"
+const PROJECT = "openplan"
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -41,7 +50,7 @@ it.effect("decodes the branch-aware task list from GET /api/projects/:project/ta
   withResponse(() =>
     json([
       {
-        project: "open-plan",
+        project: "openplan",
         id: "a-1",
         title: "First",
         metadata: {
@@ -58,7 +67,7 @@ it.effect("decodes the branch-aware task list from GET /api/projects/:project/ta
         branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" }],
       },
       {
-        project: "open-plan",
+        project: "openplan",
         id: "b-2",
         title: "Second",
         metadata: {
@@ -94,7 +103,7 @@ it.effect("decodes the branch-aware task list from GET /api/projects/:project/ta
 it.effect("decodes a task detail with its branch set and hierarchy from GET /api/projects/:project/tasks/:id", () =>
   withResponse(() =>
     json({
-      project: "open-plan",
+      project: "openplan",
       id: "a-1",
       title: "First",
       parent: "epic-1",
@@ -135,7 +144,7 @@ it.effect("decodes a task detail with its branch set and hierarchy from GET /api
 it.effect("decodes a task detail that omits the optional hierarchy fields", () =>
   withResponse(() =>
     json({
-      project: "open-plan",
+      project: "openplan",
       id: "solo-1",
       title: "Solo",
       metadata: {
@@ -163,7 +172,7 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
 
 const detailResponse = () =>
   json({
-    project: "open-plan",
+    project: "openplan",
     id: "a-1",
     title: "First",
     metadata: { status: "done", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [], tags: [] },
@@ -178,7 +187,7 @@ it.effect("requests a specific branch's version with ?branch=", () =>
     const { captured, provide } = captureRequest(detailResponse)
     const task = yield* provide(getTask(PROJECT, "a-1", "feature"))
     expect(task.metadata).toMatchObject({ status: "done" })
-    expect(captured.request?.url).toContain("/api/projects/open-plan/tasks/a-1")
+    expect(captured.request?.url).toContain("/api/projects/openplan/tasks/a-1")
     expect(UrlParams.toString(captured.request!.urlParams)).toBe("branch=feature")
   }),
 )
@@ -237,7 +246,7 @@ it.effect("rejects a malformed status with a decode failure", () =>
   withResponse(() =>
     json([
       {
-        project: "open-plan",
+        project: "openplan",
         id: "a-1",
         title: "First",
         metadata: {
@@ -265,7 +274,7 @@ it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
   Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
       json({
-        project: "open-plan",
+        project: "openplan",
         id: "child",
         title: "Child",
         metadata: {
@@ -284,7 +293,7 @@ it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
     )
     const detail = yield* provide(patchTask(PROJECT, "child", { parent: null }))
     expect(captured.request?.method).toBe("PATCH")
-    expect(captured.request?.url).toContain("/api/projects/open-plan/tasks/child")
+    expect(captured.request?.url).toContain("/api/projects/openplan/tasks/child")
     expect(requestBody(captured.request!)).toEqual({ parent: null })
     expect(detail.id).toBe("child")
   }),
@@ -294,7 +303,7 @@ it.effect("PATCH sends a parent id to reparent", () =>
   Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
       json({
-        project: "open-plan",
+        project: "openplan",
         id: "child",
         title: "Child",
         metadata: {
@@ -321,7 +330,7 @@ it.effect("POST creates a child under a parent and returns the new id", () =>
     const { captured, provide } = captureRequest(() => json({ id: "new-1" }, 201))
     const id = yield* provide(createTask(PROJECT, { title: "Subtask", parent: "root" }))
     expect(captured.request?.method).toBe("POST")
-    expect(captured.request?.url).toContain("/api/projects/open-plan/tasks")
+    expect(captured.request?.url).toContain("/api/projects/openplan/tasks")
     expect(requestBody(captured.request!)).toEqual({ title: "Subtask", parent: "root" })
     expect(id).toBe("new-1")
   }),
@@ -351,6 +360,32 @@ it.effect("a PATCH aimed at a branch no worktree holds carries the 409 reason", 
     expect(error).toBeInstanceOf(TaskRejected)
     expect((error as TaskRejected).status).toBe(409)
     expect((error as TaskRejected).message).toContain("writable worktree")
+  }),
+)
+
+// One status covers three tag-delete refusals, and `force` answers only one of them. The field is
+// what tells the caller which one it received.
+it.effect("a tag delete a reference count refuses names the refusal force answers", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() =>
+      json({ message: "tag backend is used by 2 task(s) on this branch", reason: "tag_referenced" }, 409),
+    )
+    const result = yield* Effect.result(provide(deleteTag(PROJECT, "backend", false)))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect((error as TaskRejected).status).toBe(409)
+    expect((error as TaskRejected).reason).toBe("tag_referenced")
+  }),
+)
+
+it.effect("a tag delete the branch refuses names no refusal force answers", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() =>
+      json({ message: "branch feature is not checked out in a writable worktree" }, 409),
+    )
+    const result = yield* Effect.result(provide(deleteTag(PROJECT, "backend", false)))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect((error as TaskRejected).status).toBe(409)
+    expect((error as TaskRejected).reason).toBeUndefined()
   }),
 )
 

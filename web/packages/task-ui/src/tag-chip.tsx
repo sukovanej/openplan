@@ -1,7 +1,7 @@
 import { TriangleAlert, X } from "lucide-react"
 
-import type { Color, TagView } from "@open-planner/api-client"
-import { cn, Tag, Tooltip } from "@open-planner/ui"
+import type { Color, TagView } from "@openplan/api-client"
+import { cn, Tag, Tooltip } from "@openplan/ui"
 
 // A chip wears its colour as a wash behind the name rather than as a fill: at full strength the
 // twelve read as blocks of shouting on a light page. The ink stays the palette rung, which was tuned

@@ -1,7 +1,7 @@
 import { BaseEdge, type Edge, type EdgeProps, Handle, type Node, type NodeProps, Position } from "@xyflow/react"
 import { Link } from "react-router-dom"
 
-import type { FlowNode } from "@open-planner/api-client"
+import type { FlowNode } from "@openplan/api-client"
 import {
   fieldValue,
   statusBorder,
@@ -10,8 +10,8 @@ import {
   statusSurface,
   taskPath,
   UnresolvedMark,
-} from "@open-planner/task-ui"
-import { cn } from "@open-planner/ui"
+} from "@openplan/task-ui"
+import { cn } from "@openplan/ui"
 
 import { BOX_HEADER, CARD_PAD, KEY_LINE, type Point, TITLE_LINE, TITLE_SIZE } from "../lib/flow-layout"
 

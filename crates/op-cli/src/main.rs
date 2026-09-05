@@ -27,11 +27,7 @@ use op_daemon::Home;
 use plan::Plan;
 
 #[derive(Parser)]
-#[command(
-    name = "openplan",
-    version,
-    about = "open-planner — local-first task CLI"
-)]
+#[command(name = "openplan", version, about = "openplan — local-first task CLI")]
 struct Cli {
     /// Directory the command works in [default: the current directory]
     #[arg(long, global = true)]

@@ -1,4 +1,4 @@
-import { Toast } from "@open-planner/ui"
+import { Toast } from "@openplan/ui"
 
 import { useFlash } from "../lib/flash"
 
