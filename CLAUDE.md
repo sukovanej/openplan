@@ -1,4 +1,4 @@
-# open-planner
+# openplan
 
 Local-first task manager (Rust workspace). Design and work live in `.plan/tasks/`.
 

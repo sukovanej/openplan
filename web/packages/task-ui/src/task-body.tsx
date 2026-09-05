@@ -4,8 +4,8 @@ import Markdown, { type Components } from "react-markdown"
 import { Link } from "react-router-dom"
 import remarkGfm from "remark-gfm"
 
-import type { TaskRef } from "@open-planner/api-client"
-import { cn, Prose } from "@open-planner/ui"
+import type { TaskRef } from "@openplan/api-client"
+import { cn, Prose } from "@openplan/ui"
 
 import { CodeBlock } from "./code-block"
 import { taskLinkPlugins } from "./task-links"

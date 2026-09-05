@@ -1,5 +1,5 @@
 {
-  "name": "@open-planner/task-ui",
+  "name": "@openplan/task-ui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,8 @@
   },
   "scripts": {},
   "dependencies": {
-    "@open-planner/api-client": "workspace:*",
-    "@open-planner/ui": "workspace:*",
+    "@openplan/api-client": "workspace:*",
+    "@openplan/ui": "workspace:*",
     "@shikijs/core": "catalog:",
     "@shikijs/engine-javascript": "catalog:",
     "@shikijs/langs": "catalog:",

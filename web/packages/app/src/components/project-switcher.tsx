@@ -1,8 +1,8 @@
 import { TriangleAlert } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
 
-import { boardPath, taskRouteOf } from "@open-planner/task-ui"
-import { cn, Tooltip } from "@open-planner/ui"
+import { boardPath, taskRouteOf } from "@openplan/task-ui"
+import { cn, Tooltip } from "@openplan/ui"
 
 import { demotedReason, useProjects } from "../lib/projects"
 

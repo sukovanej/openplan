@@ -1,4 +1,4 @@
-import { type TaskRoute, taskRouteOf } from "@open-planner/task-ui"
+import { type TaskRoute, taskRouteOf } from "@openplan/task-ui"
 
 import { type CursorState, focusedRow } from "./row-cursor"
 

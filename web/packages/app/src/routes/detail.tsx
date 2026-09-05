@@ -3,7 +3,7 @@ import { Pencil, Plus, Waypoints, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
-import type { Board, Comment, TaskDetail, TaskListItem } from "@open-planner/api-client"
+import type { Board, Comment, TaskDetail, TaskListItem } from "@openplan/api-client"
 import {
   boardPath,
   BranchSwitcher,
@@ -18,7 +18,7 @@ import {
   taskPath,
   TaskTimes,
   UnresolvedMark,
-} from "@open-planner/task-ui"
+} from "@openplan/task-ui"
 import {
   Button,
   type ComboOption,
@@ -31,7 +31,7 @@ import {
   PanelTitle,
   Row,
   Section,
-} from "@open-planner/ui"
+} from "@openplan/ui"
 
 import { Blocked } from "../components/blocked"
 import { BodySkeleton, DetailSkeleton } from "../components/states"

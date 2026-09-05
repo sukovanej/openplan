@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
-import type { TagView } from "@open-planner/api-client"
-import { fuzzyMatch } from "@open-planner/ui"
+import type { TagView } from "@openplan/api-client"
+import { fuzzyMatch } from "@openplan/ui"
 
 import { listTags } from "./api"
 import { tagsKey } from "./query-client"

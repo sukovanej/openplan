@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 
-import type { TaskListItem } from "@open-planner/api-client"
+import type { TaskListItem } from "@openplan/api-client"
 
 import { taskMatches } from "../src/lib/task-search"
 

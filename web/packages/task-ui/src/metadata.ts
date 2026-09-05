@@ -1,4 +1,4 @@
-import type { Field_Status, FieldError, Metadata } from "@open-planner/api-client"
+import type { Field_Status, FieldError, Metadata } from "@openplan/api-client"
 
 // Both `Metadata` and `Field<T>` are untagged unions: a value is its bare JSON, a failure is an
 // object carrying `kind`. No value in the schema is an object with a `kind`, so that is what tells

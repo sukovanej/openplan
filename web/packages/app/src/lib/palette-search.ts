@@ -1,5 +1,5 @@
-import type { SearchHit } from "@open-planner/api-client"
-import { taskPath } from "@open-planner/task-ui"
+import type { SearchHit } from "@openplan/api-client"
+import { taskPath } from "@openplan/task-ui"
 
 // Where selecting a hit goes. A hit found on a branch other than the headline pins that branch, so
 // the page shows the version the query matched rather than a different one under the same key.

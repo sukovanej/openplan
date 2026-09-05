@@ -1653,7 +1653,7 @@ async fn openapi_spec_is_served_over_http() {
     let response = get("/api-docs/openapi.json").await;
     assert_eq!(response.status(), StatusCode::OK);
     let spec = body_json(response).await;
-    assert_eq!(spec["info"]["title"], "open-planner");
+    assert_eq!(spec["info"]["title"], "openplan");
     assert!(spec["paths"].get("/api/projects/{project}/tasks").is_some());
     assert!(
         spec["paths"]

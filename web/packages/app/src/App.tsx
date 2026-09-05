@@ -1,7 +1,7 @@
 import { Waypoints } from "lucide-react"
 import { Link, Outlet } from "react-router-dom"
 
-import { FLOW_ROUTE } from "@open-planner/task-ui"
+import { FLOW_ROUTE } from "@openplan/task-ui"
 
 import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"

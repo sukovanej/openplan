@@ -1,5 +1,5 @@
-import type { Color } from "@open-planner/api-client"
-import { cn } from "@open-planner/ui"
+import type { Color } from "@openplan/api-client"
+import { cn } from "@openplan/ui"
 
 // Tailwind emits only the class names it can read literally in the source, so each colour spells out
 // a swatch of its own rather than composing one from the name.

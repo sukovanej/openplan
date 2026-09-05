@@ -1,4 +1,4 @@
-import { FLOW_ROUTE, statusText } from "@open-planner/task-ui"
+import { FLOW_ROUTE, statusText } from "@openplan/task-ui"
 
 // Each field is a list, because the endpoint takes each name more than once: the values of one name
 // are alternatives, and two names narrow each other. The whole selection lives in the URL, so a

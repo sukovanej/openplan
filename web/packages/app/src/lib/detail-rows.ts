@@ -1,5 +1,5 @@
-import type { Field_Status, TaskDetail, TaskRef } from "@open-planner/api-client"
-import { dependenciesOf, taskPath, taskReference } from "@open-planner/task-ui"
+import type { Field_Status, TaskDetail, TaskRef } from "@openplan/api-client"
+import { dependenciesOf, taskPath, taskReference } from "@openplan/task-ui"
 
 // One row of the three task lists below the task body. `at` is the row's place in the page-wide
 // sequence that one cursor walks, so a section renders its rows without knowing where its own list

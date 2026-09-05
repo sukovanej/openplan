@@ -1,6 +1,6 @@
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api"
 
-import type { Flow, FlowEdge, FlowNode } from "@open-planner/api-client"
+import type { Flow, FlowEdge, FlowNode } from "@openplan/api-client"
 
 const NODE_WIDTH = 244
 export const BOX_HEADER = 30

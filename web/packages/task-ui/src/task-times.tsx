@@ -1,7 +1,7 @@
 import { CalendarPlus, CircleAlert, History } from "lucide-react"
 
-import type { Field_Rfc3339 } from "@open-planner/api-client"
-import { MetaItem, TimeAgo, Tooltip } from "@open-planner/ui"
+import type { Field_Rfc3339 } from "@openplan/api-client"
+import { MetaItem, TimeAgo, Tooltip } from "@openplan/ui"
 
 import { type FieldProblem, fieldFailure, fieldValue } from "./metadata"
 

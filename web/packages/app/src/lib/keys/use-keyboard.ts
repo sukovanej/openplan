@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { boardPath, FLOW_ROUTE, taskRouteOf } from "@open-planner/task-ui"
+import { boardPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"

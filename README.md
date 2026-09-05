@@ -1,4 +1,4 @@
-# open-planner
+# openplan
 
 Local-first, file-based task manager for humans and AI agents, in plain markdown.
 Design and work items in [.plan/tasks/](.plan/tasks/).
@@ -22,7 +22,7 @@ cargo build                               # embeds the SPA
 ```
 
 Web workspace checks: `pnpm -r typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm -r test`.
-Live development: `pnpm --filter @open-planner/app dev` (Vite on :5173, proxying the API to
+Live development: `pnpm --filter @openplan/app dev` (Vite on :5173, proxying the API to
 the daemon on :7373).
 
 ## Run

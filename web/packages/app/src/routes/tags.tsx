@@ -3,8 +3,8 @@ import { Check, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
-import type { Color, TagView } from "@open-planner/api-client"
-import { boardPath, ColorDot, ColorPicker, TagChip } from "@open-planner/task-ui"
+import type { Color, TagView } from "@openplan/api-client"
+import { boardPath, ColorDot, ColorPicker, TagChip } from "@openplan/task-ui"
 import {
   Button,
   cn,
@@ -18,7 +18,7 @@ import {
   TextInput,
   Tooltip,
   useDismissOnOutsideClick,
-} from "@open-planner/ui"
+} from "@openplan/ui"
 
 import { createTag, deleteTag, listTags, patchTag, TaskRejected } from "../lib/api"
 import { errorText } from "../lib/format"

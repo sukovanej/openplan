@@ -1,7 +1,7 @@
 import { useMutationState } from "@tanstack/react-query"
 import { useState } from "react"
 
-import { Toast } from "@open-planner/ui"
+import { Toast } from "@openplan/ui"
 
 import { errorText } from "../lib/format"
 import { projectMutationsKey } from "../lib/query-client"

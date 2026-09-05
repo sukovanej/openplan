@@ -3,9 +3,9 @@ import { Waypoints, type LucideIcon } from "lucide-react"
 import { useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 
-import type { SearchHit } from "@open-planner/api-client"
-import { FLOW_ROUTE, statusField, TaskIdentity } from "@open-planner/task-ui"
-import { FuzzyText, fuzzyMatch, Palette, type PaletteItem, type PaletteProvider } from "@open-planner/ui"
+import type { SearchHit } from "@openplan/api-client"
+import { FLOW_ROUTE, statusField, TaskIdentity } from "@openplan/task-ui"
+import { FuzzyText, fuzzyMatch, Palette, type PaletteItem, type PaletteProvider } from "@openplan/ui"
 
 import { searchTasks } from "../lib/api"
 import type { PaletteTarget } from "../lib/keys"

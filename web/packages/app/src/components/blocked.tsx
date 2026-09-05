@@ -1,4 +1,4 @@
-import { Tooltip } from "@open-planner/ui"
+import { Tooltip } from "@openplan/ui"
 
 // Focusable, so the keyboard reaches the reason too: it replaces a control that had focus of its own.
 export function Blocked({ reason }: { reason: string }) {

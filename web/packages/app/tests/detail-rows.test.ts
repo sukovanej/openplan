@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 
-import type { TaskDetail, TaskRef } from "@open-planner/api-client"
+import type { TaskDetail, TaskRef } from "@openplan/api-client"
 
 import { detailRows } from "../src/lib/detail-rows"
 

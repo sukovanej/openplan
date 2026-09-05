@@ -1,7 +1,7 @@
 import { CircleAlert, CircleCheck, CircleDot, CircleEllipsis, CircleX, Clock, Eye, type LucideIcon } from "lucide-react"
 
-import type { Field_Status, Metadata, Status } from "@open-planner/api-client"
-import { cn, Tooltip } from "@open-planner/ui"
+import type { Field_Status, Metadata, Status } from "@openplan/api-client"
+import { cn, Tooltip } from "@openplan/ui"
 
 import { fieldValue, statusField } from "./metadata"
 
