@@ -18,6 +18,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Search order. Tasks with the most recent changes come first.
 - The `task-management` skill. The agent creates a task only when the user asks
   for one, in those words. A request to do work made a task before this change.
+- The `task-management` skill tells the agent to tag a task at creation. It
+  takes the names from `openplan tag list` and registers none of its own.
 
 ### Fixed
 
