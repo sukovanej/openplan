@@ -43,6 +43,13 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - uses: Swatinem/rust-cache@v2
+      # `openplan-gui` links WebKitGTK through Tauri. The 4.1 API is the one the `webkit2gtk`
+      # crate binds; 4.0 is a different package and does not satisfy it.
+      - name: Install the Tauri build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
       # `op-server` embeds `web/packages/app/dist` at compile time, so the SPA builds first.
       - run: pnpm install --frozen-lockfile
         working-directory: web

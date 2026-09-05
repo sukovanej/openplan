@@ -127,7 +127,9 @@ git tag v0.0.2 && git push origin v0.0.2
 ```
 
 The tag starts `.github/workflows/release.yml`. It builds each target, makes the archives, the
-checksums, and the installer, and publishes a GitHub Release.
+checksums, and the installer, and publishes a GitHub Release. The release holds the `openplan`
+binary only. The desktop app ships as a bundle, not as a binary in a tarball, so `crates/op-gui`
+sets `dist = false` until OPP-100 adds a workflow for it.
 [cargo-dist](https://axodotdev.github.io/cargo-dist/) generates that workflow from
 `[workspace.metadata.dist]` in `Cargo.toml`. After a change there, run `dist init --yes` and
 commit the result.

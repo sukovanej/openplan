@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+# A Tauri app ships as a bundle, not as a binary in a tarball: a bare `openplan-gui` has no
+# `.app`, no icon, and no declared WebKitGTK. `release-app.yml` builds and uploads it (OPP-100).
+[package.metadata.dist]
+dist = false
+
 [[bin]]
 name = "openplan-gui"
 path = "src/main.rs"
