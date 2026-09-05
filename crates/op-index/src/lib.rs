@@ -5,7 +5,7 @@ use std::path::Path;
 use op_api::{
     BranchComments, BranchMark, BranchState, ChangeKind, Comment, Matrix, MatrixCell, Metadata,
     SearchHit, SearchMatch, TaskBranches, TaskChild, TaskDetail, TaskListItem, TaskRef,
-    TaskSummary, TaskVersion, TaskView, WriteTarget, id_cmp, list_item_cmp, updated_field,
+    TaskSummary, TaskVersion, TaskView, WriteTarget, hit_cmp, id_cmp, list_item_cmp, updated_field,
 };
 use op_git::{ChangeTime, Repo, TaskChange, Worktree};
 use op_store::{Config, RawTask, Store, StoreError};
@@ -758,8 +758,7 @@ impl Index {
                 })
             })
             .collect();
-        // A stable sort, so the id order `aggregated_tasks` hands out survives inside each rank.
-        hits.sort_by_key(|hit| hit.matched);
+        hits.sort_by(hit_cmp);
         hits
     }
 

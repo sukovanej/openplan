@@ -1,6 +1,6 @@
 use crate::field::Rfc3339;
 use crate::keys::key_number;
-use crate::task::{TaskListItem, TaskSummary};
+use crate::task::{SearchHit, TaskListItem, TaskSummary};
 
 // A `rank` is an order somebody set on purpose, so ranked tasks hold the top of the list
 // and `unranked` decides among the rest.
@@ -51,6 +51,19 @@ pub fn board_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
             .then_with(|| a.project.cmp(&b.project))
             .then_with(|| id_cmp(&a.id, &b.id))
     })
+}
+
+// Which part of the task matched decides the order first, so a key hit leads every title hit and a
+// title hit leads every body hit. Among hits that matched the same way, the task changed most
+// recently leads. Two tasks can name the same word, and the one somebody is working on now is the
+// one the typist means. A `rank` plays no part here, because it orders one board column and a
+// search crosses every column.
+pub fn hit_cmp(a: &SearchHit, b: &SearchHit) -> std::cmp::Ordering {
+    a.matched
+        .cmp(&b.matched)
+        .then_with(|| newest_first(a.task.updated.as_value(), b.task.updated.as_value()))
+        .then_with(|| a.task.project.cmp(&b.task.project))
+        .then_with(|| id_cmp(&a.task.id, &b.task.id))
 }
 
 // An `updated` that could not be derived places the task nowhere on the scale, so it sorts after
