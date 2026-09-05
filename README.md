@@ -55,6 +55,24 @@ and never starts a daemon. One daemon serves every repository on the machine: th
 a repository registers it, and `openplan project` manages the registry. `OPENPLAN_HOME` picks the
 daemon's state directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
 
+### Desktop window
+
+```sh
+mise run gui     # the window on the running daemon, starting one when none runs
+```
+
+It loads `http://127.0.0.1:<port>/`, so it shows the SPA the daemon serves. Run `mise run install`
+after a change to the SPA. The window starts its own daemon when none runs, so it needs no
+`openplan` on `PATH`; it obeys `OPENPLAN_HOME` and `OPENPLAN_PORT` like every other command.
+
+### Icons
+
+`assets/icon.svg` is the only source. Edit it, then rasterize:
+
+```sh
+mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
+```
+
 ## License
 
 MIT OR Apache-2.0.

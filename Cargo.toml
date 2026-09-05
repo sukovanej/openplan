@@ -22,6 +22,7 @@ op-watch = { path = "crates/op-watch" }
 op-index = { path = "crates/op-index" }
 op-presence = { path = "crates/op-presence" }
 op-server = { path = "crates/op-server" }
+op-daemon = { path = "crates/op-daemon" }
 op-skills = { path = "crates/op-skills" }
 
 serde = { version = "1", features = ["derive"] }
@@ -47,6 +48,10 @@ rust-embed = "8"
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
+
+tauri = "2"
+tauri-build = "2"
+tauri-plugin-dialog = "2"
 
 notify = "8"
 fs2 = "0.4"

@@ -3,3 +3,6 @@
 **/*.rs.bk
 .DS_Store
 web/**/node_modules/
+
+# tauri-build regenerates these from tauri.conf.json and the plugins in Cargo.toml
+crates/op-gui/gen/schemas/

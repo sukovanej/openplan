@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>OpenPlan</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ground: #fafaf9;
+        --ink: #52525b;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #18181b;
+          --ink: #a1a1aa;
+        }
+      }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--ground);
+        color: var(--ink);
+        font: 400 14px/1.5 system-ui, sans-serif;
+        -webkit-user-select: none;
+      }
+      p {
+        animation: fade 1.4s ease-in-out infinite;
+      }
+      @keyframes fade {
+        50% {
+          opacity: 0.35;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <p>Starting the openplan daemon…</p>
+  </body>
+</html>
