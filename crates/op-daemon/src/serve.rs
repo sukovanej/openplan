@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
@@ -6,9 +7,51 @@ use op_server::{AppState, ProjectRegistry, REGISTRY_FILE, open_projects};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
-use op_daemon::{DaemonInfo, Home, now_unix};
+use op_api::DaemonInfo;
 
-pub async fn run(home: Home, port: u16) -> Result<()> {
+use crate::home::Home;
+use crate::now_unix;
+
+// The daemon is a re-exec of whichever binary asked for one, so every binary that can start a
+// daemon answers this argument before its own parsing. A flag rather than an environment variable:
+// the daemon runs `openplan mergedriver`, and an inherited variable would make that a daemon too.
+pub const SERVE_ARG: &str = "--serve-daemon";
+
+pub fn serve_request(args: impl IntoIterator<Item = String>) -> Option<u16> {
+    let mut args = args.into_iter().skip(1);
+    if args.next().as_deref() != Some(SERVE_ARG) {
+        return None;
+    }
+    args.next()?.parse().ok()
+}
+
+pub fn serve_if_requested(args: impl IntoIterator<Item = String>) -> Option<ExitCode> {
+    let port = serve_request(args)?;
+    Some(match Home::resolve() {
+        Ok(home) => serve(home, port),
+        Err(err) => {
+            eprintln!("error: {err:#}");
+            ExitCode::FAILURE
+        }
+    })
+}
+
+pub fn serve(home: Home, port: u16) -> ExitCode {
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // `run` reports its own failure through tracing, so the caller must not print the cause again.
+    match runtime.block_on(run(home, port)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(_) => ExitCode::FAILURE,
+    }
+}
+
+async fn run(home: Home, port: u16) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -16,7 +59,7 @@ pub async fn run(home: Home, port: u16) -> Result<()> {
         .try_init()
         .ok();
 
-    serve(home, port).await.inspect_err(|err| {
+    bind_and_serve(home, port).await.inspect_err(|err| {
         // With the subscriber up, lifecycle failures go through tracing for consistent formatting
         // instead of the CLI's plain `error: ...` stderr line; fall back to stderr when ERROR is
         // filtered out (e.g. RUST_LOG=off) so a failed startup is never silent.
@@ -28,7 +71,7 @@ pub async fn run(home: Home, port: u16) -> Result<()> {
     })
 }
 
-async fn serve(home: Home, port: u16) -> Result<()> {
+async fn bind_and_serve(home: Home, port: u16) -> Result<()> {
     home.ensure_dir()?;
     let lock = home.open_lock()?;
     if lock.try_lock_exclusive().is_err() {

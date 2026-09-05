@@ -4,7 +4,6 @@ mod mergedriver;
 mod open;
 mod plan;
 mod project;
-mod serve;
 mod tag;
 
 use std::io::{Read as _, Write as _};
@@ -24,7 +23,6 @@ use op_store::Store;
 use op_task::tag::Color;
 use op_task::{Status, Timestamp, rank};
 
-use daemon::Control;
 use op_daemon::Home;
 use plan::Plan;
 
@@ -269,7 +267,7 @@ enum ServerCommand {
     Start {
         #[arg(long, default_value_t = op_daemon::default_port())]
         port: u16,
-        /// Run in the foreground instead of detaching (also used internally)
+        /// Run in this terminal instead of detaching
         #[arg(long)]
         foreground: bool,
     },
@@ -287,6 +285,9 @@ enum ServerCommand {
 }
 
 fn main() -> ExitCode {
+    if let Some(code) = op_daemon::serve_if_requested(std::env::args()) {
+        return code;
+    }
     let cli = Cli::parse();
     match run(cli) {
         Ok(code) => code,
@@ -410,28 +411,22 @@ fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> 
         ServerCommand::Start { port, foreground } => {
             reject_remote_override(daemon_url, "start")?;
             if foreground {
-                let runtime = tokio::runtime::Runtime::new()?;
-                // serve::run reports its own failure through tracing; map it to an exit code
-                // rather than let main re-print the cause as a plain `error: ...` line.
-                return Ok(match runtime.block_on(serve::run(Home::resolve()?, port)) {
-                    Ok(()) => ExitCode::SUCCESS,
-                    Err(_) => ExitCode::FAILURE,
-                });
+                return Ok(op_daemon::serve(Home::resolve()?, port));
             }
-            Control::resolve()?.start(port)?;
+            daemon::start(port)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Stop => {
-            Control::resolve()?.stop(daemon_url)?;
+            daemon::stop(daemon_url)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Restart { port } => {
             reject_remote_override(daemon_url, "restart")?;
-            Control::resolve()?.restart(port)?;
+            daemon::restart(port)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Ping => {
-            let running = Control::resolve()?.ping(daemon_url)?;
+            let running = daemon::ping(daemon_url)?;
             Ok(if running {
                 ExitCode::SUCCESS
             } else {

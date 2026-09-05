@@ -1,8 +1,8 @@
-pub mod cli;
-pub mod daemon;
-
+use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
+use anyhow::{Context, Result};
+use op_daemon::{Control, base_url, default_port};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager as _, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
@@ -19,10 +19,10 @@ struct Handover {
     daemon: Option<Url>,
 }
 
-pub fn run() {
+pub fn run() -> ExitCode {
     let handover = Arc::new(Mutex::new(Handover::default()));
     let shown = handover.clone();
-    tauri::Builder::default()
+    let started = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::default())
@@ -39,31 +39,48 @@ pub fn run() {
                 })
                 .build()?;
 
-            // A cold start probes the daemon and waits for `openplan server start`, which together
-            // run for seconds. The main thread has to keep drawing the splash meanwhile.
+            // A cold start spawns the daemon and waits for it to answer /health, which together run
+            // for seconds. The main thread has to keep drawing the splash meanwhile.
             let handle = app.handle().clone();
             let found = handover.clone();
             std::thread::spawn(move || {
-                let resources = handle.path().resource_dir().ok();
-                let url = daemon::url(resources.as_deref());
+                let url = daemon_url();
                 let main = handle.clone();
-                let _ = handle.run_on_main_thread(move || match reached(url) {
+                let _ = handle.run_on_main_thread(move || match url {
                     Ok(url) => {
                         let mut handover = lock(&found);
                         handover.daemon = Some(url);
                         hand_over(&window, &mut handover);
                     }
-                    Err(reason) => refuse(&main, &reason),
+                    Err(reason) => refuse(&main, &format!("{reason:#}")),
                 });
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("starting the openplan window");
+        .run(tauri::generate_context!());
+
+    match started {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("error: {err}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 // The daemon serves the same SPA the browser gets, so the window moves to its URL instead of
 // loading assets of its own. One build of `web/packages/app` then answers both.
+fn daemon_url() -> Result<Url> {
+    let control = Control::resolve().context("Cannot find the openplan home directory.")?;
+    let info = control
+        .ensure(default_port())
+        .context("Cannot start the openplan daemon.")?
+        .into_info();
+    base_url(info.port)
+        .parse()
+        .context("The daemon reported a port that makes no URL.")
+}
+
 fn hand_over(window: &WebviewWindow, handover: &mut Handover) {
     if !handover.splash_shown {
         return;
@@ -74,12 +91,6 @@ fn hand_over(window: &WebviewWindow, handover: &mut Handover) {
     if let Err(err) = window.navigate(url) {
         refuse(window.app_handle(), &err.to_string());
     }
-}
-
-fn reached(url: Result<String, daemon::Unreachable>) -> Result<Url, String> {
-    let url = url.map_err(|err| err.to_string())?;
-    url.parse()
-        .map_err(|err: <Url as std::str::FromStr>::Err| err.to_string())
 }
 
 fn lock(handover: &Mutex<Handover>) -> std::sync::MutexGuard<'_, Handover> {

@@ -15,14 +15,10 @@ path = "src/main.rs"
 tauri-build.workspace = true
 
 [dependencies]
-op-client.workspace = true
+anyhow.workspace = true
 op-daemon.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
-thiserror.workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true
 
 [lints]
 workspace = true

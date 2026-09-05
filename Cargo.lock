@@ -3622,10 +3622,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "fs2",
+ "nix",
  "op-api",
  "op-client",
+ "op-server",
  "serde_json",
  "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3762,13 +3767,11 @@ dependencies = [
 name = "openplan-gui"
 version = "0.1.0"
 dependencies = [
- "op-client",
+ "anyhow",
  "op-daemon",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
- "tempfile",
- "thiserror 2.0.18",
 ]
 
 [[package]]

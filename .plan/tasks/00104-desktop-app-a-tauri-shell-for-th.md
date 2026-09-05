@@ -23,21 +23,19 @@ person sees must be the UI of the daemon that answers it.
 ## Starting the daemon
 
 `crates/op-daemon` is a new crate. It holds `Home`, which resolves `$OPENPLAN_HOME` or `~/.plan` and
-reads `daemon.json`, and it holds `default_port` and `base_url`. `crates/op-cli/src/daemon.rs` keeps
-the lifecycle commands and imports the rest from there.
+reads `daemon.json`. It holds `Control`, which starts, stops, and probes the daemon. It holds the
+serving loop itself. `crates/op-cli/src/daemon.rs` keeps only what it prints.
 
-The recorded port is a claim, so the shell confirms it with `GET /health` before the window loads.
-When nothing answers, the shell runs `openplan server start` and polls `/health` under a 5 second
-deadline.
+The recorded port is a claim, so `Control` confirms it with `GET /health` before the window loads.
+When nothing answers, `Control` starts a daemon and polls `/health` under a 5 second deadline.
 
-The shell must not spawn the daemon from its own executable. The daemon respawns itself from the
-executable that started it, and a GUI binary serves no HTTP. The shell resolves the CLI in this
-order: `$OPENPLAN_BIN`, the app bundle's `Resources/bin/openplan`, `PATH`, then `~/.cargo/bin`. A
-macOS app started from the dock inherits a small `PATH`, so `PATH` alone finds nothing for a
-developer install.
+The shell must not search for an `openplan` binary. `Control` starts the daemon by a re-exec of the
+running executable with `--serve-daemon <port>`, and both binaries answer that argument before their
+own parsing. The shell therefore starts a daemon out of itself, and the app bundle needs no second
+binary. The argument is a flag, not an environment variable: the daemon runs
+`openplan mergedriver`, which an inherited variable would turn into a second daemon.
 
-When no step finds a binary, or the daemon does not answer, the window shows which variable fixes it
-instead of a white page.
+When the daemon does not answer, the window shows the reason instead of a white page.
 
 Closing the window must not stop the daemon. The CLI and the merge driver share it.
 
@@ -51,5 +49,5 @@ Closing the window must not stop the daemon. The CLI and the merge driver share 
 - Starting the app with no daemon running starts one and shows the board.
 - With `OPENPLAN_PORT=7500` already serving, the app finds that port and starts no second daemon.
 - Closing the window leaves `openplan server ping` reporting a running daemon.
-- With no `openplan` binary anywhere, the window names `$OPENPLAN_BIN`.
+- With no `openplan` on `PATH`, the app still starts a daemon and shows the board.
 - `cargo build`, `cargo test`, `cargo fmt --check`, and `cargo clippy -- -D warnings` pass.
