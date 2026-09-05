@@ -6,19 +6,19 @@ Design and work items in [.plan/tasks/](.plan/tasks/).
 ## Install
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/sukovanej/open-plan/releases/latest/download/openplan-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/sukovanej/openplan/releases/latest/download/openplan-installer.sh | sh
 ```
 
 The installer puts `openplan` in `~/.local/bin` and adds that directory to your shell profile.
 `OPENPLAN_INSTALL_DIR` picks another directory, and `OPENPLAN_NO_MODIFY_PATH=1` keeps the
 profile untouched. Releases carry binaries for macOS (Apple silicon and Intel) and Linux
 (x86_64 and arm64). Windows is not supported yet. Every archive and its checksum is on the
-[releases page](https://github.com/sukovanej/open-plan/releases).
+[releases page](https://github.com/sukovanej/openplan/releases).
 
 In GitHub Actions:
 
 ```yaml
-- uses: sukovanej/open-plan/.github/actions/setup@v0.0.1
+- uses: sukovanej/openplan/.github/actions/setup@v0.0.1
   with:
     version: 0.0.1   # omit for the latest release
 - run: openplan lint

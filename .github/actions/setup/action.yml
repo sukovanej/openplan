@@ -17,7 +17,7 @@ runs:
         OPENPLAN_NO_MODIFY_PATH: "1"
       run: |
         set -euo pipefail
-        repo=https://github.com/sukovanej/open-plan/releases
+        repo=https://github.com/sukovanej/openplan/releases
         if [ "$VERSION" = latest ]; then
           url="$repo/latest/download/openplan-installer.sh"
         else
