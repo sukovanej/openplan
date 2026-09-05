@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-09-04T16:27:43Z
 ---
 # Desktop app: a Tauri shell for the web UI
@@ -41,8 +41,9 @@ Closing the window must not stop the daemon. The CLI and the merge driver share 
 
 ## Build
 
-`mise run gui` builds the SPA, then builds and starts the shell. The Tauri config declares no
-`frontendDist`, because the daemon serves every asset.
+`mise run gui` builds and starts the shell. It does not build the SPA: that restarts the daemon the
+CLI and the merge driver share, and opening a window is no reason to take it down. `frontendDist`
+points at the splash page only, because the daemon serves every other asset.
 
 ## Acceptance
 
