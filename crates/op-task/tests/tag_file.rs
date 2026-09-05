@@ -159,3 +159,21 @@ fn an_empty_description_leaves_the_display_name_alone() {
     assert_eq!(tag.body, "# Backend\n");
     assert_eq!(tag.description(), "");
 }
+
+#[test]
+fn the_default_tags_carry_a_normalized_name_a_color_and_a_description() {
+    let names: Vec<_> = op_task::tag::defaults()
+        .into_iter()
+        .map(|tag| {
+            assert!(tag.frontmatter.color.is_some(), "{} has no color", tag.name);
+            assert!(
+                !tag.description().is_empty(),
+                "{} has no description",
+                tag.name
+            );
+            assert!(tag.display_name().is_some(), "{} has no heading", tag.name);
+            tag.name
+        })
+        .collect();
+    assert_eq!(names, vec!["bug", "feature", "draft"]);
+}

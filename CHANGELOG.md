@@ -7,6 +7,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.1...main)
 
+### Added
+
+- Default tags. A store with no tag registry gets `bug`, `feature`, and `draft`
+  when it takes its first task, so a new project can tag that task without
+  registering a name first. A registry that already exists stays as it is.
+
 ### Changed
 
 - Search order. Tasks with the most recent changes come first.

@@ -4,6 +4,11 @@ created: 2026-07-26T15:40:55Z
 parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:
 - ./00044-refresh-engine-rebase-rolling-up.md
+tags:
+- cli
+- daemon
+- feature
+- git
 ---
 # Publish: fast-forward main to the rolling-updates tip (API + CLI)
 

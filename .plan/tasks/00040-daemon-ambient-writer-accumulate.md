@@ -4,6 +4,10 @@ created: 2026-07-26T15:40:55Z
 parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:
 - ./00043-ref-plumbing-in-op-git-for-the-r.md
+tags:
+- daemon
+- feature
+- git
 ---
 # Daemon ambient writer: accumulate + serialize into rolling-updates
 

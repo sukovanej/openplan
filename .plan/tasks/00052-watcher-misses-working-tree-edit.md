@@ -1,6 +1,9 @@
 ---
 status: backlog
 created: 2026-07-29T15:26:59Z
+tags:
+- bug
+- daemon
 ---
 # Watcher misses working-tree edits, leaving the UI stale
 
