@@ -3556,7 +3556,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "op-api"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "op-task",
  "serde",
@@ -3568,7 +3568,7 @@ dependencies = [
 
 [[package]]
 name = "op-claude"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3576,34 +3576,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "op-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "fs2",
- "nix",
- "op-api",
- "op-client",
- "op-daemon",
- "op-git",
- "op-lint",
- "op-md",
- "op-server",
- "op-skills",
- "op-store",
- "op-task",
- "op-watch",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "op-client"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "op-api",
  "op-git",
@@ -3618,7 +3592,7 @@ dependencies = [
 
 [[package]]
 name = "op-daemon"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "fs2",
@@ -3635,7 +3609,7 @@ dependencies = [
 
 [[package]]
 name = "op-git"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "gix",
  "jiff",
@@ -3646,7 +3620,7 @@ dependencies = [
 
 [[package]]
 name = "op-index"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "op-api",
  "op-git",
@@ -3658,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "op-lint"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "op-git",
  "op-md",
@@ -3672,14 +3646,14 @@ dependencies = [
 
 [[package]]
 name = "op-md"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "pulldown-cmark",
 ]
 
 [[package]]
 name = "op-presence"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "fs2",
  "op-api",
@@ -3688,7 +3662,7 @@ dependencies = [
 
 [[package]]
 name = "op-server"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "axum",
  "http-body-util",
@@ -3717,7 +3691,7 @@ dependencies = [
 
 [[package]]
 name = "op-skills"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "tempfile",
@@ -3725,7 +3699,7 @@ dependencies = [
 
 [[package]]
 name = "op-store"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "fs2",
  "getrandom 0.3.4",
@@ -3739,7 +3713,7 @@ dependencies = [
 
 [[package]]
 name = "op-task"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "jiff",
  "op-md",
@@ -3751,7 +3725,7 @@ dependencies = [
 
 [[package]]
 name = "op-watch"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "notify",
  "op-git",
@@ -3764,8 +3738,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "openplan"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fs2",
+ "nix",
+ "op-api",
+ "op-client",
+ "op-daemon",
+ "op-git",
+ "op-lint",
+ "op-md",
+ "op-server",
+ "op-skills",
+ "op-store",
+ "op-task",
+ "op-watch",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "openplan-gui"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "op-daemon",

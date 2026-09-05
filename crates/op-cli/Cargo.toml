@@ -1,15 +1,12 @@
 [package]
-name = "op-cli"
+name = "openplan"
 description = "The openplan binary: CLI surface, realtime daemon, and merge driver"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-
-[[bin]]
-name = "openplan"
-path = "src/main.rs"
+publish.workspace = true
 
 [dependencies]
 op-store.workspace = true
@@ -38,3 +35,6 @@ serde_json.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata.dist]
+dist = true

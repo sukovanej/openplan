@@ -1,0 +1,18 @@
+- name: Install pnpm
+  uses: pnpm/action-setup@v6
+  with:
+    package_json_file: web/package.json
+- name: Install Node
+  uses: actions/setup-node@v7
+  with:
+    node-version: 24
+    cache: pnpm
+    cache-dependency-path: web/pnpm-lock.yaml
+# `op-server` embeds `web/packages/app/dist` at compile time. Without this build the binary
+# links, but it serves no web UI. The release must stop instead.
+- name: Build the web SPA
+  run: |
+    cd web
+    pnpm install --frozen-lockfile
+    pnpm -r build
+    test -s packages/app/dist/index.html
