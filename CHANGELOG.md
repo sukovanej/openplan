@@ -12,6 +12,13 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The `task-management` skill. The agent creates a task only when the user asks
   for one, in those words. A request to do work made a task before this change.
 
+### Fixed
+
+- The desktop app carried no bundle signature, only the ad-hoc signature the
+  linker puts on every arm64 binary. macOS called a downloaded copy "damaged"
+  and offered only the Trash. Tauri now signs the app before it makes the dmg,
+  so macOS gives the usual unidentified-developer dialog instead.
+
 ## [0.0.1](https://github.com/sukovanej/openplan/releases/tag/v0.0.1) - 2026-08-27
 
 The first release.
@@ -38,6 +45,6 @@ The first release.
 
 ### Known problems
 
-- The desktop app is not signed. macOS shows a Gatekeeper warning until the app
-  carries a Developer ID certificate. Open it from the Finder context menu the
-  first time.
+- The desktop app has no valid signature, and macOS calls it damaged. Run
+  `xattr -cr /Applications/OpenPlan.app` after you copy it in. The next release
+  fixes this.

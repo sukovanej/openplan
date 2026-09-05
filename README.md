@@ -15,6 +15,10 @@ profile untouched. Releases carry binaries for macOS (Apple silicon and Intel) a
 (x86_64 and arm64). Windows is not supported yet. Every archive and its checksum is on the
 [releases page](https://github.com/sukovanej/openplan/releases).
 
+The desktop app is a separate download on the same release: `OpenPlan_<version>_<arch>.dmg` for
+macOS, `.deb` or `.AppImage` for Linux. It carries the daemon, so it needs no `openplan` on `PATH`.
+It is signed ad-hoc, not with a Developer ID, so macOS asks you to confirm the first open.
+
 In GitHub Actions:
 
 ```yaml
