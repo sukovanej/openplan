@@ -1,6 +1,11 @@
 ---
 status: backlog
 created: 2026-07-14T10:31:28Z
+tags:
+- cli
+- daemon
+- feature
+- ui
 ---
 # Section-level markdown editing of task bodies (engine → CLI → API → web editor)
 

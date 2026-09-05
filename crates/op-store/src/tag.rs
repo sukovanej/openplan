@@ -39,6 +39,22 @@ impl Store {
         self.read_tag_file(&path, name)
     }
 
+    // The registry is born with the store. A `.plan/tags` that already exists is left alone, so a
+    // default the project deleted stays deleted, and a concurrent create that lost the race to a
+    // name is not an error here.
+    pub fn seed_default_tags(&self) -> Result<(), StoreError> {
+        if self.tags_dir().exists() {
+            return Ok(());
+        }
+        for tag in op_task::tag::defaults() {
+            match self.publish_tag(&tag) {
+                Ok(()) | Err(StoreError::TagExists { .. }) => {}
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(())
+    }
+
     pub fn create_tag(&self, tag: &Tag) -> Result<(), StoreError> {
         let mut tag = tag.clone();
         tag.name = normalized(&tag.name)?;

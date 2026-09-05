@@ -1,6 +1,10 @@
 ---
 status: backlog
 created: 2026-07-29T10:33:40Z
+tags:
+- bug
+- daemon
+- git
 ---
 # Date a local read by the branch whose bytes it printed
 

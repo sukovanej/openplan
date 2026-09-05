@@ -50,7 +50,26 @@ openplan create "Add the store schema" --parent OPP-42            # prints OPP-4
 openplan create "Read the schema in the API" --parent OPP-42 --dependency OPP-43
 ```
 
+Tag the task at creation. Read the `Tag` section below.
+
 Do not commit a new task. Leave the file uncommitted until the user approves it.
+
+## Tag
+
+A tag is a registered name. A task can carry a name only after `openplan tag`
+registers it. Every store registers `bug`, `feature`, and `draft`, and a project
+adds its own names for the areas it splits into.
+
+```sh
+openplan tag list                       # name, color, and meaning
+openplan create "Fix the parser" --tag bug --tag daemon
+openplan set <key> tags "bug, daemon"   # replaces the set; "" clears it
+```
+
+Give each task you create one kind (`bug`, `feature`, or `draft`) and each area
+name that the work touches. Read `openplan tag list` first and take the names
+from what it prints. Never invent a name, and never register one the user did
+not ask for. When no name fits, leave the task untagged and say so.
 
 ## Update
 
@@ -58,6 +77,7 @@ Do not commit a new task. Leave the file uncommitted until the user approves it.
 openplan set <key> status in_progress
 openplan set <key> parent <parent-key>
 openplan set <key> dependencies "<key1>, <key2>"   # empty string clears them
+openplan set <key> tags "bug, daemon"              # empty string clears them
 ```
 
 ## Work on a task

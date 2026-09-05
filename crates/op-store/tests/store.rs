@@ -1312,3 +1312,31 @@ fn replace_raw_tag_reaches_a_file_the_registry_does_not() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), repaired);
     assert!(store.list_tags().unwrap().is_empty());
 }
+
+#[test]
+fn the_first_task_gives_a_store_the_default_tags() {
+    let (_dir, store) = make_store();
+    assert_eq!(store.list_tags().unwrap(), Vec::new());
+
+    tagged(&store, "Wire the parser", &[]).unwrap();
+
+    let registered: Vec<_> = store
+        .list_tags()
+        .unwrap()
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
+    assert_eq!(registered, vec!["bug", "draft", "feature"]);
+    tagged(&store, "Fix the parser", &["bug"]).unwrap();
+}
+
+#[test]
+fn a_registry_that_already_exists_takes_no_defaults() {
+    let (_dir, store) = make_store();
+    register(&store, "backend");
+    store.delete_tag("backend", false).unwrap();
+
+    tagged(&store, "Wire the parser", &[]).unwrap();
+
+    assert_eq!(store.list_tags().unwrap(), Vec::new());
+}

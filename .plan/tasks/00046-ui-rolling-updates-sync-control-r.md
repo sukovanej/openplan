@@ -5,6 +5,9 @@ parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:
 - ./00040-daemon-ambient-writer-accumulate.md
 - ./00042-publish-fast-forward-main-to-the.md
+tags:
+- feature
+- ui
 ---
 # UI: rolling-updates sync control + review popover
 

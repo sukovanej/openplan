@@ -90,6 +90,38 @@ impl std::str::FromStr for Color {
     }
 }
 
+// Every store starts with the three kinds a task is usually filed under, so a new project can tag
+// its first task without registering anything.
+pub const DEFAULTS: [(&str, Color, &str); 3] = [
+    (
+        "Bug",
+        Color::Red,
+        "The software does the wrong thing. The work makes it do the right thing.",
+    ),
+    (
+        "Feature",
+        Color::Green,
+        "New behaviour that a user can see.",
+    ),
+    (
+        "Draft",
+        Color::Slate,
+        "The plan is not complete. Do not start the work.",
+    ),
+];
+
+pub fn defaults() -> Vec<Tag> {
+    DEFAULTS
+        .into_iter()
+        .map(|(display_name, color, description)| {
+            let mut tag =
+                Tag::new(display_name, Some(color)).expect("a default tag name normalizes");
+            tag.set_description(description);
+            tag
+        })
+        .collect()
+}
+
 pub const NAME_RULE: &str = "a tag name is lowercase letters, digits, and hyphens, and starts with a letter or a digit; spaces and underscores become hyphens";
 
 #[derive(Debug, thiserror::Error)]

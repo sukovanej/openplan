@@ -1,6 +1,10 @@
 ---
 status: todo
 created: 2026-08-27T11:13:32Z
+tags:
+- daemon
+- feature
+- ui
 ---
 # Compute and show the implementation flow
 

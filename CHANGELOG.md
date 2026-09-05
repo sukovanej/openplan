@@ -7,11 +7,19 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.1...main)
 
+### Added
+
+- Default tags. A store with no tag registry gets `bug`, `feature`, and `draft`
+  when it takes its first task, so a new project can tag that task without
+  registering a name first. A registry that already exists stays as it is.
+
 ### Changed
 
 - Search order. Tasks with the most recent changes come first.
 - The `task-management` skill. The agent creates a task only when the user asks
   for one, in those words. A request to do work made a task before this change.
+- The `task-management` skill. The agent tags each task it creates. It takes the
+  names from `openplan tag list` and registers none of its own.
 
 ### Fixed
 

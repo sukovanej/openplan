@@ -5,6 +5,9 @@ parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:
 - ./00041-implement-the-section-aware-merg.md
 - ./00023-design-a-continuous-changes-accu.md
+tags:
+- feature
+- git
 ---
 # Ref plumbing in op-git for the rolling-updates ref
 

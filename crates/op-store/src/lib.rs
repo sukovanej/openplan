@@ -246,6 +246,9 @@ impl Store {
     // that can see every local branch; the store itself has no repo-wide view to allocate from.
     pub fn create(&self, task: &Task, number: u64) -> Result<u64, StoreError> {
         let title = single_title(&task.body)?;
+        // Before the validation, because the tags the new task carries are validated against a
+        // registry this call is what creates.
+        self.seed_default_tags()?;
         self.validate(None, None, &task.frontmatter)?;
         std::fs::create_dir_all(self.tasks_dir())?;
         // A file already carrying the number owns it whatever its slug says, so the check cannot be

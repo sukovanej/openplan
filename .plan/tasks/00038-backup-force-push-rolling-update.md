@@ -4,6 +4,9 @@ created: 2026-07-26T15:40:55Z
 parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:
 - ./00040-daemon-ambient-writer-accumulate.md
+tags:
+- feature
+- git
 ---
 # Backup: force-push rolling-updates to a mirror remote (durability)
 
