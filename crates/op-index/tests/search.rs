@@ -42,6 +42,18 @@ fn commit(root: &Path, message: &str) {
     git(root, &["commit", "-qm", message]);
 }
 
+fn commit_at(root: &Path, message: &str, at: &str) {
+    git(root, &["add", "-A"]);
+    let status = Command::new("git")
+        .current_dir(root)
+        .args(["commit", "-qm", message])
+        .env("GIT_AUTHOR_DATE", at)
+        .env("GIT_COMMITTER_DATE", at)
+        .status()
+        .expect("git must be installed for this test");
+    assert!(status.success(), "git commit failed");
+}
+
 fn built(root: &Path) -> Index {
     let repo = Repo::discover(root).unwrap();
     let store = Store::discover(root).unwrap();
@@ -160,7 +172,7 @@ fn a_query_that_matches_nothing_returns_nothing() {
 }
 
 #[test]
-fn hits_are_ordered_by_id_as_numbers() {
+fn hits_changed_at_the_same_time_are_ordered_by_id_as_numbers() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     init(root);
@@ -176,7 +188,7 @@ fn hits_are_ordered_by_id_as_numbers() {
     assert_eq!(
         ids(&built(root), "shared"),
         vec![key(1), key(2), key(10)],
-        "10 sorts after 2, not between 1 and 2"
+        "one commit dates all three, so the id breaks the tie: 10 sorts after 2, not between 1 and 2"
     );
 }
 
@@ -310,4 +322,67 @@ fn a_deleted_task_still_on_main_is_found_once() {
     let hits = built(root).search("test", "doomed");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].branch, "main", "the branch that still carries it");
+}
+
+#[test]
+fn the_task_changed_last_leads_the_hits_that_matched_the_same_way() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    for number in [1, 2, 3] {
+        task(
+            root,
+            number,
+            "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Shared word\n",
+        );
+    }
+    commit_at(root, "three tasks", "2026-01-01T00:00:00Z");
+    task(
+        root,
+        2,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Shared word again\n",
+    );
+    commit_at(root, "task 2 moves on", "2026-02-01T00:00:00Z");
+    task(
+        root,
+        3,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Shared word once more\n",
+    );
+    commit_at(root, "task 3 moves on", "2026-03-01T00:00:00Z");
+
+    assert_eq!(
+        ids(&built(root), "shared"),
+        vec![key(3), key(2), key(1)],
+        "the newest change leads, and the id no longer decides"
+    );
+}
+
+#[test]
+fn a_key_hit_leads_a_title_hit_the_change_time_cannot_overturn() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init(root);
+    task(
+        root,
+        1,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A parent\n",
+    );
+    task(
+        root,
+        2,
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# OPP-1 in the title\n",
+    );
+    commit_at(root, "two tasks", "2026-01-01T00:00:00Z");
+    task(
+        root,
+        2,
+        "---\nstatus: in_progress\ncreated: 2026-01-01T00:00:00Z\n---\n# OPP-1 in the title\n",
+    );
+    commit_at(root, "task 2 moves on", "2026-03-01T00:00:00Z");
+
+    assert_eq!(
+        ids(&built(root), "OPP-1"),
+        vec![key(1), key(2)],
+        "the task the key names leads, however long ago it changed"
+    );
 }
