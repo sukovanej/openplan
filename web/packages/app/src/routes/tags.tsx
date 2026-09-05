@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query"
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import type { Color, TagView } from "@open-planner/api-client"
 import { boardPath, ColorDot, ColorPicker, TagChip } from "@open-planner/task-ui"
 import {
   Button,
+  cn,
   EmptyState,
   Panel,
   PanelBody,
@@ -16,6 +17,7 @@ import {
   SkeletonList,
   TextInput,
   Tooltip,
+  useDismissOnOutsideClick,
 } from "@open-planner/ui"
 
 import { createTag, deleteTag, listTags, patchTag, TaskRejected } from "../lib/api"
@@ -39,6 +41,7 @@ export function TagsRoute() {
     queryKey: tagsKey(project),
     queryFn: () => runtime.runPromise(listTags(project)),
   })
+  const registration = useProjectMutation(project)
   useRowCursor(NO_ROWS)
 
   // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
@@ -67,7 +70,7 @@ export function TagsRoute() {
           <SkeletonList count={3} className="h-10 w-full" />
         ) : (
           <>
-            <NewTag project={project} />
+            <TagForm project={project} mutation={registration} className="mb-6" />
             {tags.data.length === 0 ? (
               <p className="text-muted-foreground text-sm">No tags yet. Register one above.</p>
             ) : (
@@ -83,57 +86,6 @@ export function TagsRoute() {
         )}
       </PanelBody>
     </Panel>
-  )
-}
-
-// The colour is left out: the registry derives one from the name, and the row recolours in a click.
-function NewTag({ project }: { project: string }) {
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
-  const mutation = useProjectMutation(project)
-  const trimmed = name.trim()
-
-  const submit = () => {
-    if (trimmed === "" || mutation.isPending) return
-    const described = description.trim()
-    mutation.mutate(createTag(project, { name: trimmed, description: described === "" ? undefined : described }), {
-      onSuccess: () => {
-        setName("")
-        setDescription("")
-      },
-    })
-  }
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        submit()
-      }}
-      className="mb-6 flex flex-wrap items-center gap-2"
-    >
-      <TextInput
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        placeholder="Tag name"
-        className="w-48"
-      />
-      <TextInput
-        value={description}
-        onChange={(event) => setDescription(event.target.value)}
-        placeholder="What it marks (optional)"
-        className="min-w-0 flex-1"
-      />
-      <Button
-        type="submit"
-        variant="accent"
-        disabled={trimmed === "" || mutation.isPending}
-        className="disabled:opacity-40"
-      >
-        <Plus className="size-3.5" />
-        Register tag
-      </Button>
-    </form>
   )
 }
 
@@ -160,7 +112,13 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
         }}
       />
       {editing === "naming" ? (
-        <TagForm project={project} tag={tag} mutation={mutation} onClose={() => setEditing("no")} />
+        <TagForm
+          project={project}
+          tag={tag}
+          mutation={mutation}
+          onClose={() => setEditing("no")}
+          className="min-w-0 flex-1"
+        />
       ) : (
         <>
           <TagChip name={tag.name} tag={tag} />
@@ -218,15 +176,7 @@ function Palette({
   onClose: () => void
 }) {
   const root = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (event: MouseEvent) => {
-      if (root.current !== null && !root.current.contains(event.target as Node)) onClose()
-    }
-    document.addEventListener("mousedown", onDown)
-    return () => document.removeEventListener("mousedown", onDown)
-  }, [open, onClose])
+  useDismissOnOutsideClick(root, open ? onClose : undefined)
 
   return (
     <div
@@ -305,25 +255,38 @@ function DeleteConfirm({
 }
 
 // A rename rewrites the `tags:` of every task on this branch that names the tag, so it is sent only
-// when the name really changed.
+// when the name really changed. Registration leaves the colour out: the registry derives one from
+// the name, and the row recolours in a click.
 function TagForm({
   project,
   tag,
   mutation,
   onClose,
+  className,
 }: {
   project: string
-  tag: TagView
+  tag?: TagView
   mutation: ProjectMutation
-  onClose: () => void
+  onClose?: () => void
+  className?: string
 }) {
-  const [display, setDisplay] = useState(tag.display)
-  const [description, setDescription] = useState(tag.description ?? "")
+  const editing = tag !== undefined
+  const [name, setName] = useState(tag?.display ?? "")
+  const [description, setDescription] = useState(tag?.description ?? "")
+  const named = name.trim()
 
-  const save = () => {
-    const named = display.trim()
+  const submit = () => {
     if (named === "" || mutation.isPending) return
     const described = description.trim()
+    if (tag === undefined) {
+      mutation.mutate(createTag(project, { name: named, description: described === "" ? undefined : described }), {
+        onSuccess: () => {
+          setName("")
+          setDescription("")
+        },
+      })
+      return
+    }
     mutation.mutate(
       patchTag(project, tag.name, {
         name: named === tag.display ? undefined : named,
@@ -337,17 +300,17 @@ function TagForm({
     <form
       onSubmit={(event) => {
         event.preventDefault()
-        save()
+        submit()
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") onClose()
+        if (event.key === "Escape") onClose?.()
       }}
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+      className={cn("flex flex-wrap items-center gap-2", className)}
     >
       <TextInput
-        autoFocus
-        value={display}
-        onChange={(event) => setDisplay(event.target.value)}
+        autoFocus={editing}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
         placeholder="Tag name"
         className="w-48"
       />
@@ -360,16 +323,18 @@ function TagForm({
       <Button
         type="submit"
         variant="accent"
-        disabled={display.trim() === "" || mutation.isPending}
+        disabled={named === "" || mutation.isPending}
         className="disabled:opacity-40"
       >
-        <Check className="size-3.5" />
-        Save
+        {editing ? <Check className="size-3.5" /> : <Plus className="size-3.5" />}
+        {editing ? "Save" : "Register tag"}
       </Button>
-      <Button onClick={onClose}>
-        <X className="size-3.5" />
-        Cancel
-      </Button>
+      {onClose !== undefined && (
+        <Button onClick={onClose}>
+          <X className="size-3.5" />
+          Cancel
+        </Button>
+      )}
     </form>
   )
 }

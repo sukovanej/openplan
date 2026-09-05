@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-08-26T07:12:36Z
 parent: ./00012-tags-registered-labels-name-colo.md
 ---
@@ -25,6 +25,12 @@ every copy.
 ## Acceptance criteria
 
 - [ ] One get-or-insert helper serves every keyed query in `store.ts`.
-- [ ] One form component serves both tag create and tag edit.
-- [ ] One hook serves both dismiss-on-outside-click sites.
-- [ ] `pnpm lint`, `typecheck`, `test`, and `build` pass.
+- [x] One form component serves both tag create and tag edit.
+- [x] One hook serves both dismiss-on-outside-click sites.
+- [x] `pnpm lint`, `typecheck`, `test`, and `build` pass.
+
+## Comments
+
+### 2026-09-05T10:04:54Z by Milan Suk via claude-code
+
+> The first criterion is moot: OPP-89 replaced the custom store with TanStack Query, so `store.ts` and its `keyed`, `taskQuery`, and `tagsQuery` maps no longer exist. Nothing remains to unify.
