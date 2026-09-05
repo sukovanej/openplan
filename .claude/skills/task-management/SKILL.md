@@ -1,6 +1,6 @@
 ---
 name: task-management
-description: Work items in this repo are called "tasks" (.plan/tasks/*.md, managed by the `openplan` CLI), NOT the TODO list or subagent tools. Invoke this skill before any task work, and whenever a task is mentioned. Triggers on: create/add/new task, list/show/get task(s), set status/parent/dependencies, add/clear dependency, block, reparent, delete/cancel task, "the plan".
+description: Work items in this repo are called "tasks" (.plan/tasks/*.md, managed by the `openplan` CLI), NOT the TODO list or subagent tools. Invoke this skill when the user names a task key (OPP-42), says "the plan", or asks in these words to create a task, list/show/get tasks, work on a task, set a status/parent/dependency, block, reparent, cancel, or delete a task. A request to do work is not a request to track it: do the work, and create no task.
 ---
 
 # Task management
@@ -27,6 +27,9 @@ openplan get  <key> --json          # {id,title,status,parent,dependencies,body}
 ```
 
 ## Create
+
+Create a task only when the user asks for one, in those words. A request to do
+work is a request to do the work. Finish it, and leave `.plan/tasks/` untouched.
 
 A new task starts in `backlog`. Pass `--status` only when the user asks for one.
 
@@ -59,8 +62,8 @@ openplan set <key> dependencies "<key1>, <key2>"   # empty string clears them
 
 ## Work on a task
 
-Do these three steps before you read the code, search the repository, plan, or
-start a subagent:
+The user names the task. Do these three steps before you read the code, search
+the repository, plan, or start a subagent:
 
 1. `openplan get <key>` reads the task.
 2. Create the task's worktree and move into it.
