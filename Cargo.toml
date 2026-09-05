@@ -89,6 +89,10 @@ github-build-setup = "../build-setup.yml"
 install-path = "~/.local/bin"
 # Whether to install an updater program
 install-updater = false
+# `dist build` runs `cargo build --workspace` unless this is set, so it compiles `openplan-gui`
+# even though `dist = false` keeps it out of the plan. The Linux runners carry no GTK, and
+# `gdk-sys` fails there. With this, dist builds `--package=openplan` and nothing else.
+precise-builds = true
 
 # The profile that 'dist' will build with
 [profile.dist]
