@@ -5,6 +5,13 @@ All notable changes to openplan are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.1...main)
+
+### Changed
+
+- The `task-management` skill. The agent creates a task only when the user asks
+  for one, in those words. A request to do work made a task before this change.
+
 ## [0.0.1](https://github.com/sukovanej/openplan/releases/tag/v0.0.1) - 2026-08-27
 
 The first release.
