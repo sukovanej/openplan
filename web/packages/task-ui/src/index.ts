@@ -29,7 +29,7 @@ export {
   statusText,
 } from "./status"
 export { TagChip } from "./tag-chip"
-export { ColorDot, ColorPicker, TAG_COLORS } from "./tag-palette"
+export { ColorDot, ColorPicker } from "./tag-palette"
 export { TaskBody } from "./task-body"
 export {
   BOARD_ROUTE,

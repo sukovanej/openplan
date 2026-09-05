@@ -12,10 +12,6 @@ impl Store {
         self.plan_dir().join("tags")
     }
 
-    pub fn tag_exists(&self, name: &str) -> bool {
-        matches!(normalize_name(name), Ok(name) if self.tag_names().is_ok_and(|names| names.contains(&name)))
-    }
-
     pub fn list_tags(&self) -> Result<Vec<Tag>, StoreError> {
         self.tag_names()?
             .into_iter()
@@ -47,17 +43,6 @@ impl Store {
         let mut tag = tag.clone();
         tag.name = normalized(&tag.name)?;
         self.publish_tag(&tag)
-    }
-
-    pub fn write_tag(&self, tag: &Tag) -> Result<(), StoreError> {
-        let name = normalized(&tag.name)?;
-        let path = self.tag_path(&name)?;
-        let contents = self.tag_file_string(tag)?;
-        with_file_lock(
-            &path,
-            || StoreError::TagNotFound { name: name.clone() },
-            || atomic_replace(&path, contents.as_bytes()),
-        )
     }
 
     // A verbatim overwrite of a tag's file, the tag-side twin of `replace_raw`: `lint --fix`

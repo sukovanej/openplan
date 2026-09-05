@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-07-14T11:16:24Z
 ---
 # Tags: registered labels (name · color · description) assignable to tasks

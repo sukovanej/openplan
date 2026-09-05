@@ -788,6 +788,10 @@ fn tag_temp_files(store: &Store) -> Vec<String> {
         .collect()
 }
 
+fn registers(store: &Store, name: &str) -> bool {
+    store.read_tag(name).is_ok()
+}
+
 fn register(store: &Store, display_name: &str) -> String {
     let tag = Tag::new(display_name, None).unwrap();
     store.create_tag(&tag).unwrap();
@@ -816,7 +820,7 @@ fn tag_create_read_update_delete_roundtrip() {
     assert_eq!(created.name, "backend");
     assert_eq!(created.color(), Color::Teal);
     assert_eq!(created.display_name().as_deref(), Some("Backend"));
-    assert!(store.tag_exists("backend"));
+    assert!(registers(&store, "backend"));
 
     let raw = std::fs::read_to_string(store.tags_dir().join("backend.md")).unwrap();
     assert_eq!(
@@ -828,7 +832,7 @@ fn tag_create_read_update_delete_roundtrip() {
     let updated = store
         .update_tag("backend", |tag| {
             tag.set_color(Color::Pink);
-            tag.append_body("Server-side work.");
+            tag.set_description("Server-side work.");
             Ok(())
         })
         .unwrap();
@@ -842,18 +846,13 @@ fn tag_create_read_update_delete_roundtrip() {
             .contains("Server-side work.")
     );
 
-    let mut recolored = store.read_tag("backend").unwrap();
-    recolored.set_color(Color::Amber);
-    store.write_tag(&recolored).unwrap();
-    assert_eq!(store.read_tag("backend").unwrap().color(), Color::Amber);
-
     assert_eq!(
         store.list_tags().unwrap(),
         vec![store.read_tag("backend").unwrap()]
     );
 
     store.delete_tag("backend", false).unwrap();
-    assert!(!store.tag_exists("backend"));
+    assert!(!registers(&store, "backend"));
     assert!(matches!(
         store.read_tag("backend"),
         Err(StoreError::TagNotFound { .. })
@@ -896,7 +895,7 @@ fn tag_names_are_normalized_at_the_store_boundary() {
         .unwrap();
 
     assert!(store.tags_dir().join("front-end.md").is_file());
-    assert!(store.tag_exists("Front End"));
+    assert!(registers(&store, "Front End"));
     assert_eq!(store.read_tag("FRONT_END").unwrap().name, "front-end");
 
     let refused = store.read_tag("C++");
@@ -980,7 +979,7 @@ fn renaming_a_tag_rewrites_the_tasks_that_reference_it() {
     let rewritten = store.rename_tag("backend", "Infra Team").unwrap();
 
     assert_eq!(rewritten, vec![both]);
-    assert!(!store.tag_exists("backend"));
+    assert!(!registers(&store, "backend"));
     let renamed = store.read_tag("infra-team").unwrap();
     assert_eq!(renamed.display_name().as_deref(), Some("Infra Team"));
     assert_eq!(tags_of(&store, both), vec!["infra-team", "wip"]);
@@ -991,7 +990,7 @@ fn renaming_a_tag_rewrites_the_tasks_that_reference_it() {
 fn renaming_a_tag_keeps_its_color_and_description() {
     let (_dir, store) = make_store();
     let mut tag = Tag::new("Backend", Some(Color::Teal)).unwrap();
-    tag.append_body("Server-side work.");
+    tag.set_description("Server-side work.");
     store.create_tag(&tag).unwrap();
 
     store.rename_tag("backend", "infra").unwrap();
@@ -1014,7 +1013,7 @@ fn renaming_onto_an_existing_tag_is_refused() {
         "merging two tags is not a rename: {refused:?}"
     );
     assert!(
-        store.tag_exists("backend"),
+        registers(&store, "backend"),
         "the refused rename keeps the source"
     );
     assert_eq!(tags_of(&store, id), vec!["backend"]);
@@ -1079,10 +1078,10 @@ fn deleting_a_referenced_tag_needs_force() {
         matches!(&refused, Err(StoreError::TagReferenced { name, count }) if name == "backend" && *count == 1),
         "a referenced tag must name how many tasks hold it: {refused:?}"
     );
-    assert!(store.tag_exists("backend"));
+    assert!(registers(&store, "backend"));
 
     store.delete_tag("backend", true).unwrap();
-    assert!(!store.tag_exists("backend"));
+    assert!(!registers(&store, "backend"));
     assert_eq!(
         tags_of(&store, id),
         vec!["backend"],
@@ -1118,7 +1117,7 @@ fn deleting_a_missing_tag_is_not_found() {
         Err(StoreError::TagNotFound { .. })
     ));
     assert!(matches!(
-        store.write_tag(&Tag::new("backend", None).unwrap()),
+        store.update_tag("backend", |_| Ok(())),
         Err(StoreError::TagNotFound { .. })
     ));
     assert!(matches!(
@@ -1139,7 +1138,7 @@ fn concurrent_updates_to_one_tag_serialize() {
             std::thread::spawn(move || {
                 store
                     .update_tag("backend", |tag| {
-                        tag.append_body(&format!("line {i}"));
+                        tag.set_description(&format!("{}\nline {i}", tag.description()));
                         Ok(())
                     })
                     .unwrap();
@@ -1210,8 +1209,8 @@ fn an_update_cannot_rename_a_tag() {
         matches!(&refused, Err(StoreError::Invalid(message)) if message.contains("rename_tag")),
         "an update writes where the name it was given points, so it must not move a tag: {refused:?}"
     );
-    assert!(store.tag_exists("backend"));
-    assert!(!store.tag_exists("infra"));
+    assert!(registers(&store, "backend"));
+    assert!(!registers(&store, "infra"));
     assert_eq!(
         store.read_tag("backend").unwrap().display_name().as_deref(),
         Some("backend"),
@@ -1237,7 +1236,7 @@ fn a_rename_stops_before_it_publishes_when_a_referencing_task_cannot_be_written(
         "the lenient scan counts a task the model cannot write: {refused:?}"
     );
     assert!(
-        store.tag_exists("backend") && !store.tag_exists("infra"),
+        registers(&store, "backend") && !registers(&store, "infra"),
         "a rename that cannot finish must not publish the new name"
     );
     assert_eq!(tags_of(&store, writable), vec!["backend"]);
@@ -1269,7 +1268,7 @@ fn a_rename_keeps_the_old_name_registered_until_every_task_moves() {
             })
             .unwrap();
     }
-    assert!(!store.tag_exists("backend"));
+    assert!(!registers(&store, "backend"));
 }
 
 #[test]
