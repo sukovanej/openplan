@@ -25,6 +25,10 @@ type Results = { readonly _tag: "items"; readonly items: ReadonlyArray<PaletteIt
 
 const NOTHING: Results = { _tag: "items", items: [] }
 
+const CONTROL_ALIASES: Record<string, string> = { n: "ArrowDown", p: "ArrowUp" }
+
+const keyOf = (event: KeyboardEvent) => (event.ctrlKey ? (CONTROL_ALIASES[event.key] ?? event.key) : event.key)
+
 // Closing unmounts the box below, and `key` remounts it when the consumer changes. Each visit
 // therefore starts empty, with nothing of the last one left to paint and no request left to ask for
 // a query the reader has already dismissed.
@@ -102,7 +106,7 @@ function OpenPalette({
   // The input holds the focus, so these keys never reach the global dispatcher; the palette's scope
   // there covers only the keys pressed while something else in the overlay has the focus.
   const onKeyDown = (event: KeyboardEvent) => {
-    switch (event.key) {
+    switch (keyOf(event)) {
       case "ArrowDown":
         event.preventDefault()
         step(1)

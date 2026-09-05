@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { boardPath, taskRouteOf } from "@open-planner/task-ui"
+import { boardPath, FLOW_ROUTE, taskRouteOf } from "@open-planner/task-ui"
 
 import { copyTaskId } from "../clipboard"
-import { copyTargetRow, hoveredRow } from "../copy-target"
 import { detailActions, escapeOutcome } from "../detail-actions"
-import { detailCursor, focusedRow, rowCursor } from "../row-cursor"
+import { taskFlowPath } from "../flow-selection"
+import { detailCursor, focusedRow, liveCursor } from "../row-cursor"
+import { hoveredRow, taskAtHand } from "../row-target"
 import { bindings } from "./bindings"
 import { Dispatcher } from "./dispatcher"
 import { historyIndex } from "./history"
 import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types"
 
 function routeScope(pathname: string): RouteScope {
+  if (pathname === FLOW_ROUTE) return "flow"
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
 }
 
@@ -34,7 +36,7 @@ export function useKeyboard(): Keyboard {
   live.current = { navigate, pathname, scope, activeOverlay }
 
   // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
-  // route would stay the copy target on the next one.
+  // route would stay the task at hand on the next one.
   useEffect(() => {
     hoveredRow.clear()
   }, [pathname])
@@ -45,9 +47,12 @@ export function useKeyboard(): Keyboard {
   const entryIndex = useRef(historyIndex())
 
   useEffect(() => {
-    const activeCursor = () => (live.current.scope === "detail" ? detailCursor : rowCursor)
+    const activeCursor = () => liveCursor(live.current.scope)
+    const targetTask = () => taskAtHand(activeCursor().getSnapshot(), live.current.pathname)
+    const canGoBack = () => historyIndex() > entryIndex.current
     const context = (): RunContext => ({
       navigate: (to) => live.current.navigate(to),
+      back: () => (canGoBack() ? live.current.navigate(-1) : live.current.navigate("/")),
       overlay: (name) => ({
         open: () => setActiveOverlay(name),
         close: () => setActiveOverlay((open) => (open === name ? null : open)),
@@ -75,14 +80,16 @@ export function useKeyboard(): Keyboard {
           return focusedRow(cursor) ?? hoveredRow.among(cursor.rows)
         },
       },
-      copy: {
-        taskId: () => {
-          const cursor = activeCursor().getSnapshot()
-          const row = copyTargetRow(hoveredRow.among(cursor.rows), focusedRow(cursor), live.current.pathname)
-          // The key alone is what a user pastes into a task file or a command; the project is the
-          // route's business, not the clipboard's.
-          const id = row === undefined ? undefined : taskRouteOf(row)?.id
-          if (id !== undefined) copyTaskId(id)
+      task: {
+        // The key alone is what a user pastes into a task file or a command; the project is the
+        // route's business, not the clipboard's.
+        copyId: () => {
+          const task = targetTask()
+          if (task !== undefined) copyTaskId(task.id)
+        },
+        showFlow: () => {
+          const task = targetTask()
+          if (task !== undefined) live.current.navigate(taskFlowPath(task.project, task.id))
         },
       },
       detail: {
@@ -91,8 +98,7 @@ export function useKeyboard(): Keyboard {
         editTags: () => detailActions.emit("edit-tags"),
         goToParent: () => detailActions.emit("go-parent"),
         escape: () => {
-          const canGoBack = historyIndex() > entryIndex.current
-          const outcome = escapeOutcome(detailCursor.getSnapshot().index >= 0, canGoBack)
+          const outcome = escapeOutcome(detailCursor.getSnapshot().index >= 0, canGoBack())
           if (outcome === "clear-selection") detailCursor.clear()
           else if (outcome === "back") live.current.navigate(-1)
           else {

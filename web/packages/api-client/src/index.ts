@@ -15,8 +15,11 @@ export type TaskTree = {
 }
 export const TaskTree = Schema.suspend((): Schema.Codec<TaskTree> => __recursive_TaskTree)
 // non-recursive definitions
-export type ApiErrorBody = { readonly message: string }
-export const ApiErrorBody = Schema.Struct({ message: Schema.String })
+export type ApiErrorBody = { readonly cycles?: ReadonlyArray<ReadonlyArray<string>>; readonly message: string }
+export const ApiErrorBody = Schema.Struct({
+  cycles: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
+  message: Schema.String,
+})
 export type ChangeKind = "base" | "added" | "modified" | "deleted"
 export const ChangeKind = Schema.Literals(["base", "added", "modified", "deleted"])
 export type Color =
@@ -74,6 +77,8 @@ export const FieldError = Schema.Union(
   ],
   { mode: "oneOf" },
 )
+export type FlowEdge = { readonly from: string; readonly project: string; readonly to: string }
+export const FlowEdge = Schema.Struct({ from: Schema.String, project: Schema.String, to: Schema.String })
 export type MetadataErrorTag = "error"
 export const MetadataErrorTag = Schema.Literal("error")
 export type ProjectStatus = { readonly state: "ok" } | { readonly reason: string; readonly state: "error" }
@@ -88,6 +93,8 @@ export type RegisterProject = { readonly path: string }
 export const RegisterProject = Schema.Struct({ path: Schema.String })
 export type RenameProject = { readonly name: string }
 export const RenameProject = Schema.Struct({ name: Schema.String })
+export type SearchMatch = "key" | "title" | "text"
+export const SearchMatch = Schema.Literals(["key", "title", "text"])
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
 export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
@@ -196,6 +203,52 @@ export const BranchState = Schema.Struct({
   kind: ChangeKind,
   status: Field_Status,
 })
+export type FlowNode =
+  | {
+      readonly blocks_count: number
+      readonly id: string
+      readonly kind: "leaf"
+      readonly parent?: string
+      readonly position: number
+      readonly project: string
+      readonly status: Field_Status
+      readonly title: string
+      readonly wave: number
+    }
+  | {
+      readonly id: string
+      readonly kind: "box"
+      readonly parent?: string
+      readonly project: string
+      readonly status: Field_Status
+      readonly title: string
+    }
+  | { readonly id: string; readonly kind: "unresolved"; readonly project: string }
+export const FlowNode = Schema.Union(
+  [
+    Schema.Struct({
+      blocks_count: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+      id: Schema.String,
+      kind: Schema.Literal("leaf"),
+      parent: Schema.optionalKey(Schema.String),
+      position: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+      project: Schema.String,
+      status: Field_Status,
+      title: Schema.String,
+      wave: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+    Schema.Struct({
+      id: Schema.String,
+      kind: Schema.Literal("box"),
+      parent: Schema.optionalKey(Schema.String),
+      project: Schema.String,
+      status: Field_Status,
+      title: Schema.String,
+    }),
+    Schema.Struct({ id: Schema.String, kind: Schema.Literal("unresolved"), project: Schema.String }),
+  ],
+  { mode: "oneOf" },
+)
 export type TaskChild = {
   readonly id: string
   readonly rank?: string
@@ -238,6 +291,8 @@ export const FrontmatterFields = Schema.Struct({
   status: Field_Status,
   tags: Field_Vec_String,
 })
+export type Flow = { readonly edges: ReadonlyArray<FlowEdge>; readonly nodes: ReadonlyArray<FlowNode> }
+export const Flow = Schema.Struct({ edges: Schema.Array(FlowEdge), nodes: Schema.Array(FlowNode) })
 export type BranchComments = { readonly branch: string; readonly comments: ReadonlyArray<Comment> }
 export const BranchComments = Schema.Struct({ branch: Schema.String, comments: Schema.Array(Comment) })
 export type Metadata = { readonly kind: MetadataErrorTag; readonly message: string } | FrontmatterFields
@@ -315,8 +370,8 @@ export const BoardRow = Schema.Struct({
   parent_title: Schema.optionalKey(Schema.String),
   task: TaskListItem,
 })
-export type SearchHit = { readonly branch: string; readonly task: TaskListItem }
-export const SearchHit = Schema.Struct({ branch: Schema.String, task: TaskListItem })
+export type SearchHit = { readonly branch: string; readonly matched: SearchMatch; readonly task: TaskListItem }
+export const SearchHit = Schema.Struct({ branch: Schema.String, matched: SearchMatch, task: TaskListItem })
 export type MatrixCell = {
   readonly blob_oid: string
   readonly branch: string
@@ -361,6 +416,30 @@ export type GetMergedBoard200 = Board
 export const GetMergedBoard200 = Board
 export type GetMergedBoard500 = ApiErrorBody
 export const GetMergedBoard500 = ApiErrorBody
+export type GetFlowParams = {
+  readonly project?: ReadonlyArray<string>
+  readonly status?: ReadonlyArray<Status>
+  readonly task?: ReadonlyArray<string>
+  readonly tag?: ReadonlyArray<string>
+}
+export const GetFlowParams = Schema.Struct({
+  project: Schema.optionalKey(Schema.Array(Schema.String)),
+  status: Schema.optionalKey(Schema.Array(Status)),
+  task: Schema.optionalKey(Schema.Array(Schema.String)),
+  tag: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+export type GetFlow200 = Flow
+export const GetFlow200 = Flow
+export type GetFlow400 = ApiErrorBody
+export const GetFlow400 = ApiErrorBody
+export type GetFlow404 = ApiErrorBody
+export const GetFlow404 = ApiErrorBody
+export type GetFlow422 = ApiErrorBody
+export const GetFlow422 = ApiErrorBody
+export type GetFlow500 = ApiErrorBody
+export const GetFlow500 = ApiErrorBody
+export type GetFlow503 = ApiErrorBody
+export const GetFlow503 = ApiErrorBody
 export type ListProjects200 = ReadonlyArray<ProjectView>
 export const ListProjects200 = Schema.Array(ProjectView)
 export type RegisterProjectRequestJson = RegisterProject
@@ -748,6 +827,26 @@ export const make = (
           }),
         ),
       ),
+    getFlow: (options) =>
+      HttpClientRequest.get(`/api/flow`).pipe(
+        HttpClientRequest.setUrlParams({
+          project: options?.params?.["project"] as any,
+          status: options?.params?.["status"] as any,
+          task: options?.params?.["task"] as any,
+          tag: options?.params?.["tag"] as any,
+        }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetFlow200),
+            "400": decodeError("GetFlow400", GetFlow400),
+            "404": decodeError("GetFlow404", GetFlow404),
+            "422": decodeError("GetFlow422", GetFlow422),
+            "500": decodeError("GetFlow500", GetFlow500),
+            "503": decodeError("GetFlow503", GetFlow503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     listProjects: (options) =>
       HttpClientRequest.get(`/api/projects`).pipe(
         withResponse(options?.config)(
@@ -1107,6 +1206,20 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetMergedBoard200.Type, Config>,
     HttpClientError.HttpClientError | SchemaError | TasksClientError<"GetMergedBoard500", typeof GetMergedBoard500.Type>
+  >
+  readonly getFlow: <Config extends OperationConfig>(
+    options:
+      | { readonly params?: typeof GetFlowParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetFlow200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetFlow400", typeof GetFlow400.Type>
+    | TasksClientError<"GetFlow404", typeof GetFlow404.Type>
+    | TasksClientError<"GetFlow422", typeof GetFlow422.Type>
+    | TasksClientError<"GetFlow500", typeof GetFlow500.Type>
+    | TasksClientError<"GetFlow503", typeof GetFlow503.Type>
   >
   readonly listProjects: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,

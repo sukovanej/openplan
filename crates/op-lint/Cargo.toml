@@ -12,6 +12,7 @@ publish.workspace = true
 op-task.workspace = true
 op-md.workspace = true
 op-store.workspace = true
+op-skills.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 

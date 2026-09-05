@@ -4,7 +4,6 @@ mod mergedriver;
 mod open;
 mod plan;
 mod project;
-mod serve;
 mod tag;
 
 use std::io::{Read as _, Write as _};
@@ -24,7 +23,7 @@ use op_store::Store;
 use op_task::tag::Color;
 use op_task::{Status, Timestamp, rank};
 
-use daemon::{Control, Home};
+use op_daemon::Home;
 use plan::Plan;
 
 #[derive(Parser)]
@@ -266,9 +265,9 @@ enum ProjectCommand {
 enum ServerCommand {
     /// Start the daemon detached; a no-op if one is already running
     Start {
-        #[arg(long, default_value_t = daemon::default_port())]
+        #[arg(long, default_value_t = op_daemon::default_port())]
         port: u16,
-        /// Run in the foreground instead of detaching (also used internally)
+        /// Run in this terminal instead of detaching
         #[arg(long)]
         foreground: bool,
     },
@@ -276,7 +275,7 @@ enum ServerCommand {
     Stop,
     /// Stop the running daemon, then start a fresh one
     Restart {
-        #[arg(long, default_value_t = daemon::default_port())]
+        #[arg(long, default_value_t = op_daemon::default_port())]
         port: u16,
     },
     /// Report daemon status without starting it
@@ -286,6 +285,9 @@ enum ServerCommand {
 }
 
 fn main() -> ExitCode {
+    if let Some(code) = op_daemon::serve_if_requested(std::env::args()) {
+        return code;
+    }
     let cli = Cli::parse();
     match run(cli) {
         Ok(code) => code,
@@ -305,9 +307,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let agents = match agent {
                 Some(Agent::Claude) => vec![op_skills::Agent::Claude],
                 Some(Agent::Codex) => vec![op_skills::Agent::Codex],
-                None => vec![op_skills::Agent::Claude, op_skills::Agent::Codex],
+                None => op_skills::Agent::ALL.to_vec(),
             };
-            op_skills::setup(root, &agents)?;
+            op_skills::setup(&skills_root(root), &agents)?;
             Ok(ExitCode::SUCCESS)
         }
         Command::Create {
@@ -409,28 +411,22 @@ fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> 
         ServerCommand::Start { port, foreground } => {
             reject_remote_override(daemon_url, "start")?;
             if foreground {
-                let runtime = tokio::runtime::Runtime::new()?;
-                // serve::run reports its own failure through tracing; map it to an exit code
-                // rather than let main re-print the cause as a plain `error: ...` line.
-                return Ok(match runtime.block_on(serve::run(Home::resolve()?, port)) {
-                    Ok(()) => ExitCode::SUCCESS,
-                    Err(_) => ExitCode::FAILURE,
-                });
+                return Ok(op_daemon::serve(Home::resolve()?, port));
             }
-            Control::resolve()?.start(port)?;
+            daemon::start(port)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Stop => {
-            Control::resolve()?.stop(daemon_url)?;
+            daemon::stop(daemon_url)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Restart { port } => {
             reject_remote_override(daemon_url, "restart")?;
-            Control::resolve()?.restart(port)?;
+            daemon::restart(port)?;
             Ok(ExitCode::SUCCESS)
         }
         ServerCommand::Ping => {
-            let running = Control::resolve()?.ping(daemon_url)?;
+            let running = daemon::ping(daemon_url)?;
             Ok(if running {
                 ExitCode::SUCCESS
             } else {
@@ -890,6 +886,13 @@ fn branches(root: &Path) -> Result<()> {
     Ok(())
 }
 
+// `lint` reads the skills under the root of the store it discovers, so an install run from a
+// subdirectory has to land there too, not under the caller's directory. A repository that has no
+// store yet takes the root it was given.
+fn skills_root(root: &Path) -> PathBuf {
+    Store::discover(root).map_or_else(|_| root.to_path_buf(), |store| store.root().to_path_buf())
+}
+
 // The other command that does not ask the daemon. Lint checks the files in front of the caller, as
 // a pre-commit hook and a bare checkout need it to — it asks what the bytes on disk say, where every
 // task query asks what a branch holds. It writes through the store for the same reason `set` goes
@@ -912,7 +915,7 @@ fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCo
         .filter(|d| {
             selected
                 .as_ref()
-                .is_none_or(|set| set.contains(&canonical(&d.path)))
+                .is_none_or(|set| set.contains(&lint_path(&d.path)))
         })
         .collect();
 
@@ -922,12 +925,30 @@ fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCo
         for diagnostic in &shown {
             println!("{diagnostic}");
         }
+        let checked = selected.as_ref().map_or_else(
+            || snapshot.files().len() + snapshot.tags().len() + present_skills(&snapshot),
+            |set| set.len(),
+        );
+        println!(
+            "checked {checked} file{}, found {} problem{}",
+            plural(checked),
+            shown.len(),
+            plural(shown.len())
+        );
     }
     Ok(if shown.is_empty() {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
     })
+}
+
+fn present_skills(snapshot: &Snapshot) -> usize {
+    snapshot
+        .skills()
+        .iter()
+        .filter(|skill| skill.source.is_some())
+        .count()
 }
 
 // Writes go through the store so a concurrent daemon or `openplan set` on the same task serializes on
@@ -942,9 +963,14 @@ fn apply_fixes(
         op_lint::fix_store(store, &created)?;
         return Ok(());
     };
+    for skill in snapshot.skills() {
+        if selected.contains(&lint_path(&skill.path)) && !skill.matches() {
+            op_skills::install(skill)?;
+        }
+    }
     let fixed = op_lint::fix(snapshot, &created);
     for file in snapshot.files() {
-        if !selected.contains(&canonical(&file.path)) {
+        if !selected.contains(&lint_path(&file.path)) {
             continue;
         }
         let Some(after) = fixed.get(&file.path) else {
@@ -955,7 +981,7 @@ fn apply_fixes(
         }
     }
     for tag in snapshot.tags() {
-        if !selected.contains(&canonical(&tag.path)) {
+        if !selected.contains(&lint_path(&tag.path)) {
             continue;
         }
         let Some(after) = fixed.get(&tag.path) else {
@@ -984,7 +1010,7 @@ fn lint_target_paths(
         // A target that resolves to nothing would filter every diagnostic away and pass, so a stale
         // key or a path spelled against the wrong directory has to stop the run instead.
         let Some(path) = lint_target_path(snapshot, store, target) else {
-            bail!("no task or tag file matches {target}");
+            bail!("no task, tag, or skill file matches {target}");
         };
         set.insert(path);
     }
@@ -993,19 +1019,38 @@ fn lint_target_paths(
 
 fn lint_target_path(snapshot: &Snapshot, store: &Store, target: &str) -> Option<PathBuf> {
     if let Some(number) = store.abbreviation().parse_key(target) {
-        return snapshot.file(number).map(|file| canonical(&file.path));
+        return snapshot.file(number).map(|file| lint_path(&file.path));
     }
     let spellings = [
-        canonical(Path::new(target)),
-        canonical(&store.root().join(target)),
+        lint_path(Path::new(target)),
+        lint_path(&store.root().join(target)),
     ];
     snapshot
         .files()
         .iter()
         .map(|file| &file.path)
         .chain(snapshot.tags().iter().map(|tag| &tag.path))
-        .map(|path| canonical(path))
+        .chain(snapshot.skills().iter().map(|skill| &skill.path))
+        .map(|path| lint_path(path))
         .find(|path| spellings.contains(path))
+}
+
+// A skill file the repository is missing is still a target a pre-commit hook can name, and
+// `canonical` gives a path that does not exist back unresolved — where the same path spelled
+// through a symlinked checkout resolves. Both spellings meet at the deepest directory that exists.
+fn lint_path(path: &Path) -> PathBuf {
+    for ancestor in path.ancestors() {
+        let Ok(resolved) = ancestor.canonicalize() else {
+            continue;
+        };
+        let rest = path.strip_prefix(ancestor).unwrap_or(Path::new(""));
+        return if rest.as_os_str().is_empty() {
+            resolved
+        } else {
+            resolved.join(rest)
+        };
+    }
+    path.to_path_buf()
 }
 
 struct GitCreated {

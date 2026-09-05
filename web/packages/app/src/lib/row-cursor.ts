@@ -1,5 +1,7 @@
 import { useLayoutEffect, useSyncExternalStore } from "react"
 
+import type { RouteScope } from "./keys/types"
+
 // A row is named by its task's path, which carries the project: a key alone repeats across stores,
 // and the path is also what opening the row navigates to.
 export interface CursorState {
@@ -130,4 +132,8 @@ export function useDetailCursor(key: string, rows: ReadonlyArray<string>): Curso
     detailCursor.activate(key, rows)
   }, [key, rows])
   return state
+}
+
+export function liveCursor(scope: RouteScope): RowCursorStore | KeyedRowCursor {
+  return scope === "detail" ? detailCursor : rowCursor
 }

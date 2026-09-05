@@ -49,9 +49,9 @@ async function type(container: HTMLElement, text: string) {
   await settle()
 }
 
-const press = (container: HTMLElement, key: string) =>
+const press = (container: HTMLElement, key: string, init: KeyboardEventInit = {}) =>
   act(() => {
-    inputOf(container).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }))
+    inputOf(container).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }))
   })
 
 async function open(
@@ -109,6 +109,27 @@ describe("Palette", () => {
 
     press(container, "ArrowUp")
     expect(activeOf(container)?.textContent).toBe("Beta")
+  })
+
+  it("walks the results with ctrl + n and ctrl + p", async () => {
+    const container = await open(async () => named(["Alpha", "Beta"]))
+
+    press(container, "n", { ctrlKey: true })
+    expect(activeOf(container)?.textContent).toBe("Beta")
+
+    press(container, "n", { ctrlKey: true })
+    expect(activeOf(container)?.textContent).toBe("Alpha")
+
+    press(container, "p", { ctrlKey: true })
+    expect(activeOf(container)?.textContent).toBe("Beta")
+  })
+
+  it("leaves a plain n and a plain p to the input", async () => {
+    const container = await open(async () => named(["Alpha", "Beta"]))
+
+    press(container, "n")
+    press(container, "p")
+    expect(activeOf(container)?.textContent).toBe("Alpha")
   })
 
   it("keeps walking when scrollIntoView answers with a promise, as Chrome's does", async () => {

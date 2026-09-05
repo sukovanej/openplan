@@ -30,6 +30,14 @@
   --change-modified: oklch(0.588 0.158 241.966);
   --change-deleted: oklch(0.586 0.253 17.585);
 
+  /* Task prose is long-form reading rather than UI chrome, so it takes a warmer ink than the
+     neutral `--foreground` the controls around it wear. */
+  --prose-body: oklch(0.34 0.008 70);
+  --prose-heading: oklch(0.21 0 0);
+  --prose-code: oklch(0.25 0 0);
+  --prose-code-surface: oklch(0.968 0.003 70);
+  --prose-marker: oklch(0.72 0 0);
+
   /* A surface follows its own mark, so recolouring one carries the group header with it; `todo` is
      the one status whose header wants a lighter shade than the mark it belongs to. */
   --status-backlog: oklch(0.551 0.027 264.364);
@@ -105,6 +113,12 @@
   --change-modified: oklch(0.685 0.169 237.323);
   --change-deleted: oklch(0.645 0.246 16.439);
 
+  --prose-body: oklch(0.855 0.01 80);
+  --prose-heading: oklch(0.95 0 0);
+  --prose-code: oklch(0.9 0 0);
+  --prose-code-surface: oklch(0.265 0.004 80);
+  --prose-marker: oklch(0.48 0 0);
+
   --status-backlog-text: oklch(0.707 0.022 261.325);
   --status-todo-text: oklch(0.809 0.105 251.813);
   --status-in-progress-text: oklch(0.879 0.169 91.605);
@@ -129,6 +143,8 @@
 
 @theme inline {
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Source Serif 4 Variable", ui-serif, Georgia, serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -160,6 +176,11 @@
   --color-change-added: var(--change-added);
   --color-change-modified: var(--change-modified);
   --color-change-deleted: var(--change-deleted);
+  --color-prose-body: var(--prose-body);
+  --color-prose-heading: var(--prose-heading);
+  --color-prose-code: var(--prose-code);
+  --color-prose-code-surface: var(--prose-code-surface);
+  --color-prose-marker: var(--prose-marker);
   --color-status-backlog: var(--status-backlog);
   --color-status-backlog-surface: var(--status-backlog-surface);
   --color-status-backlog-text: var(--status-backlog-text);

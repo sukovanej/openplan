@@ -24,9 +24,9 @@ export function CommentThread({
       {comments.length === 0 ? (
         <p className="text-muted-foreground text-sm">No comments yet.</p>
       ) : (
-        <ol className="space-y-4">
+        <ol className="space-y-3">
           {comments.map((comment, index) => (
-            <li key={index} className="border-border/60 border-t pt-3 first:border-t-0 first:pt-0">
+            <li key={index} className="border-border bg-muted/20 rounded-lg border p-4">
               <MetaLine className="mb-1">
                 <span className="text-foreground text-sm font-medium">
                   <Damaged field={comment.author}>{(author) => author}</Damaged>
@@ -44,7 +44,7 @@ export function CommentThread({
                 markdown={comment.text}
                 refs={refs}
                 abbreviation={abbreviation}
-                className="prose-sm"
+                className="text-[15px] leading-6"
                 data-keys-ignore
               />
             </li>

@@ -3,15 +3,15 @@
 export const OVERLAY_NAMES = ["help", "palette"] as const
 export type OverlayName = (typeof OVERLAY_NAMES)[number]
 
-export type Scope = "global" | "list" | "detail" | "rows" | OverlayName
-export type RouteScope = "list" | "detail"
+export type Scope = "global" | "list" | "detail" | "flow" | "rows" | OverlayName
+export type RouteScope = "list" | "detail" | "flow"
 
 export function isOverlayScope(scope: Scope): scope is OverlayName {
   return (OVERLAY_NAMES as ReadonlyArray<string>).includes(scope)
 }
 
-// Which consumer the palette opens on. `home` is the seat the general command interface will take;
-// until it ships the only consumer registered there is search, so `home` lands where `search` does.
+// Which consumer the palette opens on. `home` is the general command interface: the commands the app
+// answers for, and the tasks a query finds. `search` is the task search alone.
 export type PaletteTarget = "home" | "search"
 
 export type KeySpec = string | ReadonlyArray<string>
@@ -32,8 +32,9 @@ export interface PaletteControls {
   readonly open: (target: PaletteTarget) => void
 }
 
-export interface CopyControls {
-  readonly taskId: () => void
+export interface TaskControls {
+  readonly copyId: () => void
+  readonly showFlow: () => void
 }
 
 export interface DetailControls {
@@ -46,10 +47,12 @@ export interface DetailControls {
 
 export interface RunContext {
   readonly navigate: (to: string) => void
+  // Back to where the reader came from, or to the board when this page opened the session.
+  readonly back: () => void
   readonly overlay: (name: OverlayName) => OverlayControls
   readonly palette: PaletteControls
   readonly cursor: CursorControls
-  readonly copy: CopyControls
+  readonly task: TaskControls
   readonly detail: DetailControls
 }
 

@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { MutationError } from "../src/components/mutation-error"
 import {
   boardKey,
+  flowKey,
   mergedBoardKey,
   queryClient,
   queryInvalidator,
@@ -88,6 +89,17 @@ describe("invalidation", () => {
     queryInvalidator.refreshTask(project, id)
     await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(3))
     second()
+  })
+
+  it("re-reads the flow after any project changes, because one flow spans them all", async () => {
+    const flow = observe(flowKey("project=alpha"))
+    await vi.waitFor(() => expect(flow.getCurrentResult().data).toBe(1))
+
+    queryInvalidator.refreshList("beta")
+    await vi.waitFor(() => expect(flow.getCurrentResult().data).toBe(2))
+
+    queryInvalidator.refreshVisible()
+    await vi.waitFor(() => expect(flow.getCurrentResult().data).toBe(3))
   })
 
   it("refreshes the changed project, or every project after a global change", async () => {

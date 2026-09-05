@@ -5,7 +5,6 @@ export { chordOf, fromEvent, isEditableTarget, normalizeToken } from "./match"
 export { type HelpEntry, type HelpGroup, helpGroups } from "./registry"
 export {
   type Binding,
-  type CopyControls,
   type CursorControls,
   isOverlayScope,
   type KeySpec,
@@ -17,5 +16,6 @@ export {
   type RouteScope,
   type RunContext,
   type Scope,
+  type TaskControls,
 } from "./types"
 export { type Keyboard, useKeyboard } from "./use-keyboard"

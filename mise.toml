@@ -30,6 +30,56 @@ run = [
   "pnpm exec oxfmt src/index.ts",
 ]
 
+# No `depends = ["install"]`: that restarts the daemon the CLI and the merge driver share, and
+# opening a window is no reason to take it down. Run `install` yourself after a change to the SPA.
+[tasks.gui]
+description = "Open the desktop window on the running daemon, starting one when none runs"
+run = "cargo run -p openplan-gui"
+
+[tasks.icons]
+description = "Rasterize assets/icon.svg into the desktop app icons and the web favicons"
+tools = { resvg = "latest" }
+run = """
+set -eu
+svg=assets/icon.svg
+gui=crates/op-gui/icons
+web=web/packages/app/public
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+for size in 16 32 64 128 180 256 512 1024; do
+  resvg --width "$size" --height "$size" "$svg" "$tmp/$size.png"
+done
+
+mkdir -p "$gui" "$web"
+cp "$tmp/32.png" "$gui/32x32.png"
+cp "$tmp/128.png" "$gui/128x128.png"
+cp "$tmp/256.png" "$gui/128x128@2x.png"
+cp "$tmp/1024.png" "$gui/icon.png"
+cp "$svg" "$web/icon.svg"
+cp "$tmp/32.png" "$web/favicon.png"
+cp "$tmp/180.png" "$web/apple-touch-icon.png"
+
+# Only macOS carries iconutil, and only macOS bundles the .app the .icns goes into, so a Linux
+# machine keeps the committed one instead of failing the task.
+if command -v iconutil >/dev/null 2>&1; then
+  set=$tmp/icon.iconset
+  mkdir -p "$set"
+  cp "$tmp/16.png" "$set/icon_16x16.png"
+  cp "$tmp/32.png" "$set/icon_16x16@2x.png"
+  cp "$tmp/32.png" "$set/icon_32x32.png"
+  cp "$tmp/64.png" "$set/icon_32x32@2x.png"
+  cp "$tmp/128.png" "$set/icon_128x128.png"
+  cp "$tmp/256.png" "$set/icon_128x128@2x.png"
+  cp "$tmp/256.png" "$set/icon_256x256.png"
+  cp "$tmp/512.png" "$set/icon_256x256@2x.png"
+  cp "$tmp/512.png" "$set/icon_512x512.png"
+  cp "$tmp/1024.png" "$set/icon_512x512@2x.png"
+  iconutil -c icns "$set" -o "$gui/icon.icns"
+else
+  echo "no iconutil on this machine; $gui/icon.icns keeps its committed content" >&2
+fi
+"""
 [tasks.release]
 description = "Bump the workspace version and commit the release"
 usage = 'arg "<version>" help="The new version, for example 0.0.2"'

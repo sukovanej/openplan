@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use op_skills::SkillFile;
 use op_store::{Store, StoreError};
 use op_task::tag::{PartialTag, parse_partial as parse_partial_tag};
 use op_task::{Abbreviation, PartialTask, file_id, parse_partial};
@@ -28,6 +29,7 @@ pub struct Snapshot {
     abbreviation: Abbreviation,
     files: Vec<TaskFile>,
     tags: Vec<TagFile>,
+    skills: Vec<SkillFile>,
 }
 
 impl Snapshot {
@@ -43,7 +45,8 @@ impl Snapshot {
             .collect();
         Ok(
             Self::from_files(store.root(), store.abbreviation(), sources)
-                .with_tags(read_markdown(&store.tags_dir())?),
+                .with_tags(read_markdown(&store.tags_dir())?)
+                .with_skills(op_skills::installed(store.root())?),
         )
     }
 
@@ -75,6 +78,7 @@ impl Snapshot {
             abbreviation,
             files,
             tags: Vec::new(),
+            skills: Vec::new(),
         }
     }
 
@@ -95,6 +99,15 @@ impl Snapshot {
         self
     }
 
+    // Only an agent that already has a skills directory holds skills; installing them is what
+    // `openplan setup-skills` does, and a repository that never asked for them owes the binary
+    // nothing.
+    pub fn with_skills(mut self, skills: Vec<SkillFile>) -> Self {
+        self.skills = skills;
+        self.skills.sort_by(|a, b| a.path.cmp(&b.path));
+        self
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -109,6 +122,10 @@ impl Snapshot {
 
     pub fn tags(&self) -> &[TagFile] {
         &self.tags
+    }
+
+    pub fn skills(&self) -> &[SkillFile] {
+        &self.skills
     }
 
     // The file a number resolves to, lowest path first as the store does — two files claiming one

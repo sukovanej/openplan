@@ -1,3 +1,7 @@
+import { type TaskRoute, taskRouteOf } from "@open-planner/task-ui"
+
+import { type CursorState, focusedRow } from "./row-cursor"
+
 // Rows are named by their task's path throughout, so a key that repeats across projects still
 // names one row. A path alone does not name one *row*, though: a task detail can show the same task
 // under two of its lists, so the pointer is tracked by the place it is over as well.
@@ -26,10 +30,7 @@ export const hoveredRow = {
   },
 }
 
-export function copyTargetRow(
-  hoveredRow: string | undefined,
-  focusedRow: string | undefined,
-  routeRow: string | undefined,
-): string | undefined {
-  return hoveredRow ?? focusedRow ?? routeRow
+export function taskAtHand(cursor: CursorState, pathname: string): TaskRoute | undefined {
+  const row = hoveredRow.among(cursor.rows) ?? focusedRow(cursor) ?? pathname
+  return taskRouteOf(row)
 }

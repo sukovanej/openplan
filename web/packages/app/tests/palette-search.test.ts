@@ -6,6 +6,7 @@ import { hitKey, hitPath } from "../src/lib/palette-search"
 
 const hit = (over: Partial<SearchHit["task"]> & { branch: string }): SearchHit => ({
   branch: over.branch,
+  matched: "title",
   task: {
     project: "open-plan",
     id: "OPP-31",
