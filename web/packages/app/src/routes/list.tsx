@@ -3,7 +3,7 @@ import { MessageSquare, Tags } from "lucide-react"
 import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
-import type { Board, BoardRow } from "@open-planner/api-client"
+import type { Board, BoardRow } from "@openplan/api-client"
 import {
   BranchBadges,
   createdOf,
@@ -17,8 +17,8 @@ import {
   taskPath,
   TaskTags,
   TaskTimes,
-} from "@open-planner/task-ui"
-import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@open-planner/ui"
+} from "@openplan/task-ui"
+import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@openplan/ui"
 
 import { ListSkeleton } from "../components/states"
 import { getBoard, getMergedBoard } from "../lib/api"

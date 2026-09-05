@@ -132,7 +132,7 @@ describe("invalidation", () => {
 
 describe("mutations", () => {
   it.each(["success", "failure"] as const)("refreshes visible data after %s", async (outcome) => {
-    const project = "open-plan"
+    const project = "openplan"
     const board = observe(boardKey(project))
     const other = observe(boardKey("other"))
     const merged = observe(mergedBoardKey)
@@ -155,7 +155,7 @@ describe("mutations", () => {
   })
 
   it("shows, clears, and dismisses a refusal", async () => {
-    const { container, mutation } = mountMutation("open-plan", true)
+    const { container, mutation } = mountMutation("openplan", true)
 
     await act(async () => {
       await expect(mutation().mutateAsync(Effect.fail(new Error("first refusal")))).rejects.toThrow("first refusal")

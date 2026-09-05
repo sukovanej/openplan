@@ -1,7 +1,7 @@
 import { Bot, CircleAlert } from "lucide-react"
 
-import type { Comment, FieldError, TaskRef } from "@open-planner/api-client"
-import { absoluteTime, MetaLine, Section, Tag, Tooltip } from "@open-planner/ui"
+import type { Comment, FieldError, TaskRef } from "@openplan/api-client"
+import { absoluteTime, MetaLine, Section, Tag, Tooltip } from "@openplan/ui"
 
 import { fieldFailure, fieldMessage, fieldValue } from "./metadata"
 import { TaskBody } from "./task-body"

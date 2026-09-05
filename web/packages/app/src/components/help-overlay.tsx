@@ -1,4 +1,4 @@
-import { Dialog, Kbd } from "@open-planner/ui"
+import { Dialog, Kbd } from "@openplan/ui"
 
 import { bindings, type HelpEntry, helpGroups } from "../lib/keys"
 

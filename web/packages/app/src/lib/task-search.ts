@@ -1,5 +1,5 @@
-import type { TaskListItem } from "@open-planner/api-client"
-import { fuzzyMatch } from "@open-planner/ui"
+import type { TaskListItem } from "@openplan/api-client"
+import { fuzzyMatch } from "@openplan/ui"
 
 const MAX_MATCHES = 8
 

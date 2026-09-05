@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
-import type { Metadata, TagView } from "@open-planner/api-client"
-import { cn } from "@open-planner/ui"
+import type { Metadata, TagView } from "@openplan/api-client"
+import { cn } from "@openplan/ui"
 
 import { tagsOf } from "./metadata"
 import { TagChip } from "./tag-chip"

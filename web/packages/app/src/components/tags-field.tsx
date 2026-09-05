@@ -2,9 +2,9 @@ import { Effect } from "effect"
 import { Plus } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import type { Metadata, TagView } from "@open-planner/api-client"
-import { ColorDot, fieldFailure, fieldMessage, tagsOf, TaskTags } from "@open-planner/task-ui"
-import { Button, type ComboOption, Combobox, FuzzyText, Tooltip } from "@open-planner/ui"
+import type { Metadata, TagView } from "@openplan/api-client"
+import { ColorDot, fieldFailure, fieldMessage, tagsOf, TaskTags } from "@openplan/task-ui"
+import { Button, type ComboOption, Combobox, FuzzyText, Tooltip } from "@openplan/ui"
 
 import { createTag, patchTask } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"

@@ -1,5 +1,5 @@
-import type { BranchState, ChangeKind } from "@open-planner/api-client"
-import { Tag, Tooltip } from "@open-planner/ui"
+import type { BranchState, ChangeKind } from "@openplan/api-client"
+import { Tag, Tooltip } from "@openplan/ui"
 
 import { fieldValue } from "./metadata"
 

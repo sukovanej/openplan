@@ -1,4 +1,4 @@
-import { Skeleton, SkeletonList } from "@open-planner/ui"
+import { Skeleton, SkeletonList } from "@openplan/ui"
 
 export function ListSkeleton() {
   return <SkeletonList count={5} className="h-14 w-full" />

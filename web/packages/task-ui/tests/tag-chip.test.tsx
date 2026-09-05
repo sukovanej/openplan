@@ -1,7 +1,7 @@
 import { act } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { Color, TagView } from "@open-planner/api-client"
+import type { Color, TagView } from "@openplan/api-client"
 
 import { TagChip } from "../src/tag-chip"
 import { render } from "./render"

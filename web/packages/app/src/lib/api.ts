@@ -2,7 +2,7 @@ import { Context, Data, Effect } from "effect"
 import type { Schema } from "effect"
 import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 
-import * as Api from "@open-planner/api-client"
+import * as Api from "@openplan/api-client"
 
 import type { FlowSelection } from "./flow-selection"
 

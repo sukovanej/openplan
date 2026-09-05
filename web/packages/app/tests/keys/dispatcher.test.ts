@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { taskPath } from "@open-planner/task-ui"
+import { taskPath } from "@openplan/task-ui"
 
 import { taskFlowPath } from "../../src/lib/flow-selection"
 import { bindings } from "../../src/lib/keys/bindings"
@@ -11,7 +11,7 @@ import type { Binding, OverlayName, PaletteTarget, RouteScope, RunContext } from
 import { detailCursor, focusedRow, liveCursor, rowCursor } from "../../src/lib/row-cursor"
 import { hoveredRow, taskAtHand } from "../../src/lib/row-target"
 
-const PROJECT = "open-plan"
+const PROJECT = "openplan"
 
 interface Harness {
   readonly navigations: Array<string>
@@ -252,7 +252,7 @@ describe("f shows the flow of the task at hand", () => {
     rowCursor.moveBy(1)
 
     press("f")
-    expect(h.navigations).toEqual(["/flow?project=open-plan&task=12"])
+    expect(h.navigations).toEqual(["/flow?project=openplan&task=12"])
   })
 
   it("takes the hovered row ahead of the selected one", () => {

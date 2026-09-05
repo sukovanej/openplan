@@ -162,13 +162,13 @@ importers:
       '@fontsource-variable/source-serif-4':
         specifier: ^5.3.0
         version: 5.3.0
-      '@open-planner/api-client':
+      '@openplan/api-client':
         specifier: workspace:*
         version: link:../api-client
-      '@open-planner/task-ui':
+      '@openplan/task-ui':
         specifier: workspace:*
         version: link:../task-ui
-      '@open-planner/ui':
+      '@openplan/ui':
         specifier: workspace:*
         version: link:../ui
       '@tanstack/react-query':
@@ -235,10 +235,10 @@ importers:
 
   packages/task-ui:
     dependencies:
-      '@open-planner/api-client':
+      '@openplan/api-client':
         specifier: workspace:*
         version: link:../api-client
-      '@open-planner/ui':
+      '@openplan/ui':
         specifier: workspace:*
         version: link:../ui
       '@shikijs/core':

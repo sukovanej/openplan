@@ -3,7 +3,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 
-import { BOARD_ROUTE, FLOW_ROUTE, TAGS_ROUTE, TASK_ROUTE } from "@open-planner/task-ui"
+import { BOARD_ROUTE, FLOW_ROUTE, TAGS_ROUTE, TASK_ROUTE } from "@openplan/task-ui"
 
 import { App } from "./App"
 import { queryClient } from "./lib/query-client"

@@ -1,4 +1,4 @@
-import type { BranchState } from "@open-planner/api-client"
+import type { BranchState } from "@openplan/api-client"
 
 import { BranchTag } from "./branch-tag"
 

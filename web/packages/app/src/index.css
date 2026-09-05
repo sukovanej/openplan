@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@open-planner/ui/styles.css";
+@import "@openplan/ui/styles.css";
 @plugin "@tailwindcss/typography";
 
 /* Tailwind scans the Vite root and skips node_modules, so the workspace packages have to be named. */

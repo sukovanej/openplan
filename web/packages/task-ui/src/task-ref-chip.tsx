@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom"
 
-import type { TaskRef } from "@open-planner/api-client"
-import { cn } from "@open-planner/ui"
+import type { TaskRef } from "@openplan/api-client"
+import { cn } from "@openplan/ui"
 
 import { TaskIdentity, UnresolvedMark } from "./task-identity"
 

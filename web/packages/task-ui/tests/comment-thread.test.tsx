@@ -1,8 +1,8 @@
 import { act } from "react"
 import { describe, expect, it } from "vitest"
 
-import type { Comment } from "@open-planner/api-client"
-import { absoluteTime } from "@open-planner/ui"
+import type { Comment } from "@openplan/api-client"
+import { absoluteTime } from "@openplan/ui"
 
 import { CommentThread } from "../src/comment-thread"
 import { render } from "./render"
@@ -16,7 +16,7 @@ const comment = (over: Partial<Comment> = {}): Comment => ({
 })
 
 const thread = (comments: ReadonlyArray<Comment>) =>
-  render(<CommentThread project="open-plan" comments={comments} abbreviation="OPP" />)
+  render(<CommentThread project="openplan" comments={comments} abbreviation="OPP" />)
 
 describe("CommentThread", () => {
   it("shows every entry with its author, absolute time, and agent", () => {

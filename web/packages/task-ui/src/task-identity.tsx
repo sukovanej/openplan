@@ -1,8 +1,8 @@
 import { CircleDashed } from "lucide-react"
 import type { ReactNode } from "react"
 
-import type { Field_Status } from "@open-planner/api-client"
-import { cn, FuzzyText } from "@open-planner/ui"
+import type { Field_Status } from "@openplan/api-client"
+import { cn, FuzzyText } from "@openplan/ui"
 
 import { StatusChip } from "./status"
 

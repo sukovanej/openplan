@@ -11,9 +11,9 @@ import {
 
 describe("the selection in the URL", () => {
   it("keeps every repeat of a name, because the values of one name are alternatives", () => {
-    const selection = readSelection(new URLSearchParams("project=open-plan&status=todo&status=in_progress&tag=api"))
+    const selection = readSelection(new URLSearchParams("project=openplan&status=todo&status=in_progress&tag=api"))
     expect(selection).toEqual({
-      projects: ["open-plan"],
+      projects: ["openplan"],
       statuses: ["todo", "in_progress"],
       tasks: [],
       tags: ["api"],
@@ -22,7 +22,7 @@ describe("the selection in the URL", () => {
 
   it("survives a round trip through the query string", () => {
     const selection = {
-      projects: ["open-plan", "web"],
+      projects: ["openplan", "web"],
       statuses: ["todo"],
       tasks: ["OPP-42"],
       tags: ["api", "ui"],
@@ -38,7 +38,7 @@ describe("the selection in the URL", () => {
   })
 
   it("sends a named task with the project that spells its key", () => {
-    expect(taskFlowPath("open-plan", "OPP-42")).toBe("/flow?project=open-plan&task=OPP-42")
-    expect(selectsEveryTask(readSelection(new URLSearchParams("project=open-plan&task=OPP-42")))).toBe(false)
+    expect(taskFlowPath("openplan", "OPP-42")).toBe("/flow?project=openplan&task=OPP-42")
+    expect(selectsEveryTask(readSelection(new URLSearchParams("project=openplan&task=OPP-42")))).toBe(false)
   })
 })

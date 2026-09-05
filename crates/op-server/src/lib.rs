@@ -291,8 +291,8 @@ impl std::fmt::Debug for AppState {
 
 #[derive(OpenApi)]
 #[openapi(info(
-    title = "open-planner",
-    description = "open-planner daemon HTTP API",
+    title = "openplan",
+    description = "openplan daemon HTTP API",
     version = "0.1.0"
 ))]
 struct ApiDoc;

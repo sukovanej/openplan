@@ -21,7 +21,7 @@ it.effect("decodes GET /api/projects/:project/tasks through the generated client
       clientReturning(() =>
         json([
           {
-            project: "open-plan",
+            project: "openplan",
             id: "a-1",
             title: "First",
             metadata: {
@@ -40,7 +40,7 @@ it.effect("decodes GET /api/projects/:project/tasks through the generated client
         ]),
       ),
     )
-    const result = yield* tasks.listTasks("open-plan", undefined)
+    const result = yield* tasks.listTasks("openplan", undefined)
     expect(result.map((t) => t.id)).toEqual(["a-1"])
     expect(result[0].branches[0].kind).toBe("base")
   }),
@@ -57,7 +57,7 @@ it.effect("decodes the grouped, flattened board from GET /api/projects/:project/
               rows: [
                 {
                   task: {
-                    project: "open-plan",
+                    project: "openplan",
                     id: "epic-1",
                     title: "Epic",
                     metadata: {
@@ -78,7 +78,7 @@ it.effect("decodes the grouped, flattened board from GET /api/projects/:project/
                 },
                 {
                   task: {
-                    project: "open-plan",
+                    project: "openplan",
                     id: "kid-1",
                     title: "Kid",
                     metadata: {
@@ -103,7 +103,7 @@ it.effect("decodes the grouped, flattened board from GET /api/projects/:project/
         }),
       ),
     )
-    const board = yield* tasks.getBoard("open-plan", undefined)
+    const board = yield* tasks.getBoard("openplan", undefined)
     expect(board.groups.map((group) => group.status)).toEqual(["todo"])
     expect(board.groups[0].rows.map((row) => row.depth)).toEqual([0, 1])
     expect(board.groups[0].rows[1].task.metadata).toMatchObject({ parent: "epic-1" })
@@ -115,7 +115,7 @@ it.effect("decodes a branch-aware TaskDetail from GET /api/projects/:project/tas
     const tasks = make(
       clientReturning(() =>
         json({
-          project: "open-plan",
+          project: "openplan",
           id: "a-1",
           title: "First",
           metadata: {
@@ -136,7 +136,7 @@ it.effect("decodes a branch-aware TaskDetail from GET /api/projects/:project/tas
         }),
       ),
     )
-    const detail = yield* tasks.getTask("open-plan", "a-1", { params: { branch: "feature" } })
+    const detail = yield* tasks.getTask("openplan", "a-1", { params: { branch: "feature" } })
     expect(detail.headline).toBe("feature")
     expect(detail.metadata).toMatchObject({ dependencies: ["2"] })
     expect(detail.branches.map((b) => b.branch)).toEqual(["main", "feature"])
