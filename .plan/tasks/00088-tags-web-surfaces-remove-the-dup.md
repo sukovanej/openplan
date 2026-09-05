@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-08-26T07:12:36Z
 parent: ./00012-tags-registered-labels-name-colo.md
 ---
