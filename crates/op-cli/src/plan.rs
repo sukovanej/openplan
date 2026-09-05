@@ -2,8 +2,8 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 use op_api::{
-    BranchComments, Comment, CreateComment, CreateTag, CreateTask, Matrix, SearchHit, TagPatch,
-    TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    BranchComments, Comment, CreateComment, CreateTag, CreateTask, Matrix, Refusal, SearchHit,
+    TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use op_client::Client;
 use op_git::Repo;
@@ -108,27 +108,31 @@ impl Plan {
     }
 
     pub fn comment(&self, id: &str, comment: &CreateComment) -> Result<Comment> {
-        Ok(self
-            .client
-            .add_comment(&self.base_url, &self.project, &self.branch, id, comment)?)
+        served(
+            self.client
+                .add_comment(&self.base_url, &self.project, &self.branch, id, comment),
+        )
     }
 
     pub fn create(&self, task: &CreateTask) -> Result<String> {
-        Ok(self
-            .client
-            .create_task(&self.base_url, &self.project, &self.branch, task)?)
+        served(
+            self.client
+                .create_task(&self.base_url, &self.project, &self.branch, task),
+        )
     }
 
     pub fn patch(&self, id: &str, patch: &TaskPatch) -> Result<TaskDetail> {
-        Ok(self
-            .client
-            .patch_task(&self.base_url, &self.project, &self.branch, id, patch)?)
+        served(
+            self.client
+                .patch_task(&self.base_url, &self.project, &self.branch, id, patch),
+        )
     }
 
     pub fn delete(&self, id: &str) -> Result<()> {
-        Ok(self
-            .client
-            .delete_task(&self.base_url, &self.project, &self.branch, id)?)
+        served(
+            self.client
+                .delete_task(&self.base_url, &self.project, &self.branch, id),
+        )
     }
 
     pub fn tags(&self) -> Result<Vec<TagView>> {
@@ -177,18 +181,37 @@ impl Plan {
 fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
     let predates = |err: &op_client::ClientError| match err {
         op_client::ClientError::NotJson { .. } => true,
-        op_client::ClientError::Refused { status, message } => {
-            *status == 404 && message.starts_with("no such route")
-        }
+        op_client::ClientError::Refused {
+            status, message, ..
+        } => *status == 404 && message.starts_with("no such route"),
         _ => false,
     };
-    outcome.map_err(|err| match predates(&err) {
-        true => anyhow::Error::new(err).context(
-            "this openplan daemon does not serve these routes; it predates them. Stop it \
-             (`openplan server stop`) and rerun here.",
-        ),
-        false => anyhow::Error::new(err),
+    outcome.map_err(|err| {
+        if let op_client::ClientError::Refused {
+            reason: Some(reason),
+            message,
+            ..
+        } = &err
+        {
+            return anyhow::anyhow!("{message}; {}", remedy(*reason));
+        }
+        match predates(&err) {
+            true => anyhow::Error::new(err).context(
+                "this openplan daemon does not serve these routes; it predates them. Stop it \
+                 (`openplan server stop`) and rerun here.",
+            ),
+            false => anyhow::Error::new(err),
+        }
     })
+}
+
+// The store states the fact and the daemon relays it. What to do about it is a spelling of this
+// interface, which only this binary knows — the web UI answers the same refusal with a button.
+fn remedy(reason: Refusal) -> &'static str {
+    match reason {
+        Refusal::TagReferenced => "pass --force to delete it and leave those references dangling",
+        Refusal::TagUnregistered => "register it with `openplan tag create <name>`",
+    }
 }
 
 // The repository the caller stands in, as the daemon names it. A repository the machine daemon does

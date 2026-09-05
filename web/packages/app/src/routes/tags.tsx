@@ -261,8 +261,8 @@ function Palette({
 const FORCE_COST = "The tag goes, and every task that still names it is left holding a dangling tag."
 
 // The first attempt never carries `force`: the daemon is the only thing that knows how many tasks
-// name the tag, and only a conflict is a refusal that force can answer — a delete the branch cannot
-// take is refused again just the same, so it must not be offered as one.
+// name the tag. A conflict alone does not say that force would change it — a delete the branch
+// cannot take is refused again just the same — so the offer waits for the reason that names one.
 function DeleteConfirm({
   project,
   tag,
@@ -282,7 +282,7 @@ function DeleteConfirm({
     if (mutation.isPending) return
     mutation.mutate(deleteTag(project, tag.name, forcing), {
       onError: (error) => {
-        if (!forcing && error instanceof TaskRejected && error.status === 409) onRefused()
+        if (!forcing && error instanceof TaskRejected && error.reason === "tag_referenced") onRefused()
       },
     })
   }

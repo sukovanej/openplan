@@ -2,7 +2,16 @@ import { expect, it } from "@effect/vitest"
 import { Effect, Result } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/unstable/http"
 
-import { ApiBaseUrl, createTask, getTask, listTasks, patchTask, TaskNotFound, TaskRejected } from "../src/lib/api"
+import {
+  ApiBaseUrl,
+  createTask,
+  deleteTag,
+  getTask,
+  listTasks,
+  patchTask,
+  TaskNotFound,
+  TaskRejected,
+} from "../src/lib/api"
 
 const PROJECT = "open-plan"
 
@@ -351,6 +360,32 @@ it.effect("a PATCH aimed at a branch no worktree holds carries the 409 reason", 
     expect(error).toBeInstanceOf(TaskRejected)
     expect((error as TaskRejected).status).toBe(409)
     expect((error as TaskRejected).message).toContain("writable worktree")
+  }),
+)
+
+// One status covers three tag-delete refusals, and `force` answers only one of them. The field is
+// what tells the caller which one it received.
+it.effect("a tag delete a reference count refuses names the refusal force answers", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() =>
+      json({ message: "tag backend is used by 2 task(s) on this branch", reason: "tag_referenced" }, 409),
+    )
+    const result = yield* Effect.result(provide(deleteTag(PROJECT, "backend", false)))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect((error as TaskRejected).status).toBe(409)
+    expect((error as TaskRejected).reason).toBe("tag_referenced")
+  }),
+)
+
+it.effect("a tag delete the branch refuses names no refusal force answers", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() =>
+      json({ message: "branch feature is not checked out in a writable worktree" }, 409),
+    )
+    const result = yield* Effect.result(provide(deleteTag(PROJECT, "backend", false)))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect((error as TaskRejected).status).toBe(409)
+    expect((error as TaskRejected).reason).toBeUndefined()
   }),
 )
 

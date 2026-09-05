@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use op_api::{
     ApiErrorBody, BranchComments, Comment, CreateComment, CreateTag, CreateTask, DaemonInfo,
-    Matrix, ProjectView, RegisterProject, RenameProject, SearchHit, TagPatch, TagView,
+    Matrix, ProjectView, Refusal, RegisterProject, RenameProject, SearchHit, TagPatch, TagView,
     TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use reqwest::Url;
@@ -36,7 +36,13 @@ pub enum ClientError {
     )]
     ReadTimedOut,
     #[error("{message}")]
-    Refused { status: u16, message: String },
+    Refused {
+        status: u16,
+        // The remedy is a spelling of the caller's own interface, so the daemon names the refusal
+        // and leaves the sentence about it to whoever the caller is.
+        reason: Option<Refusal>,
+        message: String,
+    },
     // The daemon answered, and the answer is not what this route returns. A daemon that predates a
     // route serves the web UI's index page from its fallback instead of 404-ing, so this is what an
     // out-of-date daemon looks like from here — not a transport failure.
@@ -415,12 +421,13 @@ fn accepted(response: Response) -> Result<Response, ClientError> {
     if status.is_success() {
         return Ok(response);
     }
-    let message = response
+    let (reason, message) = response
         .json::<ApiErrorBody>()
-        .map(|body| body.message)
-        .unwrap_or_else(|_| format!("request failed with status {status}"));
+        .map(|body| (body.reason, body.message))
+        .unwrap_or_else(|_| (None, format!("request failed with status {status}")));
     Err(ClientError::Refused {
         status: status.as_u16(),
+        reason,
         message,
     })
 }

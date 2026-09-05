@@ -15,11 +15,6 @@ export type TaskTree = {
 }
 export const TaskTree = Schema.suspend((): Schema.Codec<TaskTree> => __recursive_TaskTree)
 // non-recursive definitions
-export type ApiErrorBody = { readonly cycles?: ReadonlyArray<ReadonlyArray<string>>; readonly message: string }
-export const ApiErrorBody = Schema.Struct({
-  cycles: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
-  message: Schema.String,
-})
 export type ChangeKind = "base" | "added" | "modified" | "deleted"
 export const ChangeKind = Schema.Literals(["base", "added", "modified", "deleted"])
 export type Color =
@@ -89,6 +84,8 @@ export const ProjectStatus = Schema.Union(
   ],
   { mode: "oneOf" },
 )
+export type Refusal = "tag_referenced" | "tag_unregistered"
+export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"])
 export type RegisterProject = { readonly path: string }
 export const RegisterProject = Schema.Struct({ path: Schema.String })
 export type RenameProject = { readonly name: string }
@@ -158,6 +155,16 @@ export const ProjectView = Schema.Struct({
   name: Schema.String,
   root: Schema.String,
   status: ProjectStatus,
+})
+export type ApiErrorBody = {
+  readonly cycles?: ReadonlyArray<ReadonlyArray<string>>
+  readonly message: string
+  readonly reason?: Refusal
+}
+export const ApiErrorBody = Schema.Struct({
+  cycles: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
+  message: Schema.String,
+  reason: Schema.optionalKey(Refusal),
 })
 export type CreateTask = {
   readonly body?: string | null

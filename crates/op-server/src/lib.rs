@@ -19,8 +19,9 @@ use axum::{
 use op_api::{
     Abbreviation, ApiErrorBody, Board, BranchComments, BranchState, ChangeEvent, ChangeKind,
     Comment, CreateComment, CreateTag, CreateTask, DaemonInfo, Flow, FlowCycles, FlowQuery,
-    KeyError, Matrix, ProjectView, RegisterProject, RenameProject, SearchHit, Status, TagPatch,
-    TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
+    KeyError, Matrix, ProjectView, Refusal, RegisterProject, RenameProject, SearchHit, Status,
+    TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView,
+    TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -644,6 +645,7 @@ struct CreatedTask {
 struct ApiError {
     status: StatusCode,
     message: String,
+    reason: Option<Refusal>,
     cycles: Vec<Vec<String>>,
 }
 
@@ -652,6 +654,7 @@ impl ApiError {
         Self {
             status,
             message: message.into(),
+            reason: None,
             cycles: Vec::new(),
         }
     }
@@ -700,6 +703,7 @@ impl From<StoreError> for ApiError {
             StoreError::NotFound { .. } | StoreError::TagNotFound { .. } => StatusCode::NOT_FOUND,
             StoreError::Invalid(_)
             | StoreError::InvalidRef { .. }
+            | StoreError::TagUnregistered { .. }
             | StoreError::InvalidColor(_) => StatusCode::BAD_REQUEST,
             StoreError::TagExists { .. } | StoreError::TagReferenced { .. } => StatusCode::CONFLICT,
             // The request is fine and the daemon is fine; the stored file is the thing that has to
@@ -709,7 +713,15 @@ impl From<StoreError> for ApiError {
             }
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        Self::new(status, err.to_string())
+        let reason = match &err {
+            StoreError::TagReferenced { .. } => Some(Refusal::TagReferenced),
+            StoreError::TagUnregistered { .. } => Some(Refusal::TagUnregistered),
+            _ => None,
+        };
+        Self {
+            reason,
+            ..Self::new(status, err.to_string())
+        }
     }
 }
 
@@ -720,6 +732,7 @@ impl From<FlowCycles> for ApiError {
         Self {
             status: StatusCode::UNPROCESSABLE_ENTITY,
             message: err.to_string(),
+            reason: None,
             cycles: err.cycles,
         }
     }
@@ -757,6 +770,7 @@ impl IntoResponse for ApiError {
             self.status,
             Json(ApiErrorBody {
                 message: self.message,
+                reason: self.reason,
                 cycles: self.cycles,
             }),
         )
@@ -2062,7 +2076,7 @@ async fn patch_tag(
         (status = 204, description = "Deleted"),
         (status = 400, description = "The name cannot be normalized to a tag name", body = ApiErrorBody),
         (status = 404, description = "No such project, or no such tag", body = ApiErrorBody),
-        (status = 409, description = "Tasks on this branch reference the tag, the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
+        (status = 409, description = "Tasks on this branch reference the tag (`reason: tag_referenced`, the one `force` answers), the branch is not checked out in a writable worktree, or the daemon's root is gone", body = ApiErrorBody),
         (status = 500, description = "The registry could not be written", body = ApiErrorBody),
         (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
