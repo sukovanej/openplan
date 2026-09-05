@@ -1,6 +1,9 @@
 ---
 status: backlog
 created: 2026-07-29T10:05:59Z
+tags:
+- bug
+- daemon
 ---
 # Restore the last-change walk's early exit and stop re-reading trees
 

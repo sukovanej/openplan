@@ -1,4 +1,6 @@
 ---
 color: cyan
 ---
-# ui
+# UI
+
+The web UI and the desktop window.

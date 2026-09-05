@@ -1,6 +1,10 @@
 ---
 status: backlog
 created: 2026-07-30T12:18:53Z
+tags:
+- bug
+- daemon
+- git
 ---
 # Index a live worktree whose branch has no ref yet
 

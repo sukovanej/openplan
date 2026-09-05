@@ -4,6 +4,10 @@ created: 2026-07-26T15:40:55Z
 parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:
 - ./00023-design-a-continuous-changes-accu.md
+tags:
+- cli
+- feature
+- git
 ---
 # Implement the section-aware merge driver (replace stub)
 

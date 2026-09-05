@@ -1,6 +1,9 @@
 ---
 status: backlog
 created: 2026-07-26T15:40:55Z
+tags:
+- feature
+- git
 ---
 # Continuous changes accumulation via the rolling-updates ref
 
