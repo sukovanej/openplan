@@ -53,11 +53,11 @@ pub fn board_cmp(a: &TaskListItem, b: &TaskListItem) -> std::cmp::Ordering {
     })
 }
 
-// Which part of the task matched decides the order first, so a key hit leads every title hit and a
-// title hit leads every body hit. Among hits that matched the same way, the task changed most
-// recently leads. Two tasks can name the same word, and the one somebody is working on now is the
-// one the typist means. A `rank` plays no part here, because it orders one board column and a
-// search crosses every column.
+// Where the query matched decides the order first, so a key hit beats a title hit and a title hit
+// beats a body hit. Inside one of those groups the task with the most recent change comes first.
+// Many tasks name the same word, and the one somebody works on now is the one the typist wants.
+// A `rank` plays no part here, because it orders one board column and a search crosses every
+// column.
 pub fn hit_cmp(a: &SearchHit, b: &SearchHit) -> std::cmp::Ordering {
     a.matched
         .cmp(&b.matched)

@@ -9,9 +9,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Search order. A key hit leads a title hit, and a title hit leads a body hit.
-  The task changed last leads the hits that matched the same way. The id
-  ordered them before this change.
+- Search hits now come newest first. A key match still beats a title match, and
+  a title match still beats a body match. Inside each of those groups, the task
+  with the most recent change is on top. The id decided that order before.
 - The `task-management` skill. The agent creates a task only when the user asks
   for one, in those words. A request to do work made a task before this change.
 
