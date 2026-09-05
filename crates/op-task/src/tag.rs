@@ -204,10 +204,6 @@ impl Tag {
         self.body = with_paragraph(head, description);
     }
 
-    pub fn append_body(&mut self, content: &str) {
-        self.body = with_paragraph(&self.body, content);
-    }
-
     pub fn to_file_string(&self) -> Result<String, TagError> {
         let fm = serde_yaml::to_string(&self.frontmatter)?;
         Ok(format!("---\n{fm}---\n{}", self.body))

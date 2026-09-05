@@ -62,13 +62,6 @@ fn a_missing_color_falls_back_to_the_derived_one_and_stays_missing() {
 }
 
 #[test]
-fn a_description_appends_below_the_display_name() {
-    let mut tag = Tag::new("Backend", Some(Color::Green)).unwrap();
-    tag.append_body("Work behind the API.");
-    assert_eq!(tag.body, "# Backend\n\nWork behind the API.\n");
-}
-
-#[test]
 fn a_file_without_a_fence_is_refused() {
     assert!(matches!(
         Tag::from_file_string("backend".to_owned(), "# Backend\n"),
@@ -90,7 +83,7 @@ fn an_unknown_color_in_a_file_is_refused() {
 #[test]
 fn a_rename_takes_the_name_and_the_display_name_from_one_string() {
     let mut tag = Tag::new("Backend", Some(Color::Teal)).unwrap();
-    tag.append_body("Work behind the API.");
+    tag.set_description("Work behind the API.");
 
     tag.rename("  Infra   Team  ").unwrap();
 
