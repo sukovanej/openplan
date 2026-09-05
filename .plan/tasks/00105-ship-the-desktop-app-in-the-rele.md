@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-09-05T10:22:41Z
 dependencies:
 - ./00093-release-process-versions-changel.md

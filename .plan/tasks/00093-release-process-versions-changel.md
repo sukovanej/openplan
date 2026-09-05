@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-08-27T17:14:09Z
 ---
 # Release process: versions, changelog, and cross-platform binaries
