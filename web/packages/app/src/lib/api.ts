@@ -12,9 +12,12 @@ export class TaskNotFound extends Data.TaggedError("TaskNotFound")<{
 
 // A write the server refused, carrying its reason ("cannot reparent … under its own descendant …").
 // A bare status code would drop exactly the detail a user needs to understand why nothing happened.
+// `reason` names the refusals a caller acts on rather than reads: one status covers several, and
+// only the field tells them apart.
 export class TaskRejected extends Data.TaggedError("TaskRejected")<{
   readonly status: number
   readonly message: string
+  readonly reason?: Api.Refusal
 }> {}
 
 // A flow the daemon cannot order, with the members of each cycle it found. The keys carry no
@@ -67,7 +70,13 @@ const tasks: Effect.Effect<Api.TasksClient, never, HttpClient.HttpClient> = Effe
 })
 
 const refusal = (error: { readonly response: { readonly status: number }; readonly cause: Api.ApiErrorBody }) =>
-  Effect.fail(new TaskRejected({ status: error.response.status, message: error.cause.message }))
+  Effect.fail(
+    new TaskRejected({
+      status: error.response.status,
+      message: error.cause.message,
+      reason: error.cause.reason,
+    }),
+  )
 
 // A status no route documents (a proxy's 502, say): the generated client folds it into a
 // transport-shaped error, leaving the status as the only thing worth reporting.

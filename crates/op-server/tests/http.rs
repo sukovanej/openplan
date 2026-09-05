@@ -2553,6 +2553,14 @@ async fn deleting_a_referenced_tag_needs_force() {
 
     let refused = send(&state, "DELETE", "/api/projects/test/tags/backend", None).await;
     assert_eq!(refused.status(), StatusCode::CONFLICT);
+    // The status covers three refusals and `force` answers only this one, so the caller reads the
+    // field rather than the sentence to decide whether to offer it.
+    let body = body_json(refused).await;
+    assert_eq!(body["reason"], "tag_referenced");
+    assert!(
+        !body["message"].as_str().unwrap().contains("--force"),
+        "the remedy is the caller's own spelling, not the store's: {body}"
+    );
     assert_eq!(tag_names(&state).await, vec!["backend".to_owned()]);
 
     let forced = send(
@@ -2724,13 +2732,16 @@ async fn a_task_can_only_carry_registered_tags() {
     )
     .await;
     assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
-    let message = body_json(refused).await["message"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let body = body_json(refused).await;
+    assert_eq!(body["reason"], "tag_unregistered");
+    let message = body["message"].as_str().unwrap();
     assert!(
-        message.contains("openplan tag create"),
-        "the refusal says how to register the tag: {message}"
+        message.contains("backend"),
+        "the refusal names the tag: {message}"
+    );
+    assert!(
+        !message.contains("openplan"),
+        "the remedy is the caller's own spelling, not the store's: {message}"
     );
 
     assert_eq!(

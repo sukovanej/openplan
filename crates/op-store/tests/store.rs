@@ -931,9 +931,8 @@ fn assignment_requires_every_name_in_the_registry() {
 
     let refused = tagged(&store, "Wire the parser", &["backend", "wip"]);
     assert!(
-        matches!(&refused, Err(StoreError::Invalid(message))
-            if message.contains("tag wip does not exist") && message.contains("openplan tag create")),
-        "an unknown tag must be refused with a hint: {refused:?}"
+        matches!(&refused, Err(StoreError::TagUnregistered { name }) if name == "wip"),
+        "an unknown tag must be refused by name: {refused:?}"
     );
 
     register(&store, "wip");
@@ -955,7 +954,7 @@ fn a_dangling_tag_blocks_an_unrelated_edit_until_it_is_dropped() {
         Ok(())
     });
     assert!(
-        matches!(&refused, Err(StoreError::Invalid(message)) if message.contains("tag ghost does not exist")),
+        matches!(&refused, Err(StoreError::TagUnregistered { name }) if name == "ghost"),
         "validation covers the whole set, not only what the write adds: {refused:?}"
     );
 
@@ -1089,6 +1088,26 @@ fn deleting_a_referenced_tag_needs_force() {
         vec!["backend"],
         "a forced delete leaves the reference dangling rather than editing tasks"
     );
+}
+
+// The store answers a CLI, a daemon and a browser alike, and only the caller knows how a person
+// reaches it. A refusal that named `--force` read as a flag for a button the reader had pressed.
+#[test]
+fn a_tag_refusal_states_the_fact_and_names_no_command() {
+    for refused in [
+        StoreError::TagReferenced {
+            name: "backend".to_owned(),
+            count: 2,
+        },
+        StoreError::TagUnregistered {
+            name: "backend".to_owned(),
+        },
+    ] {
+        let message = refused.to_string();
+        assert!(message.contains("backend"), "{message}");
+        assert!(!message.contains("openplan"), "{message}");
+        assert!(!message.contains("--"), "{message}");
+    }
 }
 
 #[test]
