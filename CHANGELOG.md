@@ -25,3 +25,12 @@ The first release.
 - `openplan setup-skills`. It installs the agent skills in a repository.
 - Binaries for macOS (Apple silicon and Intel) and Linux (x86_64 and arm64),
   with a one-line installer.
+- The desktop app. It opens one window on the daemon's web UI, and it starts a
+  daemon out of itself when none runs. A dmg for each macOS target and a deb for
+  each Linux target. There is no arm64 AppImage yet.
+
+### Known problems
+
+- The desktop app is not signed. macOS shows a Gatekeeper warning until the app
+  carries a Developer ID certificate. Open it from the Finder context menu the
+  first time.

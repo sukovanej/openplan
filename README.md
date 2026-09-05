@@ -76,7 +76,6 @@ and never starts a daemon. One daemon serves every repository on the machine: th
 a repository registers it, and `openplan project` manages the registry. `OPENPLAN_HOME` picks the
 daemon's state directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
 
-<<<<<<< HEAD
 ### Desktop window
 
 ```sh
@@ -95,7 +94,6 @@ after a change to the SPA. The window starts its own daemon when none runs, so i
 mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
 ```
 
->>>>>>> origin/main
 ## Release
 
 The product version is `version` in `[workspace.package]`, and it follows
@@ -127,14 +125,17 @@ git tag v0.0.2 && git push origin v0.0.2
 ```
 
 The tag starts `.github/workflows/release.yml`. It builds each target, makes the archives, the
-checksums, and the installer, and publishes a GitHub Release. The release holds the `openplan`
-binary only. The desktop app ships as a bundle, not as a binary in a tarball, so `crates/op-gui`
-sets `dist = false` until OPP-100 adds a workflow for it.
+checksums, and the installer, and publishes a GitHub Release.
+
 [cargo-dist](https://axodotdev.github.io/cargo-dist/) generates that workflow from
 `[workspace.metadata.dist]` in `Cargo.toml`. After a change there, run `dist init --yes` and
 commit the result.
 
-=======
+The desktop app ships as a bundle, not as a binary in a tarball, so `crates/op-gui` sets
+`dist = false` and cargo-dist skips it. `.github/workflows/release-app.yml` follows the Release
+workflow, builds the bundle on each platform, and uploads it to the same release. Nothing
+generates that file. Edit it by hand.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

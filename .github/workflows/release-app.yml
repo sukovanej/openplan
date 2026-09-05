@@ -1,0 +1,83 @@
+name: Release app
+
+# Not `on: release`. cargo-dist makes the release with GITHUB_TOKEN, and a release that token
+# makes starts no further workflow, so this waits for the Release run instead.
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: bundle (${{ matrix.target }})
+    # `head_branch` holds the tag name for a tag push.
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+          # No arm64 AppImage: nothing here proves the bundler makes one, and an x64 file under an
+          # arm64 name is worse than no file.
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundles: deb
+    runs-on: ${{ matrix.runner }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      # The `webkit2gtk` crate binds the WebKitGTK 4.1 API. 4.0 is a different package and does
+      # not satisfy it.
+      - name: Install the Tauri build dependencies
+        if: ${{ startsWith(matrix.runner, 'ubuntu') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      # `op-server` embeds `web/packages/app/dist` at compile time. Without this build the app
+      # links, but it serves no web UI. The release must stop instead.
+      - name: Build the web SPA
+        run: |
+          cd web
+          pnpm install --frozen-lockfile
+          pnpm -r build
+          test -s packages/app/dist/index.html
+      - run: cargo install tauri-cli --version "^2.0" --locked
+      # Every runner builds its own target, so no `--target`: passing one moves the bundle under
+      # `target/<triple>/` and buys nothing here. The bundle name carries the architecture.
+      - name: Build the bundle
+        working-directory: crates/op-gui
+        run: cargo tauri build --bundles ${{ matrix.bundles }}
+      - name: Upload the bundle to the release
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(target/release/bundle/*/*.dmg
+                 target/release/bundle/*/*.deb
+                 target/release/bundle/*/*.AppImage)
+          test ${#files[@]} -gt 0 || { echo "the bundler wrote no artifact" >&2; exit 1; }
+          gh release upload "$TAG" "${files[@]}" --clobber
