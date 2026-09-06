@@ -1,7 +1,7 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::process::ExitCode;
 
-use op_task::{Frontmatter, Task};
+use op_task::{Frontmatter, Task, three_way};
 
 pub struct Args<'a> {
     pub ancestor: &'a str,
@@ -100,7 +100,7 @@ pub fn merge(base: &str, ours: &str, theirs: &str, labels: &Labels<'_>) -> Merge
     // A frontmatter field carries no place to put markers that still leaves YAML a reader can
     // parse, and a same-field divergence is a choice only a person can make. Fall back to the
     // whole-file form rather than emit frontmatter no parser accepts.
-    let Some(frontmatter) = merge_frontmatter(
+    let Some(frontmatter) = Frontmatter::merged(
         &base_task.frontmatter,
         &our_task.frontmatter,
         &their_task.frontmatter,
@@ -135,61 +135,6 @@ fn whole_file(ours: &str, theirs: &str, labels: &Labels<'_>, what: &str) -> Merg
     }
 }
 
-fn merge_frontmatter(
-    base: &Frontmatter,
-    ours: &Frontmatter,
-    theirs: &Frontmatter,
-) -> Option<Frontmatter> {
-    let mut extra = serde_yaml::Mapping::new();
-    let keys: BTreeSet<String> = [&base.extra, &ours.extra, &theirs.extra]
-        .into_iter()
-        .flat_map(|map| map.keys())
-        .filter_map(|key| key.as_str().map(str::to_owned))
-        .collect();
-    for key in keys {
-        let at = |map: &serde_yaml::Mapping| map.get(key.as_str()).cloned();
-        if let Some(value) = scalar(&at(&base.extra), &at(&ours.extra), &at(&theirs.extra))? {
-            extra.insert(serde_yaml::Value::String(key), value);
-        }
-    }
-    Some(Frontmatter {
-        status: scalar(&base.status, &ours.status, &theirs.status)?,
-        created: scalar(&base.created, &ours.created, &theirs.created)?,
-        parent: scalar(&base.parent, &ours.parent, &theirs.parent)?,
-        rank: scalar(&base.rank, &ours.rank, &theirs.rank)?,
-        // A list of names is a set both sides may add to and remove from, so the two edits compose
-        // and nothing here can conflict.
-        dependencies: names(&base.dependencies, &ours.dependencies, &theirs.dependencies),
-        tags: names(&base.tags, &ours.tags, &theirs.tags),
-        extra,
-    })
-}
-
-fn scalar<T: PartialEq + Clone>(base: &T, ours: &T, theirs: &T) -> Option<T> {
-    if ours == theirs || base == theirs {
-        Some(ours.clone())
-    } else if base == ours {
-        Some(theirs.clone())
-    } else {
-        None
-    }
-}
-
-fn names(base: &[String], ours: &[String], theirs: &[String]) -> Vec<String> {
-    let held = |list: &[String], name: &String| list.iter().any(|item| item == name);
-    let mut out: Vec<String> = base
-        .iter()
-        .filter(|name| held(ours, name) && held(theirs, name))
-        .cloned()
-        .collect();
-    for name in ours.iter().chain(theirs) {
-        if !held(base, name) && !held(&out, name) {
-            out.push(name.clone());
-        }
-    }
-    out
-}
-
 fn merge_body(base: &str, ours: &str, theirs: &str, labels: &Labels<'_>) -> (String, Vec<String>) {
     let (base, ours, theirs) = (sections(base), sections(ours), sections(theirs));
     let find = |list: &[(Section, String)], key: &Section| {
@@ -209,7 +154,7 @@ fn merge_body(base: &str, ours: &str, theirs: &str, labels: &Labels<'_>) -> (Str
     let mut conflicts = Vec::new();
     for key in order {
         let (b, o, t) = (find(&base, &key), find(&ours, &key), find(&theirs, &key));
-        match scalar(&b, &o, &t) {
+        match three_way(&b, &o, &t) {
             Some(Some(text)) => blocks.push(text),
             Some(None) => {}
             None => {

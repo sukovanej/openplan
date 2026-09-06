@@ -19,7 +19,6 @@ op-watch.workspace = true
 op-server.workspace = true
 op-md.workspace = true
 op-task.workspace = true
-serde_yaml.workspace = true
 op-skills.workspace = true
 clap.workspace = true
 tokio.workspace = true
