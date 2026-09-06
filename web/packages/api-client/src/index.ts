@@ -44,6 +44,8 @@ export const Color = Schema.Literals([
   "violet",
   "pink",
 ])
+export type Conflict = { readonly files: ReadonlyArray<string>; readonly worktree: string }
+export const Conflict = Schema.Struct({ files: Schema.Array(Schema.String), worktree: Schema.String })
 export type CreateComment = { readonly agent?: string; readonly author: string; readonly text: string }
 export const CreateComment = Schema.Struct({
   agent: Schema.optionalKey(Schema.String),
@@ -84,6 +86,18 @@ export const ProjectStatus = Schema.Union(
   ],
   { mode: "oneOf" },
 )
+export type Published = {
+  readonly branch: string
+  readonly commit: string
+  readonly pull_request?: string | null
+  readonly remote: string
+}
+export const Published = Schema.Struct({
+  branch: Schema.String,
+  commit: Schema.String,
+  pull_request: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  remote: Schema.String,
+})
 export type Refusal = "tag_referenced" | "tag_unregistered"
 export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"])
 export type RegisterProject = { readonly path: string }
@@ -407,6 +421,11 @@ export type BoardGroup = { readonly rows: ReadonlyArray<BoardRow>; readonly stat
 export const BoardGroup = Schema.Struct({ rows: Schema.Array(BoardRow), status: Schema.optionalKey(Status) })
 export type Matrix = { readonly cells: ReadonlyArray<MatrixCell> }
 export const Matrix = Schema.Struct({ cells: Schema.Array(MatrixCell) })
+export type RollingUpdates = { readonly conflict?: null | Conflict; readonly pending: ReadonlyArray<MatrixCell> }
+export const RollingUpdates = Schema.Struct({
+  conflict: Schema.optionalKey(Schema.Union([Schema.Null, Conflict], { mode: "oneOf" })),
+  pending: Schema.Array(MatrixCell),
+})
 export type TaskBranches = { readonly id: string; readonly versions: ReadonlyArray<TaskVersion> }
 export const TaskBranches = Schema.Struct({ id: Schema.String, versions: Schema.Array(TaskVersion) })
 export type Board = { readonly groups: ReadonlyArray<BoardGroup> }
@@ -495,6 +514,22 @@ export type GetMatrix500 = ApiErrorBody
 export const GetMatrix500 = ApiErrorBody
 export type GetMatrix503 = ApiErrorBody
 export const GetMatrix503 = ApiErrorBody
+export type GetRollingUpdates200 = RollingUpdates
+export const GetRollingUpdates200 = RollingUpdates
+export type GetRollingUpdates404 = ApiErrorBody
+export const GetRollingUpdates404 = ApiErrorBody
+export type GetRollingUpdates500 = ApiErrorBody
+export const GetRollingUpdates500 = ApiErrorBody
+export type GetRollingUpdates503 = ApiErrorBody
+export const GetRollingUpdates503 = ApiErrorBody
+export type PublishRollingUpdates200 = Published
+export const PublishRollingUpdates200 = Published
+export type PublishRollingUpdates404 = ApiErrorBody
+export const PublishRollingUpdates404 = ApiErrorBody
+export type PublishRollingUpdates409 = ApiErrorBody
+export const PublishRollingUpdates409 = ApiErrorBody
+export type PublishRollingUpdates503 = ApiErrorBody
+export const PublishRollingUpdates503 = ApiErrorBody
 export type SearchProjectParams = { readonly q?: string; readonly fresh?: boolean }
 export const SearchProjectParams = Schema.Struct({
   q: Schema.optionalKey(Schema.String),
@@ -927,6 +962,30 @@ export const make = (
           }),
         ),
       ),
+    getRollingUpdates: (project, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/rolling-updates`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetRollingUpdates200),
+            "404": decodeError("GetRollingUpdates404", GetRollingUpdates404),
+            "500": decodeError("GetRollingUpdates500", GetRollingUpdates500),
+            "503": decodeError("GetRollingUpdates503", GetRollingUpdates503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    publishRollingUpdates: (project, options) =>
+      HttpClientRequest.post(`/api/projects/${project}/rolling-updates/publish`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(PublishRollingUpdates200),
+            "404": decodeError("PublishRollingUpdates404", PublishRollingUpdates404),
+            "409": decodeError("PublishRollingUpdates409", PublishRollingUpdates409),
+            "503": decodeError("PublishRollingUpdates503", PublishRollingUpdates503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     searchProject: (project, options) =>
       HttpClientRequest.get(`/api/projects/${project}/search`).pipe(
         HttpClientRequest.setUrlParams({ q: options?.params?.["q"] as any, fresh: options?.params?.["fresh"] as any }),
@@ -1290,6 +1349,28 @@ export interface TasksClient {
     | TasksClientError<"GetMatrix404", typeof GetMatrix404.Type>
     | TasksClientError<"GetMatrix500", typeof GetMatrix500.Type>
     | TasksClientError<"GetMatrix503", typeof GetMatrix503.Type>
+  >
+  readonly getRollingUpdates: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetRollingUpdates200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetRollingUpdates404", typeof GetRollingUpdates404.Type>
+    | TasksClientError<"GetRollingUpdates500", typeof GetRollingUpdates500.Type>
+    | TasksClientError<"GetRollingUpdates503", typeof GetRollingUpdates503.Type>
+  >
+  readonly publishRollingUpdates: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof PublishRollingUpdates200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"PublishRollingUpdates404", typeof PublishRollingUpdates404.Type>
+    | TasksClientError<"PublishRollingUpdates409", typeof PublishRollingUpdates409.Type>
+    | TasksClientError<"PublishRollingUpdates503", typeof PublishRollingUpdates503.Type>
   >
   readonly searchProject: <Config extends OperationConfig>(
     project: string,

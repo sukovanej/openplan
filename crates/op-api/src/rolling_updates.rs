@@ -20,8 +20,12 @@ pub struct Conflict {
     pub worktree: String,
 }
 
+// The branch the remote now holds, and the pull request that merges it. `pull_request` is empty
+// when `gh` is absent and the remote is not GitHub, which leaves the branch name as the only lead.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Published {
+    pub remote: String,
     pub branch: String,
     pub commit: String,
+    pub pull_request: Option<String>,
 }

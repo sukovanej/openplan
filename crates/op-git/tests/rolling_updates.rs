@@ -83,7 +83,7 @@ fn commit_on_main(fixture: &Fixture, contents: &str, path: &str, message: &str) 
 }
 
 #[test]
-fn the_lane_worktree_holds_the_plan_and_no_code() {
+fn the_rolling_updates_worktree_holds_the_plan_and_no_code() {
     let fixture = fixture();
 
     assert!(rolling_task(&fixture).is_file());
@@ -100,7 +100,7 @@ fn the_lane_worktree_holds_the_plan_and_no_code() {
 }
 
 #[test]
-fn ensure_lane_runs_twice_without_complaint() {
+fn ensure_rolling_updates_runs_twice_without_complaint() {
     let fixture = fixture();
 
     let again = fixture
@@ -207,93 +207,109 @@ fn the_same_section_on_both_sides_holds_the_rolling_updates_branch_at_the_confli
     assert!(!fixture.repo.rolling_updates_rebase_in_progress());
 }
 
-#[test]
-fn publish_fast_forwards_the_checked_out_main_and_moves_its_files() {
-    let fixture = fixture();
-    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
-    fixture
-        .repo
-        .rolling_updates_commit("an edit for later")
-        .unwrap();
-    fixture.repo.rolling_updates_rebase("main").unwrap();
-    let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
-
-    fixture.repo.fast_forward("main", &tip).unwrap();
-
-    assert_eq!(fixture.repo.branch_commit("main").unwrap(), tip);
-    let text = std::fs::read_to_string(fixture.root.join(".plan/tasks/00001-t.md")).unwrap();
-    assert!(text.contains("rolling alpha"), "{text}");
-}
-
-#[test]
-fn publish_refuses_when_main_has_uncommitted_task_edits() {
-    let fixture = fixture();
-    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
-    fixture
-        .repo
-        .rolling_updates_commit("an edit for later")
-        .unwrap();
-    fixture.repo.rolling_updates_rebase("main").unwrap();
-    let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
-    std::fs::write(
-        fixture.root.join(".plan/tasks/00002-x.md"),
-        task("stray", "stray"),
-    )
-    .unwrap();
-
-    let refused = fixture.repo.fast_forward("main", &tip);
-
-    assert!(matches!(
-        refused,
-        Err(op_git::GitError::WorktreeDirty { .. })
-    ));
-    assert_ne!(fixture.repo.branch_commit("main").unwrap(), tip);
-}
-
-#[test]
-fn publish_refuses_a_target_that_is_not_a_fast_forward() {
-    let fixture = fixture();
-    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
-    fixture
-        .repo
-        .rolling_updates_commit("an edit for later")
-        .unwrap();
-    let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
-    commit_on_main(&fixture, "fn main() { }\n", "src/main.rs", "code");
-
-    let refused = fixture.repo.fast_forward("main", &tip);
-
-    assert!(matches!(
-        refused,
-        Err(op_git::GitError::NotFastForward { .. })
-    ));
-}
-
-#[test]
-fn the_backup_push_sends_the_rolling_updates_branch_to_a_mirror() {
-    let fixture = fixture();
-    let mirror = fixture.root.join("../mirror.git");
+fn bare_remote(fixture: &Fixture) -> PathBuf {
+    let remote = fixture.root.parent().unwrap().join("remote.git");
+    git(
+        fixture.root.parent().unwrap(),
+        &["init", "-q", "--bare", remote.to_str().unwrap()],
+    );
     git(
         &fixture.root,
-        &["init", "-q", "--bare", mirror.to_str().unwrap()],
+        &["remote", "add", "origin", remote.to_str().unwrap()],
     );
+    remote
+}
+
+fn remote_commit(remote: &Path, branch: &str) -> Option<String> {
+    let out = Command::new("git")
+        .current_dir(remote)
+        .args(["rev-parse", branch])
+        .output()
+        .unwrap();
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+#[test]
+fn the_remote_branch_carries_the_person_and_a_config_key_overrides_it() {
+    let fixture = fixture();
+
+    assert_eq!(
+        fixture.repo.rolling_updates_remote_branch(),
+        format!("{ROLLING_UPDATES_BRANCH}-t")
+    );
+
+    git(
+        &fixture.root,
+        &["config", "openplan.rollingUpdatesBranch", "tasks/milan"],
+    );
+    assert_eq!(fixture.repo.rolling_updates_remote_branch(), "tasks/milan");
+}
+
+#[test]
+fn the_publish_remote_follows_the_default_branch_and_falls_back_to_origin() {
+    let fixture = fixture();
+
+    assert_eq!(fixture.repo.rolling_updates_remote("main"), "origin");
+
+    git(&fixture.root, &["config", "branch.main.remote", "upstream"]);
+    assert_eq!(fixture.repo.rolling_updates_remote("main"), "upstream");
+}
+
+#[test]
+fn publish_pushes_the_branch_to_the_remote_and_leaves_main_alone() {
+    let fixture = fixture();
+    let remote = bare_remote(&fixture);
+    let main = fixture.repo.branch_commit("main").unwrap();
     std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
     fixture
         .repo
         .rolling_updates_commit("an edit for later")
         .unwrap();
+    let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
+    let branch = fixture.repo.rolling_updates_remote_branch();
 
     fixture
         .repo
-        .push_rolling_updates(mirror.to_str().unwrap())
+        .push_rolling_updates("origin", &branch)
         .unwrap();
 
-    let there = Repo::discover(&mirror)
-        .unwrap()
-        .branch_commit(ROLLING_UPDATES_BRANCH)
-        .unwrap();
     assert_eq!(
-        there,
+        remote_commit(&remote, &branch).as_deref(),
+        Some(tip.as_str())
+    );
+    assert_eq!(fixture.repo.branch_commit("main").unwrap(), main);
+    assert_eq!(remote_commit(&remote, "main"), None);
+}
+
+#[test]
+fn a_rebase_rewrites_the_branch_and_the_next_push_replaces_it() {
+    let fixture = fixture();
+    let remote = bare_remote(&fixture);
+    let branch = fixture.repo.rolling_updates_remote_branch();
+    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
+    fixture
+        .repo
+        .rolling_updates_commit("an edit for later")
+        .unwrap();
+    fixture
+        .repo
+        .push_rolling_updates("origin", &branch)
+        .unwrap();
+    let first = remote_commit(&remote, &branch).unwrap();
+
+    commit_on_main(&fixture, "fn main() { }\n", "src/main.rs", "code");
+    fixture.repo.rolling_updates_rebase("main").unwrap();
+    fixture
+        .repo
+        .push_rolling_updates("origin", &branch)
+        .unwrap();
+
+    let second = remote_commit(&remote, &branch).unwrap();
+    assert_ne!(first, second);
+    assert_eq!(
+        second,
         fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap()
     );
 }

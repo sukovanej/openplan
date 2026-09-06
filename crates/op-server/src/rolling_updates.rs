@@ -18,6 +18,8 @@ const REBASE_QUIET: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_secs(5);
 const COMMIT_MESSAGE: &str = "Rolling task updates";
 const STOPPED_REBASE: &str = "a conflict holds the rolling updates; resolve it first";
+const NOTHING_TO_PUBLISH: &str =
+    "the rolling-updates branch holds no task the default branch lacks";
 const WORKER_GONE: &str = "the rolling-updates worker has stopped";
 
 enum Signal {
@@ -44,6 +46,8 @@ impl Handle {
         let (signals, inbox) = mpsc::channel();
         let worker = Worker {
             backup: repo.config_string("openplan.backupRemote"),
+            remote: repo.rolling_updates_remote(&default_branch),
+            remote_branch: repo.rolling_updates_remote_branch(),
             repo: repo.clone(),
             default_branch,
             project: project.name(),
@@ -84,6 +88,8 @@ struct Worker {
     default_branch: String,
     project: String,
     events: broadcast::Sender<ChangeEvent>,
+    remote: String,
+    remote_branch: String,
     backup: Option<String>,
 }
 
@@ -159,13 +165,25 @@ impl Worker {
             .repo
             .branch_commit(ROLLING_UPDATES_BRANCH)
             .map_err(text)?;
+        if !self
+            .repo
+            .rolling_updates_differs(&self.default_branch)
+            .map_err(text)?
+        {
+            return Err(NOTHING_TO_PUBLISH.to_owned());
+        }
         self.repo
-            .fast_forward(&self.default_branch, &commit)
+            .push_rolling_updates(&self.remote, &self.remote_branch)
             .map_err(text)?;
-        // The branch did not move, the default branch did: nothing is waiting any more.
-        self.announce();
         Ok(Published {
-            branch: self.default_branch.clone(),
+            pull_request: crate::pull_request::open(
+                &self.repo.rolling_updates_worktree(),
+                self.repo.remote_url(&self.remote).as_deref(),
+                &self.remote_branch,
+                &self.default_branch,
+            ),
+            remote: self.remote.clone(),
+            branch: self.remote_branch.clone(),
             commit,
         })
     }
@@ -178,10 +196,10 @@ impl Worker {
 
     fn tip_moved(&self) {
         self.announce();
-        // Durability only, and never on the path of an edit: a mirror nobody pulls cannot lose a
-        // race this machine is the only writer of.
+        // Durability only, and never on the path of an edit. It goes to the same per-person branch
+        // publish uses, so an open pull request keeps up with the worktree on its own.
         if let Some(remote) = &self.backup
-            && let Err(err) = self.repo.push_rolling_updates(remote)
+            && let Err(err) = self.repo.push_rolling_updates(remote, &self.remote_branch)
         {
             self.warn(&format!("backup push failed: {err}"));
         }

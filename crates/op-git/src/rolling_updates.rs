@@ -113,6 +113,23 @@ impl Repo {
         }
     }
 
+    // Task files only. The branch always carries the `.gitattributes` commit as well, and that is
+    // not something a person publishes.
+    pub fn rolling_updates_differs(&self, from: &str) -> Result<bool, GitError> {
+        let out = git(
+            &self.rolling_updates_worktree(),
+            &[
+                "diff",
+                "--name-only",
+                from,
+                ROLLING_UPDATES_BRANCH,
+                "--",
+                ".plan",
+            ],
+        )?;
+        Ok(!out.trim().is_empty())
+    }
+
     pub fn rolling_updates_rebase_in_progress(&self) -> bool {
         let admin = self
             .git_common_dir()
@@ -133,50 +150,34 @@ impl Repo {
         git(&self.rolling_updates_worktree(), &["rebase", "--abort"]).map(|_| ())
     }
 
-    // Advance `branch` to `to` without a merge and without a force. A worktree that holds the
-    // branch gets its index and its files moved with the ref, so the checkout never goes stale.
-    pub fn fast_forward(&self, branch: &str, to: &str) -> Result<(), GitError> {
-        let from = self.branch_commit(branch)?;
-        if from == to {
-            return Ok(());
+    // The remote gets one branch per person. `-` and not `/` before the name: git cannot hold
+    // `openplan/rolling-updates` and `openplan/rolling-updates/milan` at once.
+    pub fn rolling_updates_remote_branch(&self) -> String {
+        if let Some(name) = self.config_string("openplan.rollingUpdatesBranch") {
+            return name;
         }
-        if self.ancestry(&[(&from, to)])?.first().copied().flatten()
-            != Some(std::cmp::Ordering::Less)
-        {
-            return Err(GitError::NotFastForward {
-                branch: branch.to_owned(),
-            });
-        }
-        match self.worktree_holding(branch)? {
-            Some(worktree) => {
-                let dirty = git(&worktree, &["status", "--porcelain", "--", ".plan"])?;
-                if !dirty.trim().is_empty() {
-                    return Err(GitError::WorktreeDirty { path: worktree });
-                }
-                git(&worktree, &["merge", "--ff-only", to])?;
-            }
-            None => {
-                let reference = format!("refs/heads/{branch}");
-                git(
-                    &self.git_common_dir(),
-                    &["update-ref", &reference, to, &from],
-                )?;
-            }
-        }
-        Ok(())
+        let who = self
+            .config_string("user.email")
+            .and_then(|email| email.split('@').next().map(str::to_owned))
+            .or_else(|| self.config_string("user.name"))
+            .map(|who| slug(&who))
+            .filter(|who| !who.is_empty())
+            .unwrap_or_else(|| "local".to_owned());
+        format!("{ROLLING_UPDATES_BRANCH}-{who}")
     }
 
-    pub fn worktree_holding(&self, branch: &str) -> Result<Option<PathBuf>, GitError> {
-        Ok(self
-            .worktrees()?
-            .into_iter()
-            .find(|worktree| worktree.branch.as_deref() == Some(branch))
-            .map(|worktree| worktree.path))
+    pub fn rolling_updates_remote(&self, default_branch: &str) -> String {
+        self.config_string(&format!("branch.{default_branch}.remote"))
+            .unwrap_or_else(|| "origin".to_owned())
     }
 
-    pub fn push_rolling_updates(&self, remote: &str) -> Result<(), GitError> {
-        let refspec =
-            format!("refs/heads/{ROLLING_UPDATES_BRANCH}:refs/heads/{ROLLING_UPDATES_BRANCH}");
+    pub fn remote_url(&self, remote: &str) -> Option<String> {
+        self.config_string(&format!("remote.{remote}.url"))
+    }
+
+    // Force is safe because the destination carries the person: nobody else writes that branch.
+    pub fn push_rolling_updates(&self, remote: &str, branch: &str) -> Result<(), GitError> {
+        let refspec = format!("refs/heads/{ROLLING_UPDATES_BRANCH}:refs/heads/{branch}");
         git(
             &self.git_common_dir(),
             &["push", "--force", remote, &refspec],
@@ -220,4 +221,16 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
         args.join(" "),
         String::from_utf8_lossy(&output.stderr).trim(),
     )))
+}
+
+fn slug(text: &str) -> String {
+    let mut out = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').to_owned()
 }

@@ -449,9 +449,14 @@ fn publish(root: &Path, daemon_url: Option<&str>, dry_run: bool) -> Result<()> {
     if !dry_run {
         let published = plan.publish()?;
         println!(
-            "{} now holds the rolling updates at {}",
-            published.branch, published.commit
+            "pushed {} to {}/{}",
+            &published.commit[..7.min(published.commit.len())],
+            published.remote,
+            published.branch
         );
+        if let Some(url) = &published.pull_request {
+            println!("{url}");
+        }
         return Ok(());
     }
     let waiting = plan.rolling_updates()?;

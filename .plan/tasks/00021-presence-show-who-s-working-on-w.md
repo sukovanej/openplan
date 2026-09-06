@@ -100,7 +100,7 @@ first, this second.
   session and lands on a branch nobody has checked out. It creates a new collision
   axis presence doesn't cover today: a human ambient-edits task X while an agent is
   actively claimed on task X on a feature branch → the two collide *later*, at
-  the lane's rebase onto main, possibly long after. Consider whether presence
+  the rolling-updates rebase onto main, possibly long after. Consider whether presence
   should warn at *edit* time ("an agent is actively working this task on
   `feat/auth`; your edit may conflict when it merges") instead of letting the
   conflict surface silently at merge. Open: does presence stay branch-local as

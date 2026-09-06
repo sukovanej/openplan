@@ -169,8 +169,17 @@ async fn a_write_that_names_another_branch_still_lands_there() {
 }
 
 #[tokio::test]
-async fn the_route_lists_what_is_waiting_and_publish_hands_it_over() {
+async fn the_route_lists_what_is_waiting_and_publish_pushes_it_to_the_remote() {
     let (dir, state) = with_rolling_updates();
+    let remote = dir.path().parent().unwrap().join("remote.git");
+    git(
+        dir.path(),
+        &["init", "-q", "--bare", remote.to_str().unwrap()],
+    );
+    git(
+        dir.path(),
+        &["remote", "add", "origin", remote.to_str().unwrap()],
+    );
     create(
         &state,
         "An edit for later",
@@ -179,6 +188,7 @@ async fn the_route_lists_what_is_waiting_and_publish_hands_it_over() {
     .await;
     let repo = op_git::Repo::discover(dir.path()).unwrap();
     repo.rolling_updates_commit("Rolling task updates").unwrap();
+    let main = repo.branch_commit("main").unwrap();
 
     let held = waiting(&state).await;
     assert_eq!(held["pending"].as_array().unwrap().len(), 1);
@@ -189,21 +199,58 @@ async fn the_route_lists_what_is_waiting_and_publish_hands_it_over() {
     let response = send(&state, "POST", &uri, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let published = body_json(response).await;
-    assert_eq!(published["branch"], "main");
 
+    let branch = repo.rolling_updates_remote_branch();
+    assert_eq!(published["remote"], "origin");
+    assert_eq!(published["branch"], branch);
     assert_eq!(
-        repo.branch_commit("main").unwrap(),
+        published["commit"],
         repo.branch_commit(op_git::ROLLING_UPDATES_BRANCH).unwrap()
     );
     assert_eq!(
-        dir.path().join(".plan/tasks").read_dir().unwrap().count(),
-        1
+        String::from_utf8_lossy(
+            &std::process::Command::new("git")
+                .current_dir(&remote)
+                .args(["rev-parse", &branch])
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .trim(),
+        published["commit"].as_str().unwrap()
     );
+    // Publish never moves the default branch, here or on the remote. A person merges the request.
+    assert_eq!(repo.branch_commit("main").unwrap(), main);
+    assert_eq!(
+        dir.path().join(".plan/tasks").read_dir().unwrap().count(),
+        0
+    );
+}
+
+// The branch always carries its own `.gitattributes` commit, so "nothing to publish" cannot mean
+// "the tips match". A reachable remote leaves the refusal as the only reason this can fail.
+#[tokio::test]
+async fn publish_refuses_when_the_branch_holds_no_task_the_default_branch_lacks() {
+    let (dir, state) = with_rolling_updates();
+    let remote = dir.path().parent().unwrap().join("empty-remote.git");
+    git(
+        dir.path(),
+        &["init", "-q", "--bare", remote.to_str().unwrap()],
+    );
+    git(
+        dir.path(),
+        &["remote", "add", "origin", remote.to_str().unwrap()],
+    );
+
+    let uri = format!("/api/projects/{PROJECT}/rolling-updates/publish");
+    let response = send(&state, "POST", &uri, None).await;
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
     assert!(
-        waiting(&state).await["pending"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+        body_json(response)
+            .await
+            .to_string()
+            .contains("no task the default branch lacks")
     );
 }
 

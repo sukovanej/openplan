@@ -40,6 +40,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
 mod project;
+pub mod pull_request;
 mod registry;
 pub mod rolling_updates;
 pub use project::{OpenError, Project, open_projects, serve_root};
@@ -1074,17 +1075,16 @@ async fn get_rolling_updates(
     waiting.map(Json).ok_or_else(no_rolling_updates)
 }
 
-// Manual, explicit, and a fast-forward only. It never merges and never forces, so the one way it
-// fails is a default branch that moved since the last rebase, which the next rebase settles on
-// its own.
+// Manual and explicit. It pushes the branch to the remote and opens a pull request; it never
+// touches the default branch, here or on the remote. A person merges the request.
 #[utoipa::path(
     post,
     path = "/api/projects/{project}/rolling-updates/publish",
     params(("project" = String, Path, description = "Project name")),
     responses(
-        (status = 200, description = "The default branch now holds the rolling updates", body = Published),
+        (status = 200, description = "The remote now holds the branch, with a pull request when one could be opened", body = Published),
         (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 409, description = "The default branch moved, or a conflict holds the rolling-updates branch", body = ApiErrorBody),
+        (status = 409, description = "Nothing to publish, a conflict holds the branch, or the push failed", body = ApiErrorBody),
         (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
     )
 )]

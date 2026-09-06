@@ -44,10 +44,6 @@ pub enum GitError {
     Open(String),
     #[error("{0}")]
     Command(String),
-    #[error("{branch} cannot fast-forward there")]
-    NotFastForward { branch: String },
-    #[error("{} has uncommitted task changes", path.display())]
-    WorktreeDirty { path: std::path::PathBuf },
     #[error("no such branch: {0}")]
     NoSuchBranch(String),
     #[error("object database error: {0}")]
