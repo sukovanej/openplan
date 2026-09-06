@@ -83,6 +83,9 @@ pub fn command(
     if let Some(session) = &options.resume {
         command.args(["--resume", &session.0]);
     }
+    if let Some(schema) = &options.schema {
+        command.args(["--json-schema", &schema.to_string()]);
+    }
     if let Some(limit) = options.budget.max_cost_usd {
         command.args(["--max-budget-usd", &limit.to_string()]);
     }

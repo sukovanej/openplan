@@ -158,3 +158,78 @@ async fn stops_a_turn_it_is_told_to_stop() {
     }
     panic!("the event stream ended before the turn did");
 }
+
+#[tokio::test]
+#[ignore]
+async fn drafts_a_task_and_refines_it() {
+    let agent = ClaudeCode::new()
+        .tools(Tools::None)
+        .skills(Skills::Disabled)
+        .settings(Settings::Ignore);
+    let options = SessionOptions::new(std::env::temp_dir())
+        .model("claude-haiku-4-5-20251001")
+        .mcp(McpPolicy::Disabled)
+        .persistence(Persistence::Ephemeral)
+        .schema(draft_schema());
+    let mut session = agent.start(options).expect("claude is on the path");
+
+    session
+        .handle()
+        .prompt("the login page needs oauth and email login, plus rate limiting. Ask nothing.")
+        .await
+        .expect("the session takes a prompt");
+    let first = drain_draft(&mut session).await;
+
+    // The value streams while the agent writes it, so the preview fills in before the turn ends.
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&first.streamed).unwrap(),
+        first.value
+    );
+    assert!(!first.value["title"].as_str().unwrap().is_empty());
+    assert!(!first.value["body"].as_str().unwrap().is_empty());
+
+    session
+        .handle()
+        .prompt("drop the rate limiting and add a tag named security")
+        .await
+        .expect("the session takes a second prompt");
+    let second = drain_draft(&mut session).await;
+    let tags = second.value["tags"].as_array().unwrap();
+    assert!(tags.iter().any(|tag| tag == "security"), "{tags:?}");
+    session.handle().shutdown().await.ok();
+}
+
+fn draft_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "title": { "type": "string" },
+            "body": { "type": "string" },
+            "tags": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["title", "body", "tags"],
+        "additionalProperties": false
+    })
+}
+
+struct Draft {
+    streamed: String,
+    value: serde_json::Value,
+}
+
+async fn drain_draft(session: &mut op_agent::Session) -> Draft {
+    let mut draft = Draft {
+        streamed: String::new(),
+        value: serde_json::Value::Null,
+    };
+    while let Some(event) = session.next_event().await {
+        match event {
+            AgentEvent::ResultDelta { delta } => draft.streamed.push_str(&delta),
+            AgentEvent::ResultReady { value } => draft.value = value,
+            AgentEvent::TurnEnded { .. } => return draft,
+            AgentEvent::Exited { code } => panic!("the agent left early with {code:?}"),
+            _ => {}
+        }
+    }
+    panic!("the event stream ended before the turn did");
+}

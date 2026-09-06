@@ -212,7 +212,14 @@ pub enum ThreadItem {
 #[serde(tag = "type", rename_all_fields = "camelCase")]
 pub enum KnownThreadItem {
     #[serde(rename = "agentMessage")]
-    AgentMessage { id: String, text: String },
+    AgentMessage {
+        id: String,
+        text: String,
+        // `commentary` for the notes the agent writes while it works, `final_answer` for the answer
+        // itself. An output schema shapes both, so only the phase tells them apart.
+        #[serde(default)]
+        phase: Option<String>,
+    },
     #[serde(rename = "reasoning")]
     Reasoning {
         id: String,

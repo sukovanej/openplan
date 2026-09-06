@@ -69,6 +69,9 @@ pub fn turn(thread: &str, text: String, options: &SessionOptions) -> Value {
     if let Some(effort) = options.effort {
         params["effort"] = json!(effort.as_str());
     }
+    if let Some(schema) = &options.schema {
+        params["outputSchema"] = schema.clone();
+    }
     params
 }
 

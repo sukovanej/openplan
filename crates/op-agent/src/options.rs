@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{session::SessionId, usage::Usage};
 
@@ -15,6 +16,9 @@ pub struct SessionOptions {
     pub persistence: Persistence,
     pub resume: Option<SessionId>,
     pub budget: Budget,
+    // A JSON Schema the answer of every turn must match. Both CLIs stream the value as it is
+    // written, so a reader sees the fields fill in before the turn ends.
+    pub schema: Option<Value>,
 }
 
 impl SessionOptions {
@@ -29,6 +33,7 @@ impl SessionOptions {
             persistence: Persistence::default(),
             resume: None,
             budget: Budget::default(),
+            schema: None,
         }
     }
 
@@ -69,6 +74,11 @@ impl SessionOptions {
 
     pub fn budget(mut self, budget: Budget) -> Self {
         self.budget = budget;
+        self
+    }
+
+    pub fn schema(mut self, schema: Value) -> Self {
+        self.schema = Some(schema);
         self
     }
 }

@@ -34,6 +34,12 @@ pub enum AgentEvent {
         item: ItemId,
         text: String,
     },
+    ResultDelta {
+        delta: String,
+    },
+    ResultReady {
+        value: Value,
+    },
     ToolStarted(ToolCall),
     ToolOutput {
         item: ItemId,

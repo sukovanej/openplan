@@ -41,7 +41,11 @@ pub async fn run(
         mut child,
     } = process;
     let mut outgoing = Some(outgoing);
-    let mut translator = Translator::new(options.cwd.clone(), options.model.clone());
+    let mut translator = Translator::new(
+        options.cwd.clone(),
+        options.model.clone(),
+        options.schema.is_some(),
+    );
     let mut requests = 0u64;
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut approvals: HashMap<String, Approval> = HashMap::new();

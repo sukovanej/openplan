@@ -2,14 +2,21 @@ use op_agent::{
     AgentEvent, ApprovalId, ApprovalRequest, ItemId, RateLimit, RateLimitWindow, SessionId,
     SessionInfo, ToolCall, ToolOutcome, TurnId, TurnStop, Usage,
 };
+use std::collections::BTreeSet;
+
 use op_claude::{ContentBlock, KnownContentBlock, KnownStreamOutput, Message, StreamOutput};
 use serde_json::Value;
+
+// The CLI answers `--json-schema` with a built-in tool of this name, and streams the value as that
+// tool's arguments. Nothing else marks the structured answer apart from an ordinary tool call.
+const STRUCTURED: &str = "StructuredOutput";
 
 pub struct Translator {
     ready: bool,
     interrupted: bool,
     turn: u64,
     message: Option<String>,
+    structured: BTreeSet<usize>,
     session: Usage,
     // Claude Code reports cost for the whole session, so a turn costs the difference.
     spent: f64,
@@ -28,6 +35,7 @@ impl Translator {
             interrupted: false,
             turn: 0,
             message: None,
+            structured: BTreeSet::new(),
             session: Usage::default(),
             spent: 0.0,
         }
@@ -45,6 +53,7 @@ impl Translator {
 
     pub fn turn_started(&mut self) -> AgentEvent {
         self.interrupted = false;
+        self.structured.clear();
         self.turn += 1;
         AgentEvent::TurnStarted {
             turn: self.turn_id(),
@@ -155,6 +164,9 @@ impl Translator {
                             text: thinking.clone(),
                         })
                     }
+                    // The structured answer reaches the caller as `ResultReady`, not as a call the
+                    // caller never asked for.
+                    KnownContentBlock::ToolUse { name, .. } if name == STRUCTURED => None,
                     KnownContentBlock::ToolUse {
                         id, name, input, ..
                     } => Some(AgentEvent::ToolStarted(ToolCall {
@@ -177,6 +189,17 @@ impl Translator {
                     .map(str::to_owned);
                 Vec::new()
             }
+            Some("content_block_start") => {
+                if event.pointer("/content_block/name").and_then(Value::as_str) == Some(STRUCTURED)
+                {
+                    let index = event
+                        .get("index")
+                        .and_then(Value::as_u64)
+                        .unwrap_or_default();
+                    self.structured.insert(index as usize);
+                }
+                Vec::new()
+            }
             Some("content_block_delta") => {
                 let Some(message) = &self.message else {
                     return Vec::new();
@@ -196,6 +219,11 @@ impl Translator {
                         item,
                         delta: text_at(delta, "thinking"),
                     }],
+                    Some("input_json_delta") if self.structured.contains(&index) => {
+                        vec![AgentEvent::ResultDelta {
+                            delta: text_at(delta, "partial_json"),
+                        }]
+                    }
                     _ => Vec::new(),
                 }
             }
@@ -224,11 +252,19 @@ impl Translator {
             (false, true) => TurnStop::Failed,
             (false, false) => TurnStop::Completed,
         };
-        let mut events = vec![AgentEvent::UsageUpdated {
+        let mut events = Vec::new();
+        if !self.structured.is_empty()
+            && let Some(value) = message
+                .as_deref()
+                .and_then(|message| serde_json::from_str(message).ok())
+        {
+            events.push(AgentEvent::ResultReady { value });
+        }
+        events.push(AgentEvent::UsageUpdated {
             turn,
             session: self.session,
             context_window: None,
-        }];
+        });
         if stop == TurnStop::Failed {
             events.push(AgentEvent::Failed {
                 message: message.unwrap_or_else(|| subtype.to_owned()),

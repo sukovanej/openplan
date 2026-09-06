@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
 use op_agent::{
     AgentEvent, ApprovalDecision, ApprovalId, ApprovalRequest, ItemId, RateLimit, RateLimitWindow,
     SessionId, SessionInfo, ToolCall, ToolOutcome, TurnId, TurnStop, Usage,
 };
+
 use serde_json::{Value, json};
 
 use crate::protocol::{
@@ -60,15 +61,21 @@ pub fn decision(decision: &ApprovalDecision, available: &[String]) -> &'static s
 pub struct Translator {
     cwd: PathBuf,
     model: Option<String>,
+    // With an output schema the answer of the turn is the value itself, so the agent message
+    // carries JSON rather than prose.
+    structured: bool,
+    answers: BTreeSet<String>,
     thread: Option<String>,
     turn: Option<String>,
 }
 
 impl Translator {
-    pub fn new(cwd: PathBuf, model: Option<String>) -> Self {
+    pub fn new(cwd: PathBuf, model: Option<String>, structured: bool) -> Self {
         Self {
             cwd,
             model,
+            structured,
+            answers: BTreeSet::new(),
             thread: None,
             turn: None,
         }
@@ -112,8 +119,23 @@ impl Translator {
                 }]
             }
             KnownNotification::TurnCompleted { turn } => self.turn_completed(turn),
-            KnownNotification::ItemStarted { item } => item_started(item),
-            KnownNotification::ItemCompleted { item } => item_completed(item),
+            KnownNotification::ItemStarted { item } => {
+                if let Some(answer) = self.answer_id(item) {
+                    self.answers.insert(answer);
+                }
+                item_started(item)
+            }
+            KnownNotification::ItemCompleted { item } => {
+                let answer = self.answer_id(item).is_some();
+                item_completed(item, answer)
+            }
+            KnownNotification::MessageDelta { item_id, delta }
+                if self.answers.contains(item_id) =>
+            {
+                vec![AgentEvent::ResultDelta {
+                    delta: delta.clone(),
+                }]
+            }
             KnownNotification::MessageDelta { item_id, delta } => vec![AgentEvent::Message {
                 item: ItemId(item_id.clone()),
                 delta: delta.clone(),
@@ -144,8 +166,23 @@ impl Translator {
         }
     }
 
+    fn answer_id(&self, item: &ThreadItem) -> Option<String> {
+        let ThreadItem::Known(known) = item else {
+            return None;
+        };
+        match known.as_ref() {
+            KnownThreadItem::AgentMessage { id, phase, .. }
+                if self.structured && phase.as_deref() == Some(FINAL_ANSWER) =>
+            {
+                Some(id.clone())
+            }
+            _ => None,
+        }
+    }
+
     fn turn_completed(&mut self, turn: &Turn) -> Vec<AgentEvent> {
         self.turn = None;
+        self.answers.clear();
         let stop = match turn.status {
             TurnStatus::Completed | TurnStatus::InProgress => TurnStop::Completed,
             TurnStatus::Interrupted => TurnStop::Interrupted,
@@ -208,7 +245,9 @@ fn item_started(item: &ThreadItem) -> Vec<AgentEvent> {
     vec![AgentEvent::ToolStarted(call)]
 }
 
-fn item_completed(item: &ThreadItem) -> Vec<AgentEvent> {
+const FINAL_ANSWER: &str = "final_answer";
+
+fn item_completed(item: &ThreadItem, answer: bool) -> Vec<AgentEvent> {
     let known = match item {
         ThreadItem::Known(known) => known.as_ref(),
         ThreadItem::Other(value) => {
@@ -225,7 +264,11 @@ fn item_completed(item: &ThreadItem) -> Vec<AgentEvent> {
         }
     };
     match known {
-        KnownThreadItem::AgentMessage { id, text } => vec![AgentEvent::MessageEnded {
+        KnownThreadItem::AgentMessage { text, .. } if answer => serde_json::from_str(text)
+            .map(|value| AgentEvent::ResultReady { value })
+            .into_iter()
+            .collect(),
+        KnownThreadItem::AgentMessage { id, text, .. } => vec![AgentEvent::MessageEnded {
             item: ItemId(id.clone()),
             text: text.clone(),
         }],

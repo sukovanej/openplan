@@ -15,7 +15,7 @@ fn messages() -> Vec<Incoming> {
 }
 
 fn replay() -> Vec<AgentEvent> {
-    let mut translator = Translator::new("/tmp".into(), Some("gpt".to_owned()));
+    let mut translator = Translator::new("/tmp".into(), Some("gpt".to_owned()), false);
     messages()
         .iter()
         .filter_map(|message| match message {
@@ -48,7 +48,7 @@ fn tells_a_reply_from_a_notification() {
 
 #[test]
 fn keeps_the_thread_and_the_turn() {
-    let mut translator = Translator::new("/tmp".into(), None);
+    let mut translator = Translator::new("/tmp".into(), None, false);
     assert_eq!(translator.thread(), None);
     for message in messages() {
         if let Incoming::Notification(notification) = message {
