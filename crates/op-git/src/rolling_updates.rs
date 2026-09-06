@@ -153,10 +153,8 @@ impl Repo {
             .config_string("user.email")
             .and_then(|email| email.split('@').next().map(str::to_owned))
             .or_else(|| self.config_string("user.name"))
-            .map(|who| slug(&who))
-            .filter(|who| !who.is_empty())
-            .unwrap_or_else(|| "local".to_owned());
-        format!("{ROLLING_UPDATES_BRANCH}-{who}")
+            .unwrap_or_default();
+        format!("{ROLLING_UPDATES_BRANCH}-{}", op_task::slug(&who, "local"))
     }
 
     pub fn rolling_updates_remote(&self, default_branch: &str) -> String {
@@ -214,16 +212,4 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
         args.join(" "),
         String::from_utf8_lossy(&output.stderr).trim(),
     )))
-}
-
-fn slug(text: &str) -> String {
-    let mut out = String::new();
-    for ch in text.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-        } else if !out.ends_with('-') {
-            out.push('-');
-        }
-    }
-    out.trim_matches('-').to_owned()
 }

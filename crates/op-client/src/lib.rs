@@ -328,11 +328,19 @@ impl Client {
         base_url: &str,
         project: &str,
     ) -> Result<RollingUpdates, ClientError> {
-        self.read(fresh(scoped(base_url, project, &["rolling-updates"])?))
+        self.read(fresh(sub_url(
+            projects_url(base_url, project)?,
+            base_url,
+            &["rolling-updates"],
+        )?))
     }
 
     pub fn publish(&self, base_url: &str, project: &str) -> Result<Published, ClientError> {
-        let url = scoped(base_url, project, &["rolling-updates", "publish"])?;
+        let url = sub_url(
+            projects_url(base_url, project)?,
+            base_url,
+            &["rolling-updates", "publish"],
+        )?;
         self.json(self.http.post(url))
     }
 
@@ -402,14 +410,6 @@ impl Client {
             .json()
             .map_err(|err| ClientError::Unreachable(err.to_string()))
     }
-}
-
-fn scoped(base_url: &str, project: &str, path: &[&str]) -> Result<Url, ClientError> {
-    let mut url = projects_url(base_url, project)?;
-    url.path_segments_mut()
-        .map_err(|_| unusable(base_url))?
-        .extend(path);
-    Ok(url)
 }
 
 fn send(request: RequestBuilder) -> Result<Response, ClientError> {
