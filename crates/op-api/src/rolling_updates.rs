@@ -6,7 +6,7 @@ use crate::MatrixCell;
 // What the rolling-updates branch has that the default branch does not, and what stopped it. The
 // two fields carry facts rather than a state a client should render: "nothing to publish" is an
 // empty `pending`, and "blocked" is a `conflict`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RollingUpdates {
     pub pending: Vec<MatrixCell>,
     pub conflict: Option<Conflict>,

@@ -34,14 +34,13 @@ impl Repo {
         }
         let worktree = self.rolling_updates_worktree();
         if !worktree.join(".git").exists() {
-            let path = path_arg(&worktree);
             git(
                 &root,
                 &[
                     "worktree",
                     "add",
                     "--no-checkout",
-                    &path,
+                    &worktree.to_string_lossy(),
                     ROLLING_UPDATES_BRANCH,
                 ],
             )?;
@@ -80,15 +79,18 @@ impl Repo {
         next.push('\n');
         std::fs::write(&path, next).map_err(|e| GitError::Command(e.to_string()))?;
         git(worktree, &["add", "--sparse", ".gitattributes"])?;
-        commit(worktree, "Merge .plan task files section by section")?;
+        commit(worktree, "Merge .plan task files with the openplan driver")?;
         Ok(())
     }
 
-    // Whether anything was committed. The rolling holds `.plan` alone, so `add --all` cannot pick up
-    // a stray code change.
+    // Whether anything was committed. Cone-mode sparse checkout keeps every root-level file, so
+    // the paths are named rather than left to `--all`.
     pub fn rolling_updates_commit(&self, message: &str) -> Result<bool, GitError> {
         let worktree = self.rolling_updates_worktree();
-        git(&worktree, &["add", "--sparse", "--all"])?;
+        git(
+            &worktree,
+            &["add", "--sparse", "--all", "--", ".plan", ".gitattributes"],
+        )?;
         let staged = git(&worktree, &["diff", "--cached", "--name-only"])?;
         if staged.trim().is_empty() {
             return Ok(false);
@@ -188,10 +190,6 @@ fn commit(dir: &Path, message: &str) -> Result<(), GitError> {
         &["commit", "--no-verify", "--no-gpg-sign", "-m", message],
     )
     .map(|_| ())
-}
-
-fn path_arg(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
 }
 
 // Git is asked to do the work a person would do by hand. gix cannot rebase and cannot push, and a

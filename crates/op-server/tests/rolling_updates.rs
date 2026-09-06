@@ -88,6 +88,36 @@ fn install_driver(root: &std::path::Path) {
     );
 }
 
+fn bare_remote(root: &std::path::Path) -> std::path::PathBuf {
+    let remote = root.parent().unwrap().join("remote.git");
+    git(root, &["init", "-q", "--bare", remote.to_str().unwrap()]);
+    git(root, &["remote", "add", "origin", remote.to_str().unwrap()]);
+    remote
+}
+
+// The same section of the same task changed on the default branch and on the rolling-updates
+// branch, so the rebase stops with markers in the worktree.
+fn stop_the_rebase(root: &std::path::Path) {
+    let repo = op_git::Repo::discover(root).unwrap();
+    let on_main = root.join(".plan/tasks/00001-t.md");
+    let on_rolling = repo
+        .rolling_updates_worktree()
+        .join(".plan/tasks/00001-t.md");
+    let task = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\n\nbase\n";
+    std::fs::write(&on_main, task).unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "a task"]);
+    repo.rolling_updates_rebase("main").unwrap();
+    std::fs::write(&on_rolling, task.replace("base", "rolling")).unwrap();
+    repo.rolling_updates_commit("an edit for later").unwrap();
+    std::fs::write(&on_main, task.replace("base", "main")).unwrap();
+    git(root, &["commit", "-qam", "an edit on main"]);
+    assert!(matches!(
+        repo.rolling_updates_rebase("main").unwrap(),
+        op_git::Rebased::Blocked { .. }
+    ));
+}
+
 async fn create(state: &AppState, title: &str, query: &str) -> Value {
     let uri = format!("/api/projects/{PROJECT}/tasks{query}");
     let response = send(state, "POST", &uri, Some(json!({ "title": title }))).await;
@@ -171,15 +201,7 @@ async fn a_write_that_names_another_branch_still_lands_there() {
 #[tokio::test]
 async fn the_route_lists_what_is_waiting_and_publish_pushes_it_to_the_remote() {
     let (dir, state) = with_rolling_updates();
-    let remote = dir.path().parent().unwrap().join("remote.git");
-    git(
-        dir.path(),
-        &["init", "-q", "--bare", remote.to_str().unwrap()],
-    );
-    git(
-        dir.path(),
-        &["remote", "add", "origin", remote.to_str().unwrap()],
-    );
+    let remote = bare_remote(dir.path());
     create(
         &state,
         "An edit for later",
@@ -232,15 +254,7 @@ async fn the_route_lists_what_is_waiting_and_publish_pushes_it_to_the_remote() {
 #[tokio::test]
 async fn publish_refuses_when_the_branch_holds_no_task_the_default_branch_lacks() {
     let (dir, state) = with_rolling_updates();
-    let remote = dir.path().parent().unwrap().join("empty-remote.git");
-    git(
-        dir.path(),
-        &["init", "-q", "--bare", remote.to_str().unwrap()],
-    );
-    git(
-        dir.path(),
-        &["remote", "add", "origin", remote.to_str().unwrap()],
-    );
+    bare_remote(dir.path());
 
     let uri = format!("/api/projects/{PROJECT}/rolling-updates/publish");
     let response = send(&state, "POST", &uri, None).await;
@@ -257,30 +271,7 @@ async fn publish_refuses_when_the_branch_holds_no_task_the_default_branch_lacks(
 #[tokio::test]
 async fn publish_refuses_while_a_conflict_holds_the_rolling_updates_branch() {
     let (dir, state) = with_rolling_updates();
-    let repo = op_git::Repo::discover(dir.path()).unwrap();
-    let rolling = dir.path().join(".git/openplan-rolling-updates");
-    let task = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\n\nbase\n";
-    std::fs::write(dir.path().join(".plan/tasks/00001-t.md"), task).unwrap();
-    git(dir.path(), &["add", "-A"]);
-    git(dir.path(), &["commit", "-qm", "a task"]);
-    repo.rolling_updates_rebase("main").unwrap();
-
-    std::fs::write(
-        rolling.join(".plan/tasks/00001-t.md"),
-        task.replace("base", "rolling"),
-    )
-    .unwrap();
-    repo.rolling_updates_commit("an edit for later").unwrap();
-    std::fs::write(
-        dir.path().join(".plan/tasks/00001-t.md"),
-        task.replace("base", "main"),
-    )
-    .unwrap();
-    git(dir.path(), &["commit", "-qam", "an edit on main"]);
-    assert!(matches!(
-        repo.rolling_updates_rebase("main").unwrap(),
-        op_git::Rebased::Blocked { .. }
-    ));
+    stop_the_rebase(dir.path());
 
     let uri = format!("/api/projects/{PROJECT}/rolling-updates/publish");
     let response = send(&state, "POST", &uri, None).await;
@@ -301,26 +292,7 @@ async fn publish_refuses_while_a_conflict_holds_the_rolling_updates_branch() {
 #[tokio::test]
 async fn a_conflict_a_person_resolved_stops_being_reported() {
     let (dir, state) = with_rolling_updates();
-    let repo = op_git::Repo::discover(dir.path()).unwrap();
-    let rolling = dir.path().join(".git/openplan-rolling-updates");
-    let task = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\n\nbase\n";
-    std::fs::write(dir.path().join(".plan/tasks/00001-t.md"), task).unwrap();
-    git(dir.path(), &["add", "-A"]);
-    git(dir.path(), &["commit", "-qm", "a task"]);
-    repo.rolling_updates_rebase("main").unwrap();
-    std::fs::write(
-        rolling.join(".plan/tasks/00001-t.md"),
-        task.replace("base", "rolling"),
-    )
-    .unwrap();
-    repo.rolling_updates_commit("an edit for later").unwrap();
-    std::fs::write(
-        dir.path().join(".plan/tasks/00001-t.md"),
-        task.replace("base", "main"),
-    )
-    .unwrap();
-    git(dir.path(), &["commit", "-qam", "an edit on main"]);
-    repo.rolling_updates_rebase("main").unwrap();
+    stop_the_rebase(dir.path());
     assert!(!waiting(&state).await["conflict"].is_null());
 
     git(

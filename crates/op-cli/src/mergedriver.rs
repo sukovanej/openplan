@@ -43,10 +43,10 @@ pub fn run(args: &Args<'_>) -> ExitCode {
     }
 }
 
-pub struct Labels<'a> {
-    pub size: usize,
-    pub ours: &'a str,
-    pub theirs: &'a str,
+struct Labels<'a> {
+    size: usize,
+    ours: &'a str,
+    theirs: &'a str,
 }
 
 impl Labels<'_> {
@@ -64,7 +64,7 @@ impl Labels<'_> {
     }
 }
 
-pub enum Merged {
+enum Merged {
     Clean(String),
     Conflicted { text: String, what: String },
 }
@@ -77,7 +77,7 @@ impl Merged {
     }
 }
 
-pub fn merge(base: &str, ours: &str, theirs: &str, labels: &Labels<'_>) -> Merged {
+fn merge(base: &str, ours: &str, theirs: &str, labels: &Labels<'_>) -> Merged {
     if ours == theirs {
         return Merged::Clean(ours.to_owned());
     }

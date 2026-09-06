@@ -63,7 +63,12 @@ impl Handle {
     // Read from git every time. A person can finish the rebase in the worktree at any moment, and
     // nothing tells this process when they do, so a copy kept here would go stale and stay stale.
     pub fn conflict(&self) -> Option<Conflict> {
-        conflict(&self.repo)
+        self.repo
+            .rolling_updates_rebase_in_progress()
+            .then(|| Conflict {
+                files: self.repo.rolling_updates_conflicts().unwrap_or_default(),
+                worktree: self.repo.rolling_updates_worktree().display().to_string(),
+            })
     }
 
     pub fn publish(&self) -> Result<Published, String> {
@@ -73,13 +78,6 @@ impl Handle {
             .map_err(|_| WORKER_GONE.to_owned())?;
         answer.recv().map_err(|_| WORKER_GONE.to_owned())?
     }
-}
-
-fn conflict(repo: &Repo) -> Option<Conflict> {
-    repo.rolling_updates_rebase_in_progress().then(|| Conflict {
-        files: repo.rolling_updates_conflicts().unwrap_or_default(),
-        worktree: repo.rolling_updates_worktree().display().to_string(),
-    })
 }
 
 struct Worker {
@@ -159,10 +157,6 @@ impl Worker {
         {
             self.announce();
         }
-        let commit = self
-            .repo
-            .branch_commit(ROLLING_UPDATES_BRANCH)
-            .map_err(text)?;
         if !self
             .repo
             .rolling_updates_differs(&self.default_branch)
@@ -170,6 +164,10 @@ impl Worker {
         {
             return Err(NOTHING_TO_PUBLISH.to_owned());
         }
+        let commit = self
+            .repo
+            .branch_commit(ROLLING_UPDATES_BRANCH)
+            .map_err(text)?;
         self.repo
             .push_rolling_updates(&self.remote, &self.remote_branch)
             .map_err(text)?;

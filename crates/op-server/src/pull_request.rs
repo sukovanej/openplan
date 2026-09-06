@@ -27,8 +27,15 @@ pub fn web_url(remote_url: &str) -> Option<String> {
     (!path.is_empty()).then(|| format!("https://github.com/{path}"))
 }
 
+// `pr view <branch>` falls back to a merged or closed request when no open one exists; only an
+// open one may stand in for a new one.
 fn existing(dir: &Path, head: &str) -> Option<String> {
-    gh(dir, &["pr", "view", head, "--json", "url", "--jq", ".url"])
+    gh(
+        dir,
+        &[
+            "pr", "list", "--head", head, "--state", "open", "--json", "url", "--jq", ".[0].url",
+        ],
+    )
 }
 
 fn create(dir: &Path, head: &str, base: &str) -> Option<String> {
