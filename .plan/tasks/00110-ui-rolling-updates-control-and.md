@@ -8,9 +8,9 @@ tags:
 - feature
 - ui
 ---
-# UI: rolling-updates sync control and review popover
+# UI: rolling-updates control and review popover
 
-The header sync control and the "Rolling updates" review popover, on top of the
+The header control and the "Rolling updates" review popover, on top of the
 backend in [[./00109-rolling-updates-a-branch-with-a.md]]. Mockup of every
 state and layout: [../assets/sync-button-options.html](../assets/sync-button-options.html).
 
@@ -20,12 +20,15 @@ React and Effect Schema. SSE arrives over `EventSource("/api/events")`
 (`web/packages/app/src/lib/realtime.ts`). The header already renders
 `ConnectionStatus` and `ThemeToggle`.
 
-- Add a `SyncStatus` schema to `lib/api.ts` that mirrors `GET /api/sync`:
-  `{ state, pending: TaskChange[], conflicted: string[], worktree: string }`.
-- Extend the `ChangeEvent` union in `lib/events.ts` with the sync event and
-  refetch the status on it.
+- Add a `RollingUpdates` schema to `lib/api.ts` that mirrors
+  `GET /api/projects/{project}/rolling-updates`:
+  `{ pending: MatrixCell[], conflict: { files, worktree } | null }`.
+- Extend the `ChangeEvent` union in `lib/events.ts` with
+  `rolling_updates_changed` and refetch on it.
+- Read the branch name from `ProjectView`, never from a literal. The person sees
+  "Rolling updates"; the branch name only ever goes on the wire.
 
-## `SyncControl`
+## The control
 
 One colour-coded icon and a count pill, beside `ConnectionStatus` and
 `ThemeToggle`. Reuse the app's convention of `emerald` for good and `amber` for
@@ -47,7 +50,7 @@ A click opens the popover. A click never publishes.
   non-fast-forward refusal, show "main moved, refreshing, try again" rather than
   a hard failure.
 - In the **Blocked** state, replace Publish with the conflict view: the
-  conflicted task titles, the worktree path from `SyncStatus.worktree`, and the
+  conflicted task titles, the worktree path from `conflict.worktree`, and the
   two commands to run there. The v1 UI does not edit the conflict. It tells the
   person where the files are.
 
@@ -63,12 +66,13 @@ today, so there is nothing else to keep it out of.
 Component tests in `web/packages/app/tests/`, plus an interactive check with
 headless Chrome over CDP, per the repository's web-UI recipe.
 
-- Each of the five states renders the right colour, icon, and tooltip. Offline
+- Each state renders the right colour, icon, and tooltip. The offline state
   follows `useConnection`.
 - The popover lists the pending changes.
-- Publish calls `/api/publish` and the control returns to In sync.
+- Publish calls the publish route and the control returns to In sync.
 - A non-fast-forward refusal shows the retriable message.
 - Blocked shows the conflicted tasks, the worktree path, and the commands.
-- A sync event over SSE updates the control with no manual refetch.
+- A `rolling_updates_changed` event over SSE updates the control with no manual
+  refetch.
 - `BranchSwitcher` shows the rolling-updates branch as "Rolling updates" and marks the version
   unpublished.

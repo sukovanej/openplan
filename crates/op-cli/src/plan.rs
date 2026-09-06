@@ -78,8 +78,8 @@ impl Plan {
         served(self.client.publish(&self.base_url, &self.project))
     }
 
-    pub fn sync(&self) -> Result<op_api::SyncStatus> {
-        served(self.client.sync(&self.base_url, &self.project))
+    pub fn rolling_updates(&self) -> Result<op_api::RollingUpdates> {
+        served(self.client.rolling_updates(&self.base_url, &self.project))
     }
 
     pub fn matrix(&self) -> Result<Matrix> {

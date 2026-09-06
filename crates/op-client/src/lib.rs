@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use op_api::{
     ApiErrorBody, BranchComments, Comment, CreateComment, CreateTag, CreateTask, DaemonInfo,
-    Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject, SearchHit, SyncStatus,
-    TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject, RollingUpdates,
+    SearchHit, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -323,12 +323,16 @@ impl Client {
         Ok(created.id)
     }
 
-    pub fn sync(&self, base_url: &str, project: &str) -> Result<SyncStatus, ClientError> {
-        self.read(fresh(scoped(base_url, project, "sync")?))
+    pub fn rolling_updates(
+        &self,
+        base_url: &str,
+        project: &str,
+    ) -> Result<RollingUpdates, ClientError> {
+        self.read(fresh(scoped(base_url, project, &["rolling-updates"])?))
     }
 
     pub fn publish(&self, base_url: &str, project: &str) -> Result<Published, ClientError> {
-        let url = scoped(base_url, project, "publish")?;
+        let url = scoped(base_url, project, &["rolling-updates", "publish"])?;
         self.json(self.http.post(url))
     }
 
@@ -400,11 +404,11 @@ impl Client {
     }
 }
 
-fn scoped(base_url: &str, project: &str, leaf: &str) -> Result<Url, ClientError> {
+fn scoped(base_url: &str, project: &str, path: &[&str]) -> Result<Url, ClientError> {
     let mut url = projects_url(base_url, project)?;
     url.path_segments_mut()
         .map_err(|_| unusable(base_url))?
-        .push(leaf);
+        .extend(path);
     Ok(url)
 }
 

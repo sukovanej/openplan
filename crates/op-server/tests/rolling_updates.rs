@@ -95,8 +95,8 @@ async fn create(state: &AppState, title: &str, query: &str) -> Value {
     body_json(response).await
 }
 
-async fn sync(state: &AppState) -> Value {
-    let uri = format!("/api/projects/{PROJECT}/sync");
+async fn waiting(state: &AppState) -> Value {
+    let uri = format!("/api/projects/{PROJECT}/rolling-updates");
     let response = send(state, "GET", &uri, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     body_json(response).await
@@ -169,7 +169,7 @@ async fn a_write_that_names_another_branch_still_lands_there() {
 }
 
 #[tokio::test]
-async fn sync_reports_what_the_rolling_updates_branch_holds_and_publish_hands_it_over() {
+async fn the_route_lists_what_is_waiting_and_publish_hands_it_over() {
     let (dir, state) = with_rolling_updates();
     create(
         &state,
@@ -180,13 +180,12 @@ async fn sync_reports_what_the_rolling_updates_branch_holds_and_publish_hands_it
     let repo = op_git::Repo::discover(dir.path()).unwrap();
     repo.rolling_updates_commit("Rolling task updates").unwrap();
 
-    let status = sync(&state).await;
-    assert_eq!(status["state"], "pending");
-    assert_eq!(status["pending"].as_array().unwrap().len(), 1);
-    assert_eq!(status["pending"][0]["task"]["title"], "An edit for later");
-    assert!(status["conflicted"].as_array().unwrap().is_empty());
+    let held = waiting(&state).await;
+    assert_eq!(held["pending"].as_array().unwrap().len(), 1);
+    assert_eq!(held["pending"][0]["task"]["title"], "An edit for later");
+    assert!(held["conflict"].is_null());
 
-    let uri = format!("/api/projects/{PROJECT}/publish");
+    let uri = format!("/api/projects/{PROJECT}/rolling-updates/publish");
     let response = send(&state, "POST", &uri, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     let published = body_json(response).await;
@@ -200,7 +199,12 @@ async fn sync_reports_what_the_rolling_updates_branch_holds_and_publish_hands_it
         dir.path().join(".plan/tasks").read_dir().unwrap().count(),
         1
     );
-    assert_eq!(sync(&state).await["state"], "in_sync");
+    assert!(
+        waiting(&state).await["pending"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -231,15 +235,14 @@ async fn publish_refuses_while_a_conflict_holds_the_rolling_updates_branch() {
         op_git::Rebased::Blocked { .. }
     ));
 
-    let uri = format!("/api/projects/{PROJECT}/publish");
+    let uri = format!("/api/projects/{PROJECT}/rolling-updates/publish");
     let response = send(&state, "POST", &uri, None).await;
 
     assert_eq!(response.status(), StatusCode::CONFLICT);
-    let status = sync(&state).await;
-    assert_eq!(status["state"], "blocked");
-    assert_eq!(status["conflicted"][0], ".plan/tasks/00001-t.md");
+    let held = waiting(&state).await;
+    assert_eq!(held["conflict"]["files"][0], ".plan/tasks/00001-t.md");
     assert!(
-        status["worktree"]
+        held["conflict"]["worktree"]
             .as_str()
             .unwrap()
             .ends_with("openplan-rolling-updates")

@@ -35,8 +35,8 @@ pub enum ChangeEvent {
     // same way — read `/api/projects` again — so they are one event rather than four.
     ProjectsChanged,
     // The rolling-updates branch committed, rebased, published, or stopped at a conflict. A client
-    // answers every one of those by reading the sync status again.
-    SyncChanged {
+    // answers every one of those by reading the branch again.
+    RollingUpdatesChanged {
         project: String,
     },
     // The stream dropped events and cannot say which, so the client re-reads everything on screen.

@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use op_api::{ChangeEvent, MatrixCell, Published, SyncState, SyncStatus};
+use op_api::{ChangeEvent, Conflict, MatrixCell, Published, RollingUpdates as Pending};
 use op_git::{ROLLING_UPDATES_BRANCH, Rebased, Repo};
 use tokio::sync::broadcast;
 
@@ -24,8 +24,7 @@ enum Signal {
 
 #[derive(Default)]
 struct Shared {
-    state: SyncState,
-    conflicted: Vec<String>,
+    conflict: Option<Conflict>,
 }
 
 pub struct RollingUpdates {
@@ -35,8 +34,8 @@ pub struct RollingUpdates {
 }
 
 impl RollingUpdates {
-    // `None` when the repository cannot host the rolling, which leaves every write on the branch it
-    // would have used before. A project with no default branch is the ordinary case here.
+    // `None` when the repository cannot host the branch, which leaves every write where it was
+    // going. A project with no default branch is the ordinary case here.
     pub fn start(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) -> Option<Self> {
         let repo = project.repo().clone();
         let default_branch = repo.default_branch(None).ok().flatten()?;
@@ -68,17 +67,15 @@ impl RollingUpdates {
         let _ = self.signals.send(Signal::Edited);
     }
 
-    pub fn status(&self, pending: Vec<MatrixCell>) -> SyncStatus {
-        let shared = self.shared.lock().expect("rolling status poisoned");
-        let state = match shared.state {
-            SyncState::InSync if !pending.is_empty() => SyncState::Pending,
-            other => other,
-        };
-        SyncStatus {
-            state,
+    pub fn pending(&self, pending: Vec<MatrixCell>) -> Pending {
+        Pending {
             pending,
-            conflicted: shared.conflicted.clone(),
-            worktree: self.worktree.display().to_string(),
+            conflict: self
+                .shared
+                .lock()
+                .expect("rolling-updates mutex poisoned")
+                .conflict
+                .clone(),
         }
     }
 
@@ -156,14 +153,19 @@ fn due(at: &mut Option<Instant>) -> bool {
 
 // A rebase that stopped owns the worktree until a person finishes it, so nothing else may commit
 // there or replay onto it.
-fn held(repo: &Repo, shared: &Arc<Mutex<Shared>>) -> bool {
+fn held(repo: &Repo, shared: &Arc<Mutex<Shared>>, worktree: &std::path::Path) -> bool {
     if !repo.rolling_updates_rebase_in_progress() {
         return false;
     }
-    let mut shared = shared.lock().expect("rolling status poisoned");
-    shared.state = SyncState::Blocked;
-    shared.conflicted = repo.rolling_updates_conflicts().unwrap_or_default();
+    set(shared, Some(conflict(repo, worktree)));
     true
+}
+
+fn conflict(repo: &Repo, worktree: &std::path::Path) -> Conflict {
+    Conflict {
+        files: repo.rolling_updates_conflicts().unwrap_or_default(),
+        worktree: worktree.display().to_string(),
+    }
 }
 
 fn commit(
@@ -173,7 +175,7 @@ fn commit(
     project: &str,
     backup: Option<&str>,
 ) {
-    if held(repo, shared) {
+    if held(repo, shared, &repo.rolling_updates_worktree()) {
         return;
     }
     match repo.rolling_updates_commit("Rolling task updates") {
@@ -191,23 +193,26 @@ fn refresh(
     project: &str,
     backup: Option<&str>,
 ) {
-    if held(repo, shared) {
+    if held(repo, shared, &repo.rolling_updates_worktree()) {
         return;
     }
-    set(shared, SyncState::Syncing, Vec::new());
     match repo.rolling_updates_rebase(default_branch) {
         Ok(Rebased::Clean) => {
-            set(shared, SyncState::InSync, Vec::new());
+            set(shared, None);
             moved(repo, shared, events, project, backup);
         }
         Ok(Rebased::Blocked { paths }) => {
             tracing::warn!(project, "rolling updates held by a conflict in {paths:?}");
-            set(shared, SyncState::Blocked, paths);
+            set(
+                shared,
+                Some(conflict(repo, &repo.rolling_updates_worktree())),
+            );
+            let _ = paths;
             announce(events, project);
         }
         Err(err) => {
             tracing::warn!(project, "rolling updates: {err}");
-            set(shared, SyncState::InSync, Vec::new());
+            set(shared, None);
         }
     }
 }
@@ -220,7 +225,7 @@ fn publish(
     project: &str,
     backup: Option<&str>,
 ) -> Result<Published, String> {
-    if held(repo, shared) {
+    if held(repo, shared, &repo.rolling_updates_worktree()) {
         return Err("a conflict holds the rolling updates; resolve it first".to_owned());
     }
     if let Err(err) = repo.rolling_updates_commit("Rolling task updates") {
@@ -229,11 +234,10 @@ fn publish(
     let tip = repo
         .branch_commit(ROLLING_UPDATES_BRANCH)
         .map_err(|e| e.to_string())?;
-    set(shared, SyncState::Syncing, Vec::new());
     let result = repo
         .fast_forward(default_branch, &tip)
         .map_err(|e| e.to_string());
-    set(shared, SyncState::InSync, Vec::new());
+    set(shared, None);
     moved(repo, shared, events, project, backup);
     result.map(|()| Published {
         branch: default_branch.to_owned(),
@@ -258,14 +262,15 @@ fn moved(
     }
 }
 
-fn set(shared: &Arc<Mutex<Shared>>, state: SyncState, conflicted: Vec<String>) {
-    let mut shared = shared.lock().expect("rolling status poisoned");
-    shared.state = state;
-    shared.conflicted = conflicted;
+fn set(shared: &Arc<Mutex<Shared>>, conflict: Option<Conflict>) {
+    shared
+        .lock()
+        .expect("rolling-updates mutex poisoned")
+        .conflict = conflict;
 }
 
 fn announce(events: &broadcast::Sender<ChangeEvent>, project: &str) {
-    let _ = events.send(ChangeEvent::SyncChanged {
+    let _ = events.send(ChangeEvent::RollingUpdatesChanged {
         project: project.to_owned(),
     });
 }

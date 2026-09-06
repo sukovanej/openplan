@@ -36,4 +36,4 @@ spike in [[./00023-design-a-continuous-changes-accu.md]] proved that
 ## Children
 
 - Backend and CLI: [[./00109-rolling-updates-a-branch-with-a.md]]
-- UI: [[./00110-ui-rolling-updates-sync-control-a.md]]
+- UI: [[./00110-ui-rolling-updates-control-and.md]]

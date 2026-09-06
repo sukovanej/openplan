@@ -19,9 +19,9 @@ use axum::{
 use op_api::{
     Abbreviation, ApiErrorBody, Board, BranchComments, BranchState, ChangeEvent, ChangeKind,
     Comment, CreateComment, CreateTag, CreateTask, DaemonInfo, Flow, FlowCycles, FlowQuery,
-    KeyError, Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject, SearchHit,
-    Status, SyncStatus, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch,
-    TaskTree, TaskTreeView, TaskView,
+    KeyError, Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject,
+    RollingUpdates, SearchHit, Status, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem,
+    TaskPatch, TaskTree, TaskTreeView, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -307,8 +307,8 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(delete_project, rename_project))
         .routes(routes!(list_tasks, create_task))
         .routes(routes!(get_matrix))
-        .routes(routes!(get_sync))
-        .routes(routes!(publish_lane))
+        .routes(routes!(get_rolling_updates))
+        .routes(routes!(publish_rolling_updates))
         .routes(routes!(get_board))
         .routes(routes!(get_merged_board))
         .routes(routes!(get_flow))
@@ -1034,43 +1034,41 @@ async fn get_task_branches(
     Ok(Json(branches))
 }
 
-// What the rolling-updates branch holds that the default branch does not, plus its own
-// state. The pending list is the matrix diff of the rolling against the default branch, which the
-// index already computes
-// for every branch that is not the baseline.
+// What the rolling-updates branch has that the default branch does not, and what stopped it.
 #[utoipa::path(
     get,
-    path = "/api/projects/{project}/sync",
+    path = "/api/projects/{project}/rolling-updates",
     params(("project" = String, Path, description = "Project name")),
     responses(
-        (status = 200, description = "The rolling-updates branch's state and what it holds", body = SyncStatus),
+        (status = 200, description = "The edits waiting to be published, and the conflict holding them", body = RollingUpdates),
         (status = 404, description = "No such project", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
         (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
     )
 )]
-async fn get_sync(
+async fn get_rolling_updates(
     State(state): State<AppState>,
     Path(project): Path<String>,
-) -> Result<Json<SyncStatus>, ApiError> {
+) -> Result<Json<RollingUpdates>, ApiError> {
     let project = project_of(&state, &project)?;
-    let status = tokio::task::spawn_blocking(move || -> Result<Option<SyncStatus>, IndexError> {
-        // Rebuilt, not read: the branch's own commits and a publish both move refs without a write
-        // through this process, so a cached index would report a count that is already wrong.
-        let pending: Vec<op_api::MatrixCell> = project
-            .rebuilt_index()?
-            .matrix()
-            .cells
-            .iter()
-            .filter(|cell| cell.branch == op_git::ROLLING_UPDATES_BRANCH)
-            .cloned()
-            .collect();
-        Ok(project.with_rolling_updates(|rolling| rolling.status(pending)))
-    })
-    .await
-    .map_err(join_error)?
-    .map_err(index_error)?;
-    status.map(Json).ok_or_else(no_rolling_updates)
+    let waiting =
+        tokio::task::spawn_blocking(move || -> Result<Option<RollingUpdates>, IndexError> {
+            // Rebuilt, not read: the branch's own commits and a publish both move refs without a write
+            // through this process, so a cached index would report a count that is already wrong.
+            let pending: Vec<op_api::MatrixCell> = project
+                .rebuilt_index()?
+                .matrix()
+                .cells
+                .iter()
+                .filter(|cell| cell.branch == op_git::ROLLING_UPDATES_BRANCH)
+                .cloned()
+                .collect();
+            Ok(project.with_rolling_updates(|rolling| rolling.pending(pending)))
+        })
+        .await
+        .map_err(join_error)?
+        .map_err(index_error)?;
+    waiting.map(Json).ok_or_else(no_rolling_updates)
 }
 
 // Manual, explicit, and a fast-forward only. It never merges and never forces, so the one way it
@@ -1078,7 +1076,7 @@ async fn get_sync(
 // its own.
 #[utoipa::path(
     post,
-    path = "/api/projects/{project}/publish",
+    path = "/api/projects/{project}/rolling-updates/publish",
     params(("project" = String, Path, description = "Project name")),
     responses(
         (status = 200, description = "The default branch now holds the rolling updates", body = Published),
@@ -1087,7 +1085,7 @@ async fn get_sync(
         (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
     )
 )]
-async fn publish_lane(
+async fn publish_rolling_updates(
     State(state): State<AppState>,
     Path(project): Path<String>,
 ) -> Result<Json<Published>, ApiError> {

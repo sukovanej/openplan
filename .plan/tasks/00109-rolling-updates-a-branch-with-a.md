@@ -65,8 +65,8 @@ fixes them, and runs `git rebase --continue`.
 The consequence, stated plainly: while the rebase runs, `Index` drops the
 worktree from `live` because `op_in_progress` is true, so a write to it gets
 the existing `NotWritable` refusal. The branch stays blocked until a person
-resolves the conflict. Sync status reports `Blocked`, the conflicted task ids,
-and the worktree path.
+resolves the conflict. The route below reports the conflicting files and the
+worktree path.
 
 A conflict needs the same section of the same task changed on both sides since
 the last rebase, which is rare. An ephemeral second worktree would keep the branch
@@ -121,7 +121,7 @@ The rolling-updates branch needs no special case in the index, and must not get 
 - **Baseline.** `is_baseline` matches only the default branch
   (`crates/op-index/src/lib.rs:470`), so it gets diffed against its merge
   base. Its cells are what it changed, which is the pending list for
-  `/api/sync`. No new diff code.
+  the route below. No new diff code.
 - **Write target.** `Index::write_branch` needs no change. Only its caller
   changes. A task created there lives on that branch alone, so its headline
   already names it and the write reaches it with no redirect.
@@ -136,13 +136,15 @@ unpublished edit, and saying so is the point.
 
 ## API
 
-- `GET /api/sync` returns
-  `{ state, pending: TaskChange[], conflicted: string[], worktree: string }`.
-  `state` is `InSync`, `Pending(n)`, `Syncing`, `Blocked`, or `Offline`. The
-  pending list is the matrix diff of `openplan/rolling-updates` against the default
-  branch, which the index already computes for every branch that is not the baseline.
-- `POST /api/publish` fast-forwards and reports the new tip and the count.
-- Push the sync state on the existing SSE channel.
+- `GET /api/projects/{project}/rolling-updates` returns
+  `{ pending: MatrixCell[], conflict: { files, worktree } | null }`. It carries
+  facts, not a state to render: nothing to publish is an empty `pending`, and
+  blocked is a `conflict`. `pending` is the matrix diff against the default
+  branch, which the index already computes for every branch that is not the
+  baseline.
+- `POST /api/projects/{project}/rolling-updates/publish` fast-forwards and reports
+  the new tip.
+- Push a `rolling_updates_changed` event on the existing SSE channel.
 
 ## Publish
 

@@ -198,10 +198,12 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
-    /// Show what the rolling-updates branch holds that the default branch does not
-    Sync,
     /// Fast-forward the default branch to the rolling-updates branch
-    Publish,
+    Publish {
+        /// List what would be published instead of publishing it
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Git merge driver for .plan task files (git passes %O %A %B %L %P %S %X %Y)
     MergeDriver {
         ancestor: String,
@@ -417,8 +419,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
-        Command::Sync => sync(root, daemon_url).map(|()| ExitCode::SUCCESS),
-        Command::Publish => publish(root, daemon_url).map(|()| ExitCode::SUCCESS),
+        Command::Publish { dry_run } => {
+            publish(root, daemon_url, dry_run).map(|()| ExitCode::SUCCESS)
+        }
         Command::Server { command } => server(command, daemon_url),
         Command::MergeDriver {
             ancestor,
@@ -441,9 +444,18 @@ fn run(cli: Cli) -> Result<ExitCode> {
     }
 }
 
-fn sync(root: &Path, daemon_url: Option<&str>) -> Result<()> {
-    let status = Plan::resolve(root, daemon_url)?.sync()?;
-    for cell in &status.pending {
+fn publish(root: &Path, daemon_url: Option<&str>, dry_run: bool) -> Result<()> {
+    let plan = Plan::resolve(root, daemon_url)?;
+    if !dry_run {
+        let published = plan.publish()?;
+        println!(
+            "{} now holds the rolling updates at {}",
+            published.branch, published.commit
+        );
+        return Ok(());
+    }
+    let waiting = plan.rolling_updates()?;
+    for cell in &waiting.pending {
         println!(
             "{:<10} {:<10} {}",
             cell.task.id,
@@ -451,26 +463,17 @@ fn sync(root: &Path, daemon_url: Option<&str>) -> Result<()> {
             cell.task.title
         );
     }
-    for path in &status.conflicted {
-        println!("conflict   {path}");
-    }
-    if !status.conflicted.is_empty() {
+    if let Some(conflict) = &waiting.conflict {
+        for path in &conflict.files {
+            println!("conflict   {path}");
+        }
         println!(
-            "\nresolve them in {}, then run `git rebase --continue` there",
-            status.worktree
+            "\nfix them in {}, then run `git rebase --continue` there",
+            conflict.worktree
         );
-    } else if status.pending.is_empty() {
+    } else if waiting.pending.is_empty() {
         println!("nothing to publish");
     }
-    Ok(())
-}
-
-fn publish(root: &Path, daemon_url: Option<&str>) -> Result<()> {
-    let published = Plan::resolve(root, daemon_url)?.publish()?;
-    println!(
-        "{} now holds the rolling updates at {}",
-        published.branch, published.commit
-    );
     Ok(())
 }
 
