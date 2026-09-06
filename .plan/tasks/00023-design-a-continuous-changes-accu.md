@@ -5,6 +5,14 @@ parent: ./00039-continuous-changes-accumulation-v.md
 ---
 # Design a continuous-changes accumulation branch
 
+> **Superseded in part.** The storage decision changed. Ambient edits now live on
+> the branch `openplan/updates` with a standing worktree, not on the custom ref
+> `refs/open-plan/rolling-updates` with worktree-less object writes. The routing
+> rules, the conflict-gated manual publish, the backup decision, and the UI
+> design below all still hold. So does the spike result: `git rebase` calls the
+> merge driver, and the new design uses that. See
+> [[./00039-continuous-changes-accumulation-v.md]] for what changed and why.
+
 A design task. Produce the design and an implementation plan; no code yet.
 
 ## Problem

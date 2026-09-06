@@ -177,6 +177,7 @@ pub struct Project {
     freshness: Mutex<Freshness>,
     health: Mutex<Health>,
     watcher: Mutex<Option<Watcher>>,
+    rolling_updates: Mutex<Option<crate::rolling_updates::Handle>>,
     root_misses: AtomicU32,
 }
 
@@ -200,6 +201,7 @@ impl Project {
             freshness: Mutex::new(Freshness::default()),
             health: Mutex::new(Health::default()),
             watcher: Mutex::new(None),
+            rolling_updates: Mutex::new(None),
             root_misses: AtomicU32::new(0),
         }
     }
@@ -226,6 +228,17 @@ impl Project {
         &self.repo
     }
 
+    pub fn with_rolling_updates<T>(
+        &self,
+        read: impl FnOnce(&crate::rolling_updates::Handle) -> T,
+    ) -> Option<T> {
+        self.rolling_updates
+            .lock()
+            .expect("rolling-updates mutex poisoned")
+            .as_ref()
+            .map(read)
+    }
+
     pub fn store(&self) -> &Store {
         &self.store
     }
@@ -245,6 +258,8 @@ impl Project {
             git_common_dir: self.git_common_dir.clone(),
             abbreviation: self.abbreviation().to_string(),
             status: self.status(),
+            rolling_updates_branch: self
+                .with_rolling_updates(|_| op_git::ROLLING_UPDATES_BRANCH.to_owned()),
         }
     }
 
@@ -472,9 +487,17 @@ impl std::fmt::Debug for Project {
     }
 }
 
-// Blocking: `Watcher::start` scans every branch and hashes each worktree's task files. A watcher
-// that will not start stays a logged degradation — reads keep working, they just never skip a
-// rebuild, because `stale_at` counts an unwatched project as always dirty.
+// Blocking: it shells out to git to make the branch, its worktree, and the attributes commit.
+pub fn start_rolling_updates(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
+    let mut held = project
+        .rolling_updates
+        .lock()
+        .expect("rolling-updates mutex poisoned");
+    if held.is_none() {
+        *held = crate::rolling_updates::Handle::start(project, events);
+    }
+}
+
 pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
     if project.is_watched() {
         return;
@@ -496,6 +519,11 @@ pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent
         for change in rx {
             tracing::debug!(project = %watched.name(), ?change, "watcher change forwarded");
             watched.mark_dirty();
+            // The rolling-updates worktree is watched like any other, so an edit the CLI wrote
+            // straight into it reaches the committer here without the write path knowing about it.
+            if change.branch() == Some(op_git::ROLLING_UPDATES_BRANCH) {
+                watched.with_rolling_updates(crate::rolling_updates::Handle::edited);
+            }
             // The watcher reports a task by number, the file layer's spelling; the key it renders as
             // is the daemon's to decide.
             let event = match change {

@@ -11,6 +11,8 @@ pub struct ProjectView {
     pub git_common_dir: String,
     pub abbreviation: String,
     pub status: ProjectStatus,
+    // Named here so a client can label that branch without spelling its name.
+    pub rolling_updates_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

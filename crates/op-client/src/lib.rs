@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use op_api::{
     ApiErrorBody, BranchComments, Comment, CreateComment, CreateTag, CreateTask, DaemonInfo,
-    Matrix, ProjectView, Refusal, RegisterProject, RenameProject, SearchHit, TagPatch, TagView,
-    TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject, RollingUpdates,
+    SearchHit, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -321,6 +321,27 @@ impl Client {
         let url = write_url(base_url, project, branch, None)?;
         let created: CreatedTask = self.json(self.http.post(url).json(task))?;
         Ok(created.id)
+    }
+
+    pub fn rolling_updates(
+        &self,
+        base_url: &str,
+        project: &str,
+    ) -> Result<RollingUpdates, ClientError> {
+        self.read(fresh(sub_url(
+            projects_url(base_url, project)?,
+            base_url,
+            &["rolling-updates"],
+        )?))
+    }
+
+    pub fn publish(&self, base_url: &str, project: &str) -> Result<Published, ClientError> {
+        let url = sub_url(
+            projects_url(base_url, project)?,
+            base_url,
+            &["rolling-updates", "publish"],
+        )?;
+        self.json(self.http.post(url))
     }
 
     pub fn patch_task(

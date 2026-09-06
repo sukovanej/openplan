@@ -34,10 +34,16 @@ pub struct Worktree {
     pub op_in_progress: bool,
 }
 
+pub mod rolling_updates;
+
+pub use rolling_updates::{ROLLING_UPDATES_BRANCH, Rebased};
+
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
     #[error("could not open git repository: {0}")]
     Open(String),
+    #[error("{0}")]
+    Command(String),
     #[error("no such branch: {0}")]
     NoSuchBranch(String),
     #[error("object database error: {0}")]

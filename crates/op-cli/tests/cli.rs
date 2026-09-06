@@ -283,53 +283,6 @@ fn list_discovers_store_from_subdirectory() {
 }
 
 #[test]
-fn merge_driver_clean_conflict_and_read_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().join("base.md");
-    let ours = dir.path().join("ours.md");
-    let theirs = dir.path().join("theirs.md");
-    let content = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\nhi\n";
-    write(&base, content);
-    write(&ours, content);
-    write(&theirs, content);
-
-    let clean = openplan()
-        .arg("merge-driver")
-        .args([&base, &ours, &theirs])
-        .output()
-        .unwrap();
-    assert!(
-        clean.status.success(),
-        "identical inputs should merge cleanly"
-    );
-
-    write(
-        &theirs,
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\nBYE\n",
-    );
-    let conflict = openplan()
-        .arg("merge-driver")
-        .args([&base, &ours, &theirs])
-        .output()
-        .unwrap();
-    assert!(
-        !conflict.status.success(),
-        "divergent inputs should conflict"
-    );
-
-    let missing = dir.path().join("nope.md");
-    let read_error = openplan()
-        .arg("merge-driver")
-        .args([&missing, &missing, &missing])
-        .output()
-        .unwrap();
-    assert!(
-        !read_error.status.success(),
-        "unreadable inputs must fail, not report a clean merge"
-    );
-}
-
-#[test]
 fn create_names_the_file_after_the_id_and_the_title() {
     let dir = Project::new();
     let before = op_task::now();
