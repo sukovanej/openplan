@@ -5,9 +5,9 @@ pub mod translate;
 
 use std::path::PathBuf;
 
-use op_agent::{Agent, AgentError, AgentKind, Session, SessionOptions, process, session};
+use op_agent::{Agent, AgentError, AgentKind, Session, SessionOptions};
 
-pub use translate::Translator;
+pub use crate::driver::Driver;
 
 pub struct Codex {
     binary: PathBuf,
@@ -47,9 +47,7 @@ impl Agent for Codex {
 
     fn start(&self, options: SessionOptions) -> Result<Session, AgentError> {
         let command = launch::command(&self.binary, &self.config, &options);
-        let process = process::spawn(command)?;
-        let (session, channel) = session::open();
-        tokio::spawn(driver::run(process, channel, options));
-        Ok(session)
+        let budget = options.budget;
+        op_agent::driver::start(Driver::new(options), command, budget)
     }
 }

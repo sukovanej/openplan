@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{approval::ApprovalRequest, session::SessionId, usage::Usage};
+use crate::{
+    approval::{ApprovalId, ApprovalRequest},
+    session::SessionId,
+    usage::Usage,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ItemId(pub String);
@@ -17,6 +21,7 @@ pub enum AgentEvent {
     Ready(SessionInfo),
     TurnStarted {
         turn: TurnId,
+        prompt: String,
     },
     Thinking {
         item: ItemId,
@@ -47,6 +52,9 @@ pub enum AgentEvent {
     },
     ToolEnded(ToolOutcome),
     ApprovalRequested(ApprovalRequest),
+    ApprovalResolved {
+        id: ApprovalId,
+    },
     UsageUpdated {
         turn: Usage,
         session: Usage,

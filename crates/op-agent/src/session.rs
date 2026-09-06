@@ -107,9 +107,3 @@ impl SessionHandle {
             .map_err(|_| AgentError::Stopped)
     }
 }
-
-impl Channel {
-    pub async fn emit(&self, event: AgentEvent) -> bool {
-        self.events.send(event).await.is_ok()
-    }
-}

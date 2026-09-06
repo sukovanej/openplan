@@ -1,23 +1,26 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap, VecDeque},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use op_agent::{AgentEvent, Command, SessionOptions, Usage, process::Process, session::Channel};
-use serde_json::{Value, json};
-use tokio::{
-    sync::mpsc::Sender,
-    time::{Duration, Instant, sleep_until},
+use op_agent::{
+    AgentEvent, ApprovalDecision, ApprovalId, Effects, ItemId, Protocol, SessionId, SessionInfo,
+    SessionOptions, TurnId, TurnStop, Usage,
 };
-
-// How long a closed stdin has to end the CLI before it is killed.
-const GRACE: Duration = Duration::from_secs(5);
+use serde_json::{Value, json};
 
 use crate::{
     launch,
-    protocol::{Incoming, KnownNotification, Notification, Outgoing, RequestId},
-    translate::{self, Translator},
+    protocol::{
+        Incoming, KnownNotification, KnownThreadItem, Notification, Outgoing, RequestId,
+        ThreadItem, Turn, TurnStatus,
+    },
+    translate::{self, item_completed, item_started},
 };
+
+// `commentary` marks the notes the agent writes while it works, `final_answer` the answer itself.
+// An output schema shapes both, so only the phase tells them apart.
+const FINAL_ANSWER: &str = "final_answer";
 
 enum Pending {
     Initialize,
@@ -30,210 +33,303 @@ struct Approval {
     available: Vec<String>,
 }
 
-pub async fn run(
-    process: Process<Outgoing, Incoming>,
-    mut channel: Channel,
+pub struct Driver {
     options: SessionOptions,
-) {
-    let Process {
-        mut incoming,
-        outgoing,
-        mut child,
-    } = process;
-    let mut outgoing = Some(outgoing);
-    let mut translator = Translator::new(
-        options.cwd.clone(),
-        options.model.clone(),
-        options.schema.is_some(),
-    );
-    let mut requests = 0u64;
-    let mut pending: HashMap<u64, Pending> = HashMap::new();
-    let mut approvals: HashMap<String, Approval> = HashMap::new();
-    let mut queued: Vec<String> = Vec::new();
-    let mut session = Usage::default();
-    let mut over_budget = false;
-    let mut reading = true;
-    let mut deadline: Option<Instant> = None;
+    requests: u64,
+    pending: HashMap<u64, Pending>,
+    approvals: HashMap<String, Approval>,
+    // Prompts that arrived before the thread had an id.
+    queued: Vec<String>,
+    // Prompts sent as turns, in order, until `turn/started` names each one.
+    sent: VecDeque<String>,
+    thread: Option<String>,
+    turn: Option<String>,
+    // The message items that carry the structured answer of the running turn.
+    answers: BTreeSet<String>,
+    // The server reports a fatal error as a notification and again on the turn it ended.
+    failed: bool,
+    usage: Usage,
+}
 
-    let id = next(&mut requests);
-    pending.insert(id, Pending::Initialize);
-    send(
-        &outgoing,
-        Outgoing::request(id, "initialize", launch::initialize()),
-    )
-    .await;
+impl Driver {
+    pub fn new(options: SessionOptions) -> Self {
+        Self {
+            options,
+            requests: 0,
+            pending: HashMap::new(),
+            approvals: HashMap::new(),
+            queued: Vec::new(),
+            sent: VecDeque::new(),
+            thread: None,
+            turn: None,
+            answers: BTreeSet::new(),
+            failed: false,
+            usage: Usage::default(),
+        }
+    }
 
-    loop {
-        tokio::select! {
-            message = incoming.recv(), if reading => {
-                let Some(message) = message else {
-                    reading = false;
-                    continue;
-                };
-                match message {
-                    Incoming::Result { id, result } => {
-                        let RequestId::Number(id) = id else { continue };
-                        match pending.remove(&(id as u64)) {
-                            Some(Pending::Initialize) => {
-                                send(&outgoing, Outgoing::notification("initialized")).await;
-                                let (method, params) = launch::thread(&options);
-                                let id = next(&mut requests);
-                                pending.insert(id, Pending::ThreadStart);
-                                send(&outgoing, Outgoing::request(id, method, params)).await;
-                            }
-                            Some(Pending::ThreadStart) => {
-                                let Some(thread) = result.pointer("/thread/id").and_then(Value::as_str) else {
-                                    continue;
-                                };
-                                let ready = translator.thread_started(thread.to_owned());
-                                if !channel.emit(ready).await {
-                                    return;
-                                }
-                                for text in queued.drain(..) {
-                                    start_turn(&outgoing, &mut requests, thread, text, &options).await;
-                                }
-                            }
-                            None => {}
-                        }
-                    }
-                    Incoming::Failure { error, .. } => {
-                        let failed = AgentEvent::Failed { message: error.message, retrying: false };
-                        if !channel.emit(failed).await {
-                            return;
-                        }
-                    }
-                    Incoming::Request { id, method, params } => {
-                        match translate::approval_request(&id, &method, &params) {
-                            Some(request) => {
-                                let approval = Approval {
-                                    request: id,
-                                    available: available(&params),
-                                };
-                                approvals.insert(request.id.0.clone(), approval);
-                                if !channel.emit(AgentEvent::ApprovalRequested(request)).await {
-                                    return;
-                                }
-                            }
-                            None => send(&outgoing, answer(id, &method)).await,
-                        }
-                    }
-                    Incoming::Notification(notification) => {
-                        if let Some(resolved) = resolved(&notification) {
-                            approvals.remove(&resolved);
-                        }
-                        for event in translator.translate(&notification) {
-                            if let AgentEvent::UsageUpdated { session: total, .. } = &event {
-                                session = *total;
-                            }
-                            if !channel.emit(event).await {
-                                return;
-                            }
-                        }
-                        if !over_budget && options.budget.exhausted_by(&session) {
-                            over_budget = true;
-                            if !channel.emit(AgentEvent::BudgetExhausted { session }).await {
-                                return;
-                            }
-                            interrupt(&outgoing, &mut requests, &translator).await;
-                        }
-                    }
+    pub fn thread(&self) -> Option<&str> {
+        self.thread.as_deref()
+    }
+
+    pub fn turn(&self) -> Option<&str> {
+        self.turn.as_deref()
+    }
+
+    fn request(&mut self, method: &'static str, params: Value) -> (u64, Outgoing) {
+        self.requests += 1;
+        (
+            self.requests,
+            Outgoing::request(self.requests, method, params),
+        )
+    }
+
+    fn start_turn(&mut self, thread: &str, text: String, effects: &mut Effects<Outgoing>) {
+        let params = launch::turn(thread, text.clone(), &self.options);
+        let (_, request) = self.request("turn/start", params);
+        self.sent.push_back(text);
+        effects.send(request);
+    }
+
+    fn thread_started(&mut self, thread: String, effects: &mut Effects<Outgoing>) {
+        if self.thread.is_some() {
+            return;
+        }
+        self.thread = Some(thread.clone());
+        effects.emit(AgentEvent::Ready(SessionInfo {
+            session: SessionId(thread.clone()),
+            cwd: self.options.cwd.clone(),
+            model: self.options.model.clone(),
+            tools: Vec::new(),
+        }));
+        for text in std::mem::take(&mut self.queued) {
+            self.start_turn(&thread, text, effects);
+        }
+    }
+
+    fn result(&mut self, id: RequestId, result: Value, effects: &mut Effects<Outgoing>) {
+        let RequestId::Number(id) = id else { return };
+        match self.pending.remove(&(id as u64)) {
+            Some(Pending::Initialize) => {
+                effects.send(Outgoing::notification("initialized"));
+                let (method, params) = launch::thread(&self.options);
+                let (id, request) = self.request(method, params);
+                self.pending.insert(id, Pending::ThreadStart);
+                effects.send(request);
+            }
+            Some(Pending::ThreadStart) => {
+                if let Some(thread) = result.pointer("/thread/id").and_then(Value::as_str) {
+                    self.thread_started(thread.to_owned(), effects);
                 }
             }
-            command = channel.commands.recv() => {
-                let Some(command) = command else {
-                    outgoing = None;
-                    deadline = Some(Instant::now() + GRACE);
-                    continue;
+            None => {}
+        }
+    }
+
+    fn failure(&mut self, id: RequestId, message: String, effects: &mut Effects<Outgoing>) {
+        effects.emit(AgentEvent::Failed {
+            message,
+            retrying: false,
+        });
+        // Without a thread nothing else can happen, so the session ends rather than waits.
+        if let RequestId::Number(id) = id
+            && self.pending.remove(&(id as u64)).is_some()
+        {
+            effects.close();
+        }
+    }
+
+    fn server_request(
+        &mut self,
+        id: RequestId,
+        method: &str,
+        params: &Value,
+        effects: &mut Effects<Outgoing>,
+    ) {
+        match translate::approval_request(&id, method, params) {
+            Some(request) => {
+                let approval = Approval {
+                    request: id,
+                    available: translate::available_decisions(params),
                 };
-                match command {
-                    Command::Prompt(text) => {
-                        if over_budget {
-                            let refused = AgentEvent::Failed {
-                                message: "the session has spent its budget".to_owned(),
-                                retrying: false,
-                            };
-                            if !channel.emit(refused).await {
-                                return;
-                            }
-                            continue;
-                        }
-                        match translator.thread() {
-                            // The thread is still starting, so the prompt waits for its id.
-                            None => queued.push(text),
-                            Some(thread) => {
-                                let thread = thread.to_owned();
-                                start_turn(&outgoing, &mut requests, &thread, text, &options).await;
-                            }
-                        }
-                    }
-                    Command::Interrupt => interrupt(&outgoing, &mut requests, &translator).await,
-                    Command::Approve { id, decision } => {
-                        if let Some(approval) = approvals.remove(&id.0) {
-                            let verdict = translate::decision(&decision, &approval.available);
-                            let result = json!({ "decision": verdict });
-                            send(&outgoing, Outgoing::response(approval.request, result)).await;
-                        }
-                    }
-                    // Closing stdin ends the CLI, and the exit arm below reports it.
-                    Command::Shutdown => {
-                        outgoing = None;
-                        deadline = Some(Instant::now() + GRACE);
-                    }
+                self.approvals.insert(request.id.0.clone(), approval);
+                effects.emit(AgentEvent::ApprovalRequested(request));
+            }
+            None => effects.send(answer(id, method)),
+        }
+    }
+
+    fn notification(&mut self, notification: Notification, effects: &mut Effects<Outgoing>) {
+        let Notification::Known(known) = notification else {
+            return;
+        };
+        match *known {
+            // The thread id also arrives as the reply to `thread/start`, whichever lands first.
+            KnownNotification::ThreadStarted { thread } => self.thread_started(thread.id, effects),
+            KnownNotification::TurnStarted { turn } => {
+                self.turn = Some(turn.id.clone());
+                self.failed = false;
+                effects.emit(AgentEvent::TurnStarted {
+                    turn: TurnId(turn.id),
+                    prompt: self.sent.pop_front().unwrap_or_default(),
+                });
+            }
+            KnownNotification::TurnCompleted { turn } => self.turn_completed(turn, effects),
+            KnownNotification::ItemStarted { item } => {
+                if let Some(answer) = self.answer_id(&item) {
+                    self.answers.insert(answer);
                 }
+                effects.events.extend(item_started(&item));
             }
-            _ = sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
-                deadline = None;
-                let _ = child.start_kill();
+            KnownNotification::ItemCompleted { item } => {
+                let answer = self.answer_id(&item).is_some();
+                effects.events.extend(item_completed(&item, answer));
             }
-            status = child.wait() => {
-                let code = status.ok().and_then(|status| status.code());
-                channel.emit(AgentEvent::Exited { code }).await;
-                return;
+            KnownNotification::MessageDelta { item_id, delta } => {
+                effects.emit(if self.answers.contains(&item_id) {
+                    AgentEvent::ResultDelta { delta }
+                } else {
+                    AgentEvent::Message {
+                        item: ItemId(item_id),
+                        delta,
+                    }
+                });
+            }
+            KnownNotification::ReasoningDelta { item_id, delta } => {
+                effects.emit(AgentEvent::Thinking {
+                    item: ItemId(item_id),
+                    delta,
+                });
+            }
+            KnownNotification::CommandOutputDelta { item_id, delta } => {
+                effects.emit(AgentEvent::ToolOutput {
+                    item: ItemId(item_id),
+                    delta,
+                });
+            }
+            KnownNotification::TokenUsage { token_usage } => {
+                self.usage = translate::usage(&token_usage.total);
+                effects.emit(AgentEvent::UsageUpdated {
+                    turn: translate::usage(&token_usage.last),
+                    session: self.usage,
+                    context_window: token_usage.model_context_window,
+                });
+            }
+            KnownNotification::RateLimits { rate_limits } => {
+                effects.emit(AgentEvent::RateLimit(translate::rate_limit(&rate_limits)));
+            }
+            KnownNotification::Error { error, will_retry } => {
+                self.failed |= !will_retry;
+                effects.emit(AgentEvent::Failed {
+                    message: error.message,
+                    retrying: will_retry,
+                });
+            }
+            // The server also resolves a request on its own, on an interrupt for one.
+            KnownNotification::ServerRequestResolved { request_id } => {
+                let key = translate::request_key(&request_id);
+                if self.approvals.remove(&key).is_some() {
+                    effects.emit(AgentEvent::ApprovalResolved {
+                        id: ApprovalId(key),
+                    });
+                }
             }
         }
     }
-}
 
-fn next(requests: &mut u64) -> u64 {
-    *requests += 1;
-    *requests
-}
+    fn answer_id(&self, item: &ThreadItem) -> Option<String> {
+        let ThreadItem::Known(known) = item else {
+            return None;
+        };
+        match known.as_ref() {
+            KnownThreadItem::AgentMessage { id, phase, .. }
+                if self.options.schema.is_some() && phase.as_deref() == Some(FINAL_ANSWER) =>
+            {
+                Some(id.clone())
+            }
+            _ => None,
+        }
+    }
 
-async fn send(outgoing: &Option<Sender<Outgoing>>, message: Outgoing) {
-    if let Some(outgoing) = outgoing {
-        let _ = outgoing.send(message).await;
+    fn turn_completed(&mut self, turn: Turn, effects: &mut Effects<Outgoing>) {
+        self.turn = None;
+        self.answers.clear();
+        let stop = match turn.status {
+            TurnStatus::Completed | TurnStatus::InProgress => TurnStop::Completed,
+            TurnStatus::Interrupted => TurnStop::Interrupted,
+            TurnStatus::Failed => TurnStop::Failed,
+        };
+        if let Some(error) = turn.error
+            && !self.failed
+        {
+            effects.emit(AgentEvent::Failed {
+                message: error.message,
+                retrying: false,
+            });
+        }
+        effects.emit(AgentEvent::TurnEnded {
+            turn: TurnId(turn.id),
+            stop,
+        });
     }
 }
 
-async fn start_turn(
-    outgoing: &Option<Sender<Outgoing>>,
-    requests: &mut u64,
-    thread: &str,
-    text: String,
-    options: &SessionOptions,
-) {
-    let params = launch::turn(thread, text, options);
-    send(
-        outgoing,
-        Outgoing::request(next(requests), "turn/start", params),
-    )
-    .await;
-}
+impl Protocol for Driver {
+    type Input = Outgoing;
+    type Output = Incoming;
 
-async fn interrupt(
-    outgoing: &Option<Sender<Outgoing>>,
-    requests: &mut u64,
-    translator: &Translator,
-) {
-    let (Some(thread), Some(turn)) = (translator.thread(), translator.turn()) else {
-        return;
-    };
-    let params = json!({ "threadId": thread, "turnId": turn });
-    send(
-        outgoing,
-        Outgoing::request(next(requests), "turn/interrupt", params),
-    )
-    .await;
+    fn open(&mut self, effects: &mut Effects<Outgoing>) {
+        let (id, request) = self.request("initialize", launch::initialize());
+        self.pending.insert(id, Pending::Initialize);
+        effects.send(request);
+    }
+
+    fn read(&mut self, message: Incoming, effects: &mut Effects<Outgoing>) {
+        match message {
+            Incoming::Result { id, result } => self.result(id, result, effects),
+            Incoming::Failure { id, error } => self.failure(id, error.message, effects),
+            Incoming::Request { id, method, params } => {
+                self.server_request(id, &method, &params, effects);
+            }
+            Incoming::Notification(notification) => self.notification(notification, effects),
+        }
+    }
+
+    fn prompt(&mut self, text: String, effects: &mut Effects<Outgoing>) {
+        match self.thread.clone() {
+            Some(thread) => self.start_turn(&thread, text, effects),
+            // The thread is still starting, so the prompt waits for its id.
+            None => self.queued.push(text),
+        }
+    }
+
+    fn interrupt(&mut self, effects: &mut Effects<Outgoing>) {
+        let (Some(thread), Some(turn)) = (&self.thread, &self.turn) else {
+            return;
+        };
+        let params = json!({ "threadId": thread, "turnId": turn });
+        let (_, request) = self.request("turn/interrupt", params);
+        effects.send(request);
+    }
+
+    fn approve(
+        &mut self,
+        id: ApprovalId,
+        decision: ApprovalDecision,
+        effects: &mut Effects<Outgoing>,
+    ) {
+        let Some(approval) = self.approvals.remove(&id.0) else {
+            return;
+        };
+        let verdict = translate::decision(&decision, &approval.available);
+        let result = json!({ "decision": verdict });
+        effects.send(Outgoing::response(approval.request, result));
+        effects.emit(AgentEvent::ApprovalResolved { id });
+    }
+
+    fn usage(&self) -> Usage {
+        self.usage
+    }
 }
 
 // The server keeps a request open until it is answered, so an unhandled one is refused rather than
@@ -248,31 +344,5 @@ fn answer(id: RequestId, method: &str) -> Outgoing {
             Outgoing::response(id, json!({ "currentTimeAt": now }))
         }
         _ => Outgoing::unsupported(id, method),
-    }
-}
-
-fn available(params: &Value) -> Vec<String> {
-    params
-        .get("availableDecisions")
-        .and_then(Value::as_array)
-        .map(|decisions| {
-            decisions
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn resolved(notification: &Notification) -> Option<String> {
-    let Notification::Known(known) = notification else {
-        return None;
-    };
-    match known.as_ref() {
-        KnownNotification::ServerRequestResolved { request_id } => {
-            Some(translate::request_key(request_id))
-        }
-        _ => None,
     }
 }

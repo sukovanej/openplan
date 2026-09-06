@@ -1,34 +1,27 @@
-use op_agent::AgentEvent;
-use op_agent_claude::Translator;
-use op_claude::StreamOutput;
+mod common;
+
+use op_agent::{AgentEvent, Status, Transcript};
 use serde_json::Value;
 
 const DRAFT: &str = include_str!("fixtures/draft.jsonl");
 
-fn replay() -> Vec<AgentEvent> {
-    let mut translator = Translator::new();
-    let mut events = vec![translator.turn_started()];
-    for line in op_claude::parse_jsonl::<StreamOutput>("draft.jsonl", DRAFT) {
-        events.extend(translator.translate(&line.expect("the fixture parses")));
-    }
-    events
+fn replay() -> common::Replay {
+    common::replay("draft.jsonl", DRAFT)
 }
 
-fn streamed(events: &[AgentEvent]) -> String {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            AgentEvent::ResultDelta { delta } => Some(delta.as_str()),
+fn streamed(replay: &common::Replay) -> String {
+    replay
+        .all(|event| match event {
+            AgentEvent::ResultDelta { delta } => Some(delta.clone()),
             _ => None,
         })
-        .collect()
+        .concat()
 }
 
-fn ready(events: &[AgentEvent]) -> &Value {
-    events
-        .iter()
-        .find_map(|event| match event {
-            AgentEvent::ResultReady { value } => Some(value),
+fn ready(replay: &common::Replay) -> Value {
+    replay
+        .find(|event| match event {
+            AgentEvent::ResultReady { value } => Some(value.clone()),
             _ => None,
         })
         .expect("the turn ends with the value the schema asked for")
@@ -36,16 +29,15 @@ fn ready(events: &[AgentEvent]) -> &Value {
 
 #[test]
 fn streams_the_value_it_ends_with() {
-    let events = replay();
+    let replay = replay();
     let streamed: Value =
-        serde_json::from_str(&streamed(&events)).expect("the deltas are one JSON");
-    assert_eq!(&streamed, ready(&events));
+        serde_json::from_str(&streamed(&replay)).expect("the deltas are one JSON");
+    assert_eq!(streamed, ready(&replay));
 }
 
 #[test]
 fn reads_the_fields_the_schema_asked_for() {
-    let events = replay();
-    let value = ready(&events);
+    let value = ready(&replay());
     assert!(!value["title"].as_str().expect("a title").is_empty());
     assert!(value["body"].as_str().expect("a body").contains("mail"));
     assert!(!value["tags"].as_array().expect("tags").is_empty());
@@ -53,12 +45,23 @@ fn reads_the_fields_the_schema_asked_for() {
 
 #[test]
 fn keeps_the_built_in_tool_off_the_stream() {
-    let calls: Vec<_> = replay()
-        .into_iter()
-        .filter_map(|event| match event {
-            AgentEvent::ToolStarted(call) => Some(call.name),
-            _ => None,
-        })
-        .collect();
+    let calls = replay().all(|event| match event {
+        AgentEvent::ToolStarted(call) => Some(call.name.clone()),
+        _ => None,
+    });
     assert!(calls.is_empty(), "{calls:?}");
+}
+
+#[test]
+fn a_transcript_holds_the_draft_when_the_turn_ends() {
+    let replay = replay();
+    let mut transcript = Transcript::default();
+    for event in replay.events() {
+        transcript.apply(event);
+    }
+    assert_eq!(transcript.status, Status::Idle);
+    assert_eq!(transcript.result, Some(ready(&replay)));
+    assert_eq!(transcript.result_text, streamed(&replay));
+    assert!(transcript.approvals.is_empty());
+    assert!(transcript.usage.output_tokens > 0);
 }

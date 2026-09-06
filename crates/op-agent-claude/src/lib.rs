@@ -4,10 +4,10 @@ mod translate;
 
 use std::path::PathBuf;
 
-use op_agent::{Agent, AgentError, AgentKind, Session, SessionOptions, process, session};
+use op_agent::{Agent, AgentError, AgentKind, Session, SessionOptions};
 
+pub use crate::driver::Driver;
 pub use launch::{Settings, Skills, Tools};
-pub use translate::Translator;
 
 pub struct ClaudeCode {
     binary: PathBuf,
@@ -66,9 +66,6 @@ impl Agent for ClaudeCode {
             &self.settings,
             &options,
         );
-        let process = process::spawn(command)?;
-        let (session, channel) = session::open();
-        tokio::spawn(driver::run(process, channel, options));
-        Ok(session)
+        op_agent::driver::start(Driver::new(), command, options.budget)
     }
 }
