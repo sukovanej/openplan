@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: in_progress
 created: 2026-09-06T12:31:28Z
 parent: ./00039-continuous-changes-accumulation-v.md
 tags:
@@ -200,8 +200,9 @@ retries on the next tip move. Push once at startup.
 - `git rebase` in that worktree works. A default-branch commit that only changes
   code outside the cone replays cleanly and materialises nothing.
 - The merge driver runs during that rebase and gets `%P` as the repository
-  relative path. Git resolves non-overlapping hunks in core and never calls the
-  driver, which is the same as a normal merge.
+  relative path. Git calls it for every file both sides changed, even when the
+  hunks do not overlap, so the driver decides every case. A same-section line
+  edit on both sides therefore conflicts, as it must.
 - A driver that exits non-zero stops the rebase and leaves the conflict markers
   in the worktree, which is the resolution path this design needs.
 - `/.plan/**.md` does not match `.plan/tasks/00001-t.md`. `**` is only special as

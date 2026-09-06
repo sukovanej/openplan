@@ -34,10 +34,20 @@ pub struct Worktree {
     pub op_in_progress: bool,
 }
 
+pub mod lane;
+
+pub use lane::{LANE_BRANCH, Rebased};
+
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
     #[error("could not open git repository: {0}")]
     Open(String),
+    #[error("{0}")]
+    Command(String),
+    #[error("{branch} cannot fast-forward there")]
+    NotFastForward { branch: String },
+    #[error("{} has uncommitted task changes", path.display())]
+    WorktreeDirty { path: std::path::PathBuf },
     #[error("no such branch: {0}")]
     NoSuchBranch(String),
     #[error("object database error: {0}")]

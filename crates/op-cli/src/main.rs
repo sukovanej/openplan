@@ -188,11 +188,16 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
-    /// Git merge driver for .plan/**.md (git passes %O %A %B)
+    /// Git merge driver for .plan task files (git passes %O %A %B %L %P %S %X %Y)
     MergeDriver {
         ancestor: String,
         current: String,
         other: String,
+        marker_size: Option<usize>,
+        path: Option<String>,
+        label_base: Option<String>,
+        label_ours: Option<String>,
+        label_theirs: Option<String>,
     },
 }
 
@@ -398,7 +403,20 @@ fn run(cli: Cli) -> Result<ExitCode> {
             ancestor,
             current,
             other,
-        } => Ok(mergedriver::run(&ancestor, &current, &other)),
+            marker_size,
+            path,
+            label_ours,
+            label_theirs,
+            ..
+        } => Ok(mergedriver::run(&mergedriver::Args {
+            ancestor: &ancestor,
+            current: &current,
+            other: &other,
+            marker_size: marker_size.unwrap_or(7),
+            path: path.as_deref(),
+            label_ours: label_ours.as_deref(),
+            label_theirs: label_theirs.as_deref(),
+        })),
     }
 }
 

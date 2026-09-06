@@ -3757,6 +3757,7 @@ dependencies = [
  "op-task",
  "op-watch",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "tokio",
  "tracing",
