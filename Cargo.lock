@@ -3555,6 +3555,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "op-agent"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "op-agent-claude"
+version = "0.0.1"
+dependencies = [
+ "op-agent",
+ "op-claude",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "op-agent-codex"
+version = "0.0.1"
+dependencies = [
+ "op-agent",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "op-api"
 version = "0.0.1"
 dependencies = [
