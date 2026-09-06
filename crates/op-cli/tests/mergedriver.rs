@@ -211,3 +211,37 @@ fn an_unreadable_side_fails_rather_than_reporting_a_merge() {
 
     assert!(!output.status.success());
 }
+
+#[test]
+fn a_section_one_side_deleted_and_the_other_changed_conflicts() {
+    let base = task(
+        "todo",
+        "# T\n\n## Alpha\n\nbase alpha\n\n## Beta\n\nbase beta\n",
+    );
+    let ours = task("todo", "# T\n\n## Beta\n\nbase beta\n");
+    let theirs = task(
+        "todo",
+        "# T\n\n## Alpha\n\nTHEIRS alpha\n\n## Beta\n\nbase beta\n",
+    );
+
+    let run = drive(&base, &ours, &theirs);
+
+    assert_ne!(run.code, 0, "{}", run.merged);
+    assert!(run.merged.contains("THEIRS alpha"), "{}", run.merged);
+    assert!(run.stderr.contains("Alpha"), "{}", run.stderr);
+}
+
+// Every whole-file conflict wraps the two files git handed over. Re-serializing the parsed task
+// would drop whatever the file said that the parser does not keep.
+#[test]
+fn a_frontmatter_conflict_keeps_both_files_verbatim() {
+    let base = task("todo", "# T\n\n## Alpha\n\nbase\n");
+    let ours = task("in_progress", "# T\n\n## Alpha\n\nbase\n");
+    let theirs = task("done", "# T\n\n## Alpha\n\nbase\n");
+
+    let run = drive(&base, &ours, &theirs);
+
+    assert_ne!(run.code, 0);
+    assert!(run.merged.contains("status: in_progress"), "{}", run.merged);
+    assert!(run.merged.contains("status: done"), "{}", run.merged);
+}

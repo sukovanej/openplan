@@ -517,13 +517,13 @@ pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent
         for change in rx {
             tracing::debug!(project = %watched.name(), ?change, "watcher change forwarded");
             watched.mark_dirty();
-            // The watcher reports a task by number, the file layer's spelling; the key it renders as
-            // is the daemon's to decide.
-            // The rolling-updates worktree is watched like any other, so an edit the CLI wrote straight
-            // into it reaches the committer here without the write path knowing about it.
+            // The rolling-updates worktree is watched like any other, so an edit the CLI wrote
+            // straight into it reaches the committer here without the write path knowing about it.
             if change.branch() == Some(op_git::ROLLING_UPDATES_BRANCH) {
                 watched.with_rolling_updates(crate::rolling_updates::Handle::edited);
             }
+            // The watcher reports a task by number, the file layer's spelling; the key it renders as
+            // is the daemon's to decide.
             let event = match change {
                 Change::Task { number, branch } => ChangeEvent::TaskChanged {
                     project: watched.name(),

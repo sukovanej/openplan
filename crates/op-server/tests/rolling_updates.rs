@@ -34,7 +34,7 @@ async fn body_json(response: Response) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-// A repository whose serve root sits on the default branch, with the rolling started the way the
+// A repository whose serve root sits on the default branch, with the branch started the way the
 // daemon starts it. Its worktree is what makes the branch writable.
 fn with_rolling_updates() -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();

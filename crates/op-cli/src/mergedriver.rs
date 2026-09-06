@@ -93,31 +93,30 @@ pub fn merge(base: &str, ours: &str, theirs: &str, labels: &Labels<'_>) -> Merge
         Task::from_file_string(ours),
         Task::from_file_string(theirs),
     );
-    let (Ok(base), Ok(ours), Ok(theirs)) = parsed else {
+    let (Ok(base_task), Ok(our_task), Ok(their_task)) = parsed else {
         return whole_file(ours, theirs, labels, "the file does not parse as a task");
     };
 
     // A frontmatter field carries no place to put markers that still leaves YAML a reader can
     // parse, and a same-field divergence is a choice only a person can make. Fall back to the
     // whole-file form rather than emit frontmatter no parser accepts.
-    let Some(frontmatter) =
-        merge_frontmatter(&base.frontmatter, &ours.frontmatter, &theirs.frontmatter)
-    else {
-        let (Ok(ours), Ok(theirs)) = (ours.to_file_string(), theirs.to_file_string()) else {
-            return whole_file("", "", labels, "the merged task does not serialize");
-        };
+    let Some(frontmatter) = merge_frontmatter(
+        &base_task.frontmatter,
+        &our_task.frontmatter,
+        &their_task.frontmatter,
+    ) else {
         return whole_file(
-            &ours,
-            &theirs,
+            ours,
+            theirs,
             labels,
             "the same frontmatter field changed on both sides",
         );
     };
 
-    let (body, conflicts) = merge_body(&base.body, &ours.body, &theirs.body, labels);
+    let (body, conflicts) = merge_body(&base_task.body, &our_task.body, &their_task.body, labels);
     let task = Task { frontmatter, body };
     let Ok(text) = task.to_file_string() else {
-        return whole_file("", "", labels, "the merged task does not serialize");
+        return whole_file(ours, theirs, labels, "the merged task does not serialize");
     };
     if conflicts.is_empty() {
         Merged::Clean(text)
@@ -193,15 +192,15 @@ fn names(base: &[String], ours: &[String], theirs: &[String]) -> Vec<String> {
 
 fn merge_body(base: &str, ours: &str, theirs: &str, labels: &Labels<'_>) -> (String, Vec<String>) {
     let (base, ours, theirs) = (sections(base), sections(ours), sections(theirs));
-    let find = |list: &[(String, String)], key: &str| {
+    let find = |list: &[(Section, String)], key: &Section| {
         list.iter()
-            .find(|(name, _)| name == key)
+            .find(|(section, _)| section == key)
             .map(|(_, text)| text.clone())
     };
 
-    let mut order: Vec<String> = ours.iter().map(|(key, _)| key.clone()).collect();
+    let mut order: Vec<Section> = ours.iter().map(|(key, _)| key.clone()).collect();
     for (key, _) in &theirs {
-        if find(&ours, key).is_none() && find(&base, key).is_none() {
+        if !order.contains(key) {
             order.push(key.clone());
         }
     }
@@ -218,27 +217,17 @@ fn merge_body(base: &str, ours: &str, theirs: &str, labels: &Labels<'_>) -> (Str
                     o.as_deref().unwrap_or_default(),
                     t.as_deref().unwrap_or_default(),
                 ));
-                conflicts.push(name_of(&key));
+                conflicts.push(key.name());
             }
         }
     }
     (format!("{}\n", blocks.join("\n\n")), conflicts)
 }
 
-fn name_of(key: &str) -> String {
-    match key.split_once(':') {
-        None => "the text above the first heading".to_owned(),
-        Some((_, rest)) => format!(
-            "\"{}\"",
-            rest.split_once('#').map_or(rest, |(name, _)| name)
-        ),
-    }
-}
-
 // The body split into the blocks a person edits: the text before the first heading, then every
 // heading of level one or two with what it heads. A deeper heading belongs to the block it sits in,
 // so an edit inside it counts as an edit to that block.
-fn sections(body: &str) -> Vec<(String, String)> {
+fn sections(body: &str) -> Vec<(Section, String)> {
     let heads: Vec<op_md::Heading> = op_md::headings(body)
         .into_iter()
         .filter(|heading| heading.level <= 2)
@@ -246,20 +235,47 @@ fn sections(body: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let first = heads.first().map_or(body.len(), |heading| heading.start);
     if !body[..first].trim().is_empty() {
-        out.push((String::new(), body[..first].trim_end().to_owned()));
+        out.push((Section::preamble(), body[..first].trim_end().to_owned()));
     }
-    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut seen: HashMap<(u8, String), usize> = HashMap::new();
     for (index, heading) in heads.iter().enumerate() {
         let end = heads.get(index + 1).map_or(body.len(), |next| next.start);
-        let name = format!("h{}:{}", heading.level, heading.text);
-        let count = seen.entry(name.clone()).or_insert(0);
-        let key = if *count == 0 {
-            name.clone()
-        } else {
-            format!("{name}#{count}")
-        };
-        *count += 1;
-        out.push((key, body[heading.start..end].trim_end().to_owned()));
+        let repeats = seen
+            .entry((heading.level, heading.text.clone()))
+            .or_insert(0);
+        out.push((
+            Section {
+                level: heading.level,
+                heading: heading.text.clone(),
+                repeat: *repeats,
+            },
+            body[heading.start..end].trim_end().to_owned(),
+        ));
+        *repeats += 1;
     }
     out
+}
+
+#[derive(Clone, PartialEq)]
+struct Section {
+    level: u8,
+    heading: String,
+    repeat: usize,
+}
+
+impl Section {
+    fn preamble() -> Self {
+        Section {
+            level: 0,
+            heading: String::new(),
+            repeat: 0,
+        }
+    }
+
+    fn name(&self) -> String {
+        if self.level == 0 {
+            return "the text above the first heading".to_owned();
+        }
+        format!("\"{}\"", self.heading)
+    }
 }

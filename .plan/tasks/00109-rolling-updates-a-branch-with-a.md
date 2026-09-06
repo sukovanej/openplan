@@ -253,3 +253,7 @@ CLI `openplan publish` calls the endpoint and needs the daemon.
 ### 2026-09-06T18:23:58Z by Milan Suk via claude-code
 
 > The backup push and its `openplan.backupRemote` key are gone. Publish pushes the same branch, so a second continuous force-push of it earned nothing. Two entries above still describe the write redirect and the backup push; neither exists.
+
+### 2026-09-06T18:46:44Z by Milan Suk via claude-code
+
+> The merge driver dropped an edit: a section one side deleted and the other changed was skipped entirely, so it merged clean and the change was lost. It now conflicts. A whole-file conflict wraps the two original files; it used to re-serialize the parsed task, and wrapped two empty strings when that failed.

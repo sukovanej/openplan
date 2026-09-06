@@ -165,7 +165,6 @@ enum Command {
         /// Write to this branch instead of the one this worktree has checked out
         #[arg(long)]
         branch: Option<String>,
-
         #[arg(long)]
         yes: bool,
     },
@@ -198,7 +197,7 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
-    /// Fast-forward the default branch to the rolling-updates branch
+    /// Push the rolling-updates branch and open a pull request for it
     Publish {
         /// List what would be published instead of publishing it
         #[arg(long)]
@@ -211,6 +210,8 @@ enum Command {
         other: String,
         marker_size: Option<usize>,
         path: Option<String>,
+        // %S, the base label. The markers carry no base section, so nothing reads it; it holds the
+        // position git passes the two labels after it in.
         label_base: Option<String>,
         label_ours: Option<String>,
         label_theirs: Option<String>,

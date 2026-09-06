@@ -4,7 +4,7 @@ use std::process::Command;
 use crate::{GitError, Repo};
 
 pub const ROLLING_UPDATES_BRANCH: &str = "openplan/rolling-updates";
-pub const ROLLING_UPDATES_WORKTREE_DIR: &str = "openplan-rolling-updates";
+const ROLLING_UPDATES_WORKTREE_DIR: &str = "openplan-rolling-updates";
 const ATTRIBUTES_LINE: &str = "/.plan/**/*.md merge=openplan";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -18,7 +18,7 @@ impl Repo {
         self.git_common_dir().join(ROLLING_UPDATES_WORKTREE_DIR)
     }
 
-    // Everything the rolling needs, applied in the order that lets a later step assume the earlier
+    // Everything the branch needs, applied in the order that lets a later step assume the earlier
     // one: the driver registration, then the branch, then its worktree, then the attributes commit
     // that makes git call the driver.
     pub fn ensure_rolling_updates(
@@ -64,9 +64,8 @@ impl Repo {
         Ok(())
     }
 
-    // `.gitattributes` is a tracked file, so the rolling commits it rather than the
-    // default branch's worktree:
-    // it reaches the default branch with the first publish.
+    // `.gitattributes` is a tracked file, so it is committed here rather than on the default
+    // branch. It reaches the default branch with the first publish.
     fn ensure_attributes(&self, worktree: &Path) -> Result<(), GitError> {
         let path = worktree.join(".gitattributes");
         let current = std::fs::read_to_string(&path).unwrap_or_default();
