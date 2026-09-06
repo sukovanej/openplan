@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: todo
 created: 2026-09-06T11:43:22Z
 dependencies:
 - ./00106-port-the-cli-and-daemon-to-windo.md
