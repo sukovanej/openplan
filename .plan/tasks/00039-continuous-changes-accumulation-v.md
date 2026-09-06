@@ -8,22 +8,22 @@ tags:
 # Continuous changes accumulation via the rolling-updates branch
 
 Ambient edits are the task edits that belong to no feature branch. This is the
-umbrella for the lane that holds them.
+umbrella for the rolling-updates branch that holds them.
 
-Ambient edits accumulate on the branch `openplan/updates`. The daemon keeps a
+Ambient edits accumulate on the branch `openplan/rolling-updates`. The daemon keeps a
 standing worktree for it, rebases it onto the default branch as that branch
 moves, and fast-forwards the default branch when a person publishes.
 
 ## Why the storage changed
 
 [[./00023-design-a-continuous-changes-accu.md]] designed the first version. It
-kept the lane in the custom ref `refs/open-plan/rolling-updates` and wrote git
+kept these edits in the custom ref `refs/open-plan/rolling-updates` and wrote git
 objects with no worktree. Three findings stopped it:
 
 - gix hosts a merge driver only as an external command, and it turns a non-zero
   exit into an error rather than a conflict. The worktree-less reconcile could
   not name the conflicted tasks.
-- `Index` builds its lanes from `repo.local_branches()`, so a custom ref never
+- `Index` builds its branch set from `repo.local_branches()`, so a custom ref never
   reached the read path at all.
 - A conflict landed in a ref with no files on the disk, so nobody could resolve
   it.

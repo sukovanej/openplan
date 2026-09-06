@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use op_api::{ChangeEvent, MatrixCell, Published, SyncState, SyncStatus};
-use op_git::{LANE_BRANCH, Rebased, Repo};
+use op_git::{ROLLING_UPDATES_BRANCH, Rebased, Repo};
 use tokio::sync::broadcast;
 
 use crate::project::Project;
@@ -28,20 +28,20 @@ struct Shared {
     conflicted: Vec<String>,
 }
 
-pub struct Lane {
+pub struct RollingUpdates {
     signals: mpsc::Sender<Signal>,
     shared: Arc<Mutex<Shared>>,
     worktree: PathBuf,
 }
 
-impl Lane {
-    // `None` when the repository cannot host the lane, which leaves every write on the branch it
+impl RollingUpdates {
+    // `None` when the repository cannot host the rolling, which leaves every write on the branch it
     // would have used before. A project with no default branch is the ordinary case here.
     pub fn start(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) -> Option<Self> {
         let repo = project.repo().clone();
         let default_branch = repo.default_branch(None).ok().flatten()?;
         let driver = format!("{} merge-driver", std::env::current_exe().ok()?.display());
-        let worktree = match repo.ensure_lane(&default_branch, &driver) {
+        let worktree = match repo.ensure_rolling_updates(&default_branch, &driver) {
             Ok(worktree) => worktree,
             Err(err) => {
                 tracing::warn!(project = %project.name(), "rolling updates disabled: {err}");
@@ -50,14 +50,14 @@ impl Lane {
         };
         let (signals, inbox) = mpsc::channel();
         let shared = Arc::new(Mutex::new(Shared::default()));
-        let lane = Lane {
+        let rolling = RollingUpdates {
             signals,
             shared: Arc::clone(&shared),
             worktree: worktree.clone(),
         };
         let name = project.name();
         std::thread::spawn(move || run(&repo, &default_branch, &name, &shared, &inbox, &events));
-        Some(lane)
+        Some(rolling)
     }
 
     pub fn worktree(&self) -> &std::path::Path {
@@ -69,7 +69,7 @@ impl Lane {
     }
 
     pub fn status(&self, pending: Vec<MatrixCell>) -> SyncStatus {
-        let shared = self.shared.lock().expect("lane status poisoned");
+        let shared = self.shared.lock().expect("rolling status poisoned");
         let state = match shared.state {
             SyncState::InSync if !pending.is_empty() => SyncState::Pending,
             other => other,
@@ -157,12 +157,12 @@ fn due(at: &mut Option<Instant>) -> bool {
 // A rebase that stopped owns the worktree until a person finishes it, so nothing else may commit
 // there or replay onto it.
 fn held(repo: &Repo, shared: &Arc<Mutex<Shared>>) -> bool {
-    if !repo.lane_rebase_in_progress() {
+    if !repo.rolling_updates_rebase_in_progress() {
         return false;
     }
-    let mut shared = shared.lock().expect("lane status poisoned");
+    let mut shared = shared.lock().expect("rolling status poisoned");
     shared.state = SyncState::Blocked;
-    shared.conflicted = repo.lane_conflicts().unwrap_or_default();
+    shared.conflicted = repo.rolling_updates_conflicts().unwrap_or_default();
     true
 }
 
@@ -176,7 +176,7 @@ fn commit(
     if held(repo, shared) {
         return;
     }
-    match repo.lane_commit("Ambient task edits") {
+    match repo.rolling_updates_commit("Ambient task edits") {
         Ok(true) => moved(repo, shared, events, project, backup),
         Ok(false) => {}
         Err(err) => tracing::warn!(project, "rolling updates: {err}"),
@@ -195,7 +195,7 @@ fn refresh(
         return;
     }
     set(shared, SyncState::Syncing, Vec::new());
-    match repo.lane_rebase(default_branch) {
+    match repo.rolling_updates_rebase(default_branch) {
         Ok(Rebased::Clean) => {
             set(shared, SyncState::InSync, Vec::new());
             moved(repo, shared, events, project, backup);
@@ -223,10 +223,12 @@ fn publish(
     if held(repo, shared) {
         return Err("a conflict holds the rolling updates; resolve it first".to_owned());
     }
-    if let Err(err) = repo.lane_commit("Ambient task edits") {
+    if let Err(err) = repo.rolling_updates_commit("Ambient task edits") {
         return Err(err.to_string());
     }
-    let tip = repo.branch_commit(LANE_BRANCH).map_err(|e| e.to_string())?;
+    let tip = repo
+        .branch_commit(ROLLING_UPDATES_BRANCH)
+        .map_err(|e| e.to_string())?;
     set(shared, SyncState::Syncing, Vec::new());
     let result = repo
         .fast_forward(default_branch, &tip)
@@ -250,14 +252,14 @@ fn moved(
     // Durability only, and never on the path of an edit: a mirror nobody pulls cannot lose a race
     // this machine is the only writer of.
     if let Some(remote) = backup
-        && let Err(err) = repo.push_lane(remote)
+        && let Err(err) = repo.push_rolling_updates(remote)
     {
         tracing::warn!(project, "rolling-updates backup push failed: {err}");
     }
 }
 
 fn set(shared: &Arc<Mutex<Shared>>, state: SyncState, conflicted: Vec<String>) {
-    let mut shared = shared.lock().expect("lane status poisoned");
+    let mut shared = shared.lock().expect("rolling status poisoned");
     shared.state = state;
     shared.conflicted = conflicted;
 }

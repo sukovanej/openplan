@@ -46,7 +46,7 @@ impl Plan {
             )
         })?;
         let branch = if AMBIENT.load(std::sync::atomic::Ordering::Relaxed) {
-            op_git::LANE_BRANCH.to_owned()
+            op_git::ROLLING_UPDATES_BRANCH.to_owned()
         } else {
             repo.current_branch().context(
                 "cannot determine the current branch (detached HEAD?); every read and write \

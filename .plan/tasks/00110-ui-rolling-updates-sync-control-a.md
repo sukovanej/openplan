@@ -34,7 +34,7 @@ warn, and add blue for "you can act".
 - **In sync.** Muted, check icon. "Nothing to publish."
 - **Pending (N).** Blue, count pill. "N changes ready to publish to main."
 - **Syncing.** Blue spinner. A publish or a rebase is running.
-- **Blocked.** Amber, warning icon. A conflict paused the lane.
+- **Blocked.** Amber, warning icon. A conflict paused the rolling-updates branch.
 - **Offline.** Dim and disabled. Reuse `useConnection`.
 
 ## Review popover
@@ -54,7 +54,7 @@ A click opens the popover. A click never publishes.
 ## `BranchSwitcher`
 
 `BranchSwitcher` on the task detail page lists a task's versions per branch, so
-`openplan/updates` appears there. Give it the display name "Rolling updates" and
+`openplan/rolling-updates` appears there. Give it the display name "Rolling updates" and
 say the version is unpublished. Do not hide it. The UI has no worktree swimlane
 today, so there is nothing else to keep it out of.
 
@@ -70,5 +70,5 @@ headless Chrome over CDP, per the repository's web-UI recipe.
 - A non-fast-forward refusal shows the retriable message.
 - Blocked shows the conflicted tasks, the worktree path, and the commands.
 - A sync event over SSE updates the control with no manual refetch.
-- `BranchSwitcher` shows the lane as "Rolling updates" and marks the version
+- `BranchSwitcher` shows the rolling-updates branch as "Rolling updates" and marks the version
   unpublished.

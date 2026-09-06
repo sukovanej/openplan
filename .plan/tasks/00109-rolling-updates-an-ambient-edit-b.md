@@ -13,22 +13,22 @@ tags:
 Ambient edits are the task edits that belong to no feature branch: a
 reprioritisation, a rewritten description, a new subtask, any edit made in the
 global UI view. Today such an edit lands on whichever branch the caller stands
-on, which is arbitrary. This task gives ambient edits their own lane.
+on, which is arbitrary. This task gives ambient edits their own branch.
 
-This replaces phases 0 to 6 of the first plan. That plan kept the lane in a
+This replaces phases 0 to 6 of the first plan. That plan kept these edits in a
 custom ref and wrote git objects with no worktree. A real branch with a standing
 worktree does the same job with much less code.
 [[./00039-continuous-changes-accumulation-v.md]] records why the storage changed.
 
-## The lane
+## The rolling-updates branch
 
-Ambient edits accumulate on the branch `openplan/updates`. The daemon keeps one
-worktree for it at `<git-common-dir>/openplan-updates`. The worktree uses a
+Ambient edits accumulate on the branch `openplan/rolling-updates`. The daemon keeps one
+worktree for it at `<git-common-dir>/openplan-rolling-updates`. The worktree uses a
 cone-mode sparse checkout of `.plan`, so it holds the task files and no code.
 
 Three things come free from code that exists:
 
-- **Reads.** `Index::rebuild` makes a lane for every name in
+- **Reads.** `Index::rebuild` reads every name in
   `repo.local_branches()`, so the branch appears with no new read path.
 - **Uncommitted reads.** The index already lays a live worktree's files over its
   committed blobs (`crates/op-index/src/lib.rs:240`), so an ambient edit reads
@@ -64,12 +64,12 @@ fixes them, and runs `git rebase --continue`.
 
 The consequence, stated plainly: while the rebase runs, `Index` drops the
 worktree from `live` because `op_in_progress` is true, so an ambient write gets
-the existing `NotWritable` refusal. The lane stays blocked until a person
+the existing `NotWritable` refusal. The branch stays blocked until a person
 resolves the conflict. Sync status reports `Blocked`, the conflicted task ids,
 and the worktree path.
 
 A conflict needs the same section of the same task changed on both sides since
-the last rebase, which is rare. An ephemeral second worktree would keep the lane
+the last rebase, which is rare. An ephemeral second worktree would keep the branch
 writable through a conflict, but the resolved result then goes stale against the
 edits that arrived meanwhile. One worktree and one rule is the better trade.
 
@@ -100,12 +100,12 @@ the spike tested.
 ## Routing
 
 One rule: a write that would land on the default branch lands on
-`openplan/updates` instead.
+`openplan/rolling-updates` instead.
 
 - **Server.** `task_write_branch` resolves the target as it does today. When the
-  result is the default branch, use `openplan/updates`. `?branch=X` still wins,
+  result is the default branch, use `openplan/rolling-updates`. `?branch=X` still wins,
   so the branch swimlane keeps writing to X. Add `?target=ambient` so the global
-  view can name the lane.
+  view can name the branch.
 - **CLI.** A write from the default branch's worktree goes to the updates
   worktree's `Store`. `--ambient` forces the same from any worktree. Neither
   path needs the daemon.
@@ -119,29 +119,29 @@ One rule: a write that would land on the default branch lands on
 
 ## Index
 
-The lane needs no special case in the index, and must not get one.
+The rolling-updates branch needs no special case in the index, and must not get one.
 
 - **Headline.** `supersedes` decides by ancestry
-  (`crates/op-index/src/lib.rs:418`). The lane is the default branch plus
+  (`crates/op-index/src/lib.rs:418`). That branch is the default branch plus
   ambient commits, so an ambient version descends from the default branch's
   version and wins on its own. Against a feature branch's version of the same
   task neither descends from the other, so `tie_break` picks by time, exactly as
-  two feature branches do today. Excluding the lane from headline candidacy
-  would hide every ambient edit, which defeats the lane.
+  two feature branches do today. Excluding it from headline candidacy
+  would hide every ambient edit, which defeats the branch.
 - **Baseline.** `is_baseline` matches only the default branch
-  (`crates/op-index/src/lib.rs:470`), so the lane gets diffed against its merge
+  (`crates/op-index/src/lib.rs:470`), so it gets diffed against its merge
   base. Its cells are the ambient deltas, which is the pending list for
   `/api/sync`. No new diff code.
 - **Write target.** `Index::write_branch` needs no change. Only its caller
-  changes. A task created ambiently lives on the lane alone, so its headline
-  already names the lane and the write reaches it with no redirect.
+  changes. A task created ambiently lives on that branch alone, so its headline
+  already names it and the write reaches it with no redirect.
 - **`headline_pref`** ranks the serve root 2 and the default branch 1, and the
-  lane gets 0 (`crates/op-index/src/lib.rs:1149`). That rank breaks an
+  rolling-updates branch gets 0 (`crates/op-index/src/lib.rs:1149`). That rank breaks an
   exact-second tie only. Leave it.
 
-The lane reaches a person in one place: `BranchSwitcher` on the task detail page
-lists a task's versions per branch. Show the lane there under a plain name such
-as "Rolling updates". Do not hide it. A version that comes from the lane is an
+The branch reaches a person in one place: `BranchSwitcher` on the task detail page
+lists a task's versions per branch. Show it there under a plain name such
+as "Rolling updates". Do not hide it. A version that comes from it is an
 unpublished edit, and saying so is the point.
 
 ## API
@@ -149,8 +149,8 @@ unpublished edit, and saying so is the point.
 - `GET /api/sync` returns
   `{ state, pending: TaskChange[], conflicted: string[], worktree: string }`.
   `state` is `InSync`, `Pending(n)`, `Syncing`, `Blocked`, or `Offline`. The
-  pending list is the matrix diff of `openplan/updates` against the default
-  branch, which the index already computes for every non-baseline lane.
+  pending list is the matrix diff of `openplan/rolling-updates` against the default
+  branch, which the index already computes for every branch that is not the baseline.
 - `POST /api/publish` fast-forwards and reports the new tip and the count.
 - Push the sync state on the existing SSE channel.
 
@@ -176,7 +176,7 @@ name or a URL. Unset means no backup.
 After the branch tip moves, the daemon runs:
 
 ```
-git push --force <remote> openplan/updates:openplan/updates
+git push --force <remote> openplan/rolling-updates:openplan/rolling-updates
 ```
 
 Force is safe: this machine is the only writer and the mirror is write-only.
@@ -218,7 +218,7 @@ retries on the next tip move. Push once at startup.
   divergence conflicts; a file that holds conflict markers still parses.
 - Setup: a fresh project gets the branch, the worktree, the sparse checkout, the
   `.gitattributes`, and the git config entry.
-- Writes: a write from the main worktree lands on `openplan/updates`;
+- Writes: a write from the main worktree lands on `openplan/rolling-updates`;
   `--ambient` from a feature worktree does the same; a feature-worktree write
   without `--ambient` stays local; a task that lives only on a feature branch
   keeps its write there.
@@ -248,11 +248,11 @@ retries on the next tip move. Push once at startup.
 
 ### 2026-09-06T13:21:42Z by Milan Suk via claude-code
 
-> Reads needed a rule the task did not name: a read scoped to the default branch answers from the lane for every task the lane holds. Without it an ambient edit stayed invisible until publish, which made the lane unusable.
+> Reads needed a rule the task did not name: a read scoped to the default branch answers from the rolling-updates branch for every task the rolling-updates branch holds. Without it an ambient edit stayed invisible until publish, which made the rolling-updates branch unusable.
 
 ### 2026-09-06T13:21:42Z by Milan Suk via claude-code
 
-> The write redirect skips a task the lane does not carry. A file left uncommitted on the default branch belongs to no branch the lane was built from, so redirecting it reported the task as missing.
+> The write redirect skips a task the rolling-updates branch does not carry. A file left uncommitted on the default branch belongs to no branch the rolling-updates branch was built from, so redirecting it reported the task as missing.
 
 ### 2026-09-06T13:21:42Z by Milan Suk via claude-code
 

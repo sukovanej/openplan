@@ -34,9 +34,9 @@ async fn body_json(response: Response) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-// A repository whose serve root sits on the default branch, with the lane started the way the
-// daemon starts it. The lane's worktree is what makes the ambient branch writable.
-fn laned() -> (tempfile::TempDir, AppState) {
+// A repository whose serve root sits on the default branch, with the rolling started the way the
+// daemon starts it. Its worktree is what makes the branch writable.
+fn with_rolling_updates() -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     git(root, &["init", "-q", "-b", "main"]);
@@ -103,19 +103,19 @@ async fn sync(state: &AppState) -> Value {
 }
 
 #[test]
-fn starting_the_daemon_gives_the_repository_a_lane() {
-    let (dir, _state) = laned();
+fn starting_the_daemon_gives_the_repository_a_rolling_updates_branch() {
+    let (dir, _state) = with_rolling_updates();
 
-    let lane = dir.path().join(".git/openplan-updates");
-    assert!(lane.join(".plan").is_dir());
-    assert!(lane.join(".gitattributes").is_file());
-    let attributes = std::fs::read_to_string(lane.join(".gitattributes")).unwrap();
+    let rolling = dir.path().join(".git/openplan-rolling-updates");
+    assert!(rolling.join(".plan").is_dir());
+    assert!(rolling.join(".gitattributes").is_file());
+    let attributes = std::fs::read_to_string(rolling.join(".gitattributes")).unwrap();
     assert!(attributes.contains("merge=openplan"), "{attributes}");
 }
 
 #[tokio::test]
-async fn a_write_that_would_land_on_the_default_branch_lands_on_the_lane() {
-    let (dir, state) = laned();
+async fn a_write_that_would_land_on_the_default_branch_lands_on_the_rolling_updates_branch() {
+    let (dir, state) = with_rolling_updates();
 
     create(&state, "An ambient edit", "").await;
 
@@ -126,13 +126,13 @@ async fn a_write_that_would_land_on_the_default_branch_lands_on_the_lane() {
             .unwrap()
             .any(|_| true)
     );
-    let lane = dir.path().join(".git/openplan-updates/.plan/tasks");
-    assert_eq!(lane.read_dir().unwrap().count(), 1);
+    let rolling = dir.path().join(".git/openplan-rolling-updates/.plan/tasks");
+    assert_eq!(rolling.read_dir().unwrap().count(), 1);
 }
 
 #[tokio::test]
 async fn a_write_that_names_another_branch_still_lands_there() {
-    let (dir, state) = laned();
+    let (dir, state) = with_rolling_updates();
     git(dir.path(), &["branch", "feature"]);
     let worktree = dir.path().join(".git/feature-worktree");
     git(
@@ -152,11 +152,11 @@ async fn a_write_that_names_another_branch_still_lands_there() {
 }
 
 #[tokio::test]
-async fn sync_reports_what_the_lane_holds_and_publish_hands_it_over() {
-    let (dir, state) = laned();
+async fn sync_reports_what_the_rolling_updates_branch_holds_and_publish_hands_it_over() {
+    let (dir, state) = with_rolling_updates();
     create(&state, "An ambient edit", "").await;
     let repo = op_git::Repo::discover(dir.path()).unwrap();
-    repo.lane_commit("Ambient task edits").unwrap();
+    repo.rolling_updates_commit("Ambient task edits").unwrap();
 
     let status = sync(&state).await;
     assert_eq!(status["state"], "pending");
@@ -172,7 +172,7 @@ async fn sync_reports_what_the_lane_holds_and_publish_hands_it_over() {
 
     assert_eq!(
         repo.branch_commit("main").unwrap(),
-        repo.branch_commit(op_git::LANE_BRANCH).unwrap()
+        repo.branch_commit(op_git::ROLLING_UPDATES_BRANCH).unwrap()
     );
     assert_eq!(
         dir.path().join(".plan/tasks").read_dir().unwrap().count(),
@@ -182,22 +182,22 @@ async fn sync_reports_what_the_lane_holds_and_publish_hands_it_over() {
 }
 
 #[tokio::test]
-async fn publish_refuses_while_a_conflict_holds_the_lane() {
-    let (dir, state) = laned();
+async fn publish_refuses_while_a_conflict_holds_the_rolling_updates_branch() {
+    let (dir, state) = with_rolling_updates();
     let repo = op_git::Repo::discover(dir.path()).unwrap();
-    let lane = dir.path().join(".git/openplan-updates");
+    let rolling = dir.path().join(".git/openplan-rolling-updates");
     let task = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\n\nbase\n";
     std::fs::write(dir.path().join(".plan/tasks/00001-t.md"), task).unwrap();
     git(dir.path(), &["add", "-A"]);
     git(dir.path(), &["commit", "-qm", "a task"]);
-    repo.lane_rebase("main").unwrap();
+    repo.rolling_updates_rebase("main").unwrap();
 
     std::fs::write(
-        lane.join(".plan/tasks/00001-t.md"),
-        task.replace("base", "lane"),
+        rolling.join(".plan/tasks/00001-t.md"),
+        task.replace("base", "rolling"),
     )
     .unwrap();
-    repo.lane_commit("an ambient edit").unwrap();
+    repo.rolling_updates_commit("an ambient edit").unwrap();
     std::fs::write(
         dir.path().join(".plan/tasks/00001-t.md"),
         task.replace("base", "main"),
@@ -205,7 +205,7 @@ async fn publish_refuses_while_a_conflict_holds_the_lane() {
     .unwrap();
     git(dir.path(), &["commit", "-qam", "an edit on main"]);
     assert!(matches!(
-        repo.lane_rebase("main").unwrap(),
+        repo.rolling_updates_rebase("main").unwrap(),
         op_git::Rebased::Blocked { .. }
     ));
 
@@ -220,17 +220,17 @@ async fn publish_refuses_while_a_conflict_holds_the_lane() {
         status["worktree"]
             .as_str()
             .unwrap()
-            .ends_with("openplan-updates")
+            .ends_with("openplan-rolling-updates")
     );
 }
 
 #[tokio::test]
-async fn a_read_scoped_to_the_default_branch_sees_what_the_lane_holds() {
-    let (dir, state) = laned();
+async fn a_read_scoped_to_the_default_branch_sees_what_the_rolling_updates_branch_holds() {
+    let (dir, state) = with_rolling_updates();
     create(&state, "An ambient edit", "").await;
     op_git::Repo::discover(dir.path())
         .unwrap()
-        .lane_commit("Ambient task edits")
+        .rolling_updates_commit("Ambient task edits")
         .unwrap();
 
     let uri = format!("/api/projects/{PROJECT}/tasks?branch=main&fresh=true");
@@ -238,6 +238,9 @@ async fn a_read_scoped_to_the_default_branch_sees_what_the_lane_holds() {
 
     assert_eq!(listed.as_array().unwrap().len(), 1);
     assert_eq!(listed[0]["title"], "An ambient edit");
-    assert_eq!(listed[0]["headline"], op_git::LANE_BRANCH);
-    assert_eq!(listed[0]["write_target"]["branch"], op_git::LANE_BRANCH);
+    assert_eq!(listed[0]["headline"], op_git::ROLLING_UPDATES_BRANCH);
+    assert_eq!(
+        listed[0]["write_target"]["branch"],
+        op_git::ROLLING_UPDATES_BRANCH
+    );
 }

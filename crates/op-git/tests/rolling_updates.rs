@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use op_git::{LANE_BRANCH, Rebased, Repo};
+use op_git::{ROLLING_UPDATES_BRANCH, Rebased, Repo};
 
 fn git(dir: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -39,7 +39,7 @@ struct Fixture {
     _dir: tempfile::TempDir,
     root: PathBuf,
     repo: Repo,
-    lane: PathBuf,
+    rolling: PathBuf,
     driver: String,
 }
 
@@ -62,18 +62,18 @@ fn fixture() -> Fixture {
 
     let driver = driver_script(dir.path()).to_string_lossy().into_owned();
     let repo = Repo::discover(&root).unwrap();
-    let lane = repo.ensure_lane("main", &driver).unwrap();
+    let rolling = repo.ensure_rolling_updates("main", &driver).unwrap();
     Fixture {
         _dir: dir,
         root,
         repo,
-        lane,
+        rolling,
         driver,
     }
 }
 
-fn lane_task(fixture: &Fixture) -> PathBuf {
-    fixture.lane.join(".plan/tasks/00001-t.md")
+fn rolling_task(fixture: &Fixture) -> PathBuf {
+    fixture.rolling.join(".plan/tasks/00001-t.md")
 }
 
 fn commit_on_main(fixture: &Fixture, contents: &str, path: &str, message: &str) {
@@ -86,16 +86,16 @@ fn commit_on_main(fixture: &Fixture, contents: &str, path: &str, message: &str) 
 fn the_lane_worktree_holds_the_plan_and_no_code() {
     let fixture = fixture();
 
-    assert!(lane_task(&fixture).is_file());
-    assert!(!fixture.lane.join("src").exists());
-    assert!(fixture.lane.join(".gitattributes").is_file());
+    assert!(rolling_task(&fixture).is_file());
+    assert!(!fixture.rolling.join("src").exists());
+    assert!(fixture.rolling.join(".gitattributes").is_file());
     assert_eq!(
         fixture
             .repo
-            .worktree_branch(&fixture.lane)
+            .worktree_branch(&fixture.rolling)
             .unwrap()
             .as_deref(),
-        Some(LANE_BRANCH)
+        Some(ROLLING_UPDATES_BRANCH)
     );
 }
 
@@ -103,40 +103,62 @@ fn the_lane_worktree_holds_the_plan_and_no_code() {
 fn ensure_lane_runs_twice_without_complaint() {
     let fixture = fixture();
 
-    let again = fixture.repo.ensure_lane("main", &fixture.driver).unwrap();
+    let again = fixture
+        .repo
+        .ensure_rolling_updates("main", &fixture.driver)
+        .unwrap();
 
-    assert_eq!(again, fixture.lane);
+    assert_eq!(again, fixture.rolling);
 }
 
 #[test]
 fn a_commit_lands_only_when_something_changed() {
     let fixture = fixture();
 
-    assert!(!fixture.repo.lane_commit("nothing").unwrap());
-    std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
-    assert!(fixture.repo.lane_commit("an ambient edit").unwrap());
-    assert!(!fixture.repo.lane_commit("nothing again").unwrap());
+    assert!(!fixture.repo.rolling_updates_commit("nothing").unwrap());
+    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
+    assert!(
+        fixture
+            .repo
+            .rolling_updates_commit("an ambient edit")
+            .unwrap()
+    );
+    assert!(
+        !fixture
+            .repo
+            .rolling_updates_commit("nothing again")
+            .unwrap()
+    );
 }
 
 #[test]
-fn a_code_only_move_of_main_replays_the_lane_and_materializes_no_code() {
+fn a_code_only_move_of_main_replays_the_rolling_updates_branch_and_materializes_no_code() {
     let fixture = fixture();
-    std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
-    fixture.repo.lane_commit("an ambient edit").unwrap();
+    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
+    fixture
+        .repo
+        .rolling_updates_commit("an ambient edit")
+        .unwrap();
     commit_on_main(&fixture, "fn main() { }\n", "src/main.rs", "code");
 
-    assert_eq!(fixture.repo.lane_rebase("main").unwrap(), Rebased::Clean);
+    assert_eq!(
+        fixture.repo.rolling_updates_rebase("main").unwrap(),
+        Rebased::Clean
+    );
 
-    assert!(!fixture.lane.join("src").exists());
-    let text = std::fs::read_to_string(lane_task(&fixture)).unwrap();
-    assert!(text.contains("lane alpha"), "{text}");
+    assert!(!fixture.rolling.join("src").exists());
+    let text = std::fs::read_to_string(rolling_task(&fixture)).unwrap();
+    assert!(text.contains("rolling alpha"), "{text}");
 }
 
 #[test]
 fn edits_to_different_sections_replay_through_the_driver() {
     let fixture = fixture();
-    std::fs::write(lane_task(&fixture), task("base alpha", "lane beta")).unwrap();
-    fixture.repo.lane_commit("an ambient edit").unwrap();
+    std::fs::write(rolling_task(&fixture), task("base alpha", "rolling beta")).unwrap();
+    fixture
+        .repo
+        .rolling_updates_commit("an ambient edit")
+        .unwrap();
     commit_on_main(
         &fixture,
         &task("main alpha", "base beta"),
@@ -144,18 +166,24 @@ fn edits_to_different_sections_replay_through_the_driver() {
         "an edit on main",
     );
 
-    assert_eq!(fixture.repo.lane_rebase("main").unwrap(), Rebased::Clean);
+    assert_eq!(
+        fixture.repo.rolling_updates_rebase("main").unwrap(),
+        Rebased::Clean
+    );
 
-    let text = std::fs::read_to_string(lane_task(&fixture)).unwrap();
+    let text = std::fs::read_to_string(rolling_task(&fixture)).unwrap();
     assert!(text.contains("main alpha"), "{text}");
-    assert!(text.contains("lane beta"), "{text}");
+    assert!(text.contains("rolling beta"), "{text}");
 }
 
 #[test]
-fn the_same_section_on_both_sides_holds_the_lane_at_the_conflict() {
+fn the_same_section_on_both_sides_holds_the_rolling_updates_branch_at_the_conflict() {
     let fixture = fixture();
-    std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
-    fixture.repo.lane_commit("an ambient edit").unwrap();
+    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
+    fixture
+        .repo
+        .rolling_updates_commit("an ambient edit")
+        .unwrap();
     commit_on_main(
         &fixture,
         &task("main alpha", "base beta"),
@@ -163,7 +191,7 @@ fn the_same_section_on_both_sides_holds_the_lane_at_the_conflict() {
         "an edit on main",
     );
 
-    let blocked = fixture.repo.lane_rebase("main").unwrap();
+    let blocked = fixture.repo.rolling_updates_rebase("main").unwrap();
 
     assert_eq!(
         blocked,
@@ -171,36 +199,42 @@ fn the_same_section_on_both_sides_holds_the_lane_at_the_conflict() {
             paths: vec![".plan/tasks/00001-t.md".to_owned()]
         }
     );
-    assert!(fixture.repo.lane_rebase_in_progress());
-    let text = std::fs::read_to_string(lane_task(&fixture)).unwrap();
+    assert!(fixture.repo.rolling_updates_rebase_in_progress());
+    let text = std::fs::read_to_string(rolling_task(&fixture)).unwrap();
     assert!(text.contains("<<<<<<<"), "{text}");
 
-    fixture.repo.lane_rebase_abort().unwrap();
-    assert!(!fixture.repo.lane_rebase_in_progress());
+    fixture.repo.rolling_updates_rebase_abort().unwrap();
+    assert!(!fixture.repo.rolling_updates_rebase_in_progress());
 }
 
 #[test]
 fn publish_fast_forwards_the_checked_out_main_and_moves_its_files() {
     let fixture = fixture();
-    std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
-    fixture.repo.lane_commit("an ambient edit").unwrap();
-    fixture.repo.lane_rebase("main").unwrap();
-    let tip = fixture.repo.branch_commit(LANE_BRANCH).unwrap();
+    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
+    fixture
+        .repo
+        .rolling_updates_commit("an ambient edit")
+        .unwrap();
+    fixture.repo.rolling_updates_rebase("main").unwrap();
+    let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
 
     fixture.repo.fast_forward("main", &tip).unwrap();
 
     assert_eq!(fixture.repo.branch_commit("main").unwrap(), tip);
     let text = std::fs::read_to_string(fixture.root.join(".plan/tasks/00001-t.md")).unwrap();
-    assert!(text.contains("lane alpha"), "{text}");
+    assert!(text.contains("rolling alpha"), "{text}");
 }
 
 #[test]
 fn publish_refuses_when_main_has_uncommitted_task_edits() {
     let fixture = fixture();
-    std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
-    fixture.repo.lane_commit("an ambient edit").unwrap();
-    fixture.repo.lane_rebase("main").unwrap();
-    let tip = fixture.repo.branch_commit(LANE_BRANCH).unwrap();
+    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
+    fixture
+        .repo
+        .rolling_updates_commit("an ambient edit")
+        .unwrap();
+    fixture.repo.rolling_updates_rebase("main").unwrap();
+    let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
     std::fs::write(
         fixture.root.join(".plan/tasks/00002-x.md"),
         task("stray", "stray"),
@@ -219,9 +253,12 @@ fn publish_refuses_when_main_has_uncommitted_task_edits() {
 #[test]
 fn publish_refuses_a_target_that_is_not_a_fast_forward() {
     let fixture = fixture();
-    std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
-    fixture.repo.lane_commit("an ambient edit").unwrap();
-    let tip = fixture.repo.branch_commit(LANE_BRANCH).unwrap();
+    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
+    fixture
+        .repo
+        .rolling_updates_commit("an ambient edit")
+        .unwrap();
+    let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
     commit_on_main(&fixture, "fn main() { }\n", "src/main.rs", "code");
 
     let refused = fixture.repo.fast_forward("main", &tip);
@@ -233,21 +270,30 @@ fn publish_refuses_a_target_that_is_not_a_fast_forward() {
 }
 
 #[test]
-fn the_backup_push_sends_the_lane_to_a_mirror() {
+fn the_backup_push_sends_the_rolling_updates_branch_to_a_mirror() {
     let fixture = fixture();
     let mirror = fixture.root.join("../mirror.git");
     git(
         &fixture.root,
         &["init", "-q", "--bare", mirror.to_str().unwrap()],
     );
-    std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
-    fixture.repo.lane_commit("an ambient edit").unwrap();
+    std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
+    fixture
+        .repo
+        .rolling_updates_commit("an ambient edit")
+        .unwrap();
 
-    fixture.repo.push_lane(mirror.to_str().unwrap()).unwrap();
+    fixture
+        .repo
+        .push_rolling_updates(mirror.to_str().unwrap())
+        .unwrap();
 
     let there = Repo::discover(&mirror)
         .unwrap()
-        .branch_commit(LANE_BRANCH)
+        .branch_commit(ROLLING_UPDATES_BRANCH)
         .unwrap();
-    assert_eq!(there, fixture.repo.branch_commit(LANE_BRANCH).unwrap());
+    assert_eq!(
+        there,
+        fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap()
+    );
 }

@@ -3,8 +3,8 @@ use std::process::Command;
 
 use crate::{GitError, Repo};
 
-pub const LANE_BRANCH: &str = "openplan/updates";
-pub const LANE_WORKTREE_DIR: &str = "openplan-updates";
+pub const ROLLING_UPDATES_BRANCH: &str = "openplan/rolling-updates";
+pub const ROLLING_UPDATES_WORKTREE_DIR: &str = "openplan-rolling-updates";
 const ATTRIBUTES_LINE: &str = "/.plan/**/*.md merge=openplan";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -14,26 +14,36 @@ pub enum Rebased {
 }
 
 impl Repo {
-    pub fn lane_worktree(&self) -> PathBuf {
-        self.git_common_dir().join(LANE_WORKTREE_DIR)
+    pub fn rolling_updates_worktree(&self) -> PathBuf {
+        self.git_common_dir().join(ROLLING_UPDATES_WORKTREE_DIR)
     }
 
-    // Everything the lane needs, applied in the order that lets a later step assume the earlier
+    // Everything the rolling needs, applied in the order that lets a later step assume the earlier
     // one: the driver registration, then the branch, then its worktree, then the attributes commit
     // that makes git call the driver.
-    pub fn ensure_lane(&self, default_branch: &str, driver: &str) -> Result<PathBuf, GitError> {
+    pub fn ensure_rolling_updates(
+        &self,
+        default_branch: &str,
+        driver: &str,
+    ) -> Result<PathBuf, GitError> {
         let root = self.git_common_dir();
         self.register_driver(driver)?;
-        if self.branch_commit(LANE_BRANCH).is_err() {
+        if self.branch_commit(ROLLING_UPDATES_BRANCH).is_err() {
             let tip = self.branch_commit(default_branch)?;
-            git(&root, &["branch", LANE_BRANCH, &tip])?;
+            git(&root, &["branch", ROLLING_UPDATES_BRANCH, &tip])?;
         }
-        let worktree = self.lane_worktree();
+        let worktree = self.rolling_updates_worktree();
         if !worktree.join(".git").exists() {
             let path = path_arg(&worktree);
             git(
                 &root,
-                &["worktree", "add", "--no-checkout", &path, LANE_BRANCH],
+                &[
+                    "worktree",
+                    "add",
+                    "--no-checkout",
+                    &path,
+                    ROLLING_UPDATES_BRANCH,
+                ],
             )?;
             git(&worktree, &["sparse-checkout", "init", "--cone"])?;
             git(&worktree, &["sparse-checkout", "set", ".plan"])?;
@@ -54,7 +64,7 @@ impl Repo {
         Ok(())
     }
 
-    // `.gitattributes` is a tracked file, so the lane commits it rather than the
+    // `.gitattributes` is a tracked file, so the rolling commits it rather than the
     // default branch's worktree:
     // it reaches the default branch with the first publish.
     fn ensure_attributes(&self, worktree: &Path) -> Result<(), GitError> {
@@ -75,10 +85,10 @@ impl Repo {
         Ok(())
     }
 
-    // Whether anything was committed. The lane holds `.plan` alone, so `add --all` cannot pick up
+    // Whether anything was committed. The rolling holds `.plan` alone, so `add --all` cannot pick up
     // a stray code change.
-    pub fn lane_commit(&self, message: &str) -> Result<bool, GitError> {
-        let worktree = self.lane_worktree();
+    pub fn rolling_updates_commit(&self, message: &str) -> Result<bool, GitError> {
+        let worktree = self.rolling_updates_worktree();
         git(&worktree, &["add", "--sparse", "--all"])?;
         let staged = git(&worktree, &["diff", "--cached", "--name-only"])?;
         if staged.trim().is_empty() {
@@ -88,39 +98,39 @@ impl Repo {
         Ok(true)
     }
 
-    pub fn lane_rebase(&self, onto: &str) -> Result<Rebased, GitError> {
-        let worktree = self.lane_worktree();
+    pub fn rolling_updates_rebase(&self, onto: &str) -> Result<Rebased, GitError> {
+        let worktree = self.rolling_updates_worktree();
         match git(&worktree, &["rebase", onto]) {
             Ok(_) => Ok(Rebased::Clean),
             Err(err) => {
-                if !self.lane_rebase_in_progress() {
+                if !self.rolling_updates_rebase_in_progress() {
                     return Err(err);
                 }
                 Ok(Rebased::Blocked {
-                    paths: self.lane_conflicts()?,
+                    paths: self.rolling_updates_conflicts()?,
                 })
             }
         }
     }
 
-    pub fn lane_rebase_in_progress(&self) -> bool {
+    pub fn rolling_updates_rebase_in_progress(&self) -> bool {
         let admin = self
             .git_common_dir()
             .join("worktrees")
-            .join(LANE_WORKTREE_DIR);
+            .join(ROLLING_UPDATES_WORKTREE_DIR);
         admin.join("rebase-merge").exists() || admin.join("rebase-apply").exists()
     }
 
-    pub fn lane_conflicts(&self) -> Result<Vec<String>, GitError> {
+    pub fn rolling_updates_conflicts(&self) -> Result<Vec<String>, GitError> {
         let out = git(
-            &self.lane_worktree(),
+            &self.rolling_updates_worktree(),
             &["diff", "--name-only", "--diff-filter=U"],
         )?;
         Ok(out.lines().map(str::to_owned).collect())
     }
 
-    pub fn lane_rebase_abort(&self) -> Result<(), GitError> {
-        git(&self.lane_worktree(), &["rebase", "--abort"]).map(|_| ())
+    pub fn rolling_updates_rebase_abort(&self) -> Result<(), GitError> {
+        git(&self.rolling_updates_worktree(), &["rebase", "--abort"]).map(|_| ())
     }
 
     // Advance `branch` to `to` without a merge and without a force. A worktree that holds the
@@ -164,8 +174,9 @@ impl Repo {
             .map(|worktree| worktree.path))
     }
 
-    pub fn push_lane(&self, remote: &str) -> Result<(), GitError> {
-        let refspec = format!("refs/heads/{LANE_BRANCH}:refs/heads/{LANE_BRANCH}");
+    pub fn push_rolling_updates(&self, remote: &str) -> Result<(), GitError> {
+        let refspec =
+            format!("refs/heads/{ROLLING_UPDATES_BRANCH}:refs/heads/{ROLLING_UPDATES_BRANCH}");
         git(
             &self.git_common_dir(),
             &["push", "--force", remote, &refspec],

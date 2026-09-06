@@ -677,36 +677,37 @@ impl Index {
             .map_or(0, |version| version.comment_count)
     }
 
-    // A read scoped to the default branch answers from the ambient lane for every task the lane
-    // holds. The lane is that branch plus the edits nobody published yet, so leaving it out would
-    // hide an ambient edit from every read until publish. A task the lane does not carry still
-    // answers from the default branch, which stays the fresher of the two between rebases.
+    // A read scoped to the default branch answers from the rolling-updates branch for every task
+    // the rolling-updates branch holds. That branch is the default branch plus the edits nobody
+    // published yet, so leaving it out would hide an ambient edit from every read until publish. A
+    // task it does not carry still answers from the default branch, which stays the fresher of the
+    // two between rebases.
     fn overlay(&self, branch: &str) -> Option<&'static str> {
-        let lane = op_git::LANE_BRANCH;
-        (branch != lane
+        let rolling = op_git::ROLLING_UPDATES_BRANCH;
+        (branch != rolling
             && Some(branch) == self.default_branch()
-            && self.branch_versions.contains_key(lane))
-        .then_some(lane)
+            && self.branch_versions.contains_key(rolling))
+        .then_some(rolling)
     }
 
     fn source_of<'a>(&self, branch: &'a str, id: &str) -> &'a str {
         match self.overlay(branch) {
-            Some(lane) if self.holds(lane, id) => lane,
+            Some(rolling) if self.holds(rolling, id) => rolling,
             _ => branch,
         }
     }
 
     fn branch_of(&self, branch: &str) -> impl Iterator<Item = (&String, &BranchVersion)> {
-        let lane = self
+        let rolling = self
             .overlay(branch)
-            .and_then(|lane| self.branch_versions.get(lane));
+            .and_then(|rolling| self.branch_versions.get(rolling));
         let own = self
             .branch_versions
             .get(branch)
             .into_iter()
             .flatten()
-            .filter(move |(id, _)| lane.is_none_or(|held| !held.contains_key(id.as_str())));
-        lane.into_iter().flatten().chain(own)
+            .filter(move |(id, _)| rolling.is_none_or(|held| !held.contains_key(id.as_str())));
+        rolling.into_iter().flatten().chain(own)
     }
 
     // Every effective version a rebuild recorded was parsed and cached under its blob OID, so this

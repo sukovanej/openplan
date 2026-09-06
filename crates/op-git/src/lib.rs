@@ -34,9 +34,9 @@ pub struct Worktree {
     pub op_in_progress: bool,
 }
 
-pub mod lane;
+pub mod rolling_updates;
 
-pub use lane::{LANE_BRANCH, Rebased};
+pub use rolling_updates::{ROLLING_UPDATES_BRANCH, Rebased};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {

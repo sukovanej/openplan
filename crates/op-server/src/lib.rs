@@ -39,9 +39,9 @@ use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
-pub mod lane;
 mod project;
 mod registry;
+pub mod rolling_updates;
 pub use project::{OpenError, Project, open_projects, serve_root};
 pub use registry::{
     ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError, canonical, same_path, unique_name,
@@ -134,7 +134,7 @@ impl AppState {
     pub fn start_watchers(&self) {
         for project in self.projects() {
             project::start_watch(&project, self.events.clone());
-            project::start_lane(&project, self.events.clone());
+            project::start_rolling_updates(&project, self.events.clone());
         }
     }
 
@@ -197,7 +197,7 @@ impl AppState {
         if created {
             tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
             project::start_watch(&project, self.events.clone());
-            project::start_lane(&project, self.events.clone());
+            project::start_rolling_updates(&project, self.events.clone());
         }
         Ok((project.view(), created))
     }
@@ -1034,8 +1034,8 @@ async fn get_task_branches(
     Ok(Json(branches))
 }
 
-// What the rolling-updates lane holds that the default branch does not, plus the lane's own
-// state. The pending list is the matrix diff of the lane against the default branch, which the
+// What the rolling-updates branch holds that the default branch does not, plus its own
+// state. The pending list is the matrix diff of the rolling against the default branch, which the
 // index already computes
 // for every branch that is not the baseline.
 #[utoipa::path(
@@ -1043,10 +1043,10 @@ async fn get_task_branches(
     path = "/api/projects/{project}/sync",
     params(("project" = String, Path, description = "Project name")),
     responses(
-        (status = 200, description = "The rolling-updates lane's state and what it holds", body = SyncStatus),
+        (status = 200, description = "The rolling-updates branch's state and what it holds", body = SyncStatus),
         (status = 404, description = "No such project", body = ApiErrorBody),
         (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
-        (status = 503, description = "This repository has no rolling-updates lane", body = ApiErrorBody)
+        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
     )
 )]
 async fn get_sync(
@@ -1055,22 +1055,22 @@ async fn get_sync(
 ) -> Result<Json<SyncStatus>, ApiError> {
     let project = project_of(&state, &project)?;
     let status = tokio::task::spawn_blocking(move || -> Result<Option<SyncStatus>, IndexError> {
-        // Rebuilt, not read: the lane's own commits and a publish both move refs without a write
+        // Rebuilt, not read: the branch's own commits and a publish both move refs without a write
         // through this process, so a cached index would report a count that is already wrong.
         let pending: Vec<op_api::MatrixCell> = project
             .rebuilt_index()?
             .matrix()
             .cells
             .iter()
-            .filter(|cell| cell.branch == op_git::LANE_BRANCH)
+            .filter(|cell| cell.branch == op_git::ROLLING_UPDATES_BRANCH)
             .cloned()
             .collect();
-        Ok(project.with_lane(|lane| lane.status(pending)))
+        Ok(project.with_rolling_updates(|rolling| rolling.status(pending)))
     })
     .await
     .map_err(join_error)?
     .map_err(index_error)?;
-    status.map(Json).ok_or_else(no_lane)
+    status.map(Json).ok_or_else(no_rolling_updates)
 }
 
 // Manual, explicit, and a fast-forward only. It never merges and never forces, so the one way it
@@ -1083,8 +1083,8 @@ async fn get_sync(
     responses(
         (status = 200, description = "The default branch now holds the ambient edits", body = Published),
         (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 409, description = "The default branch moved, or a conflict holds the lane", body = ApiErrorBody),
-        (status = 503, description = "This repository has no rolling-updates lane", body = ApiErrorBody)
+        (status = 409, description = "The default branch moved, or a conflict holds the rolling-updates branch", body = ApiErrorBody),
+        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
     )
 )]
 async fn publish_lane(
@@ -1092,18 +1092,20 @@ async fn publish_lane(
     Path(project): Path<String>,
 ) -> Result<Json<Published>, ApiError> {
     let project = project_of(&state, &project)?;
-    let published = tokio::task::spawn_blocking(move || project.with_lane(lane::Lane::publish))
-        .await
-        .map_err(join_error)?;
+    let published = tokio::task::spawn_blocking(move || {
+        project.with_rolling_updates(rolling_updates::RollingUpdates::publish)
+    })
+    .await
+    .map_err(join_error)?;
     match published {
-        None => Err(no_lane()),
+        None => Err(no_rolling_updates()),
         Some(Err(why)) => Err(ApiError::conflict(why)),
         Some(Ok(published)) => Ok(Json(published)),
     }
 }
 
-fn no_lane() -> ApiError {
-    ApiError::unavailable("this repository has no rolling-updates lane")
+fn no_rolling_updates() -> ApiError {
+    ApiError::unavailable("this repository has no rolling-updates branch")
 }
 
 // The list view's whole data set in one read: tasks grouped by status and flattened into
@@ -1568,18 +1570,18 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
 }
 
 // One rule for the whole write path: a write that would land on the default branch lands on the
-// ambient lane instead. It holds however the caller arrived there, so the CLI standing in that
+// ambient rolling instead. It holds however the caller arrived there, so the CLI standing in that
 // worktree and the UI acting on a task that lives only there both stop dirtying the checkout. A
 // write that resolves to any other branch is left exactly where it was going.
 fn ambient(index: &Index, branch: String, id: Option<&str>) -> String {
-    let lane = op_git::LANE_BRANCH;
-    // A repository the daemon could not give a lane keeps writing where it always did, so the rule
-    // adds a target and never takes one away. Nor may it move a write to a task the lane does not
-    // carry: a file left uncommitted there is on no branch the lane was built from, and redirecting it
+    let rolling = op_git::ROLLING_UPDATES_BRANCH;
+    // A repository the daemon could not give a rolling keeps writing where it always did, so the rule
+    // adds a target and never takes one away. Nor may it move a write to a task the rolling does not
+    // carry: a file left uncommitted there is on no branch the rolling was built from, and redirecting it
     // would report the task as missing.
-    let reachable = id.is_none_or(|id| index.holds(lane, id));
-    if Some(branch.as_str()) == index.default_branch() && index.is_live(lane) && reachable {
-        return lane.to_owned();
+    let reachable = id.is_none_or(|id| index.holds(rolling, id));
+    if Some(branch.as_str()) == index.default_branch() && index.is_live(rolling) && reachable {
+        return rolling.to_owned();
     }
     branch
 }

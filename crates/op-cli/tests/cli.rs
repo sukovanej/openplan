@@ -143,13 +143,13 @@ fn create(project: &Project, title: &str) -> String {
     stdout(&out).trim().to_owned()
 }
 
-// A write that would land on the default branch lands on the rolling-updates lane, whose worktree the
+// A write that would land on the default branch lands on the rolling-updates branch, whose worktree the
 // daemon keeps inside the git directory. A test that asks where a plan file is means wherever the
-// write went, so it looks at the lane first and falls back to the worktree's own `.plan`.
+// write went, so it looks there first and falls back to the worktree's own `.plan`.
 fn plan_dir(root: &Path) -> PathBuf {
-    let lane = root.join(".git/openplan-updates/.plan");
-    if lane.is_dir() {
-        lane
+    let rolling = root.join(".git/openplan-rolling-updates/.plan");
+    if rolling.is_dir() {
+        rolling
     } else {
         root.join(".plan")
     }
@@ -1256,7 +1256,7 @@ fn list_filters_by_status_across_an_unreadable_task() {
     assert_eq!(tasks[0]["id"], good);
 }
 
-// A create from the default branch lands on the lane, so that branch reaches the state these
+// A create from the default branch lands on the rolling-updates branch, so that branch reaches the state these
 // tests want by publishing rather than by committing files its worktree does not hold.
 fn publish(project: &Project) {
     let out = run(project, &["publish"]);

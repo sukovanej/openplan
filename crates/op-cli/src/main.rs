@@ -35,7 +35,7 @@ struct Cli {
     /// Connect to this daemon URL instead of the machine daemon
     #[arg(long, global = true)]
     daemon: Option<String>,
-    /// Write to the rolling-updates lane rather than to this worktree's branch
+    /// Write to the rolling-updates branch rather than to this worktree's branch
     #[arg(long, global = true)]
     ambient: bool,
     #[command(subcommand)]
@@ -191,9 +191,9 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
-    /// Show what the rolling-updates lane holds that the default branch does not
+    /// Show what the rolling-updates branch holds that the default branch does not
     Sync,
-    /// Fast-forward the default branch to the rolling-updates lane
+    /// Fast-forward the default branch to the rolling-updates branch
     Publish,
     /// Git merge driver for .plan task files (git passes %O %A %B %L %P %S %X %Y)
     MergeDriver {

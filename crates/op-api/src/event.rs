@@ -34,7 +34,7 @@ pub enum ChangeEvent {
     // Membership, a rename, a status change, or a new abbreviation. A client answers all four the
     // same way — read `/api/projects` again — so they are one event rather than four.
     ProjectsChanged,
-    // The rolling-updates lane committed, rebased, published, or stopped at a conflict. A client
+    // The rolling-updates branch committed, rebased, published, or stopped at a conflict. A client
     // answers every one of those by reading the sync status again.
     SyncChanged {
         project: String,

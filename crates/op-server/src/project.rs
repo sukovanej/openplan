@@ -177,7 +177,7 @@ pub struct Project {
     freshness: Mutex<Freshness>,
     health: Mutex<Health>,
     watcher: Mutex<Option<Watcher>>,
-    lane: Mutex<Option<crate::lane::Lane>>,
+    rolling_updates: Mutex<Option<crate::rolling_updates::RollingUpdates>>,
     root_misses: AtomicU32,
 }
 
@@ -201,7 +201,7 @@ impl Project {
             freshness: Mutex::new(Freshness::default()),
             health: Mutex::new(Health::default()),
             watcher: Mutex::new(None),
-            lane: Mutex::new(None),
+            rolling_updates: Mutex::new(None),
             root_misses: AtomicU32::new(0),
         }
     }
@@ -228,10 +228,13 @@ impl Project {
         &self.repo
     }
 
-    pub fn with_lane<T>(&self, read: impl FnOnce(&crate::lane::Lane) -> T) -> Option<T> {
-        self.lane
+    pub fn with_rolling_updates<T>(
+        &self,
+        read: impl FnOnce(&crate::rolling_updates::RollingUpdates) -> T,
+    ) -> Option<T> {
+        self.rolling_updates
             .lock()
-            .expect("lane mutex poisoned")
+            .expect("rolling-updates mutex poisoned")
             .as_ref()
             .map(read)
     }
@@ -485,10 +488,13 @@ impl std::fmt::Debug for Project {
 // Blocking: `Watcher::start` scans every branch and hashes each worktree's task files. A watcher
 // that will not start stays a logged degradation — reads keep working, they just never skip a
 // rebuild, because `stale_at` counts an unwatched project as always dirty.
-pub fn start_lane(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
-    let mut held = project.lane.lock().expect("lane mutex poisoned");
+pub fn start_rolling_updates(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
+    let mut held = project
+        .rolling_updates
+        .lock()
+        .expect("rolling-updates mutex poisoned");
     if held.is_none() {
-        *held = crate::lane::Lane::start(project, events);
+        *held = crate::rolling_updates::RollingUpdates::start(project, events);
     }
 }
 
@@ -515,10 +521,10 @@ pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent
             watched.mark_dirty();
             // The watcher reports a task by number, the file layer's spelling; the key it renders as
             // is the daemon's to decide.
-            // The lane worktree is watched like any other, so an edit the CLI wrote straight
+            // The rolling-updates worktree is watched like any other, so an edit the CLI wrote straight
             // into it reaches the committer here without the write path knowing about it.
-            if change.branch() == Some(op_git::LANE_BRANCH) {
-                watched.with_lane(crate::lane::Lane::edited);
+            if change.branch() == Some(op_git::ROLLING_UPDATES_BRANCH) {
+                watched.with_rolling_updates(crate::rolling_updates::RollingUpdates::edited);
             }
             let event = match change {
                 Change::Task { number, branch } => ChangeEvent::TaskChanged {

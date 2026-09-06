@@ -839,7 +839,7 @@ async fn a_tag_written_outside_the_daemon_reaches_the_event_stream() {
     )
     .unwrap();
 
-    // Starting the rolling-updates lane adds a worktree, and a new worktree reports a tags change
+    // Starting the rolling-updates branch adds a worktree, and a new worktree reports a tags change
     // of its own, so this waits for the branch the tag was written on.
     let event = sse_event(events, "tags_changed", Some("main")).await;
     assert_eq!(event["project"], "alpha");
