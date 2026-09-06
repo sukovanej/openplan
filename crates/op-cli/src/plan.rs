@@ -11,14 +11,6 @@ use op_server::serve_root;
 
 use crate::daemon::{daemon_base_url, project_named};
 
-static AMBIENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-// `--ambient` is global, so it is read where the branch is resolved rather than threaded through
-// every command that can write.
-pub fn force_ambient() {
-    AMBIENT.store(true, std::sync::atomic::Ordering::Relaxed);
-}
-
 // The machine daemon is the store, as every task and tag command sees it: the single in-band
 // writer, which allocates ids from one counter with a view across every local branch and resolves
 // the target worktree from the branch at write time, and the single resolver for reads, so one
@@ -45,14 +37,10 @@ impl Plan {
                 root.display()
             )
         })?;
-        let branch = if AMBIENT.load(std::sync::atomic::Ordering::Relaxed) {
-            op_git::ROLLING_UPDATES_BRANCH.to_owned()
-        } else {
-            repo.current_branch().context(
-                "cannot determine the current branch (detached HEAD?); every read and write \
-                 targets a branch",
-            )?
-        };
+        let branch = repo.current_branch().context(
+            "cannot determine the current branch (detached HEAD?); every read and write targets a \
+             branch",
+        )?;
 
         let client = Client::default();
         let base_url = daemon_base_url(&client, daemon_url)?;
@@ -70,6 +58,13 @@ impl Plan {
     // to read.
     pub fn branch(&self) -> &str {
         &self.branch
+    }
+
+    pub fn on_branch(mut self, branch: Option<String>) -> Self {
+        if let Some(branch) = branch {
+            self.branch = branch;
+        }
+        self
     }
 
     pub fn list(&self, branch: &str) -> Result<Vec<TaskListItem>> {

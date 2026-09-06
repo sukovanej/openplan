@@ -1081,7 +1081,7 @@ async fn get_sync(
     path = "/api/projects/{project}/publish",
     params(("project" = String, Path, description = "Project name")),
     responses(
-        (status = 200, description = "The default branch now holds the ambient edits", body = Published),
+        (status = 200, description = "The default branch now holds the rolling updates", body = Published),
         (status = 404, description = "No such project", body = ApiErrorBody),
         (status = 409, description = "The default branch moved, or a conflict holds the rolling-updates branch", body = ApiErrorBody),
         (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
@@ -1566,24 +1566,7 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
             ApiError::bad_request("cannot determine the current worktree's branch")
         })?,
     };
-    Ok(ambient(index, branch, None))
-}
-
-// One rule for the whole write path: a write that would land on the default branch lands on the
-// ambient rolling instead. It holds however the caller arrived there, so the CLI standing in that
-// worktree and the UI acting on a task that lives only there both stop dirtying the checkout. A
-// write that resolves to any other branch is left exactly where it was going.
-fn ambient(index: &Index, branch: String, id: Option<&str>) -> String {
-    let rolling = op_git::ROLLING_UPDATES_BRANCH;
-    // A repository the daemon could not give a rolling keeps writing where it always did, so the rule
-    // adds a target and never takes one away. Nor may it move a write to a task the rolling does not
-    // carry: a file left uncommitted there is on no branch the rolling was built from, and redirecting it
-    // would report the task as missing.
-    let reachable = id.is_none_or(|id| index.holds(rolling, id));
-    if Some(branch.as_str()) == index.default_branch() && index.is_live(rolling) && reachable {
-        return rolling.to_owned();
-    }
-    branch
+    Ok(branch)
 }
 
 // The write target of a write about one task. A named branch is an instruction and is taken as one,
@@ -1602,7 +1585,7 @@ fn task_write_branch(
             ApiError::bad_request("cannot determine the current worktree's branch")
         })?,
     };
-    Ok(ambient(index, branch, Some(id)))
+    Ok(branch)
 }
 
 // Callers hold the index mutex across this and release it before writing, so the store's flock wait

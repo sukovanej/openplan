@@ -3,7 +3,7 @@ status: backlog
 created: 2026-09-06T12:31:44Z
 parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:
-- ./00109-rolling-updates-an-ambient-edit-b.md
+- ./00109-rolling-updates-a-branch-with-a.md
 tags:
 - feature
 - ui
@@ -11,7 +11,7 @@ tags:
 # UI: rolling-updates sync control and review popover
 
 The header sync control and the "Rolling updates" review popover, on top of the
-backend in [[./00109-rolling-updates-an-ambient-edit-b.md]]. Mockup of every
+backend in [[./00109-rolling-updates-a-branch-with-a.md]]. Mockup of every
 state and layout: [../assets/sync-button-options.html](../assets/sync-button-options.html).
 
 ## Wiring
@@ -41,7 +41,7 @@ warn, and add blue for "you can act".
 
 A click opens the popover. A click never publishes.
 
-- List the pending ambient changes: the task title and what changed.
+- List the pending changes: the task title and what changed.
 - The primary action **"Publish N to main"** sits inside the popover and calls
   `POST /api/publish`. Show `Syncing` while the request runs. On the
   non-fast-forward refusal, show "main moved, refreshing, try again" rather than

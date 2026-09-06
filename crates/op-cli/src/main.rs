@@ -35,9 +35,6 @@ struct Cli {
     /// Connect to this daemon URL instead of the machine daemon
     #[arg(long, global = true)]
     daemon: Option<String>,
-    /// Write to the rolling-updates branch rather than to this worktree's branch
-    #[arg(long, global = true)]
-    ambient: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -68,6 +65,9 @@ enum Command {
         /// Read the content from a file, or `-` for stdin
         #[arg(long = "body-file")]
         body_file: Option<String>,
+        /// Write to this branch instead of the one this worktree has checked out
+        #[arg(long)]
+        branch: Option<String>,
     },
     /// List tasks in the store
     List {
@@ -155,10 +155,17 @@ enum Command {
         id: String,
         field: String,
         value: String,
+        /// Write to this branch instead of the one this worktree has checked out
+        #[arg(long)]
+        branch: Option<String>,
     },
     /// Delete a task file
     Delete {
         id: String,
+        /// Write to this branch instead of the one this worktree has checked out
+        #[arg(long)]
+        branch: Option<String>,
+
         #[arg(long)]
         yes: bool,
     },
@@ -308,9 +315,6 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
     let daemon_url = cli.daemon.as_deref();
-    if cli.ambient {
-        plan::force_ambient();
-    }
     // Every command works in the current directory unless told otherwise.
     let root = cli.root.as_deref().unwrap_or_else(|| Path::new("."));
     match cli.command {
@@ -331,6 +335,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             tags,
             body,
             body_file,
+            branch,
         } => {
             let body = resolve_body(body, body_file)?;
             let tags = tag::identities(tags)?;
@@ -345,6 +350,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     tags,
                     body,
                 },
+                branch,
             )
             .map(|()| ExitCode::SUCCESS)
         }
@@ -397,10 +403,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             before,
             after,
         } => move_task(root, daemon_url, &id, parent, before, after).map(|()| ExitCode::SUCCESS),
-        Command::Set { id, field, value } => {
-            set(root, daemon_url, &id, &field, &value).map(|()| ExitCode::SUCCESS)
-        }
-        Command::Delete { id, yes } => delete(root, daemon_url, &id, yes),
+        Command::Set {
+            id,
+            field,
+            value,
+            branch,
+        } => set(root, daemon_url, &id, &field, &value, branch).map(|()| ExitCode::SUCCESS),
+        Command::Delete { id, yes, branch } => delete(root, daemon_url, &id, yes, branch),
         Command::Branches => branches(root).map(|()| ExitCode::SUCCESS),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Lint { targets, json, fix } => lint(root, &targets, json, fix),
@@ -459,7 +468,7 @@ fn sync(root: &Path, daemon_url: Option<&str>) -> Result<()> {
 fn publish(root: &Path, daemon_url: Option<&str>) -> Result<()> {
     let published = Plan::resolve(root, daemon_url)?.publish()?;
     println!(
-        "{} now holds the ambient edits at {}",
+        "{} now holds the rolling updates at {}",
         published.branch, published.commit
     );
     Ok(())
@@ -523,8 +532,15 @@ fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Optio
     }
 }
 
-fn create(root: &Path, daemon_url: Option<&str>, task: &CreateTask) -> Result<()> {
-    let id = Plan::resolve(root, daemon_url)?.create(task)?;
+fn create(
+    root: &Path,
+    daemon_url: Option<&str>,
+    task: &CreateTask,
+    branch: Option<String>,
+) -> Result<()> {
+    let id = Plan::resolve(root, daemon_url)?
+        .on_branch(branch)
+        .create(task)?;
     println!("{id}");
     Ok(())
 }
@@ -861,10 +877,19 @@ fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
 
-fn set(root: &Path, daemon_url: Option<&str>, id: &str, field: &str, value: &str) -> Result<()> {
+fn set(
+    root: &Path,
+    daemon_url: Option<&str>,
+    id: &str,
+    field: &str,
+    value: &str,
+    branch: Option<String>,
+) -> Result<()> {
     // Parse before reaching for the daemon so a typo fails without starting one.
     let patch = parse_field(field, value)?;
-    Plan::resolve(root, daemon_url)?.patch(id, &patch)?;
+    Plan::resolve(root, daemon_url)?
+        .on_branch(branch)
+        .patch(id, &patch)?;
     Ok(())
 }
 
@@ -909,8 +934,14 @@ fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
     }
 }
 
-fn delete(root: &Path, daemon_url: Option<&str>, id: &str, yes: bool) -> Result<ExitCode> {
-    let plan = Plan::resolve(root, daemon_url)?;
+fn delete(
+    root: &Path,
+    daemon_url: Option<&str>,
+    id: &str,
+    yes: bool,
+    branch: Option<String>,
+) -> Result<ExitCode> {
+    let plan = Plan::resolve(root, daemon_url)?.on_branch(branch);
     // The delete targets the caller's branch, so the prompt has to be about a task that branch
     // actually carries — a typo must refuse before it asks the reader to confirm one.
     plan.get(id, plan.branch())?;

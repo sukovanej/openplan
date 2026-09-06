@@ -176,7 +176,7 @@ fn commit(
     if held(repo, shared) {
         return;
     }
-    match repo.rolling_updates_commit("Ambient task edits") {
+    match repo.rolling_updates_commit("Rolling task updates") {
         Ok(true) => moved(repo, shared, events, project, backup),
         Ok(false) => {}
         Err(err) => tracing::warn!(project, "rolling updates: {err}"),
@@ -223,7 +223,7 @@ fn publish(
     if held(repo, shared) {
         return Err("a conflict holds the rolling updates; resolve it first".to_owned());
     }
-    if let Err(err) = repo.rolling_updates_commit("Ambient task edits") {
+    if let Err(err) = repo.rolling_updates_commit("Rolling task updates") {
         return Err(err.to_string());
     }
     let tip = repo

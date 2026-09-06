@@ -7,10 +7,10 @@ tags:
 ---
 # Continuous changes accumulation via the rolling-updates branch
 
-Ambient edits are the task edits that belong to no feature branch. This is the
+Some task edits belong to no feature branch. This is the
 umbrella for the rolling-updates branch that holds them.
 
-Ambient edits accumulate on the branch `openplan/rolling-updates`. The daemon keeps a
+Such edits accumulate on the branch `openplan/rolling-updates`. The daemon keeps a
 standing worktree for it, rebases it onto the default branch as that branch
 moves, and fast-forwards the default branch when a person publishes.
 
@@ -35,5 +35,5 @@ spike in [[./00023-design-a-continuous-changes-accu.md]] proved that
 
 ## Children
 
-- Backend and CLI: [[./00109-rolling-updates-an-ambient-edit-b.md]]
+- Backend and CLI: [[./00109-rolling-updates-a-branch-with-a.md]]
 - UI: [[./00110-ui-rolling-updates-sync-control-a.md]]

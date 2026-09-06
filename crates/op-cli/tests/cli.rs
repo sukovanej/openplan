@@ -143,22 +143,10 @@ fn create(project: &Project, title: &str) -> String {
     stdout(&out).trim().to_owned()
 }
 
-// A write that would land on the default branch lands on the rolling-updates branch, whose worktree the
-// daemon keeps inside the git directory. A test that asks where a plan file is means wherever the
-// write went, so it looks there first and falls back to the worktree's own `.plan`.
-fn plan_dir(root: &Path) -> PathBuf {
-    let rolling = root.join(".git/openplan-rolling-updates/.plan");
-    if rolling.is_dir() {
-        rolling
-    } else {
-        root.join(".plan")
-    }
-}
-
 // A task file's name carries a title slug its id does not, so a test locates it by the
 // number behind the key.
 fn task_file(root: &Path, key: &str) -> PathBuf {
-    let dir = plan_dir(root).join("tasks");
+    let dir = root.join(".plan/tasks");
     let prefix = format!("{:0>5}-", number(key));
     std::fs::read_dir(&dir)
         .unwrap()
@@ -192,7 +180,7 @@ fn task_body(path: &PathBuf) -> String {
 fn list_reports_real_status_and_title() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-ship-it.md"),
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
@@ -219,11 +207,11 @@ fn list_reports_real_status_and_title() {
 fn search_finds_a_task_by_its_body_and_reports_the_branch() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-ship-it.md"),
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\nIt needs a zeppelin.\n",
     );
     write(
-        &plan_dir(dir.path()).join("tasks/00002-paint-it.md"),
+        &dir.path().join(".plan/tasks/00002-paint-it.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Paint it\n",
     );
 
@@ -249,7 +237,7 @@ fn search_finds_a_task_by_its_body_and_reports_the_branch() {
 fn search_reports_no_matches_rather_than_nothing() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-ship-it.md"),
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
@@ -263,7 +251,7 @@ fn search_reports_no_matches_rather_than_nothing() {
 fn search_json_carries_the_hit_and_its_branch() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-ship-it.md"),
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
@@ -334,7 +322,8 @@ fn create_names_the_file_after_the_id_and_the_title() {
 fn a_write_from_a_linked_worktree_lands_on_that_worktrees_branch() {
     let dir = Project::new();
     let anchor = create(&dir, "Anchor");
-    publish(&dir);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "anchor"]);
     let feature = dir.path().join(".worktrees/feature");
     git(
         dir.path(),
@@ -369,7 +358,7 @@ fn a_write_from_a_linked_worktree_lands_on_that_worktrees_branch() {
         "written on feature: {id}"
     );
     assert!(
-        std::fs::read_dir(plan_dir(dir.path()).join("tasks"))
+        std::fs::read_dir(dir.path().join(".plan/tasks"))
             .unwrap()
             .all(
                 |entry| entry.unwrap().file_name() != task_file(&feature, &id).file_name().unwrap()
@@ -382,8 +371,7 @@ fn a_write_from_a_linked_worktree_lands_on_that_worktrees_branch() {
 #[test]
 fn removing_the_worktree_that_started_the_daemon_leaves_writes_working() {
     let dir = Project::new();
-    // Committed by hand: the daemon must be started by the worktree's write, not by this one, so
-    // this cannot go through `publish` either.
+    // Committed by hand: the daemon must be started by the worktree's write, not by this one.
     write(
         &dir.path().join(".plan/tasks/00001-anchor.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Anchor\n",
@@ -444,7 +432,8 @@ fn a_read_from_a_linked_worktree_answers_for_that_worktrees_branch() {
     let dir = Project::new();
     let alpha = create(&dir, "Alpha");
     let shared = create(&dir, "Shared");
-    publish(&dir);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "two tasks"]);
     let feature = dir.path().join(".worktrees/feature");
     git(
         dir.path(),
@@ -626,14 +615,14 @@ fn writes_from_two_repositories_land_in_their_own_stores() {
     // Each repository has its own id counter, so both first tasks are number one.
     assert_eq!(stdout(&out).trim(), "OPP-1");
     assert_eq!(
-        std::fs::read_dir(plan_dir(second.path()).join("tasks"))
+        std::fs::read_dir(second.path().join(".plan/tasks"))
             .unwrap()
             .count(),
         1,
         "the write lands in the repository --root names"
     );
     assert_eq!(
-        std::fs::read_dir(plan_dir(first.path()).join("tasks"))
+        std::fs::read_dir(first.path().join(".plan/tasks"))
             .unwrap()
             .count(),
         1,
@@ -690,7 +679,7 @@ fn a_daemon_without_project_routes_asks_for_a_restart() {
         "stderr: {stderr}"
     );
     assert!(
-        std::fs::read_dir(plan_dir(project.path()).join("tasks"))
+        std::fs::read_dir(project.path().join(".plan/tasks"))
             .unwrap()
             .next()
             .is_none(),
@@ -738,7 +727,7 @@ fn a_named_daemon_is_not_registered_into_by_a_write() {
         "the named daemon keeps the projects it had: {text}"
     );
     assert!(
-        std::fs::read_dir(plan_dir(other.path()).join("tasks"))
+        std::fs::read_dir(other.path().join(".plan/tasks"))
             .unwrap()
             .next()
             .is_none(),
@@ -1005,7 +994,7 @@ fn get_renders_references_the_store_can_read_back() {
 fn get_refuses_to_render_a_task_missing_a_required_field() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-legacy.md"),
+        &dir.path().join(".plan/tasks/00001-legacy.md"),
         "---\nstatus: todo\n---\n# Legacy\n",
     );
 
@@ -1037,7 +1026,7 @@ fn get_refuses_to_render_a_task_missing_a_required_field() {
 fn get_reports_a_field_it_cannot_render() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-legacy.md"),
+        &dir.path().join(".plan/tasks/00001-legacy.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: [1, 2]\n---\n# Legacy\n",
     );
 
@@ -1212,11 +1201,11 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
     let dir = Project::new();
     let good = create(&dir, "Good one");
     write(
-        &plan_dir(dir.path()).join("tasks/00002-broken.md"),
+        &dir.path().join(".plan/tasks/00002-broken.md"),
         "this file has no frontmatter\n",
     );
     write(
-        &plan_dir(dir.path()).join("tasks/00003-legacy.md"),
+        &dir.path().join(".plan/tasks/00003-legacy.md"),
         "---\nstatus: in_progress\n---\n# Legacy\n",
     );
 
@@ -1243,7 +1232,7 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
 fn list_filters_by_status_across_an_unreadable_task() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-broken.md"),
+        &dir.path().join(".plan/tasks/00001-broken.md"),
         "this file has no frontmatter\n",
     );
     let good = create(&dir, "Good one");
@@ -1254,17 +1243,6 @@ fn list_filters_by_status_across_an_unreadable_task() {
     // A task with no readable status matches no status filter, rather than matching the default.
     assert_eq!(tasks.len(), 1, "{tasks:?}");
     assert_eq!(tasks[0]["id"], good);
-}
-
-// A create from the default branch lands on the rolling-updates branch, so that branch reaches the state these
-// tests want by publishing rather than by committing files its worktree does not hold.
-fn publish(project: &Project) {
-    let out = run(project, &["publish"]);
-    assert!(
-        out.status.success(),
-        "publish failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
 }
 
 fn git(dir: &Path, args: &[&str]) {
@@ -1283,14 +1261,14 @@ impl Project {
         let project = Project::new();
         let root = project.path();
         write(
-            &plan_dir(root).join("tasks/00001-alpha.md"),
+            &root.join(".plan/tasks/00001-alpha.md"),
             "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
         );
         git(root, &["add", "."]);
         git(root, &["commit", "-qm", "init"]);
         git(root, &["checkout", "-q", "-b", "feature"]);
         write(
-            &plan_dir(root).join("tasks/00001-alpha.md"),
+            &root.join(".plan/tasks/00001-alpha.md"),
             "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha done\n",
         );
         git(root, &["commit", "-qam", "edit alpha on feature"]);
@@ -1348,8 +1326,7 @@ fn list_branch_reads_other_branch_without_checking_it_out() {
         view["metadata"]["status"], "todo",
         "reading a branch must not mutate the worktree"
     );
-    let on_disk =
-        std::fs::read_to_string(plan_dir(dir.path()).join("tasks/00001-alpha.md")).unwrap();
+    let on_disk = std::fs::read_to_string(dir.path().join(".plan/tasks/00001-alpha.md")).unwrap();
     assert!(
         on_disk.contains("status: todo"),
         "working file unchanged: {on_disk}"
@@ -1662,13 +1639,13 @@ fn get_json_dates_the_checked_out_branch_not_the_headline() {
     let root = dir.path();
     // `created` predates both commits, so the view's clamp cannot mask which one is reported.
     write(
-        &plan_dir(root).join("tasks/00001-alpha.md"),
+        &root.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: todo\ncreated: 2000-01-01T00:00:00Z\n---\n# Alpha\n",
     );
     commit_at(root, 1_000_000_000, "add alpha");
     git(root, &["checkout", "-q", "-b", "feature"]);
     write(
-        &plan_dir(root).join("tasks/00001-alpha.md"),
+        &root.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: done\ncreated: 2000-01-01T00:00:00Z\n---\n# Alpha done\n",
     );
     commit_at(root, 2_000_000_000, "edit alpha on feature");
@@ -1686,7 +1663,7 @@ fn get_json_dates_the_checked_out_branch_not_the_headline() {
 fn set_on_a_task_without_created_explains_what_to_add() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00002-legacy.md"),
+        &dir.path().join(".plan/tasks/00002-legacy.md"),
         "---\nstatus: todo\n---\n# Legacy\n",
     );
 
@@ -1733,7 +1710,7 @@ const VALID: &str = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ti
 #[test]
 fn lint_clean_project_exits_zero() {
     let dir = lint_store();
-    write(&plan_dir(dir.path()).join("tasks/00001-clean.md"), VALID);
+    write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
 
     let out = run_lint(dir.path(), &[]);
     assert!(
@@ -1746,11 +1723,11 @@ fn lint_clean_project_exits_zero() {
 #[test]
 fn lint_counts_the_files_it_checked() {
     let dir = lint_store();
-    write(&plan_dir(dir.path()).join("tasks/00001-clean.md"), VALID);
-    write(&plan_dir(dir.path()).join("tasks/00002-clean.md"), VALID);
-    std::fs::create_dir_all(plan_dir(dir.path()).join("tags")).unwrap();
+    write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
+    write(&dir.path().join(".plan/tasks/00002-clean.md"), VALID);
+    std::fs::create_dir_all(dir.path().join(".plan/tags")).unwrap();
     write(
-        &plan_dir(dir.path()).join("tags/backend.md"),
+        &dir.path().join(".plan/tags/backend.md"),
         "---\ncolor: cyan\n---\n# backend\n",
     );
 
@@ -1772,9 +1749,9 @@ fn lint_counts_the_files_it_checked() {
 #[test]
 fn lint_seeded_defect_exits_nonzero_and_prints_it() {
     let dir = lint_store();
-    write(&plan_dir(dir.path()).join("tasks/00001-clean.md"), VALID);
+    write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
     write(
-        &plan_dir(dir.path()).join("tasks/00002-seeded-defect.md"),
+        &dir.path().join(".plan/tasks/00002-seeded-defect.md"),
         "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Seeded defect\n",
     );
 
@@ -1795,7 +1772,7 @@ fn lint_seeded_defect_exits_nonzero_and_prints_it() {
 fn lint_json_carries_severity_error() {
     let dir = lint_store();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-seeded-defect.md"),
+        &dir.path().join(".plan/tasks/00001-seeded-defect.md"),
         "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Seeded defect\n",
     );
 
@@ -1823,17 +1800,14 @@ fn lint_json_carries_severity_error() {
 fn lint_targets_filter_output_and_ignore_breakage_elsewhere() {
     let dir = lint_store();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-alpha-broken.md"),
+        &dir.path().join(".plan/tasks/00001-alpha-broken.md"),
         "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
     );
     write(
-        &plan_dir(dir.path()).join("tasks/00002-beta-broken.md"),
+        &dir.path().join(".plan/tasks/00002-beta-broken.md"),
         "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Beta\n",
     );
-    write(
-        &plan_dir(dir.path()).join("tasks/00003-gamma-clean.md"),
-        VALID,
-    );
+    write(&dir.path().join(".plan/tasks/00003-gamma-clean.md"), VALID);
 
     // Targeting the one clean task: breakage in the others is off the commit's path, so the run
     // passes and says nothing about them.
@@ -1869,8 +1843,8 @@ fn lint_targets_filter_output_and_ignore_breakage_elsewhere() {
 #[test]
 fn lint_fix_rewrites_then_reports_clean() {
     let dir = lint_store();
-    write(&plan_dir(dir.path()).join("tasks/00001-root.md"), VALID);
-    let child = plan_dir(dir.path()).join("tasks/00002-child.md");
+    write(&dir.path().join(".plan/tasks/00001-root.md"), VALID);
+    let child = dir.path().join(".plan/tasks/00002-child.md");
     write(
         &child,
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00001-wrong-slug.md\n---\n# Child\n",
@@ -1904,9 +1878,9 @@ fn lint_fix_rewrites_then_reports_clean() {
 #[test]
 fn lint_reports_and_repairs_a_tag_file_by_its_path() {
     let dir = lint_store();
-    write(&plan_dir(dir.path()).join("tasks/00001-clean.md"), VALID);
-    std::fs::create_dir_all(plan_dir(dir.path()).join("tags")).unwrap();
-    let tag = plan_dir(dir.path()).join("tags/backend.md");
+    write(&dir.path().join(".plan/tasks/00001-clean.md"), VALID);
+    std::fs::create_dir_all(dir.path().join(".plan/tags")).unwrap();
+    let tag = dir.path().join(".plan/tags/backend.md");
     write(&tag, "---\n---\n# Backend\n");
 
     let reported = run_lint(dir.path(), &[".plan/tags/backend.md"]);
@@ -2182,7 +2156,7 @@ fn create_tag(project: &Project, name: &str) -> String {
 }
 
 fn tag_file(root: &Path, name: &str) -> PathBuf {
-    plan_dir(root).join("tags").join(format!("{name}.md"))
+    root.join(".plan/tags").join(format!("{name}.md"))
 }
 
 fn tags_of(root: &Path, key: &str) -> Vec<String> {
@@ -2716,7 +2690,7 @@ fn comment_reads_its_text_from_stdin() {
 fn a_damaged_entry_keeps_its_text_and_reports_the_field() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-ship-it.md"),
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\n## Comments\n\n### \
          yesterday by Test\n\n> still readable\n",
     );
@@ -2740,7 +2714,8 @@ fn a_damaged_entry_keeps_its_text_and_reports_the_field() {
 fn a_comment_on_another_branch_names_the_branches_the_task_lives_on() {
     let dir = Project::new();
     let id = create(&dir, "Ship login");
-    publish(&dir);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "add the task"]);
     git(dir.path(), &["checkout", "-q", "-b", "side", "HEAD~1"]);
 
     let out = run(&dir, &["comment", &id, "hello"]);
@@ -2755,7 +2730,8 @@ fn all_branches_labels_every_entry_with_its_branch() {
     let dir = Project::new();
     let id = create(&dir, "Ship login");
     run(&dir, &["comment", &id, "on main"]);
-    publish(&dir);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "add the task"]);
     git(dir.path(), &["checkout", "-q", "-b", "side"]);
     run(&dir, &["comment", &id, "on side"]);
 
@@ -2774,7 +2750,8 @@ fn a_named_branch_reads_that_branch_log() {
     let dir = Project::new();
     let id = create(&dir, "Ship login");
     run(&dir, &["comment", &id, "on main"]);
-    publish(&dir);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-qm", "add the task"]);
     git(dir.path(), &["checkout", "-q", "-b", "side"]);
     run(&dir, &["comment", &id, "on side"]);
 
@@ -2800,7 +2777,7 @@ fn get_renders_the_comment_log_with_the_file() {
 fn lint_reports_every_comment_failure_with_a_span() {
     let dir = Project::new();
     write(
-        &plan_dir(dir.path()).join("tasks/00001-ship-it.md"),
+        &dir.path().join(".plan/tasks/00001-ship-it.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\n## Comments\n\n### \
          yesterday by Test\n\n> a\n\n### 2026-01-01T00:00:00Z by Test\n\n### 2026-01-02T00:00:00Z \
          by Test\n\n> c\n\n> orphan\n\n## Comments\n\n### 2026-01-03T00:00:00Z by Test\n\n> d\n",
@@ -2841,7 +2818,7 @@ fn lint_fix_leaves_the_comment_log_alone() {
     let target = create(&dir, "Target");
     let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\n## \
                   Comments\n\n### 2026-01-01T00:00:00Z by Test\n\n> see [[OPP-1]]\n";
-    let path = plan_dir(dir.path()).join("tasks/00002-ship-it.md");
+    let path = dir.path().join(".plan/tasks/00002-ship-it.md");
     write(&path, source);
     assert_eq!(target, "OPP-1");
 

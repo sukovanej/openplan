@@ -120,7 +120,7 @@ fn a_commit_lands_only_when_something_changed() {
     assert!(
         fixture
             .repo
-            .rolling_updates_commit("an ambient edit")
+            .rolling_updates_commit("an edit for later")
             .unwrap()
     );
     assert!(
@@ -137,7 +137,7 @@ fn a_code_only_move_of_main_replays_the_rolling_updates_branch_and_materializes_
     std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
     fixture
         .repo
-        .rolling_updates_commit("an ambient edit")
+        .rolling_updates_commit("an edit for later")
         .unwrap();
     commit_on_main(&fixture, "fn main() { }\n", "src/main.rs", "code");
 
@@ -157,7 +157,7 @@ fn edits_to_different_sections_replay_through_the_driver() {
     std::fs::write(rolling_task(&fixture), task("base alpha", "rolling beta")).unwrap();
     fixture
         .repo
-        .rolling_updates_commit("an ambient edit")
+        .rolling_updates_commit("an edit for later")
         .unwrap();
     commit_on_main(
         &fixture,
@@ -182,7 +182,7 @@ fn the_same_section_on_both_sides_holds_the_rolling_updates_branch_at_the_confli
     std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
     fixture
         .repo
-        .rolling_updates_commit("an ambient edit")
+        .rolling_updates_commit("an edit for later")
         .unwrap();
     commit_on_main(
         &fixture,
@@ -213,7 +213,7 @@ fn publish_fast_forwards_the_checked_out_main_and_moves_its_files() {
     std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
     fixture
         .repo
-        .rolling_updates_commit("an ambient edit")
+        .rolling_updates_commit("an edit for later")
         .unwrap();
     fixture.repo.rolling_updates_rebase("main").unwrap();
     let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
@@ -231,7 +231,7 @@ fn publish_refuses_when_main_has_uncommitted_task_edits() {
     std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
     fixture
         .repo
-        .rolling_updates_commit("an ambient edit")
+        .rolling_updates_commit("an edit for later")
         .unwrap();
     fixture.repo.rolling_updates_rebase("main").unwrap();
     let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
@@ -256,7 +256,7 @@ fn publish_refuses_a_target_that_is_not_a_fast_forward() {
     std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
     fixture
         .repo
-        .rolling_updates_commit("an ambient edit")
+        .rolling_updates_commit("an edit for later")
         .unwrap();
     let tip = fixture.repo.branch_commit(ROLLING_UPDATES_BRANCH).unwrap();
     commit_on_main(&fixture, "fn main() { }\n", "src/main.rs", "code");
@@ -280,7 +280,7 @@ fn the_backup_push_sends_the_rolling_updates_branch_to_a_mirror() {
     std::fs::write(rolling_task(&fixture), task("rolling alpha", "base beta")).unwrap();
     fixture
         .repo
-        .rolling_updates_commit("an ambient edit")
+        .rolling_updates_commit("an edit for later")
         .unwrap();
 
     fixture

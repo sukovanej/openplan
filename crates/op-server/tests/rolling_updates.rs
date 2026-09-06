@@ -114,10 +114,15 @@ fn starting_the_daemon_gives_the_repository_a_rolling_updates_branch() {
 }
 
 #[tokio::test]
-async fn a_write_that_would_land_on_the_default_branch_lands_on_the_rolling_updates_branch() {
+async fn a_write_that_names_the_rolling_updates_branch_lands_there() {
     let (dir, state) = with_rolling_updates();
 
-    create(&state, "An ambient edit", "").await;
+    create(
+        &state,
+        "An edit for later",
+        "?branch=openplan/rolling-updates",
+    )
+    .await;
 
     assert!(
         !dir.path()
@@ -128,6 +133,18 @@ async fn a_write_that_would_land_on_the_default_branch_lands_on_the_rolling_upda
     );
     let rolling = dir.path().join(".git/openplan-rolling-updates/.plan/tasks");
     assert_eq!(rolling.read_dir().unwrap().count(), 1);
+}
+
+#[tokio::test]
+async fn a_write_that_names_no_branch_still_lands_on_the_default_branch() {
+    let (dir, state) = with_rolling_updates();
+
+    create(&state, "A plain edit", "").await;
+
+    assert_eq!(
+        dir.path().join(".plan/tasks").read_dir().unwrap().count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -154,14 +171,19 @@ async fn a_write_that_names_another_branch_still_lands_there() {
 #[tokio::test]
 async fn sync_reports_what_the_rolling_updates_branch_holds_and_publish_hands_it_over() {
     let (dir, state) = with_rolling_updates();
-    create(&state, "An ambient edit", "").await;
+    create(
+        &state,
+        "An edit for later",
+        "?branch=openplan/rolling-updates",
+    )
+    .await;
     let repo = op_git::Repo::discover(dir.path()).unwrap();
-    repo.rolling_updates_commit("Ambient task edits").unwrap();
+    repo.rolling_updates_commit("Rolling task updates").unwrap();
 
     let status = sync(&state).await;
     assert_eq!(status["state"], "pending");
     assert_eq!(status["pending"].as_array().unwrap().len(), 1);
-    assert_eq!(status["pending"][0]["task"]["title"], "An ambient edit");
+    assert_eq!(status["pending"][0]["task"]["title"], "An edit for later");
     assert!(status["conflicted"].as_array().unwrap().is_empty());
 
     let uri = format!("/api/projects/{PROJECT}/publish");
@@ -197,7 +219,7 @@ async fn publish_refuses_while_a_conflict_holds_the_rolling_updates_branch() {
         task.replace("base", "rolling"),
     )
     .unwrap();
-    repo.rolling_updates_commit("an ambient edit").unwrap();
+    repo.rolling_updates_commit("an edit for later").unwrap();
     std::fs::write(
         dir.path().join(".plan/tasks/00001-t.md"),
         task.replace("base", "main"),
@@ -221,26 +243,5 @@ async fn publish_refuses_while_a_conflict_holds_the_rolling_updates_branch() {
             .as_str()
             .unwrap()
             .ends_with("openplan-rolling-updates")
-    );
-}
-
-#[tokio::test]
-async fn a_read_scoped_to_the_default_branch_sees_what_the_rolling_updates_branch_holds() {
-    let (dir, state) = with_rolling_updates();
-    create(&state, "An ambient edit", "").await;
-    op_git::Repo::discover(dir.path())
-        .unwrap()
-        .rolling_updates_commit("Ambient task edits")
-        .unwrap();
-
-    let uri = format!("/api/projects/{PROJECT}/tasks?branch=main&fresh=true");
-    let listed = body_json(send(&state, "GET", &uri, None).await).await;
-
-    assert_eq!(listed.as_array().unwrap().len(), 1);
-    assert_eq!(listed[0]["title"], "An ambient edit");
-    assert_eq!(listed[0]["headline"], op_git::ROLLING_UPDATES_BRANCH);
-    assert_eq!(
-        listed[0]["write_target"]["branch"],
-        op_git::ROLLING_UPDATES_BRANCH
     );
 }
