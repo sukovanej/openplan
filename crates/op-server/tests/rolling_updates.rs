@@ -165,16 +165,88 @@ async fn a_write_that_names_the_rolling_updates_branch_lands_there() {
     assert_eq!(rolling.read_dir().unwrap().count(), 1);
 }
 
+// Only a caller with no worktree of its own names no branch. The daemon stands in the
+// rolling-updates worktree for it.
 #[tokio::test]
-async fn a_write_that_names_no_branch_still_lands_on_the_default_branch() {
+async fn a_write_that_names_no_branch_lands_on_the_rolling_updates_branch() {
     let (dir, state) = with_rolling_updates();
 
-    create(&state, "A plain edit", "").await;
+    create(&state, "An edit from the UI", "").await;
+
+    assert_eq!(
+        dir.path().join(".plan/tasks").read_dir().unwrap().count(),
+        0
+    );
+    let rolling = dir.path().join(".git/openplan-rolling-updates/.plan/tasks");
+    assert_eq!(rolling.read_dir().unwrap().count(), 1);
+}
+
+#[tokio::test]
+async fn a_write_that_names_the_default_branch_lands_there() {
+    let (dir, state) = with_rolling_updates();
+
+    create(&state, "A plain edit", "?branch=main").await;
 
     assert_eq!(
         dir.path().join(".plan/tasks").read_dir().unwrap().count(),
         1
     );
+}
+
+// Unnamed reads default to the same place: the default branch with the pending edits on top.
+#[tokio::test]
+async fn an_unnamed_read_sees_the_pending_edits() {
+    let (_dir, state) = with_rolling_updates();
+    create(&state, "On main", "?branch=main").await;
+    create(&state, "Pending", "").await;
+
+    let uri = format!("/api/projects/{PROJECT}/tasks");
+    let response = send(&state, "GET", &uri, None).await;
+    let listed = body_json(response).await;
+
+    let titles: Vec<&str> = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|task| task["title"].as_str().unwrap())
+        .collect();
+    assert!(titles.contains(&"Pending"), "{titles:?}");
+}
+
+// A branch cut from a default branch with no store would give the daemon a worktree it cannot
+// write to, so no branch is made and unnamed writes keep going to the serve root.
+#[tokio::test]
+async fn a_default_branch_without_the_store_gets_no_rolling_updates_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    let store = op_store::Store::discover(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let config = op_store::Config {
+        abbreviation: store.abbreviation(),
+        default_branch: None,
+    };
+    let state = AppState::new([Project::new(
+        PROJECT,
+        root.to_path_buf(),
+        repo,
+        store,
+        &config,
+    )]);
+    state.start_watchers();
+
+    create(&state, "A plain edit", "").await;
+
+    assert!(!root.join(".git/openplan-rolling-updates").exists());
+    assert_eq!(root.join(".plan/tasks").read_dir().unwrap().count(), 1);
+    let uri = format!("/api/projects/{PROJECT}/rolling-updates");
+    let response = send(&state, "GET", &uri, None).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[tokio::test]

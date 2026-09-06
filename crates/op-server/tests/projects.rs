@@ -62,8 +62,10 @@ async fn create_task(state: &AppState, project: &str, body: Value) -> String {
         Some(body),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-    body_json(response).await["id"].as_str().unwrap().to_owned()
+    let status = response.status();
+    let body = body_json(response).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    body["id"].as_str().unwrap().to_owned()
 }
 
 async fn board_rows(state: &AppState, uri: &str) -> Vec<(String, String, u64)> {

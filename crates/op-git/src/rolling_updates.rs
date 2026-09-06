@@ -18,6 +18,14 @@ impl Repo {
         self.git_common_dir().join(ROLLING_UPDATES_WORKTREE_DIR)
     }
 
+    pub fn branch_has_path(&self, branch: &str, path: &str) -> bool {
+        git(
+            &self.git_common_dir(),
+            &["cat-file", "-e", &format!("{branch}:{path}")],
+        )
+        .is_ok()
+    }
+
     // Everything the branch needs, applied in the order that lets a later step assume the earlier
     // one: the driver registration, then the branch, then its worktree, then the attributes commit
     // that makes git call the driver.

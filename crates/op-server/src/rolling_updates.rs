@@ -34,10 +34,17 @@ pub struct Handle {
 
 impl Handle {
     // `None` when the repository cannot host the branch, which leaves every write where it was
-    // going. A project with no default branch is the ordinary case here.
+    // going. A project with no default branch is the ordinary case here. A default branch that
+    // does not carry the store is the other: a branch cut from it would give the daemon a worktree
+    // it cannot write to, and every unnamed write would be refused.
     pub fn start(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) -> Option<Self> {
         let repo = project.repo().clone();
         let default_branch = repo.default_branch(None).ok().flatten()?;
+        let store = format!("{}/{}", op_store::STORE_DIR, op_store::CONFIG_FILE);
+        if !repo.branch_has_path(&default_branch, &store) {
+            tracing::warn!(project = %project.name(), "rolling updates disabled: {default_branch} carries no {store}");
+            return None;
+        }
         let driver = format!("{} merge-driver", std::env::current_exe().ok()?.display());
         if let Err(err) = repo.ensure_rolling_updates(&default_branch, &driver) {
             tracing::warn!(project = %project.name(), "rolling updates disabled: {err}");

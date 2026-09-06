@@ -98,17 +98,29 @@ the spike tested.
 
 ## Reaching the branch
 
-`openplan/rolling-updates` is a branch like any other. A write reaches it by
-naming it, with `--branch openplan/rolling-updates` on the CLI or `?branch=` on
-the API. Nothing is rerouted, and a write that resolves to the default branch
-lands on the default branch and its worktree.
+`openplan/rolling-updates` is a branch like any other. A named branch is the
+target, the default branch included. Nothing named is ever rerouted.
+
+A request that names no branch comes from one caller: the UI. The CLI reads the
+branch of the worktree it runs in and names it on every call. For the UI, the
+daemon stands in the rolling-updates worktree: an unnamed create lands on that
+branch, an unnamed edit goes where the task lives (that branch for a task the
+default branch carries, a feature branch for a task only it carries), and an
+unnamed read is the default branch with the pending edits on top. So no client
+spells the branch name. `ProjectView.rolling_updates_branch` carries it for a
+client that must label it.
+
+The daemon makes no branch when the default branch does not carry the store,
+because a worktree cut from it could take no write. Unnamed requests then use
+the serve root, as before.
 
 `--branch` already existed on `list`, `get`, `comments`, and `show`. This adds it
 to `create`, `set`, and `delete`, which the API already accepted.
 
 ## Index
 
-The rolling-updates branch needs no special case in the index, and must not get one.
+The rolling-updates branch gets one special case in the index: `current_branch`
+is that branch while its worktree exists. Everything else falls out of it.
 
 - **Headline.** `supersedes` decides by ancestry
   (`crates/op-index/src/lib.rs:418`). That branch is the default branch plus
