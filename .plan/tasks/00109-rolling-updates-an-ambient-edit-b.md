@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: in_review
 created: 2026-09-06T12:31:28Z
 parent: ./00039-continuous-changes-accumulation-v.md
 tags:
@@ -239,3 +239,21 @@ retries on the next tip move. Push once at startup.
 - Backup: with `openplan.backupRemote` set, a tip move pushes to a local bare
   remote; unset pushes nothing; a burst coalesces to one push; an unreachable
   remote logs a warning and does not fail the edit.
+
+## Comments
+
+### 2026-09-06T13:21:42Z by Milan Suk via claude-code
+
+> The trunk-move trigger polls the trunk ref every 5 seconds. It does not emit a new watcher event as the task says. Reading one ref is a file read, and the poll doubles as the sweep and the reconcile at startup, so op-watch needed no change.
+
+### 2026-09-06T13:21:42Z by Milan Suk via claude-code
+
+> Reads needed a rule the task did not name: a read scoped to the trunk answers from the lane for every task the lane holds. Without it an ambient edit stayed invisible until publish, which made the lane unusable.
+
+### 2026-09-06T13:21:42Z by Milan Suk via claude-code
+
+> The write redirect skips a task the lane does not carry. An uncommitted trunk file belongs to no branch the lane was built from, so redirecting it reported the task as missing.
+
+### 2026-09-06T13:21:42Z by Milan Suk via claude-code
+
+> The backup push has op-git tests only. Nothing exercises the daemon's pusher against a live mirror.
