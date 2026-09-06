@@ -616,6 +616,7 @@ impl Index {
             .branch_of(branch)
             .filter_map(|(id, version)| {
                 let parsed = self.parsed(version)?;
+                let source = self.source_of(branch, id);
                 Some(TaskListItem {
                     project: project.to_owned(),
                     id: id.clone(),
@@ -623,11 +624,11 @@ impl Index {
                     comment_count: parsed.comment_count,
                     updated: updated_field(
                         parsed.metadata.created(),
-                        self.task_updated_or_headline(id, Some(branch)),
+                        self.task_updated_or_headline(id, Some(source)),
                     ),
-                    headline: branch.to_owned(),
-                    branches: self.branch_state(id, branch).into_iter().collect(),
-                    write_target: self.write_target(id, Some(branch)),
+                    headline: source.to_owned(),
+                    branches: self.branch_state(id, source).into_iter().collect(),
+                    write_target: self.write_target(id, Some(source)),
                     metadata: parsed.metadata.clone(),
                 })
             })
@@ -653,6 +654,7 @@ impl Index {
     // How one task stands on one branch — the same answer whether a caller asks about the task
     // alone or reads it in the branch's list.
     fn branch_state(&self, id: &str, branch: &str) -> Option<BranchState> {
+        let branch = self.source_of(branch, id);
         let version = self.branch_versions.get(branch)?.get(id)?;
         Some(BranchState {
             branch: branch.to_owned(),
@@ -675,8 +677,36 @@ impl Index {
             .map_or(0, |version| version.comment_count)
     }
 
+    // A read scoped to the trunk answers from the ambient lane for every task the lane holds. The
+    // lane is the trunk plus the edits nobody published yet, so leaving it out would hide an
+    // ambient edit from every read until publish. A task the lane does not carry still answers from
+    // the trunk, which stays the fresher of the two between rebases.
+    fn overlay(&self, branch: &str) -> Option<&'static str> {
+        let lane = op_git::LANE_BRANCH;
+        (branch != lane
+            && Some(branch) == self.default_branch()
+            && self.branch_versions.contains_key(lane))
+        .then_some(lane)
+    }
+
+    fn source_of<'a>(&self, branch: &'a str, id: &str) -> &'a str {
+        match self.overlay(branch) {
+            Some(lane) if self.holds(lane, id) => lane,
+            _ => branch,
+        }
+    }
+
     fn branch_of(&self, branch: &str) -> impl Iterator<Item = (&String, &BranchVersion)> {
-        self.branch_versions.get(branch).into_iter().flatten()
+        let lane = self
+            .overlay(branch)
+            .and_then(|lane| self.branch_versions.get(lane));
+        let own = self
+            .branch_versions
+            .get(branch)
+            .into_iter()
+            .flatten()
+            .filter(move |(id, _)| lane.is_none_or(|held| !held.contains_key(id.as_str())));
+        lane.into_iter().flatten().chain(own)
     }
 
     // Every effective version a rebuild recorded was parsed and cached under its blob OID, so this
@@ -776,6 +806,14 @@ impl Index {
         haystack.rest.contains(needle).then_some(SearchMatch::Text)
     }
 
+    pub fn is_live(&self, branch: &str) -> bool {
+        self.live.contains_key(branch)
+    }
+
+    pub fn default_branch(&self) -> Option<&str> {
+        self.default_branch.as_deref()
+    }
+
     pub fn current_branch(&self) -> Option<&str> {
         self.current_branch.as_deref()
     }
@@ -841,7 +879,7 @@ impl Index {
             .min_by_key(|branch| (!self.live.contains_key(*branch), *branch))
     }
 
-    fn holds(&self, branch: &str, id: &str) -> bool {
+    pub fn holds(&self, branch: &str, id: &str) -> bool {
         self.branch_versions
             .get(branch)
             .is_some_and(|tasks| tasks.contains_key(id))
@@ -1216,6 +1254,7 @@ impl Index {
         id: &str,
         branch: &str,
     ) -> Result<Option<String>, IndexError> {
+        let branch = self.source_of(branch, id);
         let Some(version) = self
             .branch_versions
             .get(branch)

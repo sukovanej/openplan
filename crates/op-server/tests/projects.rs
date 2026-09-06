@@ -839,12 +839,13 @@ async fn a_tag_written_outside_the_daemon_reaches_the_event_stream() {
     )
     .unwrap();
 
-    let event = sse_event(events, "tags_changed").await;
+    // Starting the rolling-updates lane adds a worktree, and a new worktree reports a tags change
+    // of its own, so this waits for the branch the tag was written on.
+    let event = sse_event(events, "tags_changed", Some("main")).await;
     assert_eq!(event["project"], "alpha");
-    assert_eq!(event["branch"], "main");
 }
 
-async fn sse_event(response: Response, kind: &str) -> Value {
+async fn sse_event(response: Response, kind: &str, branch: Option<&str>) -> Value {
     let read = async {
         let mut body = response.into_body();
         let mut buffer = String::new();
@@ -860,7 +861,7 @@ async fn sse_event(response: Response, kind: &str) -> Value {
                     continue;
                 };
                 let value: Value = serde_json::from_str(line.trim()).unwrap();
-                if value["kind"] == kind {
+                if value["kind"] == kind && branch.is_none_or(|branch| value["branch"] == branch) {
                     return value;
                 }
             }

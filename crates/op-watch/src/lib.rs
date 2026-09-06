@@ -20,6 +20,15 @@ pub enum Change {
     Config,
 }
 
+impl Change {
+    pub fn branch(&self) -> Option<&str> {
+        match self {
+            Change::Task { branch, .. } | Change::Tags { branch } => Some(branch),
+            Change::Config => None,
+        }
+    }
+}
+
 // A quiet window that coalesces the burst of fs events a single git op (commit, merge, checkout)
 // produces into one diff pass.
 const DEBOUNCE: Duration = Duration::from_millis(150);

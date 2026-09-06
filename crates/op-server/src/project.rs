@@ -177,6 +177,7 @@ pub struct Project {
     freshness: Mutex<Freshness>,
     health: Mutex<Health>,
     watcher: Mutex<Option<Watcher>>,
+    lane: Mutex<Option<crate::lane::Lane>>,
     root_misses: AtomicU32,
 }
 
@@ -200,6 +201,7 @@ impl Project {
             freshness: Mutex::new(Freshness::default()),
             health: Mutex::new(Health::default()),
             watcher: Mutex::new(None),
+            lane: Mutex::new(None),
             root_misses: AtomicU32::new(0),
         }
     }
@@ -224,6 +226,14 @@ impl Project {
 
     pub fn repo(&self) -> &Repo {
         &self.repo
+    }
+
+    pub fn with_lane<T>(&self, read: impl FnOnce(&crate::lane::Lane) -> T) -> Option<T> {
+        self.lane
+            .lock()
+            .expect("lane mutex poisoned")
+            .as_ref()
+            .map(read)
     }
 
     pub fn store(&self) -> &Store {
@@ -475,6 +485,13 @@ impl std::fmt::Debug for Project {
 // Blocking: `Watcher::start` scans every branch and hashes each worktree's task files. A watcher
 // that will not start stays a logged degradation — reads keep working, they just never skip a
 // rebuild, because `stale_at` counts an unwatched project as always dirty.
+pub fn start_lane(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
+    let mut held = project.lane.lock().expect("lane mutex poisoned");
+    if held.is_none() {
+        *held = crate::lane::Lane::start(project, events);
+    }
+}
+
 pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
     if project.is_watched() {
         return;
@@ -498,6 +515,11 @@ pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent
             watched.mark_dirty();
             // The watcher reports a task by number, the file layer's spelling; the key it renders as
             // is the daemon's to decide.
+            // The lane worktree is watched like any other, so an edit the CLI wrote straight
+            // into it reaches the committer here without the write path knowing about it.
+            if change.branch() == Some(op_git::LANE_BRANCH) {
+                watched.with_lane(crate::lane::Lane::edited);
+            }
             let event = match change {
                 Change::Task { number, branch } => ChangeEvent::TaskChanged {
                     project: watched.name(),

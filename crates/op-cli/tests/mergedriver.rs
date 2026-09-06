@@ -198,3 +198,16 @@ fn an_unchanged_side_keeps_the_other_verbatim() {
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert_eq!(run.merged, theirs);
 }
+
+#[test]
+fn an_unreadable_side_fails_rather_than_reporting_a_merge() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("nope.md");
+    let output = Command::new(env!("CARGO_BIN_EXE_openplan"))
+        .arg("merge-driver")
+        .args([&missing, &missing, &missing])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+}

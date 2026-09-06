@@ -35,6 +35,9 @@ struct Cli {
     /// Connect to this daemon URL instead of the machine daemon
     #[arg(long, global = true)]
     daemon: Option<String>,
+    /// Write to the rolling-updates lane rather than to this worktree's branch
+    #[arg(long, global = true)]
+    ambient: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -188,6 +191,10 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
+    /// Show what the rolling-updates lane holds that the trunk does not
+    Sync,
+    /// Fast-forward the trunk to the rolling-updates lane
+    Publish,
     /// Git merge driver for .plan task files (git passes %O %A %B %L %P %S %X %Y)
     MergeDriver {
         ancestor: String,
@@ -301,6 +308,9 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
     let daemon_url = cli.daemon.as_deref();
+    if cli.ambient {
+        plan::force_ambient();
+    }
     // Every command works in the current directory unless told otherwise.
     let root = cli.root.as_deref().unwrap_or_else(|| Path::new("."));
     match cli.command {
@@ -398,6 +408,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
+        Command::Sync => sync(root, daemon_url).map(|()| ExitCode::SUCCESS),
+        Command::Publish => publish(root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Server { command } => server(command, daemon_url),
         Command::MergeDriver {
             ancestor,
@@ -418,6 +430,39 @@ fn run(cli: Cli) -> Result<ExitCode> {
             label_theirs: label_theirs.as_deref(),
         })),
     }
+}
+
+fn sync(root: &Path, daemon_url: Option<&str>) -> Result<()> {
+    let status = Plan::resolve(root, daemon_url)?.sync()?;
+    for cell in &status.pending {
+        println!(
+            "{:<10} {:<10} {}",
+            cell.task.id,
+            kind_str(cell.kind),
+            cell.task.title
+        );
+    }
+    for path in &status.conflicted {
+        println!("conflict   {path}");
+    }
+    if !status.conflicted.is_empty() {
+        println!(
+            "\nresolve them in {}, then run `git rebase --continue` there",
+            status.worktree
+        );
+    } else if status.pending.is_empty() {
+        println!("nothing to publish");
+    }
+    Ok(())
+}
+
+fn publish(root: &Path, daemon_url: Option<&str>) -> Result<()> {
+    let published = Plan::resolve(root, daemon_url)?.publish()?;
+    println!(
+        "{} now holds the ambient edits at {}",
+        published.branch, published.commit
+    );
+    Ok(())
 }
 
 fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> {

@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use op_api::{
     ApiErrorBody, BranchComments, Comment, CreateComment, CreateTag, CreateTask, DaemonInfo,
-    Matrix, ProjectView, Refusal, RegisterProject, RenameProject, SearchHit, TagPatch, TagView,
-    TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject, SearchHit, SyncStatus,
+    TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -323,6 +323,15 @@ impl Client {
         Ok(created.id)
     }
 
+    pub fn sync(&self, base_url: &str, project: &str) -> Result<SyncStatus, ClientError> {
+        self.read(fresh(scoped(base_url, project, "sync")?))
+    }
+
+    pub fn publish(&self, base_url: &str, project: &str) -> Result<Published, ClientError> {
+        let url = scoped(base_url, project, "publish")?;
+        self.json(self.http.post(url))
+    }
+
     pub fn patch_task(
         &self,
         base_url: &str,
@@ -389,6 +398,14 @@ impl Client {
             .json()
             .map_err(|err| ClientError::Unreachable(err.to_string()))
     }
+}
+
+fn scoped(base_url: &str, project: &str, leaf: &str) -> Result<Url, ClientError> {
+    let mut url = projects_url(base_url, project)?;
+    url.path_segments_mut()
+        .map_err(|_| unusable(base_url))?
+        .push(leaf);
+    Ok(url)
 }
 
 fn send(request: RequestBuilder) -> Result<Response, ClientError> {
