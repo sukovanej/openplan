@@ -48,9 +48,7 @@ daemon was down.
 worktree, so the branch stays the default branch plus a linear stack of its
 own commits. The trigger is the default branch tip moving. Debounce on a quiet
 window of about 1 minute. A periodic sweep and a rebase at startup catch the
-events the watcher drops. `ChangeEvent::RefMoved` exists already
-(`crates/op-api/src/event.rs:20`) and nothing emits it. Emit it, and add the
-commit id.
+events the watcher drops.
 
 **Publish.** Only a person publishes. The daemon pushes the branch to the
 remote and opens a pull request. It never writes the default branch, here or on
@@ -162,8 +160,7 @@ The remote branch is one per person, so two people never write the same ref and
 force stays safe. The name is `openplan/rolling-updates-<who>`, where `<who>` is
 the local part of `user.email`, then `user.name`, then `local`. A `-` and not a
 `/` before the name, because git cannot hold `openplan/rolling-updates` and
-`openplan/rolling-updates/milan` at once. The git config key
-`openplan.rollingUpdatesBranch` replaces the whole name.
+`openplan/rolling-updates/milan` at once.
 
 `gh` is optional. When it is absent, or when it refuses, publish reports the
 GitHub compare URL that opens the request by hand. When the remote is not
@@ -174,16 +171,6 @@ Publish refuses when a conflict holds the branch, and when the branch holds
 nothing the default branch lacks.
 
 CLI `openplan publish` calls the endpoint and needs the daemon.
-
-## Backup
-
-Opt in with the git config key `openplan.backupRemote`, which holds a remote
-name or a URL. Unset means no backup. It pushes to the same per-person branch
-publish uses, so an open pull request keeps up with the worktree on its own.
-
-The push is best effort and stays off the critical path. A burst of tip moves
-coalesces into one push. A failure logs a warning, does not fail the edit, and
-retries on the next tip move. Push once at startup.
 
 ## Accepted costs
 
@@ -237,13 +224,9 @@ retries on the next tip move. Push once at startup.
   and leaves the default branch untouched on both sides; a conflict is refused;
   a branch that holds nothing new is refused; `openplan publish` with the daemon
   down errors clearly.
-- Naming: the remote branch carries the person; `openplan.rollingUpdatesBranch`
-  replaces it; the publish remote follows `branch.<default>.remote` and falls
-  back to `origin`; a GitHub remote URL in any of its spellings becomes a
-  compare URL and anything else becomes none.
-- Backup: with `openplan.backupRemote` set, a tip move pushes to a local bare
-  remote; unset pushes nothing; a burst coalesces to one push; an unreachable
-  remote logs a warning and does not fail the edit.
+- Naming: the remote branch carries the person; the publish remote follows
+  `branch.<default>.remote` and falls back to `origin`; a GitHub remote URL in
+  any of its spellings becomes a compare URL and anything else becomes none.
 
 ## Comments
 
@@ -266,3 +249,7 @@ retries on the next tip move. Push once at startup.
 ### 2026-09-06T18:19:07Z by Milan Suk via claude-code
 
 > Publish pushes a per-person branch and opens a pull request; it never writes the default branch. The earlier fast-forward-to-main design is gone, and with it `Repo::fast_forward`, `worktree_holding`, `NotFastForward`, and `WorktreeDirty`.
+
+### 2026-09-06T18:23:58Z by Milan Suk via claude-code
+
+> The backup push and its `openplan.backupRemote` key are gone. Publish pushes the same branch, so a second continuous force-push of it earned nothing. Two entries above still describe the write redirect and the backup push; neither exists.

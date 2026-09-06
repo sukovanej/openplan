@@ -776,10 +776,6 @@ impl Index {
         haystack.rest.contains(needle).then_some(SearchMatch::Text)
     }
 
-    pub fn default_branch(&self) -> Option<&str> {
-        self.default_branch.as_deref()
-    }
-
     pub fn current_branch(&self) -> Option<&str> {
         self.current_branch.as_deref()
     }

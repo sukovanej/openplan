@@ -146,16 +146,9 @@ impl Repo {
         Ok(out.lines().map(str::to_owned).collect())
     }
 
-    pub fn rolling_updates_rebase_abort(&self) -> Result<(), GitError> {
-        git(&self.rolling_updates_worktree(), &["rebase", "--abort"]).map(|_| ())
-    }
-
     // The remote gets one branch per person. `-` and not `/` before the name: git cannot hold
     // `openplan/rolling-updates` and `openplan/rolling-updates/milan` at once.
     pub fn rolling_updates_remote_branch(&self) -> String {
-        if let Some(name) = self.config_string("openplan.rollingUpdatesBranch") {
-            return name;
-        }
         let who = self
             .config_string("user.email")
             .and_then(|email| email.split('@').next().map(str::to_owned))

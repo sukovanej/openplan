@@ -45,7 +45,6 @@ impl Handle {
         }
         let (signals, inbox) = mpsc::channel();
         let worker = Worker {
-            backup: repo.config_string("openplan.backupRemote"),
             remote: repo.rolling_updates_remote(&default_branch),
             remote_branch: repo.rolling_updates_remote_branch(),
             repo: repo.clone(),
@@ -90,7 +89,6 @@ struct Worker {
     events: broadcast::Sender<ChangeEvent>,
     remote: String,
     remote_branch: String,
-    backup: Option<String>,
 }
 
 impl Worker {
@@ -130,7 +128,7 @@ impl Worker {
             return;
         }
         match self.repo.rolling_updates_commit(COMMIT_MESSAGE) {
-            Ok(true) => self.tip_moved(),
+            Ok(true) => self.announce(),
             Ok(false) => {}
             Err(err) => self.warn(&err.to_string()),
         }
@@ -141,7 +139,7 @@ impl Worker {
             return;
         }
         match self.repo.rolling_updates_rebase(&self.default_branch) {
-            Ok(Rebased::Clean) => self.tip_moved(),
+            Ok(Rebased::Clean) => self.announce(),
             Ok(Rebased::Blocked { paths }) => {
                 self.warn(&format!("a conflict in {paths:?} holds the branch"));
                 self.announce();
@@ -159,7 +157,7 @@ impl Worker {
             .rolling_updates_commit(COMMIT_MESSAGE)
             .map_err(text)?
         {
-            self.tip_moved();
+            self.announce();
         }
         let commit = self
             .repo
@@ -192,17 +190,6 @@ impl Worker {
     // commit there or replay onto it.
     fn rebase_stopped(&self) -> bool {
         self.repo.rolling_updates_rebase_in_progress()
-    }
-
-    fn tip_moved(&self) {
-        self.announce();
-        // Durability only, and never on the path of an edit. It goes to the same per-person branch
-        // publish uses, so an open pull request keeps up with the worktree on its own.
-        if let Some(remote) = &self.backup
-            && let Err(err) = self.repo.push_rolling_updates(remote, &self.remote_branch)
-        {
-            self.warn(&format!("backup push failed: {err}"));
-        }
     }
 
     fn announce(&self) {

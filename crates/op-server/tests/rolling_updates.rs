@@ -323,7 +323,10 @@ async fn a_conflict_a_person_resolved_stops_being_reported() {
     repo.rolling_updates_rebase("main").unwrap();
     assert!(!waiting(&state).await["conflict"].is_null());
 
-    repo.rolling_updates_rebase_abort().unwrap();
+    git(
+        &dir.path().join(".git/openplan-rolling-updates"),
+        &["rebase", "--abort"],
+    );
 
     assert!(waiting(&state).await["conflict"].is_null());
 }

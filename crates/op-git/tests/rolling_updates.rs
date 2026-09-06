@@ -203,7 +203,7 @@ fn the_same_section_on_both_sides_holds_the_rolling_updates_branch_at_the_confli
     let text = std::fs::read_to_string(rolling_task(&fixture)).unwrap();
     assert!(text.contains("<<<<<<<"), "{text}");
 
-    fixture.repo.rolling_updates_rebase_abort().unwrap();
+    git(&fixture.rolling, &["rebase", "--abort"]);
     assert!(!fixture.repo.rolling_updates_rebase_in_progress());
 }
 
@@ -232,19 +232,13 @@ fn remote_commit(remote: &Path, branch: &str) -> Option<String> {
 }
 
 #[test]
-fn the_remote_branch_carries_the_person_and_a_config_key_overrides_it() {
+fn the_remote_branch_carries_the_person() {
     let fixture = fixture();
 
     assert_eq!(
         fixture.repo.rolling_updates_remote_branch(),
         format!("{ROLLING_UPDATES_BRANCH}-t")
     );
-
-    git(
-        &fixture.root,
-        &["config", "openplan.rollingUpdatesBranch", "tasks/milan"],
-    );
-    assert_eq!(fixture.repo.rolling_updates_remote_branch(), "tasks/milan");
 }
 
 #[test]
