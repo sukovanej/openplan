@@ -1063,7 +1063,10 @@ async fn get_rolling_updates(
                 .filter(|cell| cell.branch == op_git::ROLLING_UPDATES_BRANCH)
                 .cloned()
                 .collect();
-            Ok(project.with_rolling_updates(|rolling| rolling.pending(pending)))
+            Ok(project.with_rolling_updates(|rolling| RollingUpdates {
+                pending,
+                conflict: rolling.conflict(),
+            }))
         })
         .await
         .map_err(join_error)?
@@ -1091,7 +1094,7 @@ async fn publish_rolling_updates(
 ) -> Result<Json<Published>, ApiError> {
     let project = project_of(&state, &project)?;
     let published = tokio::task::spawn_blocking(move || {
-        project.with_rolling_updates(rolling_updates::RollingUpdates::publish)
+        project.with_rolling_updates(rolling_updates::Handle::publish)
     })
     .await
     .map_err(join_error)?;

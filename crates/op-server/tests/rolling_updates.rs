@@ -248,3 +248,35 @@ async fn publish_refuses_while_a_conflict_holds_the_rolling_updates_branch() {
             .ends_with("openplan-rolling-updates")
     );
 }
+
+// The route reads the rebase state from git on every call. A person who finishes the rebase in the
+// worktree tells this process nothing, so a conflict the daemon remembered would never clear.
+#[tokio::test]
+async fn a_conflict_a_person_resolved_stops_being_reported() {
+    let (dir, state) = with_rolling_updates();
+    let repo = op_git::Repo::discover(dir.path()).unwrap();
+    let rolling = dir.path().join(".git/openplan-rolling-updates");
+    let task = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\n## Plan\n\nbase\n";
+    std::fs::write(dir.path().join(".plan/tasks/00001-t.md"), task).unwrap();
+    git(dir.path(), &["add", "-A"]);
+    git(dir.path(), &["commit", "-qm", "a task"]);
+    repo.rolling_updates_rebase("main").unwrap();
+    std::fs::write(
+        rolling.join(".plan/tasks/00001-t.md"),
+        task.replace("base", "rolling"),
+    )
+    .unwrap();
+    repo.rolling_updates_commit("an edit for later").unwrap();
+    std::fs::write(
+        dir.path().join(".plan/tasks/00001-t.md"),
+        task.replace("base", "main"),
+    )
+    .unwrap();
+    git(dir.path(), &["commit", "-qam", "an edit on main"]);
+    repo.rolling_updates_rebase("main").unwrap();
+    assert!(!waiting(&state).await["conflict"].is_null());
+
+    repo.rolling_updates_rebase_abort().unwrap();
+
+    assert!(waiting(&state).await["conflict"].is_null());
+}

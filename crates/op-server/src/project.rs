@@ -177,7 +177,7 @@ pub struct Project {
     freshness: Mutex<Freshness>,
     health: Mutex<Health>,
     watcher: Mutex<Option<Watcher>>,
-    rolling_updates: Mutex<Option<crate::rolling_updates::RollingUpdates>>,
+    rolling_updates: Mutex<Option<crate::rolling_updates::Handle>>,
     root_misses: AtomicU32,
 }
 
@@ -230,7 +230,7 @@ impl Project {
 
     pub fn with_rolling_updates<T>(
         &self,
-        read: impl FnOnce(&crate::rolling_updates::RollingUpdates) -> T,
+        read: impl FnOnce(&crate::rolling_updates::Handle) -> T,
     ) -> Option<T> {
         self.rolling_updates
             .lock()
@@ -485,16 +485,14 @@ impl std::fmt::Debug for Project {
     }
 }
 
-// Blocking: `Watcher::start` scans every branch and hashes each worktree's task files. A watcher
-// that will not start stays a logged degradation — reads keep working, they just never skip a
-// rebuild, because `stale_at` counts an unwatched project as always dirty.
+// Blocking: it shells out to git to make the branch, its worktree, and the attributes commit.
 pub fn start_rolling_updates(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
     let mut held = project
         .rolling_updates
         .lock()
         .expect("rolling-updates mutex poisoned");
     if held.is_none() {
-        *held = crate::rolling_updates::RollingUpdates::start(project, events);
+        *held = crate::rolling_updates::Handle::start(project, events);
     }
 }
 
@@ -524,7 +522,7 @@ pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent
             // The rolling-updates worktree is watched like any other, so an edit the CLI wrote straight
             // into it reaches the committer here without the write path knowing about it.
             if change.branch() == Some(op_git::ROLLING_UPDATES_BRANCH) {
-                watched.with_rolling_updates(crate::rolling_updates::RollingUpdates::edited);
+                watched.with_rolling_updates(crate::rolling_updates::Handle::edited);
             }
             let event = match change {
                 Change::Task { number, branch } => ChangeEvent::TaskChanged {
