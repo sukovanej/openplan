@@ -76,7 +76,7 @@ fn lane_task(fixture: &Fixture) -> PathBuf {
     fixture.lane.join(".plan/tasks/00001-t.md")
 }
 
-fn trunk_commit(fixture: &Fixture, contents: &str, path: &str, message: &str) {
+fn commit_on_main(fixture: &Fixture, contents: &str, path: &str, message: &str) {
     std::fs::write(fixture.root.join(path), contents).unwrap();
     git(&fixture.root, &["add", "-A"]);
     git(&fixture.root, &["commit", "-qm", message]);
@@ -123,7 +123,7 @@ fn a_code_only_move_of_main_replays_the_lane_and_materializes_no_code() {
     let fixture = fixture();
     std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
     fixture.repo.lane_commit("an ambient edit").unwrap();
-    trunk_commit(&fixture, "fn main() { }\n", "src/main.rs", "code");
+    commit_on_main(&fixture, "fn main() { }\n", "src/main.rs", "code");
 
     assert_eq!(fixture.repo.lane_rebase("main").unwrap(), Rebased::Clean);
 
@@ -137,17 +137,17 @@ fn edits_to_different_sections_replay_through_the_driver() {
     let fixture = fixture();
     std::fs::write(lane_task(&fixture), task("base alpha", "lane beta")).unwrap();
     fixture.repo.lane_commit("an ambient edit").unwrap();
-    trunk_commit(
+    commit_on_main(
         &fixture,
-        &task("trunk alpha", "base beta"),
+        &task("main alpha", "base beta"),
         ".plan/tasks/00001-t.md",
-        "trunk edit",
+        "an edit on main",
     );
 
     assert_eq!(fixture.repo.lane_rebase("main").unwrap(), Rebased::Clean);
 
     let text = std::fs::read_to_string(lane_task(&fixture)).unwrap();
-    assert!(text.contains("trunk alpha"), "{text}");
+    assert!(text.contains("main alpha"), "{text}");
     assert!(text.contains("lane beta"), "{text}");
 }
 
@@ -156,11 +156,11 @@ fn the_same_section_on_both_sides_holds_the_lane_at_the_conflict() {
     let fixture = fixture();
     std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
     fixture.repo.lane_commit("an ambient edit").unwrap();
-    trunk_commit(
+    commit_on_main(
         &fixture,
-        &task("trunk alpha", "base beta"),
+        &task("main alpha", "base beta"),
         ".plan/tasks/00001-t.md",
-        "trunk edit",
+        "an edit on main",
     );
 
     let blocked = fixture.repo.lane_rebase("main").unwrap();
@@ -180,7 +180,7 @@ fn the_same_section_on_both_sides_holds_the_lane_at_the_conflict() {
 }
 
 #[test]
-fn publish_fast_forwards_the_checked_out_trunk_and_moves_its_files() {
+fn publish_fast_forwards_the_checked_out_main_and_moves_its_files() {
     let fixture = fixture();
     std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
     fixture.repo.lane_commit("an ambient edit").unwrap();
@@ -195,7 +195,7 @@ fn publish_fast_forwards_the_checked_out_trunk_and_moves_its_files() {
 }
 
 #[test]
-fn publish_refuses_when_the_trunk_worktree_has_uncommitted_task_edits() {
+fn publish_refuses_when_main_has_uncommitted_task_edits() {
     let fixture = fixture();
     std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
     fixture.repo.lane_commit("an ambient edit").unwrap();
@@ -222,7 +222,7 @@ fn publish_refuses_a_target_that_is_not_a_fast_forward() {
     std::fs::write(lane_task(&fixture), task("lane alpha", "base beta")).unwrap();
     fixture.repo.lane_commit("an ambient edit").unwrap();
     let tip = fixture.repo.branch_commit(LANE_BRANCH).unwrap();
-    trunk_commit(&fixture, "fn main() { }\n", "src/main.rs", "code");
+    commit_on_main(&fixture, "fn main() { }\n", "src/main.rs", "code");
 
     let refused = fixture.repo.fast_forward("main", &tip);
 

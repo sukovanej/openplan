@@ -191,9 +191,9 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
-    /// Show what the rolling-updates lane holds that the trunk does not
+    /// Show what the rolling-updates lane holds that the default branch does not
     Sync,
-    /// Fast-forward the trunk to the rolling-updates lane
+    /// Fast-forward the default branch to the rolling-updates lane
     Publish,
     /// Git merge driver for .plan task files (git passes %O %A %B %L %P %S %X %Y)
     MergeDriver {

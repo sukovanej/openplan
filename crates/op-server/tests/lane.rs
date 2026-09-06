@@ -34,8 +34,8 @@ async fn body_json(response: Response) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-// A repository whose serve root sits on the trunk, with the lane started the way the daemon starts
-// it. The lane's worktree is what makes the ambient branch writable.
+// A repository whose serve root sits on the default branch, with the lane started the way the
+// daemon starts it. The lane's worktree is what makes the ambient branch writable.
 fn laned() -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -114,7 +114,7 @@ fn starting_the_daemon_gives_the_repository_a_lane() {
 }
 
 #[tokio::test]
-async fn a_write_that_would_land_on_the_trunk_lands_on_the_lane() {
+async fn a_write_that_would_land_on_the_default_branch_lands_on_the_lane() {
     let (dir, state) = laned();
 
     create(&state, "An ambient edit", "").await;
@@ -152,7 +152,7 @@ async fn a_write_that_names_another_branch_still_lands_there() {
 }
 
 #[tokio::test]
-async fn sync_reports_what_the_lane_holds_and_publish_hands_it_to_the_trunk() {
+async fn sync_reports_what_the_lane_holds_and_publish_hands_it_over() {
     let (dir, state) = laned();
     create(&state, "An ambient edit", "").await;
     let repo = op_git::Repo::discover(dir.path()).unwrap();
@@ -200,10 +200,10 @@ async fn publish_refuses_while_a_conflict_holds_the_lane() {
     repo.lane_commit("an ambient edit").unwrap();
     std::fs::write(
         dir.path().join(".plan/tasks/00001-t.md"),
-        task.replace("base", "trunk"),
+        task.replace("base", "main"),
     )
     .unwrap();
-    git(dir.path(), &["commit", "-qam", "a trunk edit"]);
+    git(dir.path(), &["commit", "-qam", "an edit on main"]);
     assert!(matches!(
         repo.lane_rebase("main").unwrap(),
         op_git::Rebased::Blocked { .. }
@@ -225,7 +225,7 @@ async fn publish_refuses_while_a_conflict_holds_the_lane() {
 }
 
 #[tokio::test]
-async fn a_read_scoped_to_the_trunk_sees_what_the_lane_holds() {
+async fn a_read_scoped_to_the_default_branch_sees_what_the_lane_holds() {
     let (dir, state) = laned();
     create(&state, "An ambient edit", "").await;
     op_git::Repo::discover(dir.path())

@@ -54,7 +54,8 @@ impl Repo {
         Ok(())
     }
 
-    // `.gitattributes` is a tracked file, so the lane commits it rather than the trunk worktree:
+    // `.gitattributes` is a tracked file, so the lane commits it rather than the
+    // default branch's worktree:
     // it reaches the default branch with the first publish.
     fn ensure_attributes(&self, worktree: &Path) -> Result<(), GitError> {
         let path = worktree.join(".gitattributes");

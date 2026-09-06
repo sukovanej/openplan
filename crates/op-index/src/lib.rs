@@ -677,10 +677,10 @@ impl Index {
             .map_or(0, |version| version.comment_count)
     }
 
-    // A read scoped to the trunk answers from the ambient lane for every task the lane holds. The
-    // lane is the trunk plus the edits nobody published yet, so leaving it out would hide an
-    // ambient edit from every read until publish. A task the lane does not carry still answers from
-    // the trunk, which stays the fresher of the two between rebases.
+    // A read scoped to the default branch answers from the ambient lane for every task the lane
+    // holds. The lane is that branch plus the edits nobody published yet, so leaving it out would
+    // hide an ambient edit from every read until publish. A task the lane does not carry still
+    // answers from the default branch, which stays the fresher of the two between rebases.
     fn overlay(&self, branch: &str) -> Option<&'static str> {
         let lane = op_git::LANE_BRANCH;
         (branch != lane

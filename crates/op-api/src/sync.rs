@@ -14,7 +14,7 @@ pub enum SyncState {
 }
 
 // What the rolling-updates lane holds and how it is faring. `pending` is the lane's diff against
-// the trunk, and `conflicted` names the files a stopped rebase left for a person to fix in
+// the default branch, and `conflicted` names the files a stopped rebase left for a person to fix in
 // `worktree`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SyncStatus {

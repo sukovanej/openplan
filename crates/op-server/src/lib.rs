@@ -1034,8 +1034,9 @@ async fn get_task_branches(
     Ok(Json(branches))
 }
 
-// What the rolling-updates lane holds that the trunk does not, plus the lane's own state. The
-// pending list is the matrix diff of the lane against the trunk, which the index already computes
+// What the rolling-updates lane holds that the default branch does not, plus the lane's own
+// state. The pending list is the matrix diff of the lane against the default branch, which the
+// index already computes
 // for every branch that is not the baseline.
 #[utoipa::path(
     get,
@@ -1073,15 +1074,16 @@ async fn get_sync(
 }
 
 // Manual, explicit, and a fast-forward only. It never merges and never forces, so the one way it
-// fails is a trunk that moved since the last rebase, which the next rebase settles on its own.
+// fails is a default branch that moved since the last rebase, which the next rebase settles on
+// its own.
 #[utoipa::path(
     post,
     path = "/api/projects/{project}/publish",
     params(("project" = String, Path, description = "Project name")),
     responses(
-        (status = 200, description = "The trunk now holds the ambient edits", body = Published),
+        (status = 200, description = "The default branch now holds the ambient edits", body = Published),
         (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 409, description = "The trunk moved, or a conflict holds the lane", body = ApiErrorBody),
+        (status = 409, description = "The default branch moved, or a conflict holds the lane", body = ApiErrorBody),
         (status = 503, description = "This repository has no rolling-updates lane", body = ApiErrorBody)
     )
 )]
@@ -1565,15 +1567,15 @@ fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiE
     Ok(ambient(index, branch, None))
 }
 
-// One rule for the whole write path: a write that would land on the trunk lands on the ambient lane
-// instead. It holds however the caller arrived at the trunk, so the CLI standing in the trunk
-// worktree and the UI acting on a task that lives only there both stop dirtying that checkout. A
+// One rule for the whole write path: a write that would land on the default branch lands on the
+// ambient lane instead. It holds however the caller arrived there, so the CLI standing in that
+// worktree and the UI acting on a task that lives only there both stop dirtying the checkout. A
 // write that resolves to any other branch is left exactly where it was going.
 fn ambient(index: &Index, branch: String, id: Option<&str>) -> String {
     let lane = op_git::LANE_BRANCH;
     // A repository the daemon could not give a lane keeps writing where it always did, so the rule
     // adds a target and never takes one away. Nor may it move a write to a task the lane does not
-    // carry: an uncommitted trunk file is on no branch the lane was built from, and redirecting it
+    // carry: a file left uncommitted there is on no branch the lane was built from, and redirecting it
     // would report the task as missing.
     let reachable = id.is_none_or(|id| index.holds(lane, id));
     if Some(branch.as_str()) == index.default_branch() && index.is_live(lane) && reachable {

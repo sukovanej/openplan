@@ -244,15 +244,15 @@ retries on the next tip move. Push once at startup.
 
 ### 2026-09-06T13:21:42Z by Milan Suk via claude-code
 
-> The trunk-move trigger polls the trunk ref every 5 seconds. It does not emit a new watcher event as the task says. Reading one ref is a file read, and the poll doubles as the sweep and the reconcile at startup, so op-watch needed no change.
+> The trigger for a moved default branch polls that ref every 5 seconds. It does not emit a new watcher event as the task says. Reading one ref is a file read, and the poll doubles as the sweep and the reconcile at startup, so op-watch needed no change.
 
 ### 2026-09-06T13:21:42Z by Milan Suk via claude-code
 
-> Reads needed a rule the task did not name: a read scoped to the trunk answers from the lane for every task the lane holds. Without it an ambient edit stayed invisible until publish, which made the lane unusable.
+> Reads needed a rule the task did not name: a read scoped to the default branch answers from the lane for every task the lane holds. Without it an ambient edit stayed invisible until publish, which made the lane unusable.
 
 ### 2026-09-06T13:21:42Z by Milan Suk via claude-code
 
-> The write redirect skips a task the lane does not carry. An uncommitted trunk file belongs to no branch the lane was built from, so redirecting it reported the task as missing.
+> The write redirect skips a task the lane does not carry. A file left uncommitted on the default branch belongs to no branch the lane was built from, so redirecting it reported the task as missing.
 
 ### 2026-09-06T13:21:42Z by Milan Suk via claude-code
 

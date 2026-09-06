@@ -143,7 +143,7 @@ fn create(project: &Project, title: &str) -> String {
     stdout(&out).trim().to_owned()
 }
 
-// A write that would land on the trunk lands on the rolling-updates lane, whose worktree the
+// A write that would land on the default branch lands on the rolling-updates lane, whose worktree the
 // daemon keeps inside the git directory. A test that asks where a plan file is means wherever the
 // write went, so it looks at the lane first and falls back to the worktree's own `.plan`.
 fn plan_dir(root: &Path) -> PathBuf {
@@ -1256,8 +1256,8 @@ fn list_filters_by_status_across_an_unreadable_task() {
     assert_eq!(tasks[0]["id"], good);
 }
 
-// A create from the trunk lands on the lane, so the trunk reaches the state these tests want by
-// publishing rather than by committing files its worktree does not hold.
+// A create from the default branch lands on the lane, so that branch reaches the state these
+// tests want by publishing rather than by committing files its worktree does not hold.
 fn publish(project: &Project) {
     let out = run(project, &["publish"]);
     assert!(
