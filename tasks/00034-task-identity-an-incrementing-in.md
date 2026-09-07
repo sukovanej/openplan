@@ -15,7 +15,7 @@ the id: the task is found by the number its file name starts with.
 ## Motivation
 
 Sequential ids (`42`) are shorter, memorable, orderable, and pleasant to type and
-reference (`[[./00042-publish-fast-forward-main-to-the.md]]`) versus opaque random hex.
+reference (`[[./00039-continuous-changes-accumulation-v.md]]`) versus opaque random hex.
 
 ## Allocation model (settled — single-machine)
 
