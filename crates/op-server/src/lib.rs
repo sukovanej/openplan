@@ -19,9 +19,9 @@ use axum::{
 use op_api::{
     Abbreviation, ApiErrorBody, Board, BranchComments, BranchState, ChangeEvent, ChangeKind,
     Comment, CreateComment, CreateTag, CreateTask, DaemonInfo, Flow, FlowCycles, FlowQuery,
-    KeyError, Matrix, ProjectView, Refusal, RegisterProject, RenameProject, SearchHit, Status,
-    TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTree, TaskTreeView,
-    TaskView,
+    KeyError, Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject,
+    RollingUpdates, SearchHit, Status, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem,
+    TaskPatch, TaskTree, TaskTreeView, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -40,7 +40,9 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
 mod project;
+pub mod pull_request;
 mod registry;
+pub mod rolling_updates;
 pub use project::{OpenError, Project, open_projects, serve_root};
 pub use registry::{
     ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError, canonical, same_path, unique_name,
@@ -133,6 +135,7 @@ impl AppState {
     pub fn start_watchers(&self) {
         for project in self.projects() {
             project::start_watch(&project, self.events.clone());
+            project::start_rolling_updates(&project, self.events.clone());
         }
     }
 
@@ -195,6 +198,7 @@ impl AppState {
         if created {
             tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
             project::start_watch(&project, self.events.clone());
+            project::start_rolling_updates(&project, self.events.clone());
         }
         Ok((project.view(), created))
     }
@@ -304,6 +308,8 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(delete_project, rename_project))
         .routes(routes!(list_tasks, create_task))
         .routes(routes!(get_matrix))
+        .routes(routes!(get_rolling_updates))
+        .routes(routes!(publish_rolling_updates))
         .routes(routes!(get_board))
         .routes(routes!(get_merged_board))
         .routes(routes!(get_flow))
@@ -692,6 +698,14 @@ impl ApiError {
         )
     }
 
+    fn conflict(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, message)
+    }
+
+    fn unavailable(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
+    }
+
     fn no_id_available(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, message)
     }
@@ -1019,6 +1033,80 @@ async fn get_task_branches(
     .await
     .map_err(join_error)??;
     Ok(Json(branches))
+}
+
+// What the rolling-updates branch has that the default branch does not, and what stopped it.
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/rolling-updates",
+    params(("project" = String, Path, description = "Project name")),
+    responses(
+        (status = 200, description = "The edits waiting to be published, and the conflict holding them", body = RollingUpdates),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
+    )
+)]
+async fn get_rolling_updates(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+) -> Result<Json<RollingUpdates>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let waiting =
+        tokio::task::spawn_blocking(move || -> Result<Option<RollingUpdates>, IndexError> {
+            // Rebuilt, not read: the branch's own commits and a publish both move refs without a write
+            // through this process, so a cached index would report a count that is already wrong.
+            let pending: Vec<op_api::MatrixCell> = project
+                .rebuilt_index()?
+                .matrix()
+                .cells
+                .iter()
+                .filter(|cell| cell.branch == op_git::ROLLING_UPDATES_BRANCH)
+                .cloned()
+                .collect();
+            Ok(project.with_rolling_updates(|rolling| RollingUpdates {
+                pending,
+                conflict: rolling.conflict(),
+            }))
+        })
+        .await
+        .map_err(join_error)?
+        .map_err(index_error)?;
+    waiting.map(Json).ok_or_else(no_rolling_updates)
+}
+
+// Manual and explicit. It pushes the branch to the remote and opens a pull request; it never
+// touches the default branch, here or on the remote. A person merges the request.
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project}/rolling-updates/publish",
+    params(("project" = String, Path, description = "Project name")),
+    responses(
+        (status = 200, description = "The remote now holds the branch, with a pull request when one could be opened", body = Published),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 409, description = "Nothing to publish, a conflict holds the branch, or the push failed", body = ApiErrorBody),
+        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
+    )
+)]
+async fn publish_rolling_updates(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+) -> Result<Json<Published>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let published = tokio::task::spawn_blocking(move || {
+        project.with_rolling_updates(rolling_updates::Handle::publish)
+    })
+    .await
+    .map_err(join_error)?;
+    match published {
+        None => Err(no_rolling_updates()),
+        Some(Err(why)) => Err(ApiError::conflict(why)),
+        Some(Ok(published)) => Ok(Json(published)),
+    }
+}
+
+fn no_rolling_updates() -> ApiError {
+    ApiError::unavailable("this repository has no rolling-updates branch")
 }
 
 // The list view's whole data set in one read: tasks grouped by status and flattened into
@@ -1473,13 +1561,13 @@ fn index_error(err: IndexError) -> ApiError {
 
 // The write target: the branch requested via `?branch=`, else the serve-root worktree's own branch.
 fn write_branch(index: &Index, requested: Option<String>) -> Result<String, ApiError> {
-    match requested {
-        Some(branch) => Ok(branch),
-        None => index
-            .current_branch()
-            .map(str::to_owned)
-            .ok_or_else(|| ApiError::bad_request("cannot determine the current worktree's branch")),
-    }
+    let branch = match requested {
+        Some(branch) => branch,
+        None => index.current_branch().map(str::to_owned).ok_or_else(|| {
+            ApiError::bad_request("cannot determine the current worktree's branch")
+        })?,
+    };
+    Ok(branch)
 }
 
 // The write target of a write about one task. A named branch is an instruction and is taken as one,
@@ -1492,13 +1580,13 @@ fn task_write_branch(
     id: &str,
     requested: Option<String>,
 ) -> Result<String, ApiError> {
-    match requested {
-        Some(branch) => Ok(branch),
-        None => index
-            .write_branch(id)
-            .map(str::to_owned)
-            .ok_or_else(|| ApiError::bad_request("cannot determine the current worktree's branch")),
-    }
+    let branch = match requested {
+        Some(branch) => branch,
+        None => index.write_branch(id).map(str::to_owned).ok_or_else(|| {
+            ApiError::bad_request("cannot determine the current worktree's branch")
+        })?,
+    };
+    Ok(branch)
 }
 
 // Callers hold the index mutex across this and release it before writing, so the store's flock wait

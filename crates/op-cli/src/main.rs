@@ -65,6 +65,9 @@ enum Command {
         /// Read the content from a file, or `-` for stdin
         #[arg(long = "body-file")]
         body_file: Option<String>,
+        /// Write to this branch instead of the one this worktree has checked out
+        #[arg(long)]
+        branch: Option<String>,
     },
     /// List tasks in the store
     List {
@@ -152,10 +155,16 @@ enum Command {
         id: String,
         field: String,
         value: String,
+        /// Write to this branch instead of the one this worktree has checked out
+        #[arg(long)]
+        branch: Option<String>,
     },
     /// Delete a task file
     Delete {
         id: String,
+        /// Write to this branch instead of the one this worktree has checked out
+        #[arg(long)]
+        branch: Option<String>,
         #[arg(long)]
         yes: bool,
     },
@@ -188,11 +197,24 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
-    /// Git merge driver for .plan/**.md (git passes %O %A %B)
+    /// Push the rolling-updates branch and open a pull request for it
+    Publish {
+        /// List what would be published instead of publishing it
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Git merge driver for .plan task files (git passes %O %A %B %L %P %S %X %Y)
     MergeDriver {
         ancestor: String,
         current: String,
         other: String,
+        marker_size: Option<usize>,
+        path: Option<String>,
+        // %S, the base label. The markers carry no base section, so nothing reads it; it holds the
+        // position git passes the two labels after it in.
+        label_base: Option<String>,
+        label_ours: Option<String>,
+        label_theirs: Option<String>,
     },
 }
 
@@ -316,6 +338,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             tags,
             body,
             body_file,
+            branch,
         } => {
             let body = resolve_body(body, body_file)?;
             let tags = tag::identities(tags)?;
@@ -330,6 +353,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     tags,
                     body,
                 },
+                branch,
             )
             .map(|()| ExitCode::SUCCESS)
         }
@@ -382,10 +406,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             before,
             after,
         } => move_task(root, daemon_url, &id, parent, before, after).map(|()| ExitCode::SUCCESS),
-        Command::Set { id, field, value } => {
-            set(root, daemon_url, &id, &field, &value).map(|()| ExitCode::SUCCESS)
-        }
-        Command::Delete { id, yes } => delete(root, daemon_url, &id, yes),
+        Command::Set {
+            id,
+            field,
+            value,
+            branch,
+        } => set(root, daemon_url, &id, &field, &value, branch).map(|()| ExitCode::SUCCESS),
+        Command::Delete { id, yes, branch } => delete(root, daemon_url, &id, yes, branch),
         Command::Branches => branches(root).map(|()| ExitCode::SUCCESS),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Lint { targets, json, fix } => lint(root, &targets, json, fix),
@@ -393,13 +420,67 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
+        Command::Publish { dry_run } => {
+            publish(root, daemon_url, dry_run).map(|()| ExitCode::SUCCESS)
+        }
         Command::Server { command } => server(command, daemon_url),
         Command::MergeDriver {
             ancestor,
             current,
             other,
-        } => Ok(mergedriver::run(&ancestor, &current, &other)),
+            marker_size,
+            path,
+            label_ours,
+            label_theirs,
+            ..
+        } => Ok(mergedriver::run(&mergedriver::Args {
+            ancestor: &ancestor,
+            current: &current,
+            other: &other,
+            marker_size: marker_size.unwrap_or(7),
+            path: path.as_deref(),
+            label_ours: label_ours.as_deref(),
+            label_theirs: label_theirs.as_deref(),
+        })),
     }
+}
+
+fn publish(root: &Path, daemon_url: Option<&str>, dry_run: bool) -> Result<()> {
+    let plan = Plan::resolve(root, daemon_url)?;
+    if !dry_run {
+        let published = plan.publish()?;
+        println!(
+            "pushed {} to {}/{}",
+            &published.commit[..7.min(published.commit.len())],
+            published.remote,
+            published.branch
+        );
+        if let Some(url) = &published.pull_request {
+            println!("{url}");
+        }
+        return Ok(());
+    }
+    let waiting = plan.rolling_updates()?;
+    for cell in &waiting.pending {
+        println!(
+            "{:<10} {:<10} {}",
+            cell.task.id,
+            kind_str(cell.kind),
+            cell.task.title
+        );
+    }
+    if let Some(conflict) = &waiting.conflict {
+        for path in &conflict.files {
+            println!("conflict   {path}");
+        }
+        println!(
+            "\nfix them in {}, then run `git rebase --continue` there",
+            conflict.worktree
+        );
+    } else if waiting.pending.is_empty() {
+        println!("nothing to publish");
+    }
+    Ok(())
 }
 
 fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> {
@@ -460,8 +541,15 @@ fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Optio
     }
 }
 
-fn create(root: &Path, daemon_url: Option<&str>, task: &CreateTask) -> Result<()> {
-    let id = Plan::resolve(root, daemon_url)?.create(task)?;
+fn create(
+    root: &Path,
+    daemon_url: Option<&str>,
+    task: &CreateTask,
+    branch: Option<String>,
+) -> Result<()> {
+    let id = Plan::resolve(root, daemon_url)?
+        .on_branch(branch)
+        .create(task)?;
     println!("{id}");
     Ok(())
 }
@@ -798,10 +886,19 @@ fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
 
-fn set(root: &Path, daemon_url: Option<&str>, id: &str, field: &str, value: &str) -> Result<()> {
+fn set(
+    root: &Path,
+    daemon_url: Option<&str>,
+    id: &str,
+    field: &str,
+    value: &str,
+    branch: Option<String>,
+) -> Result<()> {
     // Parse before reaching for the daemon so a typo fails without starting one.
     let patch = parse_field(field, value)?;
-    Plan::resolve(root, daemon_url)?.patch(id, &patch)?;
+    Plan::resolve(root, daemon_url)?
+        .on_branch(branch)
+        .patch(id, &patch)?;
     Ok(())
 }
 
@@ -846,8 +943,14 @@ fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
     }
 }
 
-fn delete(root: &Path, daemon_url: Option<&str>, id: &str, yes: bool) -> Result<ExitCode> {
-    let plan = Plan::resolve(root, daemon_url)?;
+fn delete(
+    root: &Path,
+    daemon_url: Option<&str>,
+    id: &str,
+    yes: bool,
+    branch: Option<String>,
+) -> Result<ExitCode> {
+    let plan = Plan::resolve(root, daemon_url)?.on_branch(branch);
     // The delete targets the caller's branch, so the prompt has to be about a task that branch
     // actually carries — a typo must refuse before it asks the reader to confirm one.
     plan.get(id, plan.branch())?;

@@ -60,11 +60,26 @@ impl Plan {
         &self.branch
     }
 
+    pub fn on_branch(mut self, branch: Option<String>) -> Self {
+        if let Some(branch) = branch {
+            self.branch = branch;
+        }
+        self
+    }
+
     pub fn list(&self, branch: &str) -> Result<Vec<TaskListItem>> {
         served(
             self.client
                 .tasks(&self.base_url, &self.project, Some(branch)),
         )
+    }
+
+    pub fn publish(&self) -> Result<op_api::Published> {
+        served(self.client.publish(&self.base_url, &self.project))
+    }
+
+    pub fn rolling_updates(&self) -> Result<op_api::RollingUpdates> {
+        served(self.client.rolling_updates(&self.base_url, &self.project))
     }
 
     pub fn matrix(&self) -> Result<Matrix> {

@@ -7,7 +7,7 @@ use op_api::{
     SearchHit, SearchMatch, TaskBranches, TaskChild, TaskDetail, TaskListItem, TaskRef,
     TaskSummary, TaskVersion, TaskView, WriteTarget, hit_cmp, id_cmp, list_item_cmp, updated_field,
 };
-use op_git::{ChangeTime, Repo, TaskChange, Worktree};
+use op_git::{ChangeTime, ROLLING_UPDATES_BRANCH, Repo, TaskChange, Worktree};
 use op_store::{Config, RawTask, Store, StoreError};
 use op_task::{Abbreviation, FieldError, FieldResult, Timestamp};
 
@@ -203,9 +203,17 @@ impl Index {
         // change lands here, and every store this hands back out must speak the new keys.
         let store = &store.with_abbreviation(self.abbreviation);
         let worktrees = repo.worktrees()?;
+        // The daemon stands in the rolling-updates worktree when there is one. A caller names no
+        // branch only when it has no worktree of its own — the UI — and its edits are what that
+        // branch is for. The CLI carries the branch of the worktree it runs in.
         self.current_branch = worktrees
             .iter()
-            .find(|worktree| same_path(&worktree.path, store.root()))
+            .find(|worktree| worktree.branch.as_deref() == Some(ROLLING_UPDATES_BRANCH))
+            .or_else(|| {
+                worktrees
+                    .iter()
+                    .find(|worktree| same_path(&worktree.path, store.root()))
+            })
             .and_then(|worktree| worktree.branch.clone());
         self.live = live_worktrees(&worktrees, store);
         self.live_times.clear();

@@ -104,7 +104,7 @@ DELETE /api/tags/:name      # ?force= overrides the reference check
   dangling names from every tags PATCH it sends — the tooltip is what makes that drop non-silent.
 - **Assign / unassign on a task:** add and remove chips, driven by the task PATCH route — the same
   uncommitted live-worktree write path status changes use today (no dependency on rolling-updates;
-  when [[./00045-route-ambient-writes-to-rolling-u.md]] reroutes ambient writes, tag writes ride
+  when [[./00109-rolling-updates-a-branch-with-a.md]] reroutes ambient writes, tag writes ride
   along).
 - **Tag-management surface:** create / recolor / rename / delete against `/api/tags`, with a palette
   picker (the fixed named set).

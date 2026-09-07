@@ -95,12 +95,12 @@ first, this second.
   `emit-change-events-for-all-branches-and-worktrees`.
 - Independent of `branch-aware-crud`.
 - **Cross-branch collision warning (from `23`).**
-  That design adds *ambient* edits routed to `refs/open-plan/rolling-updates`,
+  That design adds *ambient* edits routed to the branch `openplan/updates`,
   which are **unclaimed by nature** — a human's quick UI triage edit heartbeats no
   session and lands on a branch nobody has checked out. It creates a new collision
   axis presence doesn't cover today: a human ambient-edits task X while an agent is
   actively claimed on task X on a feature branch → the two collide *later*, at
-  rolling-updates' refresh/rebase, possibly long after. Consider whether presence
+  the rolling-updates rebase onto main, possibly long after. Consider whether presence
   should warn at *edit* time ("an agent is actively working this task on
   `feat/auth`; your edit may conflict when it merges") instead of letting the
   conflict surface silently at merge. Open: does presence stay branch-local as

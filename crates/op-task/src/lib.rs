@@ -101,6 +101,63 @@ pub struct Frontmatter {
     pub extra: serde_yaml::Mapping,
 }
 
+impl Frontmatter {
+    // `None` when the same field changed on both sides. A field carries no place to put conflict
+    // markers that still leaves YAML a reader can parse, so the caller falls back to the whole file.
+    pub fn merged(base: &Self, ours: &Self, theirs: &Self) -> Option<Self> {
+        let mut extra = serde_yaml::Mapping::new();
+        let keys: std::collections::BTreeSet<String> = [&base.extra, &ours.extra, &theirs.extra]
+            .into_iter()
+            .flat_map(|map| map.keys())
+            .filter_map(|key| key.as_str().map(str::to_owned))
+            .collect();
+        for key in keys {
+            let at = |map: &serde_yaml::Mapping| map.get(key.as_str()).cloned();
+            if let Some(value) = three_way(&at(&base.extra), &at(&ours.extra), &at(&theirs.extra))?
+            {
+                extra.insert(serde_yaml::Value::String(key), value);
+            }
+        }
+        Some(Frontmatter {
+            status: three_way(&base.status, &ours.status, &theirs.status)?,
+            created: three_way(&base.created, &ours.created, &theirs.created)?,
+            parent: three_way(&base.parent, &ours.parent, &theirs.parent)?,
+            rank: three_way(&base.rank, &ours.rank, &theirs.rank)?,
+            // A list of names is a set both sides may add to and remove from, so the two edits
+            // compose and nothing here can conflict.
+            dependencies: names(&base.dependencies, &ours.dependencies, &theirs.dependencies),
+            tags: names(&base.tags, &ours.tags, &theirs.tags),
+            extra,
+        })
+    }
+}
+
+// The side that changed, or `None` when both changed to different things.
+pub fn three_way<T: PartialEq + Clone>(base: &T, ours: &T, theirs: &T) -> Option<T> {
+    if ours == theirs || base == theirs {
+        Some(ours.clone())
+    } else if base == ours {
+        Some(theirs.clone())
+    } else {
+        None
+    }
+}
+
+fn names(base: &[String], ours: &[String], theirs: &[String]) -> Vec<String> {
+    let held = |list: &[String], name: &String| list.iter().any(|item| item == name);
+    let mut out: Vec<String> = base
+        .iter()
+        .filter(|name| held(ours, name) && held(theirs, name))
+        .cloned()
+        .collect();
+    for name in ours.iter().chain(theirs) {
+        if !held(base, name) && !held(&out, name) {
+            out.push(name.clone());
+        }
+    }
+    out
+}
+
 // The number the daemon allocated, in the one spelling that names a file: decimal, no sign,
 // no padding. `042`, `+7`, and a slug from before the scheme name no task.
 pub fn parse_id(id: &str) -> Option<u64> {
