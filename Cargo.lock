@@ -3805,6 +3805,7 @@ name = "openplan-gui"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "op-client",
  "op-daemon",
  "tauri",
  "tauri-build",

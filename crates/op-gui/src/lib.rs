@@ -1,11 +1,17 @@
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
+#[cfg(target_os = "windows")]
+use anyhow::bail;
 use anyhow::{Context, Result};
+#[cfg(not(target_os = "windows"))]
 use op_daemon::{Control, base_url, default_port};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager as _, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
+
+#[cfg(target_os = "windows")]
+use std::time::{Duration, Instant};
 
 const TITLE: &str = "OpenPlan";
 const WINDOW: &str = "main";
@@ -70,6 +76,7 @@ pub fn run() -> ExitCode {
 
 // The daemon serves the same SPA the browser gets, so the window moves to its URL instead of
 // loading assets of its own. One build of `web/packages/app` then answers both.
+#[cfg(not(target_os = "windows"))]
 fn daemon_url() -> Result<Url> {
     let control = Control::resolve().context("Cannot find the openplan home directory.")?;
     let info = control
@@ -79,6 +86,45 @@ fn daemon_url() -> Result<Url> {
     base_url(info.port)
         .parse()
         .context("The daemon reported a port that makes no URL.")
+}
+
+// WSL forwards its loopback listeners to the Windows host. The Windows bundle has no daemon of
+// its own: the CLI in WSL owns both its state and lifecycle, while this window only waits for the
+// daemon the user already started there.
+#[cfg(target_os = "windows")]
+fn daemon_url() -> Result<Url> {
+    let port = windows_daemon_port()?;
+    let base = format!("http://127.0.0.1:{port}");
+    let client = op_client::Client::default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+
+    while client.health(&base).is_none() {
+        if Instant::now() >= deadline {
+            bail!(
+                "Cannot reach the openplan daemon at {base}. Start it in WSL with `openplan server start`; \
+                 Windows needs WSL localhost forwarding enabled."
+            );
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    base.parse()
+        .context("The Windows-to-WSL daemon URL is not valid.")
+}
+
+#[cfg(target_os = "windows")]
+fn windows_daemon_port() -> Result<u16> {
+    match std::env::var("OPENPLAN_PORT") {
+        Ok(port) => match port.parse::<u16>() {
+            Ok(0) => bail!(
+                "OPENPLAN_PORT=0 chooses a random port in WSL, which the Windows GUI cannot discover. \
+                 Start the daemon on a fixed port instead."
+            ),
+            Ok(port) => Ok(port),
+            Err(_) => Ok(7373),
+        },
+        Err(_) => Ok(7373),
+    }
 }
 
 fn hand_over(window: &WebviewWindow, handover: &mut Handover) {

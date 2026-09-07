@@ -21,9 +21,16 @@ tauri-build.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-op-daemon.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
+
+# The native Windows window attaches to the daemon in WSL over localhost.  It must not link the
+# Unix-only daemon controller, which would both fail to compile and try to manage Windows processes.
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+op-daemon.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+op-client.workspace = true
 
 [lints]
 workspace = true

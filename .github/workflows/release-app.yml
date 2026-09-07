@@ -33,6 +33,9 @@ jobs:
           - runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             bundles: deb
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
     runs-on: ${{ matrix.runner }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,6 +81,8 @@ jobs:
           shopt -s nullglob
           files=(target/release/bundle/*/*.dmg
                  target/release/bundle/*/*.deb
-                 target/release/bundle/*/*.AppImage)
+                 target/release/bundle/*/*.AppImage
+                 target/release/bundle/*/*.msi
+                 target/release/bundle/*/*-setup.exe)
           test ${#files[@]} -gt 0 || { echo "the bundler wrote no artifact" >&2; exit 1; }
           gh release upload "$TAG" "${files[@]}" --clobber
