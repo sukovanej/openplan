@@ -26,6 +26,10 @@ export const ChangeEvent = Schema.Union([
     kind: Schema.Literal("projects_changed"),
   }),
   Schema.Struct({
+    kind: Schema.Literal("rolling_updates_changed"),
+    project: Schema.String,
+  }),
+  Schema.Struct({
     kind: Schema.Literal("resync"),
   }),
   Schema.Struct({
@@ -38,6 +42,7 @@ export interface Invalidator {
   readonly refreshProjects: () => void
   readonly refreshList: (project: string) => void
   readonly refreshTask: (project: string, id: string) => void
+  readonly refreshRollingUpdates: (project: string) => void
   // Everything on screen that a change in `project` can have changed, or — with no project — every
   // read there is.
   readonly refreshVisible: (project?: string) => void
@@ -48,6 +53,7 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
     case "task_changed": {
       inv.refreshTask(event.project, event.id)
       inv.refreshList(event.project)
+      inv.refreshRollingUpdates(event.project)
       return
     }
     // A ref move (e.g. `openplan set`) carries no task id, so refetch everything on screen —
@@ -72,6 +78,12 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
     case "projects_changed": {
       inv.refreshProjects()
       inv.refreshVisible()
+      return
+    }
+    // The branch committed, rebased, published, or stopped at a conflict. All four change what the
+    // header control reads, and none of them changes a task the aggregation returns.
+    case "rolling_updates_changed": {
+      inv.refreshRollingUpdates(event.project)
       return
     }
     // The stream dropped events and cannot say which, so nothing on screen can be trusted.

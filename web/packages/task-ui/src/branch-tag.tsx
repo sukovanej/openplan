@@ -11,23 +11,30 @@ const kindColor: Record<ChangeKind, string> = {
   deleted: "border-change-deleted text-change-deleted line-through",
 }
 
+// A person never checks the rolling-updates branch out and never types its name, so the tag says
+// what the branch is instead of what it is called.
+export const ROLLING_UPDATES_LABEL = "Rolling updates"
+
 // The single branch tag used everywhere a branch is shown.
 export function BranchTag({
   branch,
   headline = false,
   selected = false,
+  rollingUpdates,
   onSelect,
 }: {
   branch: BranchState
   headline?: boolean
   selected?: boolean
+  rollingUpdates?: string | null
   onSelect?: () => void
 }) {
+  const rolling = branch.branch === rollingUpdates
   return (
-    <Tooltip content={branchTitle(branch, headline)}>
+    <Tooltip content={branchTitle(branch, headline, rolling)}>
       <Tag className={kindColor[branch.kind]} dashed={branch.dirty} selected={selected} onSelect={onSelect}>
         {headline && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />}
-        <span>{branch.branch}</span>
+        <span>{rolling ? ROLLING_UPDATES_LABEL : branch.branch}</span>
       </Tag>
     </Tooltip>
   )
@@ -35,10 +42,11 @@ export function BranchTag({
 
 const branchStatusText = (status: BranchState["status"]): string => fieldValue(status) ?? "unreadable"
 
-function branchTitle(branch: BranchState, headline: boolean): string {
+function branchTitle(branch: BranchState, headline: boolean, rolling: boolean): string {
   const notes: Array<string> = [branchStatusText(branch.status)]
   if (headline) notes.push("latest")
   if (branch.kind !== "base") notes.push(branch.kind)
   if (branch.dirty) notes.push("uncommitted")
+  if (rolling) notes.push("unpublished")
   return `${branch.branch}: ${notes.join(", ")}`
 }

@@ -11,6 +11,8 @@ pub struct ProjectView {
     pub git_common_dir: String,
     pub abbreviation: String,
     pub status: ProjectStatus,
+    // `None` where the repository cannot host the branch, which is also where publishing is absent.
+    pub rolling_updates_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

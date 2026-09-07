@@ -18,6 +18,7 @@ export const flowsKey = [...mergedKey, "flow"] as const
 export const flowKey = (query: string) => [...flowsKey, query] as const
 export const boardKey = (project: string) => [...projectKey(project), "board"] as const
 export const tasksKey = (project: string) => [...projectKey(project), "tasks"] as const
+export const rollingUpdatesKey = (project: string) => [...projectKey(project), "rolling-updates"] as const
 export const tagsKey = (project: string, branch?: string) =>
   branch === undefined
     ? ([...projectKey(project), "tags"] as const)
@@ -64,6 +65,7 @@ export const queryInvalidator: Invalidator = {
     invalidate(flowsKey)
   },
   refreshTask: (project, id) => invalidate(taskKey(project, id)),
+  refreshRollingUpdates: (project) => invalidate(rollingUpdatesKey(project)),
   refreshVisible: (project) => {
     if (project === undefined) {
       invalidate(["project"])

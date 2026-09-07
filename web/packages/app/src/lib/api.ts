@@ -293,6 +293,32 @@ export const patchTask = (
     }),
   )
 
+// The edits waiting on the rolling-updates branch, and the conflict holding them.
+export const getRollingUpdates = (
+  project: string,
+): Effect.Effect<Api.RollingUpdates, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.getRollingUpdates(project, undefined)).pipe(
+    Effect.catchTags({
+      GetRollingUpdates404: refusal,
+      GetRollingUpdates500: refusal,
+      GetRollingUpdates503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// Pushes the branch and opens a pull request. It never writes the default branch, so a person still
+// merges. The 409 carries the reason a person acts on: a conflict holds the branch, or it holds
+// nothing the default branch lacks.
+export const publishRollingUpdates = (project: string): Effect.Effect<Api.Published, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.publishRollingUpdates(project, undefined)).pipe(
+    Effect.catchTags({
+      PublishRollingUpdates404: refusal,
+      PublishRollingUpdates409: refusal,
+      PublishRollingUpdates503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
 // `branch` puts the new task on one branch's worktree. A subtask names the branch its parent lives
 // on, so the pair stays together instead of parting on whatever the daemon's root has checked out.
 export const createTask = (

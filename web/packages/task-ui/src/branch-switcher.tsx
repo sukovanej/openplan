@@ -10,11 +10,13 @@ export function BranchSwitcher({
   branches,
   selected,
   headline,
+  rollingUpdates,
   onSelect,
 }: {
   branches: ReadonlyArray<BranchState>
   selected: string | undefined
   headline: string
+  rollingUpdates?: string | null
   onSelect: (branch: string | undefined) => void
 }) {
   if (branches.length < 2) return null
@@ -29,6 +31,7 @@ export function BranchSwitcher({
             branch={branch}
             headline={isHeadline}
             selected={active === branch.branch}
+            rollingUpdates={rollingUpdates}
             onSelect={() => onSelect(isHeadline ? undefined : branch.branch)}
           />
         )

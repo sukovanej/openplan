@@ -9,6 +9,7 @@ import { Flash } from "./components/flash"
 import { HelpOverlay } from "./components/help-overlay"
 import { MutationError } from "./components/mutation-error"
 import { ProjectSwitcher } from "./components/project-switcher"
+import { RollingUpdates } from "./components/rolling-updates"
 import { ThemeToggle } from "./components/theme-toggle"
 import { useKeyboard } from "./lib/keys"
 
@@ -30,6 +31,7 @@ export function App() {
             <Waypoints className="size-3.5" />
             Flow
           </Link>
+          <RollingUpdates />
           <ThemeToggle />
         </div>
       </header>

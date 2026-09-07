@@ -1,6 +1,7 @@
 export { BranchBadges } from "./branch-badges"
 export { BranchSwitcher } from "./branch-switcher"
-export { BranchTag } from "./branch-tag"
+export { BranchTag, ROLLING_UPDATES_LABEL } from "./branch-tag"
+export { ChangeMark } from "./change-mark"
 export { CommentThread } from "./comment-thread"
 export {
   createdOf,

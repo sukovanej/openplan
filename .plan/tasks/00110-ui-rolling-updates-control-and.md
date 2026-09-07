@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: in_review
 created: 2026-09-06T12:31:44Z
 parent: ./00039-continuous-changes-accumulation-v.md
 dependencies:
@@ -76,3 +76,17 @@ headless Chrome over CDP, per the repository's web-UI recipe.
   refetch.
 - `BranchSwitcher` shows the rolling-updates branch as "Rolling updates" and marks the version
   unpublished.
+
+## Comments
+
+### 2026-09-07T14:47:20Z by Milan Suk via claude-code
+
+> The task says "Publish N to main", `POST /api/publish`, and a non-fast-forward refusal. OPP-109 replaced that flow: publish calls `POST /api/projects/{project}/rolling-updates/publish`, pushes a per-person branch, and opens a pull request. The button says "Publish N changes", and the refusals it shows are the real 409s.
+
+### 2026-09-07T14:47:20Z by Milan Suk via claude-code
+
+> The control covers every project that has the branch, not the current one. The header is global and the app opens on the merged board, where no project is current. The popover names the project only when more than one has something waiting.
+
+### 2026-09-07T14:47:20Z by Milan Suk via claude-code
+
+> `ProjectView` gained `rolling_updates_branch`. The UI needs the branch name for the switcher label, and the task forbids a literal.
