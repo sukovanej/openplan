@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-09-06T12:31:28Z
 parent: ./00039-continuous-changes-accumulation-v.md
 tags:
