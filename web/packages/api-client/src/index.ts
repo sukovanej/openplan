@@ -160,7 +160,6 @@ export type ProjectView = {
   readonly abbreviation: string
   readonly git_common_dir: string
   readonly name: string
-  readonly rolling_updates_branch?: string | null
   readonly root: string
   readonly status: ProjectStatus
 }
@@ -168,7 +167,6 @@ export const ProjectView = Schema.Struct({
   abbreviation: Schema.String,
   git_common_dir: Schema.String,
   name: Schema.String,
-  rolling_updates_branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   root: Schema.String,
   status: ProjectStatus,
 })

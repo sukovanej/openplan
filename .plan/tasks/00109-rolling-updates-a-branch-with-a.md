@@ -107,8 +107,7 @@ daemon stands in the rolling-updates worktree: an unnamed create lands on that
 branch, an unnamed edit goes where the task lives (that branch for a task the
 default branch carries, a feature branch for a task only it carries), and an
 unnamed read is the default branch with the pending edits on top. So no client
-spells the branch name. `ProjectView.rolling_updates_branch` carries it for a
-client that must label it.
+spells the branch name.
 
 The daemon makes no branch when the default branch does not carry the store,
 because a worktree cut from it could take no write. Unnamed requests then use
