@@ -34,6 +34,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `openplan open` now opens the web UI in the Windows default browser when run
+  from WSL, including minimal distributions without `xdg-open`.
 - The desktop app carried no bundle signature, only the ad-hoc signature the
   linker puts on every arm64 binary. macOS called a downloaded copy "damaged"
   and offered only the Trash. Tauri now signs the app before it makes the dmg,

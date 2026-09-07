@@ -104,9 +104,50 @@ fn launchers(url: &str) -> Vec<Launcher> {
         .map(|entry| launcher(entry, url))
         .collect();
     if listed.is_empty() {
-        return vec![launcher(DEFAULT_LAUNCHER, url)];
+        return vec![default_launcher(url)];
     }
     listed
+}
+
+#[cfg(target_os = "linux")]
+fn default_launcher(url: &str) -> Launcher {
+    linux_launcher(is_wsl(), url)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn default_launcher(url: &str) -> Launcher {
+    launcher(DEFAULT_LAUNCHER, url)
+}
+
+#[cfg(target_os = "linux")]
+fn wsl_launcher(url: &str) -> Launcher {
+    // `start` is a command built into cmd.exe. Its first quoted argument is the window title, so
+    // supply an empty one before the URL; otherwise a quoted URL would be treated as that title.
+    Launcher {
+        program: "cmd.exe".to_owned(),
+        args: vec![
+            "/C".to_owned(),
+            "start".to_owned(),
+            String::new(),
+            url.to_owned(),
+        ],
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_launcher(is_wsl: bool, url: &str) -> Launcher {
+    if is_wsl {
+        // WSL can invoke Windows executables directly, while minimal distributions often omit
+        // xdg-open. `cmd.exe` hands the URL to the Windows default browser.
+        wsl_launcher(url)
+    } else {
+        launcher(DEFAULT_LAUNCHER, url)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn is_wsl() -> bool {
+    std::env::var_os("WSL_INTEROP").is_some() || std::env::var_os("WSL_DISTRO_NAME").is_some()
 }
 
 fn launcher(entry: &str, url: &str) -> Launcher {
@@ -119,4 +160,17 @@ fn launcher(entry: &str, url: &str) -> Launcher {
         args.push(url.to_owned());
     }
     Launcher { program, args }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wsl_launcher_uses_the_windows_command_processor() {
+        let launcher = linux_launcher(true, "http://127.0.0.1:4040/");
+        assert_eq!(launcher.program, "cmd.exe");
+        assert_eq!(launcher.args, ["/C", "start", "", "http://127.0.0.1:4040/"]);
+    }
 }
