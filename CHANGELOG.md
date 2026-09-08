@@ -36,6 +36,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `openplan open` now opens the web UI in the Windows default browser when run
   from WSL, including minimal distributions without `xdg-open`.
+- `OPENPLAN_PORT` with a value that is not a port number now stops the command.
+  The CLI, the daemon, and the Windows app used port 7373 instead.
 - The desktop app carried no bundle signature, only the ad-hoc signature the
   linker puts on every arm64 binary. macOS called a downloaded copy "damaged"
   and offered only the Trash. Tauri now signs the app before it makes the dmg,

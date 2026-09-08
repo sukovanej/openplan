@@ -64,6 +64,7 @@ jobs:
       # `op-server` embeds `web/packages/app/dist` at compile time. Without this build the app
       # links, but it serves no web UI. The release must stop instead.
       - name: Build the web SPA
+        shell: bash
         run: |
           cd web
           pnpm install --frozen-lockfile

@@ -1,23 +1,11 @@
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
 
-use anyhow::{Context as _, Result, anyhow, bail};
+use anyhow::Result;
 use op_client::Client;
 use op_git::Repo;
 
 use crate::daemon::daemon_base_url;
 use crate::plan::resolve_project;
-
-#[cfg(target_os = "macos")]
-const DEFAULT_LAUNCHER: &str = "open";
-#[cfg(not(target_os = "macos"))]
-const DEFAULT_LAUNCHER: &str = "xdg-open";
-
-// A launcher that is the browser itself does not exit until the user closes the window, so past
-// this point the command stops waiting and reports success. A launcher that cannot run, or that
-// refuses the URL, answers well inside it.
-const LAUNCH_DEADLINE: Duration = Duration::from_secs(1);
 
 pub fn run(root: &Path, daemon_url: Option<&str>) -> Result<()> {
     let client = Client::default();
@@ -34,143 +22,7 @@ pub fn run(root: &Path, daemon_url: Option<&str>) -> Result<()> {
         resolve_project(&client, &base_url, &repo, root, true)?;
     }
     let url = format!("{base_url}/");
-    launch(&url)?;
+    op_browser::open(&url)?;
     println!("opened {url}");
     Ok(())
-}
-
-struct Launcher {
-    program: String,
-    args: Vec<String>,
-}
-
-fn launch(url: &str) -> Result<()> {
-    let mut failure = anyhow!("no command to open {url}; set $BROWSER");
-    for launcher in launchers(url) {
-        match launcher.spawn() {
-            Ok(child) => return confirm(child, &launcher.program, url),
-            // $BROWSER lists candidates in order of preference, so a name this machine does not
-            // have is a reason to try the next one rather than to stop.
-            Err(err) => {
-                failure = anyhow::Error::new(err).context(format!(
-                    "cannot run {}; set $BROWSER to a command that opens a URL",
-                    launcher.program
-                ));
-            }
-        }
-    }
-    Err(failure)
-}
-
-impl Launcher {
-    fn spawn(&self) -> std::io::Result<Child> {
-        Command::new(&self.program)
-            .args(&self.args)
-            .stdin(Stdio::null())
-            // A browser that keeps running holds whatever streams it inherits, so it would write
-            // into this command's own output long after the command returned — and hold open the
-            // pipes of any caller that captures that output.
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-    }
-}
-
-fn confirm(mut child: Child, program: &str, url: &str) -> Result<()> {
-    let deadline = Instant::now() + LAUNCH_DEADLINE;
-    loop {
-        match child
-            .try_wait()
-            .context("waiting for the browser launcher")?
-        {
-            Some(status) if status.success() => return Ok(()),
-            Some(status) => bail!(
-                "{program} did not open {url} ({status}); set $BROWSER to a command that opens a \
-                 URL"
-            ),
-            None if Instant::now() >= deadline => return Ok(()),
-            None => std::thread::sleep(Duration::from_millis(20)),
-        }
-    }
-}
-
-// $BROWSER holds a colon-separated list of commands, each tried in turn, and each placing the URL
-// where it spells `%s` or else at the end.
-fn launchers(url: &str) -> Vec<Launcher> {
-    let browser = std::env::var("BROWSER").unwrap_or_default();
-    let listed: Vec<Launcher> = browser
-        .split(':')
-        .filter(|entry| !entry.trim().is_empty())
-        .map(|entry| launcher(entry, url))
-        .collect();
-    if listed.is_empty() {
-        return vec![default_launcher(url)];
-    }
-    listed
-}
-
-#[cfg(target_os = "linux")]
-fn default_launcher(url: &str) -> Launcher {
-    linux_launcher(is_wsl(), url)
-}
-
-#[cfg(not(target_os = "linux"))]
-fn default_launcher(url: &str) -> Launcher {
-    launcher(DEFAULT_LAUNCHER, url)
-}
-
-#[cfg(target_os = "linux")]
-fn wsl_launcher(url: &str) -> Launcher {
-    // `start` is a command built into cmd.exe. Its first quoted argument is the window title, so
-    // supply an empty one before the URL; otherwise a quoted URL would be treated as that title.
-    Launcher {
-        program: "cmd.exe".to_owned(),
-        args: vec![
-            "/C".to_owned(),
-            "start".to_owned(),
-            String::new(),
-            url.to_owned(),
-        ],
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn linux_launcher(is_wsl: bool, url: &str) -> Launcher {
-    if is_wsl {
-        // WSL can invoke Windows executables directly, while minimal distributions often omit
-        // xdg-open. `cmd.exe` hands the URL to the Windows default browser.
-        wsl_launcher(url)
-    } else {
-        launcher(DEFAULT_LAUNCHER, url)
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn is_wsl() -> bool {
-    std::env::var_os("WSL_INTEROP").is_some() || std::env::var_os("WSL_DISTRO_NAME").is_some()
-}
-
-fn launcher(entry: &str, url: &str) -> Launcher {
-    let words: Vec<&str> = entry.split_whitespace().collect();
-    let spells_url = words.iter().any(|word| word.contains("%s"));
-    let mut placed = words.iter().map(|word| word.replace("%s", url));
-    let program = placed.next().unwrap_or_else(|| DEFAULT_LAUNCHER.to_owned());
-    let mut args: Vec<String> = placed.collect();
-    if !spells_url {
-        args.push(url.to_owned());
-    }
-    Launcher { program, args }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn wsl_launcher_uses_the_windows_command_processor() {
-        let launcher = linux_launcher(true, "http://127.0.0.1:4040/");
-        assert_eq!(launcher.program, "cmd.exe");
-        assert_eq!(launcher.args, ["/C", "start", "", "http://127.0.0.1:4040/"]);
-    }
 }

@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 #[cfg(target_os = "windows")]
 use anyhow::bail;
 use anyhow::{Context, Result};
+#[cfg(target_os = "windows")]
+use op_client::{base_url, default_port};
 #[cfg(not(target_os = "windows"))]
 use op_daemon::{Control, base_url, default_port};
 use tauri::webview::PageLoadEvent;
@@ -80,7 +82,7 @@ pub fn run() -> ExitCode {
 fn daemon_url() -> Result<Url> {
     let control = Control::resolve().context("Cannot find the openplan home directory.")?;
     let info = control
-        .ensure(default_port())
+        .ensure(default_port()?)
         .context("Cannot start the openplan daemon.")?
         .into_info();
     base_url(info.port)
@@ -93,8 +95,7 @@ fn daemon_url() -> Result<Url> {
 // daemon the user already started there.
 #[cfg(target_os = "windows")]
 fn daemon_url() -> Result<Url> {
-    let port = windows_daemon_port()?;
-    let base = format!("http://127.0.0.1:{port}");
+    let base = base_url(windows_daemon_port()?);
     let client = op_client::Client::default();
     let deadline = Instant::now() + Duration::from_secs(5);
 
@@ -114,17 +115,14 @@ fn daemon_url() -> Result<Url> {
 
 #[cfg(target_os = "windows")]
 fn windows_daemon_port() -> Result<u16> {
-    match std::env::var("OPENPLAN_PORT") {
-        Ok(port) => match port.parse::<u16>() {
-            Ok(0) => bail!(
-                "OPENPLAN_PORT=0 chooses a random port in WSL, which the Windows GUI cannot discover. \
-                 Start the daemon on a fixed port instead."
-            ),
-            Ok(port) => Ok(port),
-            Err(_) => Ok(7373),
-        },
-        Err(_) => Ok(7373),
+    let port = default_port()?;
+    if port == 0 {
+        bail!(
+            "OPENPLAN_PORT=0 chooses a random port in WSL, which the Windows GUI cannot discover. \
+             Start the daemon on a fixed port instead."
+        );
     }
+    Ok(port)
 }
 
 fn hand_over(window: &WebviewWindow, handover: &mut Handover) {

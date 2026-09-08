@@ -283,7 +283,7 @@ enum ProjectCommand {
 enum ServerCommand {
     /// Start the daemon detached; a no-op if one is already running
     Start {
-        #[arg(long, default_value_t = op_daemon::default_port())]
+        #[arg(long, env = "OPENPLAN_PORT", default_value_t = op_daemon::DEFAULT_PORT)]
         port: u16,
         /// Run in this terminal instead of detaching
         #[arg(long)]
@@ -293,7 +293,7 @@ enum ServerCommand {
     Stop,
     /// Stop the running daemon, then start a fresh one
     Restart {
-        #[arg(long, default_value_t = op_daemon::default_port())]
+        #[arg(long, env = "OPENPLAN_PORT", default_value_t = op_daemon::DEFAULT_PORT)]
         port: u16,
     },
     /// Report daemon status without starting it

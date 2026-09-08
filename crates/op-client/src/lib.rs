@@ -11,6 +11,26 @@ use reqwest::blocking::{RequestBuilder, Response};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
+pub const DEFAULT_PORT: u16 = 7373;
+
+#[derive(Debug, thiserror::Error)]
+#[error("OPENPLAN_PORT={0} is not a port number")]
+pub struct InvalidPort(String);
+
+// The port the daemon binds unless told otherwise. A write brings the daemon up itself, with no
+// `--port` to carry, so the override has to be reachable from the environment too. A value that is
+// not a port number gets no default: 7373 would attach the caller to a daemon it never named.
+pub fn default_port() -> Result<u16, InvalidPort> {
+    match std::env::var("OPENPLAN_PORT") {
+        Ok(value) => value.parse().map_err(|_| InvalidPort(value)),
+        Err(_) => Ok(DEFAULT_PORT),
+    }
+}
+
+pub fn base_url(port: u16) -> String {
+    format!("http://127.0.0.1:{port}")
+}
+
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 // A read has no local answer to fall back on, and it asks the daemon to walk every branch before
