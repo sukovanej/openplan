@@ -11,6 +11,9 @@ repository = "https://github.com/sukovanej/openplan"
 publish = false
 
 [workspace.dependencies]
+op-agent = { path = "crates/op-agent" }
+op-agent-claude = { path = "crates/op-agent-claude" }
+op-agent-codex = { path = "crates/op-agent-codex" }
 op-claude = { path = "crates/op-claude" }
 op-md = { path = "crates/op-md" }
 op-task = { path = "crates/op-task" }
@@ -41,7 +44,7 @@ pulldown-cmark = { version = "0.13", default-features = false }
 gix = "0.85" # default features provide the sha1 object hash
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] } # UTC only, so no tzdb
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs", "process", "io-util", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 axum = "0.8"
 tower-http = { version = "0.7", features = ["trace"] }
