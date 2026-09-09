@@ -26,6 +26,11 @@
     ],
     "macOS": {
       "signingIdentity": "-"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
     }
   }
 }
