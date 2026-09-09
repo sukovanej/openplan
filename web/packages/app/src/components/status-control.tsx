@@ -64,7 +64,7 @@ export function StatusControl({
         event.stopPropagation()
       }}
     >
-      <Tooltip content={`${named(current)} — press c to change`}>
+      <Tooltip content={`${named(current)} — press s to change`}>
         <button
           type="button"
           aria-label="Change status"

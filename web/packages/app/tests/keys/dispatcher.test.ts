@@ -315,13 +315,13 @@ describe("f shows the flow of the task at hand", () => {
   })
 })
 
-describe("c asks the task at hand for its status menu", () => {
+describe("s asks the task at hand for its status menu", () => {
   it("names the selected row, and the place it sits at", () => {
     const h = mount()
     rowCursor.setRows(paths("12", "13"))
     rowCursor.moveBy(1)
 
-    press("c")
+    press("s")
     expect(h.statuses).toEqual([{ project: PROJECT, id: "12", at: 0 }])
   })
 
@@ -331,7 +331,7 @@ describe("c asks the task at hand for its status menu", () => {
     rowCursor.moveBy(1)
     hoveredRow.enter(path("13"), 1)
 
-    press("c")
+    press("s")
     expect(h.statuses).toEqual([{ project: PROJECT, id: "13", at: 1 }])
   })
 
@@ -345,7 +345,7 @@ describe("c asks the task at hand for its status menu", () => {
     press("j")
     press("j")
 
-    press("c")
+    press("s")
     expect(h.statuses).toEqual([{ project: PROJECT, id: "41", at: 1 }])
   })
 
@@ -354,7 +354,7 @@ describe("c asks the task at hand for its status menu", () => {
     h.setScope("detail")
     h.setPath(path("28"))
 
-    press("c")
+    press("s")
     expect(h.statuses).toEqual([{ project: PROJECT, id: "28", at: -1 }])
   })
 
@@ -363,7 +363,7 @@ describe("c asks the task at hand for its status menu", () => {
     h.setScope("flow")
     h.setPath("/flow")
 
-    press("c")
+    press("s")
     expect(h.statuses).toEqual([])
   })
 })
@@ -390,13 +390,13 @@ describe("scope resolution", () => {
   it("triggers parent, subtask, and tag edits only on the detail route", () => {
     const h = mount()
     press("p")
-    press("s")
+    press("a")
     press("t")
     expect(h.detail).toEqual({ editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 })
 
     h.setScope("detail")
     press("p")
-    press("s")
+    press("a")
     press("t")
     expect(h.detail).toEqual({ editParent: 1, addSubtask: 1, editTags: 1, goToParent: 0, escape: 0 })
   })
