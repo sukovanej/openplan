@@ -144,9 +144,9 @@
 }
 
 @theme inline {
-  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: -apple-system, "SF Pro Text", BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Source Serif 4 Variable", ui-serif, Georgia, serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: Menlo, ui-monospace, SFMono-Regular, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
