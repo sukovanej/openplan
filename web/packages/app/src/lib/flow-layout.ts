@@ -12,7 +12,7 @@ const TITLE_INSET = 24 + 16 + 10 + CARD_BORDER * 2
 export const CARD_PAD = 8
 export const KEY_LINE = 16
 const MIN_CARD_HEIGHT = 60
-const TITLE_FONT = `${TITLE_SIZE}px "Geist Variable", ui-sans-serif, system-ui, sans-serif`
+const TITLE_FONT = `${TITLE_SIZE}px -apple-system, "SF Pro Text", BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif`
 
 const BOX_PAD = 12
 const ISLAND_GAP = 48
