@@ -41,7 +41,7 @@ import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { taskFlowPath } from "../lib/flow-selection"
 import { errorText } from "../lib/format"
-import { useAbbreviation } from "../lib/projects"
+import { useAbbreviation, useProject } from "../lib/projects"
 import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
@@ -145,6 +145,7 @@ function TaskDetailView({
   onSelect: (branch: string | undefined) => void
 }) {
   const abbreviation = useAbbreviation(project)
+  const rollingUpdates = useProject(project)?.rolling_updates_branch
   const write = writeHere(detail ?? task)
   const writeKey = `${write.branch ?? ""}:${write.blocked ?? ""}`
   // One cursor walks the three lists in document order, so `j`, `k` and Enter reach every row on the
@@ -200,7 +201,13 @@ function TaskDetailView({
               problems={detail === null ? [] : problems(detail.metadata)}
             />
           </MetaLine>
-          <BranchSwitcher branches={task.branches} selected={selected} headline={task.headline} onSelect={onSelect} />
+          <BranchSwitcher
+            branches={task.branches}
+            selected={selected}
+            headline={task.headline}
+            rollingUpdates={rollingUpdates}
+            onSelect={onSelect}
+          />
           {/* The box is as wide as the reading measure, so the text fills it and the rule over an
               `h2` bleeds back over the padding to divide the whole box. */}
           {body === undefined ? (

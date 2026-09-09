@@ -8,10 +8,12 @@ const kindOrder: Record<ChangeKind, number> = { deleted: 0, added: 1, modified: 
 export function BranchBadges({
   branches,
   headline,
+  rollingUpdates,
   className,
 }: {
   branches: ReadonlyArray<BranchState>
   headline: string
+  rollingUpdates?: string | null
   className?: string
 }) {
   if (branches.length === 0) return null
@@ -19,7 +21,12 @@ export function BranchBadges({
   return (
     <div className={cn("flex flex-wrap items-center gap-1", className)}>
       {ordered.map((branch) => (
-        <BranchTag key={branch.branch} branch={branch} headline={branches.length > 1 && branch.branch === headline} />
+        <BranchTag
+          key={branch.branch}
+          branch={branch}
+          headline={branches.length > 1 && branch.branch === headline}
+          rollingUpdates={rollingUpdates}
+        />
       ))}
     </div>
   )

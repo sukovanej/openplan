@@ -243,6 +243,7 @@ function TaskRow({
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
   const { byName: tags } = useTags(task.project)
+  const rollingUpdates = useProject(task.project)?.rolling_updates_branch
   const navigate = useNavigate()
 
   // The row opens its task from its own click rather than from a link stretched over it: an overlay
@@ -323,11 +324,21 @@ function TaskRow({
           <TaskTags metadata={task.metadata} tags={tags} />
         </MetaLine>
         {task.branches.length > 0 && (
-          <BranchBadges branches={task.branches} headline={task.headline} className="mt-2 sm:hidden" />
+          <BranchBadges
+            branches={task.branches}
+            headline={task.headline}
+            rollingUpdates={rollingUpdates}
+            className="mt-2 sm:hidden"
+          />
         )}
       </div>
       <div role="gridcell" className="ml-auto hidden shrink-0 self-center pr-4 pl-3 sm:block">
-        <BranchBadges branches={task.branches} headline={task.headline} className="justify-end" />
+        <BranchBadges
+          branches={task.branches}
+          headline={task.headline}
+          rollingUpdates={rollingUpdates}
+          className="justify-end"
+        />
       </div>
     </Row>
   )

@@ -6,11 +6,13 @@ import {
   ApiBaseUrl,
   createTask,
   deleteTag,
+  getRollingUpdates,
   getTask,
   listTasks,
   patchTask,
-  TaskNotFound,
+  publishRollingUpdates,
   TaskRejected,
+  TaskNotFound,
 } from "../src/lib/api"
 
 const PROJECT = "openplan"
@@ -429,5 +431,96 @@ it.effect("a refused POST carries the server's reason", () =>
     expect(Result.isFailure(result)).toBe(true)
     const error = Result.isFailure(result) ? result.failure : undefined
     expect((error as TaskRejected).message).toContain("does not exist")
+  }),
+)
+
+it.effect("decodes what is waiting on the rolling-updates branch", () =>
+  Effect.gen(function* () {
+    const { captured, provide } = captureRequest(() =>
+      json({
+        pending: [
+          {
+            branch: "openplan/rolling-updates",
+            task: {
+              id: "OPP-1",
+              title: "First",
+              metadata: {
+                status: "todo",
+                created: "2026-01-01T00:00:00Z",
+                parent: null,
+                rank: null,
+                dependencies: [],
+                tags: [],
+              },
+            },
+            blob_oid: "abc",
+            dirty: false,
+            kind: "modified",
+          },
+        ],
+        conflict: null,
+      }),
+    )
+    const waiting = yield* provide(getRollingUpdates(PROJECT))
+    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/rolling-updates`)
+    expect(waiting.pending).toHaveLength(1)
+    expect(waiting.conflict).toBeNull()
+  }),
+)
+
+it.effect("decodes the conflict that holds the rolling-updates branch", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() =>
+      json({
+        pending: [],
+        conflict: { files: [".plan/tasks/00001-t.md"], worktree: "/repo/.git/openplan-rolling-updates" },
+      }),
+    )
+    const waiting = yield* provide(getRollingUpdates(PROJECT))
+    expect(waiting.conflict?.files).toEqual([".plan/tasks/00001-t.md"])
+    expect(waiting.conflict?.worktree).toContain("openplan-rolling-updates")
+  }),
+)
+
+// A repository the daemon cannot give the branch answers 503, and the caller must read that as a
+// refusal rather than as an empty branch.
+it.effect("a project with no rolling-updates branch refuses the read", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() => json({ message: "this repository has no rolling-updates branch" }, 503))
+    const result = yield* Effect.result(provide(getRollingUpdates(PROJECT)))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect(error).toBeInstanceOf(TaskRejected)
+    expect((error as TaskRejected).status).toBe(503)
+  }),
+)
+
+it.effect("publish posts to the branch's route and decodes the pull request", () =>
+  Effect.gen(function* () {
+    const { captured, provide } = captureRequest(() =>
+      json({
+        remote: "origin",
+        branch: "openplan/rolling-updates-milan",
+        commit: "0123456789abcdef",
+        pull_request: "https://github.com/o/p/pull/7",
+      }),
+    )
+    const published = yield* provide(publishRollingUpdates(PROJECT))
+    expect(captured.request?.method).toBe("POST")
+    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/rolling-updates/publish`)
+    expect(published.pull_request).toBe("https://github.com/o/p/pull/7")
+  }),
+)
+
+// Nothing to publish and a conflict that holds the branch share one status, so the message is what
+// tells the person which they got.
+it.effect("a publish the daemon refuses carries its reason", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() =>
+      json({ message: "a conflict holds the rolling updates; resolve it first" }, 409),
+    )
+    const result = yield* Effect.result(provide(publishRollingUpdates(PROJECT)))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect((error as TaskRejected).status).toBe(409)
+    expect((error as TaskRejected).message).toContain("resolve it first")
   }),
 )
