@@ -9,12 +9,23 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Rolling updates. An edit that belongs to no feature branch now lands on
+  `openplan/rolling-updates` instead of whatever branch you happen to stand on.
+  The daemon commits it and keeps the branch rebased on the default branch.
+  Publishing stays yours: it pushes the branch and opens a pull request.
+- A header control in the web UI. It counts what waits to be published, lists it
+  when you click, and publishes from there. When a rebase hits a conflict, it
+  names the files and the commands that fix them.
+- `openplan publish`, with `--dry-run` to read the list first.
+- `--branch` on `create`, `set`, and `delete`.
 - Default tags. A store with no tag registry gets `bug`, `feature`, and `draft`
   when it takes its first task, so a new project can tag that task without
   registering a name first. A registry that already exists stays as it is.
 
 ### Changed
 
+- `openplan merge-driver` merges by frontmatter field and by markdown section.
+  It conflicted on any difference before.
 - Search order. Tasks with the most recent changes come first.
 - The `task-management` skill. The agent creates a task only when the user asks
   for one, in those words. A request to do work made a task before this change.
