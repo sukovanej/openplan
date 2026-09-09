@@ -60,7 +60,12 @@ export function StatusMenu({
       aria-activedescendant={`${listId}-${active}`}
       data-keys-ignore
       onKeyDown={onKeyDown}
-      className={cn("bg-popover w-44 rounded-md border p-1 shadow-md outline-none", className)}
+      // The header it opens under sets its own case, weight and tracking, and the menu is not a
+      // header, so it states the whole of its own type rather than inheriting any of that.
+      className={cn(
+        "bg-popover text-foreground w-44 rounded-md border p-1 text-sm font-normal tracking-normal normal-case shadow-md outline-none",
+        className,
+      )}
     >
       {STATUSES.map((status, index) => {
         const Icon = statusIcon(status)
