@@ -53,15 +53,22 @@ describe("the task at hand", () => {
 
   it("prefers the hovered row over both the cursor and the route", () => {
     hoveredRow.enter(path("13"), 1)
-    expect(taskAtHand(cursor(0), path("28"))).toEqual({ project: "openplan", id: "13" })
+    expect(taskAtHand(cursor(0), path("28"))).toEqual({ project: "openplan", id: "13", at: 1 })
   })
 
   it("falls back to the keyboard cursor when nothing is hovered", () => {
-    expect(taskAtHand(cursor(0), path("28"))).toEqual({ project: "openplan", id: "12" })
+    expect(taskAtHand(cursor(0), path("28"))).toEqual({ project: "openplan", id: "12", at: 0 })
   })
 
   it("falls back to the route's own task when neither hover nor cursor is set", () => {
-    expect(taskAtHand(cursor(-1), path("28"))).toEqual({ project: "openplan", id: "28" })
+    expect(taskAtHand(cursor(-1), path("28"))).toEqual({ project: "openplan", id: "28", at: -1 })
+  })
+
+  // A task detail can show one task under two of its lists, so the place is what tells its two rows
+  // apart for a surface that draws one control per row.
+  it("carries the place of the row it took the task from", () => {
+    const twice: CursorState = { rows: [path("13"), path("13")], index: 1 }
+    expect(taskAtHand(twice, path("28"))).toEqual({ project: "openplan", id: "13", at: 1 })
   })
 
   it("resolves to no task on a route that names none", () => {

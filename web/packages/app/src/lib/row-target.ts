@@ -1,6 +1,6 @@
 import { type TaskRoute, taskRouteOf } from "@openplan/task-ui"
 
-import { type CursorState, focusedRow } from "./row-cursor"
+import type { CursorState } from "./row-cursor"
 
 // Rows are named by their task's path throughout, so a key that repeats across projects still
 // names one row. A path alone does not name one *row*, though: a task detail can show the same task
@@ -30,7 +30,15 @@ export const hoveredRow = {
   },
 }
 
-export function taskAtHand(cursor: CursorState, pathname: string): TaskRoute | undefined {
-  const row = hoveredRow.among(cursor.rows) ?? focusedRow(cursor) ?? pathname
-  return taskRouteOf(row)
+// Which row the task at hand sits on, so a surface that draws one row per task can tell which of
+// them was asked for. `-1` is the page's own task, which sits on no row.
+export interface TaskTarget extends TaskRoute {
+  readonly at: number
+}
+
+export function taskAtHand(cursor: CursorState, pathname: string): TaskTarget | undefined {
+  const pointed = hoveredRow.place(cursor.rows)
+  const at = pointed === -1 ? cursor.index : pointed
+  const route = taskRouteOf(at === -1 ? pathname : cursor.rows[at])
+  return route === undefined ? undefined : { ...route, at }
 }

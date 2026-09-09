@@ -10,7 +10,7 @@ import {
   parentOf,
   ParentLink,
   problems,
-  StatusField,
+  statusField,
   StatusGroupHeader,
   statusGroupLabel,
   tagsPath,
@@ -21,6 +21,7 @@ import {
 import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@openplan/ui"
 
 import { ListSkeleton } from "../components/states"
+import { StatusControl } from "../components/status-control"
 import { getBoard, getMergedBoard } from "../lib/api"
 import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
@@ -30,6 +31,7 @@ import { hoveredRow } from "../lib/row-target"
 import { runtime } from "../lib/runtime"
 import { useTags } from "../lib/tags"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
+import { writeHere } from "../lib/write-target"
 
 // `/` is every project at once and `/:project` is one of them. They differ only in which board they
 // read; everything below the read is the same view.
@@ -244,6 +246,7 @@ function TaskRow({
   const broken = problems(task.metadata)
   const { byName: tags } = useTags(task.project)
   const rollingUpdates = useProject(task.project)?.rolling_updates_branch
+  const write = writeHere(task)
   const navigate = useNavigate()
 
   // The row opens its task from its own click rather than from a link stretched over it: an overlay
@@ -286,7 +289,14 @@ function TaskRow({
     >
       <TreeGuides columns={guides.columns} />
       <div role="gridcell" className="relative flex shrink-0 items-center self-stretch">
-        <StatusField metadata={task.metadata} />
+        <StatusControl
+          project={task.project}
+          id={task.id}
+          at={at}
+          status={statusField(task.metadata)}
+          branch={write.branch}
+          blocked={write.blocked}
+        />
         {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
       </div>
       <div role="gridcell" className="text-muted-foreground grid shrink-0 self-center pl-3 text-xs tabular-nums">

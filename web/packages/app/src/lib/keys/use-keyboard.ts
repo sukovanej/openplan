@@ -8,6 +8,7 @@ import { detailActions, escapeOutcome } from "../detail-actions"
 import { taskFlowPath } from "../flow-selection"
 import { detailCursor, focusedRow, liveCursor } from "../row-cursor"
 import { hoveredRow, taskAtHand } from "../row-target"
+import { statusRequests } from "../status-requests"
 import { bindings } from "./bindings"
 import { Dispatcher } from "./dispatcher"
 import { historyIndex } from "./history"
@@ -90,6 +91,11 @@ export function useKeyboard(): Keyboard {
         showFlow: () => {
           const task = targetTask()
           if (task !== undefined) live.current.navigate(taskFlowPath(task.project, task.id))
+        },
+        // The row at hand opens its own menu, which is where the mark it changes is drawn.
+        editStatus: () => {
+          const task = targetTask()
+          if (task !== undefined) statusRequests.emit(task)
         },
       },
       detail: {
