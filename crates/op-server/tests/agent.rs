@@ -620,6 +620,12 @@ async fn the_instructions_name_the_worktree_the_code_root_the_binary_and_the_tas
     assert!(instructions.contains(&dir.path().display().to_string()));
     assert!(instructions.contains(&std::env::current_exe().unwrap().display().to_string()));
     assert!(instructions.contains(&key));
+    let file = std::fs::read_dir(worktree.join(".plan/tasks"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "md"))
+        .expect("the task is a file in the worktree");
+    assert!(instructions.contains(&file.display().to_string()));
     assert!(instructions.contains("Never run git"));
 }
 
