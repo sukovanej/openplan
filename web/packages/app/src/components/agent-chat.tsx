@@ -320,17 +320,6 @@ export function Waiting({ label }: { label: string }) {
   )
 }
 
-export function Exited({ code, onRestart }: { code: number | null; onRestart: () => void }) {
-  return (
-    <div className="flex items-center gap-2 border-b px-4 py-2 text-xs">
-      <span className="text-muted-foreground">The agent exited{code !== null && ` with code ${code}`}.</span>
-      <Button variant="accent" onClick={onRestart} className="ml-auto">
-        Start a new session
-      </Button>
-    </div>
-  )
-}
-
 export function UsageLine({ usage }: { usage: Usage }) {
   const total = usage.input_tokens + usage.cache_write_tokens + usage.output_tokens
   return (

@@ -8,11 +8,11 @@ import type { SessionView } from "../lib/agent-events"
 import { errorText } from "../lib/format"
 import { useAbbreviation } from "../lib/projects"
 import { useAgentChat } from "../lib/use-agent-chat"
-import { ChatLog, Composer, SessionState, StopButton, Waiting } from "./agent-chat"
+import { ChatLog, Composer, SessionState, StopButton, UsageLine, Waiting } from "./agent-chat"
 
 // The chat at the foot of the task box: the prompt, one line under it with what the agent is doing
 // or last said, and a way to the whole transcript. The task above is the output that matters; the
-// transcript is there for when a reader wants the working.
+// transcript is there for when a reader wants the working. Without a task the session drafts one.
 export function AgentDock({
   project,
   task,
@@ -21,7 +21,7 @@ export function AgentDock({
   onView,
 }: {
   project: string
-  task: string
+  task: string | undefined
   session: string | undefined
   onSession: (next: string | undefined) => void
   onView?: (view: SessionView) => void
@@ -54,6 +54,7 @@ export function AgentDock({
             <LatestLine line={line} onOpen={() => setTranscriptOpen(true)} />
           )}
         </div>
+        {chat.view !== undefined && !chat.running && <UsageLine usage={chat.transcript.usage} />}
         {chat.running && <StopButton stopping={chat.stopping} onStop={chat.stop} />}
         <Button
           size="icon"

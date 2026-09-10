@@ -3,17 +3,30 @@ import { useCallback, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 
 import { taskSessionPath } from "@openplan/task-ui"
-import { Button, Combobox, type ComboOption, EmptyState, fuzzyMatch, FuzzyText, Skeleton } from "@openplan/ui"
+import {
+  Button,
+  Combobox,
+  type ComboOption,
+  EmptyState,
+  fuzzyMatch,
+  FuzzyText,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  Skeleton,
+} from "@openplan/ui"
 
-import { AgentPanel } from "../components/agent-panel"
+import { AgentDock } from "../components/agent-dock"
 import type { SessionView } from "../lib/agent-events"
 import { useProjects } from "../lib/projects"
 
 const SESSION_PARAM = "session"
 const PROJECT_PARAM = "project"
 
-// The page that drafts a task. The project is picked here, since the page belongs to none; once
-// the agent writes the task, the page hands over to the task's own, with the session on it.
+// The page that drafts a task: the task box before there is a task, with the chat at its foot as
+// on a task's page. The project is picked in the header, since the page belongs to none; once the
+// agent writes the task, the page hands over to the task's own, with the session on it.
 export function AgentRoute() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -54,25 +67,28 @@ export function AgentRoute() {
   }
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
-      <div className="min-w-0 lg:h-full lg:w-[59rem] lg:shrink-0">
-        <NoTaskYet writing={writing} />
-      </div>
-      <AgentPanel
-        key={project}
-        project={project}
-        session={session}
-        onSession={setSession}
-        onView={onView}
-        className="h-[70vh] lg:h-full lg:min-w-80 lg:flex-1"
-        lead={
+      <Panel className="h-auto min-w-0 lg:h-full lg:w-[59rem]">
+        <PanelHeader className="gap-3">
+          <PanelTitle>New task</PanelTitle>
           <ProjectPicker
             projects={projects.map((known) => known.name)}
             value={project}
             fixed={session !== undefined}
             onChange={setProject}
           />
-        }
-      />
+        </PanelHeader>
+        <PanelBody className="p-6">
+          <NoTaskYet writing={writing} />
+        </PanelBody>
+        <AgentDock
+          key={project}
+          project={project}
+          task={undefined}
+          session={session}
+          onSession={setSession}
+          onView={onView}
+        />
+      </Panel>
     </div>
   )
 }
