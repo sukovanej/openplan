@@ -615,6 +615,7 @@ async fn the_instructions_name_the_worktree_the_code_root_the_binary_and_the_tas
 
     let worktree = dir.path().join(".git/openplan-rolling-updates");
     assert_eq!(started.options.cwd, worktree);
+    assert_eq!(started.options.model.as_deref(), Some("sonnet"));
     assert!(instructions.contains(&worktree.join(".plan/tasks").display().to_string()));
     assert!(instructions.contains(&dir.path().display().to_string()));
     assert!(instructions.contains(&std::env::current_exe().unwrap().display().to_string()));

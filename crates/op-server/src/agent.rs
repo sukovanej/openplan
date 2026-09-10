@@ -35,6 +35,9 @@ const SESSION_ID_BYTES: usize = 8;
 // past that mark sees every session out rather than cutting one short.
 const STOP_GRACE: Duration = Duration::from_secs(6);
 const TOOLS: [&str; 6] = ["Read", "Grep", "Glob", "Bash", "Edit", "Write"];
+// The alias the `claude` binary resolves to its current Sonnet: a task is a page of prose, and
+// Sonnet writes one for a fraction of what Opus asks.
+const CLAUDE_MODEL: &str = "sonnet";
 
 // Where the agent works. `cwd` is the tree it writes; `code_root` is the tree it reads to design a
 // task, which is a different place because the worktree is a sparse checkout of `.plan` alone.
@@ -428,6 +431,10 @@ pub(crate) async fn create_session(
         .mcp(McpPolicy::Disabled)
         .persistence(Persistence::Ephemeral)
         .instructions(instructions(&workspace, kind, body.task.as_deref()));
+    let options = match kind {
+        AgentKind::ClaudeCode => options.model(CLAUDE_MODEL),
+        AgentKind::Codex => options,
+    };
     let started = agent.start(options).map_err(spawn_error)?;
 
     let id = session_id();
