@@ -35,6 +35,7 @@ import {
 
 import { Blocked } from "../components/blocked"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
+import { StatusControl } from "../components/status-control"
 import { TagsField } from "../components/tags-field"
 import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
@@ -46,7 +47,9 @@ import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from 
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
 import { runtime } from "../lib/runtime"
+import { NO_ROW } from "../lib/status-requests"
 import { taskMatches } from "../lib/task-search"
+import { type WriteHere, writeHere } from "../lib/write-target"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
 const NO_COMMENTS: ReadonlyArray<Comment> = []
@@ -63,25 +66,6 @@ function listItem(client: QueryClient, project: string, id: string): TaskListIte
     if (found !== undefined) return found
   }
   return undefined
-}
-
-// Where an edit of the shown version lands, and what to say when it can land nowhere. The daemon
-// resolves the branch and reports whether a live worktree can take the write, so the page names that
-// branch rather than guessing at one, and offers only the actions that can succeed.
-interface WriteHere {
-  readonly branch: string | undefined
-  readonly blocked: string | undefined
-}
-
-function writeHere(task: TaskDetail | TaskListItem): WriteHere {
-  const target = task.write_target
-  if (target === undefined) {
-    return { branch: undefined, blocked: "This repository has no branch to write to." }
-  }
-  return {
-    branch: target.branch,
-    blocked: target.writable ? undefined : `No writable worktree holds ${target.branch}, so this task cannot change.`,
-  }
 }
 
 export function DetailRoute() {
@@ -159,7 +143,23 @@ function TaskDetailView({
       <Panel className="h-auto min-w-0 lg:h-full lg:w-[59rem]">
         <PanelHeader className="gap-2">
           <PanelTitle>
-            <TaskIdentity variant="header" status={statusField(task.metadata)} id={task.id} title={task.title} />
+            <TaskIdentity
+              variant="header"
+              status={statusField(task.metadata)}
+              mark={
+                <StatusControl
+                  project={project}
+                  id={task.id}
+                  at={NO_ROW}
+                  status={statusField(task.metadata)}
+                  branch={write.branch}
+                  blocked={write.blocked}
+                  className="size-5"
+                />
+              }
+              id={task.id}
+              title={task.title}
+            />
           </PanelTitle>
           <FlowAction project={project} id={task.id} />
           <div className="min-w-0">
@@ -229,8 +229,8 @@ function TaskDetailView({
           with the rule that separates it from the one above, and the first has nothing above it to
           separate from. */}
       <aside className="min-w-0 lg:min-w-80 lg:flex-1 lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
-        <RefSection title="Depends on" rows={rows.dependsOn} cursor={index} />
-        <RefSection title="Blocks" rows={rows.blocks} cursor={index} />
+        <RefSection project={project} title="Depends on" rows={rows.dependsOn} cursor={index} />
+        <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
         <SubtasksSection
           key={writeKey}
           project={project}
@@ -440,7 +440,7 @@ function ParentPicker({
 
 // One list's rows, each carrying its own place in the page-wide cursor, so the sections agree on
 // nothing but the order `detailRows` numbered them in.
-function RowList({ rows, cursor }: { rows: ReadonlyArray<DetailRow>; cursor: number }) {
+function RowList({ project, rows, cursor }: { project: string; rows: ReadonlyArray<DetailRow>; cursor: number }) {
   const activeRow = useRef<HTMLLIElement>(null)
   useEffect(() => {
     activeRow.current?.scrollIntoView({ block: "nearest" })
@@ -473,7 +473,13 @@ function RowList({ rows, cursor }: { rows: ReadonlyArray<DetailRow>; cursor: num
           >
             <TaskIdentity
               status={row.status}
-              mark={row.unresolved ? <UnresolvedMark /> : undefined}
+              mark={
+                row.unresolved ? (
+                  <UnresolvedMark />
+                ) : (
+                  <StatusControl project={project} id={row.id} at={row.at} status={row.status} className="size-4" />
+                )
+              }
               id={row.id}
               title={row.title}
             />
@@ -486,11 +492,21 @@ function RowList({ rows, cursor }: { rows: ReadonlyArray<DetailRow>; cursor: num
 
 // The two dependency directions. Neither carries an action, so an empty one has nothing to say and
 // stays hidden.
-function RefSection({ title, rows, cursor }: { title: string; rows: ReadonlyArray<DetailRow>; cursor: number }) {
+function RefSection({
+  project,
+  title,
+  rows,
+  cursor,
+}: {
+  project: string
+  title: string
+  rows: ReadonlyArray<DetailRow>
+  cursor: number
+}) {
   if (rows.length === 0) return null
   return (
     <Section title={title} count={rows.length}>
-      <RowList rows={rows} cursor={cursor} />
+      <RowList project={project} rows={rows} cursor={cursor} />
     </Section>
   )
 }
@@ -542,7 +558,7 @@ function SubtasksSection({
           <p className="text-muted-foreground text-sm">No subtasks yet.</p>
         ) : null
       ) : (
-        <RowList rows={rows} cursor={cursor} />
+        <RowList project={project} rows={rows} cursor={cursor} />
       )}
     </Section>
   )

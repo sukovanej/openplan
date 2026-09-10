@@ -16,7 +16,9 @@ export {
   tagsOf,
 } from "./metadata"
 export { ParentLink } from "./parent-link"
+export { StatusMenu } from "./status-menu"
 export {
+  STATUSES,
   statusBorder,
   StatusChip,
   statusFaint,
@@ -24,8 +26,10 @@ export {
   StatusGroupHeader,
   statusGroupLabel,
   StatusIcon,
+  statusIcon,
   StatusMark,
   statusLabel,
+  statusMark,
   statusSurface,
   statusText,
 } from "./status"

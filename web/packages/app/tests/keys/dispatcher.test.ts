@@ -10,12 +10,14 @@ import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
 import type { Binding, OverlayName, PaletteTarget, RouteScope, RunContext } from "../../src/lib/keys/types"
 import { detailCursor, focusedRow, liveCursor, rowCursor } from "../../src/lib/row-cursor"
 import { hoveredRow, taskAtHand } from "../../src/lib/row-target"
+import type { StatusTarget } from "../../src/lib/status-requests"
 
 const PROJECT = "openplan"
 
 interface Harness {
   readonly navigations: Array<string>
   readonly copied: Array<string | undefined>
+  readonly statuses: Array<StatusTarget>
   readonly overlay: { open: number; close: number; toggle: number }
   readonly closed: Array<OverlayName>
   readonly opened: Array<PaletteTarget>
@@ -41,6 +43,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   let activeOverlay: OverlayName | null = null
   const navigations: Array<string> = []
   const copied: Array<string | undefined> = []
+  const statuses: Array<StatusTarget> = []
   const overlay = { open: 0, close: 0, toggle: 0 }
   const closed: Array<OverlayName> = []
   const opened: Array<PaletteTarget> = []
@@ -83,6 +86,10 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
         const task = targetTask()
         if (task !== undefined) navigations.push(taskFlowPath(task.project, task.id))
       },
+      editStatus: () => {
+        const task = targetTask()
+        if (task !== undefined) statuses.push(task)
+      },
     },
     detail: {
       editParent: () => void detail.editParent++,
@@ -103,6 +110,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   mounted = {
     navigations,
     copied,
+    statuses,
     went,
     overlay,
     closed,
@@ -307,6 +315,59 @@ describe("f shows the flow of the task at hand", () => {
   })
 })
 
+describe("s asks the task at hand for its status menu", () => {
+  it("names the selected row, and the place it sits at", () => {
+    const h = mount()
+    rowCursor.setRows(paths("12", "13"))
+    rowCursor.moveBy(1)
+
+    press("s")
+    expect(h.statuses).toEqual([{ project: PROJECT, id: "12", at: 0 }])
+  })
+
+  it("names the hovered row ahead of the selected one", () => {
+    const h = mount()
+    rowCursor.setRows(paths("12", "13"))
+    rowCursor.moveBy(1)
+    hoveredRow.enter(path("13"), 1)
+
+    press("s")
+    expect(h.statuses).toEqual([{ project: PROJECT, id: "13", at: 1 }])
+  })
+
+  // A task detail shows one task under two of its lists often enough; the place tells the two rows
+  // apart, so only the row at hand opens its menu.
+  it("names the row of a task the page lists twice", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("28"))
+    detailCursor.activate(path("28"), paths("41", "41"))
+    press("j")
+    press("j")
+
+    press("s")
+    expect(h.statuses).toEqual([{ project: PROJECT, id: "41", at: 1 }])
+  })
+
+  it("names the open task, on no row, when nothing is selected", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("28"))
+
+    press("s")
+    expect(h.statuses).toEqual([{ project: PROJECT, id: "28", at: -1 }])
+  })
+
+  it("does nothing when no row and no task is at hand", () => {
+    const h = mount()
+    h.setScope("flow")
+    h.setPath("/flow")
+
+    press("s")
+    expect(h.statuses).toEqual([])
+  })
+})
+
 describe("scope resolution", () => {
   it("routes Escape to the detail-view handler only on the detail route", () => {
     const h = mount()
@@ -329,13 +390,13 @@ describe("scope resolution", () => {
   it("triggers parent, subtask, and tag edits only on the detail route", () => {
     const h = mount()
     press("p")
-    press("s")
+    press("a")
     press("t")
     expect(h.detail).toEqual({ editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 })
 
     h.setScope("detail")
     press("p")
-    press("s")
+    press("a")
     press("t")
     expect(h.detail).toEqual({ editParent: 1, addSubtask: 1, editTags: 1, goToParent: 0, escape: 0 })
   })

@@ -71,7 +71,14 @@ const UNREADABLE_BORDER = "border-status-unreadable"
 const UNREADABLE_SURFACE = "bg-status-unreadable-surface/12"
 const UNREADABLE_FAINT = "bg-status-unreadable-surface/6"
 
+// The order the board groups statuses in, which is also the order a picker offers them in.
+export const STATUSES = Object.keys(styles) as ReadonlyArray<Status>
+
 export const statusLabel = (status: Status): string => styles[status].label
+
+export const statusIcon = (status: Status): LucideIcon => styles[status].icon
+
+export const statusMark = (status: Status): string => styles[status].mark
 
 // A status off the wire, which a URL can spell any way at all. One the store does not know reads
 // back as it was written, so a reader sees what they typed.

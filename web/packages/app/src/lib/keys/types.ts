@@ -34,6 +34,7 @@ export interface PaletteControls {
 
 export interface TaskControls {
   readonly copyId: () => void
+  readonly editStatus: () => void
   readonly showFlow: () => void
 }
 

@@ -80,7 +80,7 @@ export const bindings: ReadonlyArray<Binding> = [
   },
   {
     id: "detail.subtask",
-    keys: "s",
+    keys: "a",
     scope: "detail",
     label: "Add subtask",
     group: "Task",
@@ -93,6 +93,14 @@ export const bindings: ReadonlyArray<Binding> = [
     label: "Add a tag",
     group: "Task",
     run: (ctx) => ctx.detail.editTags(),
+  },
+  {
+    id: "task.status",
+    keys: "s",
+    scope: "global",
+    label: "Change status",
+    group: "Task",
+    run: (ctx) => ctx.task.editStatus(),
   },
   {
     id: "task.flow",
