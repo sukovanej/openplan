@@ -101,7 +101,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     },
     agent: {
       open: () => {
-        const to = agentPathFor(pathname)
+        const to = agentPathFor(pathname, targetTask())
         if (to !== undefined) navigations.push(to)
       },
     },
@@ -170,6 +170,25 @@ describe("the agent page", () => {
     h.setPath(path("OPP-3"))
     press("e")
     expect(h.navigations).toEqual([`/${PROJECT}/agent/OPP-3`])
+  })
+
+  it("opens on the row at hand from a board with e, and on a new task when no row is", () => {
+    const h = mount()
+    h.setPath(`/${PROJECT}`)
+    rowCursor.setRows(paths("OPP-1", "OPP-2"))
+    press("e")
+    expect(h.navigations).toEqual([`/${PROJECT}/agent`])
+    press("j")
+    press("e")
+    expect(h.navigations).toEqual([`/${PROJECT}/agent`, `/${PROJECT}/agent/OPP-1`])
+  })
+
+  it("does nothing with e on the agent page itself", () => {
+    const h = mount()
+    h.setScope("agent")
+    h.setPath(`/${PROJECT}/agent/OPP-3`)
+    press("e")
+    expect(h.navigations).toEqual([])
   })
 
   it("leaves with Escape", () => {

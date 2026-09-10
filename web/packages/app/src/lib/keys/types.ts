@@ -47,8 +47,8 @@ export interface DetailControls {
 }
 
 export interface AgentControls {
-  // The agent page for the task at hand, or for a new task on the board's project. The merged
-  // board names no project, so there it opens nothing.
+  // The agent page for the task at hand, or for a new task on the board's project when no task is
+  // at hand. The merged board names no project, so there it opens nothing.
   readonly open: () => void
 }
 

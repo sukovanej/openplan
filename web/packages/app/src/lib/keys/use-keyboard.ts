@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { agentPath, agentRouteOf, boardPath, FLOW_ROUTE, projectRouteOf, taskRouteOf } from "@openplan/task-ui"
+import {
+  agentPath,
+  agentRouteOf,
+  boardPath,
+  FLOW_ROUTE,
+  projectRouteOf,
+  type TaskRoute,
+  taskRouteOf,
+} from "@openplan/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
@@ -20,9 +28,10 @@ function routeScope(pathname: string): RouteScope {
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
 }
 
-// The task page opens the agent on its task; a board opens it on a task that does not exist yet.
-export function agentPathFor(pathname: string): string | undefined {
-  const task = taskRouteOf(pathname)
+// The task at hand opens the agent on itself; a board with none opens it on a task that does not
+// exist yet. The agent page is already there.
+export function agentPathFor(pathname: string, task: TaskRoute | undefined): string | undefined {
+  if (agentRouteOf(pathname) !== undefined) return undefined
   if (task !== undefined) return agentPath(task.project, task.id)
   const project = projectRouteOf(pathname)
   return project === undefined ? undefined : agentPath(project)
@@ -126,7 +135,7 @@ export function useKeyboard(): Keyboard {
       },
       agent: {
         open: () => {
-          const to = agentPathFor(live.current.pathname)
+          const to = agentPathFor(live.current.pathname, targetTask())
           if (to !== undefined) live.current.navigate(to)
         },
       },
