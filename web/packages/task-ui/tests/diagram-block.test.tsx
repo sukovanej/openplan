@@ -66,7 +66,9 @@ describe("a d2 fence", () => {
   it("says it is drawing until the picture arrives", async () => {
     const root = render(<TaskBody project="openplan" abbreviation="OPP" markdown={"```d2\nw -> v\n```"} />)
     expect(root.querySelector("pre")).toBeNull()
-    expect(root.querySelector("[data-diagram='drawing'] [role='status']")!.textContent).toContain("Drawing")
+    const placeholder = root.querySelector("[data-diagram='drawing'][role='status']")!
+    expect(placeholder.textContent).toContain("Drawing")
+    expect(placeholder.querySelectorAll("[data-slot='skeleton']").length).toBeGreaterThan(1)
     await settle()
     expect(root.querySelector("[data-diagram='drawing']")).toBeNull()
     expect(root.querySelector("figure[data-diagram='drawn'] img")).not.toBeNull()

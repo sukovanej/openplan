@@ -1,7 +1,6 @@
-import { Loader2 } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 
-import { cn } from "@openplan/ui"
+import { Skeleton } from "@openplan/ui"
 
 import { type DiagramResult, type DiagramTheme, drawDiagram, type DrawnDiagram, svgDataUrl } from "./diagram"
 import { useResolvedTheme } from "./use-dark-mode"
@@ -52,11 +51,16 @@ export function DiagramBlock({ source, children }: { source: string; children: R
   const { current, last } = useDiagram(source)
   if (current === null && last === null) {
     return (
-      <figure className={cn(frameClass, "flex min-h-32 items-center justify-center")} data-diagram="drawing">
-        <p role="status" className="text-muted-foreground my-0 flex items-center gap-2 font-sans text-sm">
-          <Loader2 className="size-4 animate-spin" />
-          Drawing the diagram
-        </p>
+      <figure className={frameClass} data-diagram="drawing" role="status">
+        <span className="sr-only">Drawing the diagram</span>
+        <div className="flex flex-col items-center gap-4 py-4">
+          <Skeleton className="h-10 w-28" />
+          <Skeleton className="h-8 w-0.5" />
+          <div className="flex gap-6">
+            <Skeleton className="h-10 w-28" />
+            <Skeleton className="h-10 w-28" />
+          </div>
+        </div>
       </figure>
     )
   }
