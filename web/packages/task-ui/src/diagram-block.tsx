@@ -41,7 +41,7 @@ function Picture({ drawn }: { drawn: DrawnDiagram }) {
       alt="Diagram"
       width={Math.round(drawn.size.width * SCALE)}
       height={Math.round(drawn.size.height * SCALE)}
-      className="my-0 h-auto max-w-none"
+      className="mx-auto my-0 block h-auto max-w-none"
     />
   )
 }
