@@ -7,11 +7,13 @@ use anyhow::{Context, Result};
 #[cfg(target_os = "windows")]
 use op_client::{base_url, default_port};
 #[cfg(not(target_os = "windows"))]
-use op_daemon::{Control, base_url, default_port};
+use op_daemon::{AppInfo, Control, base_url, default_port};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager as _, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
 
+#[cfg(not(target_os = "windows"))]
+use std::path::{Path, PathBuf};
 #[cfg(target_os = "windows")]
 use std::time::{Duration, Instant};
 
@@ -28,6 +30,10 @@ struct Handover {
 }
 
 pub fn run() -> ExitCode {
+    #[cfg(not(target_os = "windows"))]
+    if let Err(err) = leave_receipt() {
+        eprintln!("warning: {err:#}");
+    }
     let handover = Arc::new(Mutex::new(Handover::default()));
     let shown = handover.clone();
     let started = tauri::Builder::default()
@@ -74,6 +80,31 @@ pub fn run() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+// `openplan update` reads the receipt to quit this process and to find the bundle it replaces. The
+// receipt outlives the process: a dead pid still names the bundle to update. A binary outside a
+// bundle, such as a `cargo run` build, leaves none, and the updater leaves it alone.
+#[cfg(not(target_os = "windows"))]
+fn leave_receipt() -> Result<()> {
+    let exe = std::env::current_exe().context("locating the app executable")?;
+    let Some(bundle) = bundle_of(&exe) else {
+        return Ok(());
+    };
+    let control = Control::resolve()?;
+    control.home().ensure_dir()?;
+    control.home().write_app_info(&AppInfo {
+        pid: std::process::id(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        bundle,
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+fn bundle_of(exe: &Path) -> Option<PathBuf> {
+    exe.ancestors()
+        .find(|dir| dir.extension().is_some_and(|ext| ext == "app"))
+        .map(Path::to_path_buf)
 }
 
 // The daemon serves the same SPA the browser gets, so the window moves to its URL instead of

@@ -1,0 +1,27 @@
+[package]
+name = "op-update"
+description = "Fetch the newest GitHub release, verify its digests, and replace the installed CLI and desktop app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+flate2.workspace = true
+reqwest.workspace = true
+semver.workspace = true
+serde.workspace = true
+sha2.workspace = true
+tar.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

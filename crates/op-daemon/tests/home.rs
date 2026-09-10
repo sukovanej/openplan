@@ -1,5 +1,7 @@
 use fs2::FileExt as _;
-use op_daemon::{DEFAULT_PORT, DaemonInfo, Home, base_url};
+use std::path::PathBuf;
+
+use op_daemon::{AppInfo, DEFAULT_PORT, DaemonInfo, Home, base_url};
 
 fn info() -> DaemonInfo {
     DaemonInfo {
@@ -65,4 +67,29 @@ fn a_held_lock_is_not_free() {
 #[test]
 fn the_default_port_names_the_loopback_daemon() {
     assert_eq!(base_url(DEFAULT_PORT), "http://127.0.0.1:7373");
+}
+
+#[test]
+fn the_app_receipt_reads_back_whole() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = Home::at(dir.path());
+    home.ensure_dir().unwrap();
+    let info = AppInfo {
+        pid: 777,
+        version: "0.2.0".to_owned(),
+        bundle: PathBuf::from("/Applications/OpenPlan.app"),
+    };
+
+    home.write_app_info(&info).unwrap();
+
+    assert_eq!(home.read_app_info().unwrap(), info);
+    assert!(home.read_info().is_none());
+}
+
+#[test]
+fn a_missing_receipt_reads_as_no_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = Home::at(dir.path());
+
+    assert!(home.read_app_info().is_none());
 }

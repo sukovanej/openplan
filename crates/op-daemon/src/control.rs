@@ -9,7 +9,7 @@ use fs2::FileExt as _;
 
 use op_api::DaemonInfo;
 
-use crate::home::Home;
+use crate::home::{AppInfo, Home};
 use crate::serve::SERVE_ARG;
 use crate::serving;
 
@@ -62,6 +62,20 @@ impl Control {
 
     pub fn recorded(&self) -> Option<DaemonInfo> {
         self.home.read_info()
+    }
+
+    pub fn app(&self) -> Option<AppInfo> {
+        self.home.read_app_info()
+    }
+
+    pub fn app_is_running(&self, app: &AppInfo) -> bool {
+        pid_alive(app.pid)
+    }
+
+    pub fn quit_app(&self, app: &AppInfo) -> Result<()> {
+        signal_term(app.pid)?;
+        self.wait_until_exited(app.pid)
+            .with_context(|| format!("quitting {}", app.bundle.display()))
     }
 
     pub fn ensure(&self, port: u16) -> Result<Started> {
@@ -130,7 +144,12 @@ impl Control {
         if !clean {
             signal_term(info.pid)?;
         }
-        self.wait_until_exited(info.pid)?;
+        self.wait_until_exited(info.pid).with_context(|| {
+            format!(
+                "stopping the daemon; see {}",
+                self.home.log_path().display()
+            )
+        })?;
         self.home.clear_info();
         Ok(StopOutcome::Stopped {
             pid: info.pid,
@@ -162,10 +181,7 @@ impl Control {
                 return Ok(());
             }
             if start.elapsed() > STOP_DEADLINE {
-                bail!(
-                    "daemon (pid {pid}) did not exit within {STOP_DEADLINE:?}; see {}",
-                    self.home.log_path().display()
-                );
+                bail!("process {pid} did not exit within {STOP_DEADLINE:?}");
             }
             std::thread::sleep(Duration::from_millis(50));
         }

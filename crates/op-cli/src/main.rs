@@ -5,6 +5,7 @@ mod open;
 mod plan;
 mod project;
 mod tag;
+mod update;
 
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -192,6 +193,8 @@ enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// Replace this CLI and the desktop app with the newest release
+    Update,
     /// Manage the background daemon and web UI
     Server {
         #[command(subcommand)]
@@ -423,6 +426,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Publish { dry_run } => {
             publish(root, daemon_url, dry_run).map(|()| ExitCode::SUCCESS)
         }
+        Command::Update => update::run().map(|()| ExitCode::SUCCESS),
         Command::Server { command } => server(command, daemon_url),
         Command::MergeDriver {
             ancestor,

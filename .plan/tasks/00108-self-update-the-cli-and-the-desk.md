@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-09-06T11:45:17Z
 tags:
 - cli
@@ -57,3 +57,9 @@ tags:
 - The daemon stops through the HTTP `/shutdown` path that `Control::stop`
   already uses. It sends a signal only when that path fails.
 - A browser tab keeps the old SPA until the user reloads it.
+
+## Comments
+
+### 2026-09-10T22:18:59Z by Milan Suk via claude-code
+
+> reqwest 0.13 has no rustls-tls-native-roots; its rustls feature verifies through the platform trust store, which gives the same proxy behavior. The CLI archive is now .tar.gz (dist unix-archive), so the updater needs one decompressor for the CLI and the app tarball.
