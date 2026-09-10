@@ -98,6 +98,30 @@ async fn spa_index_served_with_charset() {
     assert_eq!(content_type, "text/html; charset=utf-8");
 }
 
+fn a_hashed_asset() -> String {
+    let assets =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/packages/app/dist/assets");
+    let file = std::fs::read_dir(assets)
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|entry| entry.path().extension().is_some_and(|ext| ext == "js"))
+        .unwrap();
+    format!("/assets/{}", file.file_name().to_string_lossy())
+}
+
+#[tokio::test]
+async fn hashed_assets_are_cached_for_a_year_and_the_page_is_not() {
+    let response = get(&a_hashed_asset()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "public, max-age=31536000, immutable"
+    );
+
+    let response = get("/").await;
+    assert!(response.headers().get(header::CACHE_CONTROL).is_none());
+}
+
 #[tokio::test]
 async fn health_reports_identity_when_set() {
     let info = op_api::DaemonInfo {

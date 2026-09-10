@@ -4,6 +4,7 @@ import { toJsxRuntime } from "hast-util-to-jsx-runtime"
 import { type ComponentProps, type ReactNode, useMemo } from "react"
 import { Fragment, jsx, jsxs } from "react/jsx-runtime"
 
+import { DiagramBlock } from "./diagram-block"
 import { type CodeLanguage, highlightToHast, resolveLang, useHighlighterReady } from "./highlighter"
 
 // Shiki writes both palettes as `--shiki-light` / `--shiki-dark` on every token, so the app theme
@@ -27,16 +28,22 @@ function languageTag(className: unknown): string | undefined {
   return undefined
 }
 
-function fencedCode(node: Element | undefined): { source: string; lang: CodeLanguage } | null {
+const DIAGRAM_TAG = "d2"
+
+type Fence = { source: string; kind: "diagram" } | { source: string; kind: "code"; lang: CodeLanguage }
+
+function fencedCode(node: Element | undefined): Fence | null {
   if (node === undefined || node.children.length !== 1) return null
   const code = node.children[0]
   if (code?.type !== "element" || code.tagName !== "code" || code.children.length !== 1) return null
   const text = code.children[0]
   if (text?.type !== "text") return null
-  const lang = resolveLang(languageTag(code.properties.className))
+  const tag = languageTag(code.properties.className)
+  if (tag?.trim().toLowerCase() === DIAGRAM_TAG) return { source: text.value, kind: "diagram" }
+  const lang = resolveLang(tag)
   // The source keeps its trailing newline, so the highlighted block has the same line count as the
   // plain one below it and the swap moves nothing.
-  return lang === null ? null : { source: text.value, lang }
+  return lang === null ? null : { source: text.value, kind: "code", lang }
 }
 
 // Only a block Shiki can colour mounts this, so a fence with no language never pulls the chunk in.
@@ -50,6 +57,7 @@ export function CodeBlock({ node, children, ...props }: ComponentProps<"pre"> & 
   const plain = <pre {...props}>{children}</pre>
   const fence = fencedCode(node)
   if (fence === null) return plain
+  if (fence.kind === "diagram") return <DiagramBlock source={fence.source}>{plain}</DiagramBlock>
   return (
     <HighlightedCode source={fence.source} lang={fence.lang}>
       {plain}

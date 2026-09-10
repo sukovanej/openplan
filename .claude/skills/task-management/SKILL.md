@@ -96,6 +96,21 @@ exists.
 Set `in_review` when the work is complete. A human sets `done`. The one
 exception is a merge: follow the `task-management-merge` skill.
 
+## Diagram
+
+Draw a diagram in a task body as a fenced code block tagged `d2`. The web UI
+renders the block as a picture. Use plain [d2](https://d2lang.com): shapes,
+containers, and connections. Do not use imports, icons, links, or layout
+settings.
+
+````markdown
+```d2
+cli -> daemon: HTTP
+daemon -> store: reads .plan/tasks
+store: {shape: cylinder}
+```
+````
+
 ## Comment
 
 Follow the `task-comments` skill. Most tasks get no comment.

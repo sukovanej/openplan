@@ -15,6 +15,7 @@
     "@shikijs/engine-javascript": "catalog:",
     "@shikijs/langs": "catalog:",
     "@shikijs/themes": "catalog:",
+    "@terrastruct/d2": "catalog:",
     "hast-util-to-jsx-runtime": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
