@@ -306,6 +306,21 @@ export const getRollingUpdates = (
     }),
   )
 
+// One pending task's change, as git's own unified diff against the default branch.
+export const getRollingUpdateDiff = (
+  project: string,
+  task: string,
+): Effect.Effect<Api.TaskDiff, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.getRollingUpdateDiff(project, encodeURIComponent(task), undefined)).pipe(
+    Effect.catchTags({
+      GetRollingUpdateDiff400: refusal,
+      GetRollingUpdateDiff404: refusal,
+      GetRollingUpdateDiff500: refusal,
+      GetRollingUpdateDiff503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
 // Pushes the branch and opens a pull request. It never writes the default branch, so a person still
 // merges. The 409 carries the reason a person acts on: a conflict holds the branch, or it holds
 // nothing the default branch lacks.

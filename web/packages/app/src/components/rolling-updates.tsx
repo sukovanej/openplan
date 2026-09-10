@@ -1,10 +1,10 @@
-import { Check, CloudOff, CloudUpload, LoaderCircle, TriangleAlert } from "lucide-react"
+import { Check, ChevronRight, CloudOff, CloudUpload, LoaderCircle, TriangleAlert } from "lucide-react"
 import { useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
 import type { Published } from "@openplan/api-client"
 import { ChangeMark, ROLLING_UPDATES_LABEL, taskPath } from "@openplan/task-ui"
-import { Button, cn, CountPill, Tooltip, useDismissOnOutsideClick } from "@openplan/ui"
+import { Button, cn, CountPill, DiffView, Skeleton, Tooltip, useDismissOnOutsideClick } from "@openplan/ui"
 
 import { useConnection } from "../lib/connection"
 import {
@@ -15,6 +15,7 @@ import {
   syncState,
   usePublish,
   useRollingUpdates,
+  useTaskDiff,
 } from "../lib/rolling-updates"
 
 const icons = {
@@ -84,7 +85,7 @@ export function RollingUpdates() {
         </Button>
       </Tooltip>
       {open && (
-        <div className="bg-popover absolute top-full right-0 z-30 mt-1.5 w-96 rounded-md border p-2 shadow-md">
+        <div className="bg-popover absolute top-full right-0 z-30 mt-1.5 w-[40rem] max-w-[calc(100vw-1rem)] rounded-md border p-2 shadow-md">
           <Review updates={updates} publish={publish} />
         </div>
       )}
@@ -97,6 +98,9 @@ type Publish = ReturnType<typeof usePublish>
 function Review({ updates, publish }: { updates: ReadonlyArray<ProjectUpdates>; publish: Publish }) {
   const named = updates.length > 1
   const empty = conflicted(updates).length === 0 && pendingCount(updates) === 0
+  // One diff at a time. Two open at once would push the rest of the list, and the button that
+  // publishes them, off the bottom of the popover.
+  const [open, setOpen] = useState<string>()
   if (empty) {
     return (
       <p className="text-muted-foreground px-2 py-3 text-xs">
@@ -109,31 +113,70 @@ function Review({ updates, publish }: { updates: ReadonlyArray<ProjectUpdates>; 
       {updates
         .filter((one) => one.conflict !== undefined || one.pending.length > 0)
         .map((one) => (
-          <Group key={one.project} updates={one} named={named} publish={publish} />
+          <Group
+            key={one.project}
+            updates={one}
+            named={named}
+            publish={publish}
+            open={open}
+            onOpen={(row) => setOpen(row === open ? undefined : row)}
+          />
         ))}
     </div>
   )
 }
 
-function Group({ updates, named, publish }: { updates: ProjectUpdates; named: boolean; publish: Publish }) {
+function Group({
+  updates,
+  named,
+  publish,
+  open,
+  onOpen,
+}: {
+  updates: ProjectUpdates
+  named: boolean
+  publish: Publish
+  open: string | undefined
+  onOpen: (row: string) => void
+}) {
   const { project, pending, conflict } = updates
   const published = publish.variables === project && publish.data !== undefined ? publish.data : undefined
   return (
     <section className="flex flex-col gap-1.5">
       {named && <h2 className="text-muted-foreground px-2 text-xs font-medium">{project}</h2>}
       <ul className="flex flex-col">
-        {pending.map((cell) => (
-          <li key={cell.task.id}>
-            <Link
-              to={taskPath(project, cell.task.id)}
-              className="hover:bg-muted flex items-baseline gap-2 rounded-sm px-2 py-1 text-sm"
-            >
-              <span className="text-muted-foreground shrink-0 text-xs">{cell.task.id}</span>
-              <span className="min-w-0 flex-1 truncate">{cell.task.title}</span>
-              <ChangeMark kind={cell.kind} />
-            </Link>
-          </li>
-        ))}
+        {pending.map((cell) => {
+          const row = `${project}/${cell.task.id}`
+          const expanded = open === row
+          return (
+            <li key={cell.task.id}>
+              <div className="hover:bg-muted flex items-baseline gap-1 rounded-sm pr-2">
+                <button
+                  type="button"
+                  aria-label={`Diff of ${cell.task.id}`}
+                  aria-expanded={expanded}
+                  onClick={() => onOpen(row)}
+                  className="text-muted-foreground hover:text-foreground self-center p-1"
+                >
+                  <ChevronRight className={cn("size-3.5 transition-transform", expanded && "rotate-90")} aria-hidden />
+                </button>
+                <Link
+                  to={taskPath(project, cell.task.id)}
+                  className="flex min-w-0 flex-1 items-baseline gap-2 py-1 text-sm"
+                >
+                  <span className="text-muted-foreground shrink-0 text-xs">{cell.task.id}</span>
+                  <span className="min-w-0 flex-1 truncate">{cell.task.title}</span>
+                  <ChangeMark kind={cell.kind} />
+                </Link>
+              </div>
+              {expanded && (
+                <div className="bg-muted/30 mx-2 mb-1 max-h-80 overflow-auto rounded-md border">
+                  <Diff project={project} task={cell.task.id} />
+                </div>
+              )}
+            </li>
+          )
+        })}
       </ul>
       {conflict === undefined ? (
         <Publisher project={project} count={pending.length} published={published} publish={publish} />
@@ -142,6 +185,15 @@ function Group({ updates, named, publish }: { updates: ProjectUpdates; named: bo
       )}
     </section>
   )
+}
+
+function Diff({ project, task }: { project: string; task: string }) {
+  const diff = useTaskDiff(project, task)
+  if (diff.isPending) return <Skeleton className="m-2 h-16" />
+  if (diff.isError) {
+    return <p className="text-muted-foreground px-2 py-1.5 text-xs">The diff of {task} could not be read.</p>
+  }
+  return <DiffView diff={diff.data} className="py-1" />
 }
 
 function Publisher({

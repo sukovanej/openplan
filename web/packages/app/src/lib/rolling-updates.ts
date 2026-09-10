@@ -1,10 +1,10 @@
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import type { Conflict, MatrixCell, Published } from "@openplan/api-client"
+import type { Conflict, MatrixCell, Published, TaskDiff } from "@openplan/api-client"
 
-import { getRollingUpdates, publishRollingUpdates } from "./api"
+import { getRollingUpdateDiff, getRollingUpdates, publishRollingUpdates } from "./api"
 import { useProjects } from "./projects"
-import { mergedKey, projectKey, projectMutationsKey, rollingUpdatesKey } from "./query-client"
+import { mergedKey, projectKey, projectMutationsKey, rollingUpdateDiffKey, rollingUpdatesKey } from "./query-client"
 import { runtime } from "./runtime"
 
 export type SyncState = "offline" | "syncing" | "blocked" | "pending" | "idle"
@@ -48,6 +48,14 @@ export function useRollingUpdates(): ReadonlyArray<ProjectUpdates> {
         if (project === undefined || result.data === undefined) return []
         return [{ project: project.name, pending: result.data.pending, conflict: result.data.conflict ?? undefined }]
       }),
+  })
+}
+
+export function useTaskDiff(project: string, task: string) {
+  return useQuery({
+    queryKey: rollingUpdateDiffKey(project, task),
+    queryFn: () => runtime.runPromise(getRollingUpdateDiff(project, task)),
+    select: (read: TaskDiff) => read.diff,
   })
 }
 

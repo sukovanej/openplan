@@ -20,8 +20,8 @@ use op_api::{
     Abbreviation, ApiErrorBody, Board, BranchComments, BranchState, ChangeEvent, ChangeKind,
     Comment, CreateComment, CreateTag, CreateTask, DaemonInfo, Flow, FlowCycles, FlowQuery,
     KeyError, Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject,
-    RollingUpdates, SearchHit, Status, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem,
-    TaskPatch, TaskTree, TaskTreeView, TaskView,
+    RollingUpdates, SearchHit, Status, TagPatch, TagView, TaskBranches, TaskDetail, TaskDiff,
+    TaskListItem, TaskPatch, TaskTree, TaskTreeView, TaskView,
 };
 use op_git::Repo;
 use op_index::{Index, IndexError};
@@ -310,6 +310,7 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(get_matrix))
         .routes(routes!(get_rolling_updates))
         .routes(routes!(publish_rolling_updates))
+        .routes(routes!(get_rolling_update_diff))
         .routes(routes!(get_board))
         .routes(routes!(get_merged_board))
         .routes(routes!(get_flow))
@@ -1103,6 +1104,78 @@ async fn publish_rolling_updates(
         Some(Err(why)) => Err(ApiError::conflict(why)),
         Some(Ok(published)) => Ok(Json(published)),
     }
+}
+
+// One pending task's change, as git's own unified diff. The route takes no branch parameters
+// because both sides are fixed: the default branch, and the branch the daemon writes.
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/rolling-updates/{task}/diff",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("task" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$")
+    ),
+    responses(
+        (status = 200, description = "The task's unified diff against the default branch", body = TaskDiff),
+        (status = 400, description = "The task key is invalid", body = ApiErrorBody),
+        (status = 404, description = "No such project, or the task has no pending change", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
+    )
+)]
+async fn get_rolling_update_diff(
+    State(state): State<AppState>,
+    Path((project, task)): Path<(String, String)>,
+) -> Result<Json<TaskDiff>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let diff = tokio::task::spawn_blocking(move || -> Result<String, ApiError> {
+        if project.rolling_updates_branch().is_none() {
+            return Err(no_rolling_updates());
+        }
+        let path = {
+            // Rebuilt for the same reason the listing rebuilds: a commit or a publish moves refs
+            // without a write through this process.
+            let index = project.rebuilt_index().map_err(index_error)?;
+            let number = reject_non_key(index.abbreviation(), &task)?;
+            pending_path(&index, project.store(), &task, number)
+                .ok_or_else(|| no_pending_change(&task))?
+        };
+        project
+            .with_rolling_updates(|rolling| rolling.diff(&path))
+            .ok_or_else(no_rolling_updates)?
+            .map_err(ApiError::internal)
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(Json(TaskDiff { diff }))
+}
+
+// The task file of a pending change, relative to the worktree git runs in. It sits in the
+// rolling-updates worktree, unless the pending change is the deletion that took it out of there,
+// and then only the default branch's checkout still carries it.
+fn pending_path(index: &Index, serve: &Store, id: &str, number: u64) -> Option<String> {
+    index
+        .matrix()
+        .cells
+        .iter()
+        .find(|cell| cell.branch == op_git::ROLLING_UPDATES_BRANCH && cell.task.id == id)?;
+    [
+        index.live_store(op_git::ROLLING_UPDATES_BRANCH),
+        Some(serve.clone()),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|store| {
+        let path = store.task_path(number).ok()?;
+        Some(path.strip_prefix(store.root()).ok()?.display().to_string())
+    })
+}
+
+fn no_pending_change(id: &str) -> ApiError {
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        format!("task {id} has no change waiting on the rolling-updates branch"),
+    )
 }
 
 fn no_rolling_updates() -> ApiError {
