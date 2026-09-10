@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_review
 created: 2026-09-10T00:15:45Z
 dependencies:
 - ./00109-rolling-updates-a-branch-with-a.md
@@ -197,3 +197,19 @@ One live test in the same file, under `#[ignore]`, that starts the real
 `claude` binary against a temporary repository with a rolling-updates
 worktree, asks for a task, and finds one new file in the worktree's
 `.plan/tasks` when the turn ends.
+
+## Comments
+
+### 2026-09-10T00:58:43Z by Milan Suk via claude-code
+
+> `AppState::new` keeps the two real backends and `AppState::with_agents` takes the fake instead, because `new` has 30 call sites and `with_registry`/`with_health` are the house pattern for injection.
+>
+> `AgentKind` gained `PartialOrd, Ord, Hash` in `op-agent`; `BTreeMap<AgentKind, _>` needs them. That is the only change to the agent crates.
+>
+> The bound task sits in the same mutex as the transcript, not a separate `RwLock`. Every broadcast send happens under that mutex, so a reader takes its snapshot and subscribes without racing the events the snapshot already holds.
+>
+> The DTOs live in `op-server`, not `op-api`, so the shared wire crate never depends on `op-agent`.
+>
+> The live test asks the agent for the file, not for `<binary> create`: the instructions name the running executable, and in a test that executable is the test.
+>
+> `web/packages/api-client` still has no agent routes. Run `mise run generate-web-client` for [[./00114-ui-the-agent-page-a-chat-beside-t.md]].

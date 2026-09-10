@@ -3698,7 +3698,11 @@ name = "op-server"
 version = "0.0.1"
 dependencies = [
  "axum",
+ "getrandom 0.3.4",
  "http-body-util",
+ "op-agent",
+ "op-agent-claude",
+ "op-agent-codex",
  "op-api",
  "op-git",
  "op-index",
