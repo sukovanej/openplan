@@ -239,6 +239,10 @@ impl Project {
             .map(read)
     }
 
+    pub fn rolling_updates_branch(&self) -> Option<String> {
+        self.with_rolling_updates(|_| op_git::ROLLING_UPDATES_BRANCH.to_owned())
+    }
+
     pub fn store(&self) -> &Store {
         &self.store
     }
@@ -258,8 +262,7 @@ impl Project {
             git_common_dir: self.git_common_dir.clone(),
             abbreviation: self.abbreviation().to_string(),
             status: self.status(),
-            rolling_updates_branch: self
-                .with_rolling_updates(|_| op_git::ROLLING_UPDATES_BRANCH.to_string()),
+            rolling_updates_branch: self.rolling_updates_branch(),
         }
     }
 

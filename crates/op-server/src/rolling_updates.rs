@@ -30,6 +30,7 @@ enum Signal {
 pub struct Handle {
     signals: mpsc::Sender<Signal>,
     repo: Repo,
+    default_branch: String,
 }
 
 impl Handle {
@@ -55,12 +56,22 @@ impl Handle {
             remote: repo.rolling_updates_remote(&default_branch),
             remote_branch: repo.rolling_updates_remote_branch(),
             repo: repo.clone(),
-            default_branch,
+            default_branch: default_branch.clone(),
             project: project.name(),
             events,
         };
         std::thread::spawn(move || worker.run(&inbox));
-        Some(Handle { signals, repo })
+        Some(Handle {
+            signals,
+            repo,
+            default_branch,
+        })
+    }
+
+    pub fn diff(&self, path: &str) -> Result<String, String> {
+        self.repo
+            .rolling_updates_diff(&self.default_branch, path)
+            .map_err(text)
     }
 
     pub fn edited(&self) {

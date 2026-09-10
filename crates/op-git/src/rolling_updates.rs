@@ -139,6 +139,17 @@ impl Repo {
         Ok(!out.trim().is_empty())
     }
 
+    // `git diff <default-branch>` compares that branch's tree to the working file, so an edit the
+    // daemon has not committed yet shows without a read through the index.
+    pub fn rolling_updates_diff(&self, from: &str, path: &str) -> Result<String, GitError> {
+        let worktree = self.rolling_updates_worktree();
+        let diff = git(&worktree, &["diff", from, "--", path])?;
+        if diff.trim().is_empty() {
+            return untracked_diff(&worktree, path);
+        }
+        Ok(diff)
+    }
+
     pub fn rolling_updates_rebase_in_progress(&self) -> bool {
         let admin = self
             .git_common_dir()
@@ -189,6 +200,30 @@ impl Repo {
         let value = git(&self.git_common_dir(), &["config", "--get", key]).ok()?;
         let value = value.trim();
         (!value.is_empty()).then(|| value.to_owned())
+    }
+}
+
+// A task the daemon has not committed yet is untracked, and `git diff <commit>` passes over an
+// untracked file in silence. `--no-index` formats the same addition, and it exits 1 when it finds
+// one, so the status is read rather than trusted.
+fn untracked_diff(worktree: &Path, path: &str) -> Result<String, GitError> {
+    if !worktree.join(path).is_file()
+        || !git(worktree, &["ls-files", "--", path])?.trim().is_empty()
+    {
+        return Ok(String::new());
+    }
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["diff", "--no-index", "--", "/dev/null", path])
+        .output()
+        .map_err(|e| GitError::Command(format!("git diff --no-index: {e}")))?;
+    match output.status.code() {
+        Some(0 | 1) => Ok(String::from_utf8_lossy(&output.stdout).into_owned()),
+        _ => Err(GitError::Command(format!(
+            "git diff --no-index failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))),
     }
 }
 

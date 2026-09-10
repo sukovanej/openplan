@@ -374,3 +374,177 @@ async fn a_conflict_a_person_resolved_stops_being_reported() {
 
     assert!(waiting(&state).await["conflict"].is_null());
 }
+
+async fn diff(state: &AppState, id: &str) -> Response {
+    let uri = format!("/api/projects/{PROJECT}/rolling-updates/{id}/diff");
+    send(state, "GET", &uri, None).await
+}
+
+async fn diff_text(state: &AppState, id: &str) -> String {
+    let response = diff(state, id).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    body_json(response).await["diff"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn lines_starting(diff: &str, mark: char) -> Vec<&str> {
+    let header: String = std::iter::repeat_n(mark, 3).collect();
+    diff.lines()
+        .filter(|line| line.starts_with(mark) && !line.starts_with(&header))
+        .collect()
+}
+
+// The task exists on the default branch, and the rolling-updates branch edits it.
+fn edit_on_the_branch(root: &std::path::Path, body: &str) {
+    let repo = op_git::Repo::discover(root).unwrap();
+    let task = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# T\n\nbase\n";
+    std::fs::write(root.join(".plan/tasks/00001-t.md"), task).unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "a task"]);
+    repo.rolling_updates_rebase("main").unwrap();
+    std::fs::write(
+        repo.rolling_updates_worktree()
+            .join(".plan/tasks/00001-t.md"),
+        task.replace("base", body),
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn a_modified_task_diffs_the_edit_against_the_default_branch() {
+    let (dir, state) = with_rolling_updates();
+    edit_on_the_branch(dir.path(), "edited");
+    op_git::Repo::discover(dir.path())
+        .unwrap()
+        .rolling_updates_commit("Rolling task updates")
+        .unwrap();
+
+    let text = diff_text(&state, "OPP-1").await;
+
+    assert_eq!(
+        text.lines().filter(|line| line.starts_with("@@")).count(),
+        1,
+        "{text}"
+    );
+    assert_eq!(lines_starting(&text, '-'), ["-base"], "{text}");
+    assert_eq!(lines_starting(&text, '+'), ["+edited"], "{text}");
+}
+
+// The commit runs on a quiet timer, so a read can land while the edit is only in the worktree.
+#[tokio::test]
+async fn a_dirty_edit_the_daemon_has_not_committed_is_in_the_diff() {
+    let (dir, state) = with_rolling_updates();
+    edit_on_the_branch(dir.path(), "not committed yet");
+
+    let text = diff_text(&state, "OPP-1").await;
+
+    assert_eq!(lines_starting(&text, '+'), ["+not committed yet"], "{text}");
+}
+
+#[tokio::test]
+async fn an_added_task_diffs_against_dev_null() {
+    let (dir, state) = with_rolling_updates();
+    create(
+        &state,
+        "An edit for later",
+        "?branch=openplan/rolling-updates",
+    )
+    .await;
+    op_git::Repo::discover(dir.path())
+        .unwrap()
+        .rolling_updates_commit("Rolling task updates")
+        .unwrap();
+
+    let text = diff_text(&state, "OPP-1").await;
+
+    assert!(text.contains("--- /dev/null"), "{text}");
+    assert!(lines_starting(&text, '-').is_empty(), "{text}");
+    assert!(
+        lines_starting(&text, '+').contains(&"+# An edit for later"),
+        "{text}"
+    );
+}
+
+// The daemon writes a new task into the worktree and commits it seconds later, so an untracked file
+// is what a person's first read finds.
+#[tokio::test]
+async fn an_added_task_the_daemon_has_not_committed_diffs_against_dev_null() {
+    let (_dir, state) = with_rolling_updates();
+    create(
+        &state,
+        "An edit for later",
+        "?branch=openplan/rolling-updates",
+    )
+    .await;
+
+    let text = diff_text(&state, "OPP-1").await;
+
+    assert!(text.contains("/dev/null"), "{text}");
+    assert!(
+        lines_starting(&text, '+').contains(&"+# An edit for later"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn a_deleted_task_diffs_to_nothing() {
+    let (dir, state) = with_rolling_updates();
+    edit_on_the_branch(dir.path(), "base");
+    let repo = op_git::Repo::discover(dir.path()).unwrap();
+    std::fs::remove_file(
+        repo.rolling_updates_worktree()
+            .join(".plan/tasks/00001-t.md"),
+    )
+    .unwrap();
+    repo.rolling_updates_commit("Rolling task updates").unwrap();
+
+    let text = diff_text(&state, "OPP-1").await;
+
+    assert!(lines_starting(&text, '+').is_empty(), "{text}");
+    assert!(lines_starting(&text, '-').contains(&"-base"), "{text}");
+}
+
+#[tokio::test]
+async fn a_task_with_no_pending_change_has_no_diff() {
+    let (dir, state) = with_rolling_updates();
+    create(&state, "A plain edit", "?branch=main").await;
+    op_git::Repo::discover(dir.path())
+        .unwrap()
+        .rolling_updates_rebase("main")
+        .unwrap();
+
+    assert_eq!(diff(&state, "OPP-1").await.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_repository_without_the_branch_has_no_diff_to_answer_with() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
+    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
+    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    let store = op_store::Store::discover(root).unwrap();
+    let repo = op_git::Repo::discover(root).unwrap();
+    let config = op_store::Config {
+        abbreviation: store.abbreviation(),
+        default_branch: None,
+    };
+    let state = AppState::new([Project::new(
+        PROJECT,
+        root.to_path_buf(),
+        repo,
+        store,
+        &config,
+    )]);
+    state.start_watchers();
+
+    assert_eq!(
+        diff(&state, "OPP-1").await.status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}

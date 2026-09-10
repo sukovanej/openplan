@@ -12,6 +12,13 @@ pub struct RollingUpdates {
     pub conflict: Option<Conflict>,
 }
 
+// One pending task's change, as git's own unified diff against the default branch. Empty when the
+// two sides agree.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TaskDiff {
+    pub diff: String,
+}
+
 // A rebase that stopped. The files keep their markers in `worktree`, so a person fixes them there
 // and runs `git rebase --continue`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

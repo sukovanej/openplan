@@ -19,6 +19,10 @@ export const flowKey = (query: string) => [...flowsKey, query] as const
 export const boardKey = (project: string) => [...projectKey(project), "board"] as const
 export const tasksKey = (project: string) => [...projectKey(project), "tasks"] as const
 export const rollingUpdatesKey = (project: string) => [...projectKey(project), "rolling-updates"] as const
+// Under what is waiting to be published, so the invalidation that refreshes that list refreshes
+// every open diff with it. A commit, a rebase, a publish, and an edit to the task all send it.
+export const rollingUpdateDiffKey = (project: string, task: string) =>
+  [...rollingUpdatesKey(project), "diff", task] as const
 export const tagsKey = (project: string, branch?: string) =>
   branch === undefined
     ? ([...projectKey(project), "tags"] as const)

@@ -108,6 +108,8 @@ export type SearchMatch = "key" | "title" | "text"
 export const SearchMatch = Schema.Literals(["key", "title", "text"])
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
+export type TaskDiff = { readonly diff: string }
+export const TaskDiff = Schema.Struct({ diff: Schema.String })
 export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
 export const TaskTreeView = Schema.Struct({ cycles: Schema.optionalKey(Schema.Array(Schema.String)), tree: TaskTree })
 export type WriteTarget = { readonly branch: string; readonly writable: boolean }
@@ -532,6 +534,16 @@ export type PublishRollingUpdates409 = ApiErrorBody
 export const PublishRollingUpdates409 = ApiErrorBody
 export type PublishRollingUpdates503 = ApiErrorBody
 export const PublishRollingUpdates503 = ApiErrorBody
+export type GetRollingUpdateDiff200 = TaskDiff
+export const GetRollingUpdateDiff200 = TaskDiff
+export type GetRollingUpdateDiff400 = ApiErrorBody
+export const GetRollingUpdateDiff400 = ApiErrorBody
+export type GetRollingUpdateDiff404 = ApiErrorBody
+export const GetRollingUpdateDiff404 = ApiErrorBody
+export type GetRollingUpdateDiff500 = ApiErrorBody
+export const GetRollingUpdateDiff500 = ApiErrorBody
+export type GetRollingUpdateDiff503 = ApiErrorBody
+export const GetRollingUpdateDiff503 = ApiErrorBody
 export type SearchProjectParams = { readonly q?: string; readonly fresh?: boolean }
 export const SearchProjectParams = Schema.Struct({
   q: Schema.optionalKey(Schema.String),
@@ -988,6 +1000,19 @@ export const make = (
           }),
         ),
       ),
+    getRollingUpdateDiff: (project, task, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/rolling-updates/${task}/diff`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(GetRollingUpdateDiff200),
+            "400": decodeError("GetRollingUpdateDiff400", GetRollingUpdateDiff400),
+            "404": decodeError("GetRollingUpdateDiff404", GetRollingUpdateDiff404),
+            "500": decodeError("GetRollingUpdateDiff500", GetRollingUpdateDiff500),
+            "503": decodeError("GetRollingUpdateDiff503", GetRollingUpdateDiff503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     searchProject: (project, options) =>
       HttpClientRequest.get(`/api/projects/${project}/search`).pipe(
         HttpClientRequest.setUrlParams({ q: options?.params?.["q"] as any, fresh: options?.params?.["fresh"] as any }),
@@ -1373,6 +1398,19 @@ export interface TasksClient {
     | TasksClientError<"PublishRollingUpdates404", typeof PublishRollingUpdates404.Type>
     | TasksClientError<"PublishRollingUpdates409", typeof PublishRollingUpdates409.Type>
     | TasksClientError<"PublishRollingUpdates503", typeof PublishRollingUpdates503.Type>
+  >
+  readonly getRollingUpdateDiff: <Config extends OperationConfig>(
+    project: string,
+    task: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetRollingUpdateDiff200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetRollingUpdateDiff400", typeof GetRollingUpdateDiff400.Type>
+    | TasksClientError<"GetRollingUpdateDiff404", typeof GetRollingUpdateDiff404.Type>
+    | TasksClientError<"GetRollingUpdateDiff500", typeof GetRollingUpdateDiff500.Type>
+    | TasksClientError<"GetRollingUpdateDiff503", typeof GetRollingUpdateDiff503.Type>
   >
   readonly searchProject: <Config extends OperationConfig>(
     project: string,
