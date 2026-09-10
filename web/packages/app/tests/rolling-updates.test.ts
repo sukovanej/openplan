@@ -67,6 +67,10 @@ const PROJECT = "openplan"
 
 const served = vi.hoisted(() => ({
   diff: ["@@ -1 +1 @@", "-the old body", "+the new body"].join("\n"),
+  // What a discard changes about the next read, and what it was asked to discard.
+  gone: new Set<string>(),
+  conflict: null as { files: Array<string>; worktree: string } | null,
+  discarded: [] as Array<{ project: string; id?: string }>,
 }))
 
 vi.mock("../src/lib/api", async () => {
@@ -84,11 +88,22 @@ vi.mock("../src/lib/api", async () => {
     ]),
     getRollingUpdates: () =>
       Effect.sync(() => ({
-        pending: [cell("OPP-1"), cell("OPP-2")],
-        conflict: null,
+        pending: [cell("OPP-1"), cell("OPP-2")].filter((one) => !served.gone.has(one.task.id)),
+        conflict: served.conflict,
       })),
     getRollingUpdateDiff: () => Effect.sync(() => ({ diff: served.diff })),
     publishRollingUpdates: () => Effect.succeed({ remote: "origin", branch: "b", commit: "c", pull_request: null }),
+    discardRollingUpdate: (project: string, id: string) =>
+      Effect.sync(() => {
+        served.discarded.push({ project, id })
+        served.gone.add(id)
+      }),
+    discardRollingUpdates: (project: string) =>
+      Effect.sync(() => {
+        served.discarded.push({ project })
+        served.gone = new Set(["OPP-1", "OPP-2"])
+        served.conflict = null
+      }),
   }
 })
 
@@ -101,6 +116,9 @@ afterEach(async () => {
     await act(async () => held.root.unmount())
     held.container.remove()
   }
+  served.gone = new Set()
+  served.conflict = null
+  served.discarded = []
   queryClient.clear()
 })
 
@@ -150,6 +168,12 @@ const expanded = (root: HTMLElement) =>
     (chevron) => chevron.getAttribute("aria-expanded") === "true",
   )
 
+function labelled(root: HTMLElement, text: string): HTMLButtonElement {
+  const found = Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find((one) => one.textContent === text)
+  if (found === undefined) throw new Error(`no ${text} button appeared`)
+  return found
+}
+
 describe("the review popover", () => {
   it("expands the row whose chevron a person clicks", async () => {
     const root = await openTheReview()
@@ -191,5 +215,56 @@ describe("the review popover", () => {
     await tick()
 
     expect(root.textContent).toContain("a later body")
+  })
+})
+
+describe("discarding", () => {
+  it("asks in the row itself, and Keep closes the question", async () => {
+    const root = await openTheReview()
+
+    await click(await settle(root, "Discard the change to OPP-1"))
+    expect(root.textContent).toContain("Discard?")
+
+    await click(labelled(root, "Keep"))
+
+    expect(root.textContent).not.toContain("Discard?")
+    expect(served.discarded).toEqual([])
+  })
+
+  it("sends the task's own route, and the row leaves the list", async () => {
+    const root = await openTheReview()
+
+    await click(await settle(root, "Discard the change to OPP-1"))
+    await click(labelled(root, "Discard"))
+    await tick()
+
+    expect(served.discarded).toEqual([{ project: PROJECT, id: "OPP-1" }])
+    expect(expanded(root)).toEqual([false])
+    expect(root.textContent).not.toContain("OPP-1")
+  })
+
+  it("sends the project's route when everything is discarded", async () => {
+    const root = await openTheReview()
+
+    await click(labelled(root, "Discard all"))
+    await click(labelled(root, "Discard"))
+    await tick()
+
+    expect(served.discarded).toEqual([{ project: PROJECT }])
+    expect(root.textContent).toContain("Nothing to publish")
+  })
+
+  // Publishing is refused while the rebase stands, so this is the only action the box can offer.
+  it("offers the discard that ends a stopped rebase", async () => {
+    served.conflict = { files: [".plan/tasks/00001-t.md"], worktree: "/repo/.git/openplan-rolling-updates" }
+    const root = await openTheReview()
+    expect(root.textContent).not.toContain("Publish")
+
+    await click(labelled(root, "Abort the rebase and discard everything"))
+    await click(labelled(root, "Discard"))
+    await tick()
+
+    expect(served.discarded).toEqual([{ project: PROJECT }])
+    expect(root.textContent).not.toContain("A rebase stopped")
   })
 })

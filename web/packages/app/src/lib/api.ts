@@ -334,6 +334,35 @@ export const publishRollingUpdates = (project: string): Effect.Effect<Api.Publis
     }),
   )
 
+// Puts one pending task back to what the default branch says, or takes it away when the default
+// branch never had it. The branch keeps its earlier commits; nothing rewrites history.
+export const discardRollingUpdate = (
+  project: string,
+  id: string,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.discardRollingUpdate(project, encodeURIComponent(id), undefined)).pipe(
+    Effect.catchTags({
+      DiscardRollingUpdate400: refusal,
+      DiscardRollingUpdate404: refusal,
+      DiscardRollingUpdate409: refusal,
+      DiscardRollingUpdate500: refusal,
+      DiscardRollingUpdate503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// Puts the whole branch back on the default branch. It is also the only way out of a stopped
+// rebase, so it stays reachable while a conflict blocks everything else.
+export const discardRollingUpdates = (project: string): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.discardRollingUpdates(project, undefined)).pipe(
+    Effect.catchTags({
+      DiscardRollingUpdates404: refusal,
+      DiscardRollingUpdates409: refusal,
+      DiscardRollingUpdates503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
 // `branch` puts the new task on one branch's worktree. A subtask names the branch its parent lives
 // on, so the pair stays together instead of parting on whatever the daemon's root has checked out.
 export const createTask = (

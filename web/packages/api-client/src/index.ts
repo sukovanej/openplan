@@ -526,6 +526,12 @@ export type GetRollingUpdates500 = ApiErrorBody
 export const GetRollingUpdates500 = ApiErrorBody
 export type GetRollingUpdates503 = ApiErrorBody
 export const GetRollingUpdates503 = ApiErrorBody
+export type DiscardRollingUpdates404 = ApiErrorBody
+export const DiscardRollingUpdates404 = ApiErrorBody
+export type DiscardRollingUpdates409 = ApiErrorBody
+export const DiscardRollingUpdates409 = ApiErrorBody
+export type DiscardRollingUpdates503 = ApiErrorBody
+export const DiscardRollingUpdates503 = ApiErrorBody
 export type PublishRollingUpdates200 = Published
 export const PublishRollingUpdates200 = Published
 export type PublishRollingUpdates404 = ApiErrorBody
@@ -534,6 +540,16 @@ export type PublishRollingUpdates409 = ApiErrorBody
 export const PublishRollingUpdates409 = ApiErrorBody
 export type PublishRollingUpdates503 = ApiErrorBody
 export const PublishRollingUpdates503 = ApiErrorBody
+export type DiscardRollingUpdate400 = ApiErrorBody
+export const DiscardRollingUpdate400 = ApiErrorBody
+export type DiscardRollingUpdate404 = ApiErrorBody
+export const DiscardRollingUpdate404 = ApiErrorBody
+export type DiscardRollingUpdate409 = ApiErrorBody
+export const DiscardRollingUpdate409 = ApiErrorBody
+export type DiscardRollingUpdate500 = ApiErrorBody
+export const DiscardRollingUpdate500 = ApiErrorBody
+export type DiscardRollingUpdate503 = ApiErrorBody
+export const DiscardRollingUpdate503 = ApiErrorBody
 export type GetRollingUpdateDiff200 = TaskDiff
 export const GetRollingUpdateDiff200 = TaskDiff
 export type GetRollingUpdateDiff400 = ApiErrorBody
@@ -988,6 +1004,18 @@ export const make = (
           }),
         ),
       ),
+    discardRollingUpdates: (project, options) =>
+      HttpClientRequest.delete(`/api/projects/${project}/rolling-updates`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "404": decodeError("DiscardRollingUpdates404", DiscardRollingUpdates404),
+            "409": decodeError("DiscardRollingUpdates409", DiscardRollingUpdates409),
+            "503": decodeError("DiscardRollingUpdates503", DiscardRollingUpdates503),
+            "204": () => Effect.void,
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     publishRollingUpdates: (project, options) =>
       HttpClientRequest.post(`/api/projects/${project}/rolling-updates/publish`).pipe(
         withResponse(options?.config)(
@@ -996,6 +1024,20 @@ export const make = (
             "404": decodeError("PublishRollingUpdates404", PublishRollingUpdates404),
             "409": decodeError("PublishRollingUpdates409", PublishRollingUpdates409),
             "503": decodeError("PublishRollingUpdates503", PublishRollingUpdates503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    discardRollingUpdate: (project, task, options) =>
+      HttpClientRequest.delete(`/api/projects/${project}/rolling-updates/${task}`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "400": decodeError("DiscardRollingUpdate400", DiscardRollingUpdate400),
+            "404": decodeError("DiscardRollingUpdate404", DiscardRollingUpdate404),
+            "409": decodeError("DiscardRollingUpdate409", DiscardRollingUpdate409),
+            "500": decodeError("DiscardRollingUpdate500", DiscardRollingUpdate500),
+            "503": decodeError("DiscardRollingUpdate503", DiscardRollingUpdate503),
+            "204": () => Effect.void,
             orElse: unexpectedStatus,
           }),
         ),
@@ -1388,6 +1430,17 @@ export interface TasksClient {
     | TasksClientError<"GetRollingUpdates500", typeof GetRollingUpdates500.Type>
     | TasksClientError<"GetRollingUpdates503", typeof GetRollingUpdates503.Type>
   >
+  readonly discardRollingUpdates: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DiscardRollingUpdates404", typeof DiscardRollingUpdates404.Type>
+    | TasksClientError<"DiscardRollingUpdates409", typeof DiscardRollingUpdates409.Type>
+    | TasksClientError<"DiscardRollingUpdates503", typeof DiscardRollingUpdates503.Type>
+  >
   readonly publishRollingUpdates: <Config extends OperationConfig>(
     project: string,
     options: { readonly config?: Config | undefined } | undefined,
@@ -1398,6 +1451,20 @@ export interface TasksClient {
     | TasksClientError<"PublishRollingUpdates404", typeof PublishRollingUpdates404.Type>
     | TasksClientError<"PublishRollingUpdates409", typeof PublishRollingUpdates409.Type>
     | TasksClientError<"PublishRollingUpdates503", typeof PublishRollingUpdates503.Type>
+  >
+  readonly discardRollingUpdate: <Config extends OperationConfig>(
+    project: string,
+    task: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DiscardRollingUpdate400", typeof DiscardRollingUpdate400.Type>
+    | TasksClientError<"DiscardRollingUpdate404", typeof DiscardRollingUpdate404.Type>
+    | TasksClientError<"DiscardRollingUpdate409", typeof DiscardRollingUpdate409.Type>
+    | TasksClientError<"DiscardRollingUpdate500", typeof DiscardRollingUpdate500.Type>
+    | TasksClientError<"DiscardRollingUpdate503", typeof DiscardRollingUpdate503.Type>
   >
   readonly getRollingUpdateDiff: <Config extends OperationConfig>(
     project: string,

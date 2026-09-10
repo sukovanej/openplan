@@ -107,6 +107,57 @@ impl Repo {
         Ok(true)
     }
 
+    // One task off the branch. The default branch's version wins where it has one, and where it has
+    // none the task was added here, so it goes. Either way the path is staged, so the commit below
+    // carries that task alone and leaves any other dirty task to the commit timer.
+    pub fn discard_rolling_update(
+        &self,
+        default_branch: &str,
+        path: &str,
+        message: &str,
+    ) -> Result<(), GitError> {
+        let worktree = self.rolling_updates_worktree();
+        if self.branch_has_path(default_branch, path) {
+            git(&worktree, &["checkout", default_branch, "--", path])?;
+        } else {
+            git(
+                &worktree,
+                &[
+                    "rm",
+                    "--sparse",
+                    "--force",
+                    "--quiet",
+                    "--ignore-unmatch",
+                    "--",
+                    path,
+                ],
+            )?;
+            // A task written since the last commit is untracked, so the index never knew it and
+            // the removal above left the file where it was.
+            let file = worktree.join(path);
+            if file.exists() {
+                std::fs::remove_file(&file).map_err(|e| GitError::Command(e.to_string()))?;
+            }
+        }
+        let staged = git(&worktree, &["diff", "--cached", "--name-only"])?;
+        if staged.trim().is_empty() {
+            return Ok(());
+        }
+        commit(&worktree, message)
+    }
+
+    // Every task off the branch, and the only way out of a stopped rebase. The clean follows the
+    // reset because a reset keeps untracked files, and a task written since the last commit is one.
+    pub fn discard_rolling_updates(&self, default_branch: &str) -> Result<(), GitError> {
+        let worktree = self.rolling_updates_worktree();
+        if self.rolling_updates_rebase_in_progress() {
+            git(&worktree, &["rebase", "--abort"])?;
+        }
+        git(&worktree, &["reset", "--hard", default_branch])?;
+        git(&worktree, &["clean", "--force", "--quiet", "--", ".plan"])?;
+        self.ensure_attributes(&worktree)
+    }
+
     pub fn rolling_updates_rebase(&self, onto: &str) -> Result<Rebased, GitError> {
         let worktree = self.rolling_updates_worktree();
         match git(&worktree, &["rebase", onto]) {
