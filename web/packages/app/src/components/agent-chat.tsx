@@ -97,7 +97,9 @@ function ChatRow({
             project={project}
             markdown={item.text}
             abbreviation={abbreviation}
-            className="text-[15px] leading-6 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-headings:mt-4 prose-headings:mb-1 prose-h2:border-t-0 prose-h2:pt-0 prose-h2:text-base prose-h3:text-sm"
+            // The chat is on the page's own face, not the task body's serif: it is talk, not a
+            // document.
+            className="font-sans text-sm leading-6 dark:[font-weight:400] prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-headings:mt-4 prose-headings:mb-1 prose-h2:border-t-0 prose-h2:pt-0 prose-h2:text-base prose-h3:text-sm"
             data-keys-ignore
           />
           {!item.done && <span className="bg-info ml-0.5 inline-block h-4 w-0.5 animate-pulse align-text-bottom" />}
@@ -208,23 +210,19 @@ function approvalDetail(input: unknown): string | undefined {
 }
 
 // Enter sends and Shift+Enter breaks the line; there is no send button. Escape hands the keyboard
-// back to the page. While a turn runs a Stop button sits beside the input.
+// back to the page. While a turn runs, Enter waits: the Stop button is in the panel header.
 export function Composer({
   disabled,
   sending,
-  stopping,
   live,
   usage,
   onSend,
-  onStop,
 }: {
   disabled: boolean
   sending: boolean
-  stopping: boolean
   live: boolean
   usage: Usage | undefined
   onSend: (text: string) => void
-  onStop: () => void
 }) {
   const [text, setText] = useState("")
   const area = useRef<HTMLTextAreaElement>(null)
@@ -249,27 +247,28 @@ export function Composer({
 
   return (
     <div className="flex shrink-0 flex-col gap-1.5 border-t px-4 py-3">
-      <div className="flex items-end gap-2">
-        <textarea
-          ref={area}
-          value={text}
-          rows={2}
-          disabled={disabled}
-          placeholder={disabled ? "The agent is not ready" : "Describe the task, or ask for a change"}
-          aria-label="Prompt"
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={onKeyDown}
-          className="bg-background min-h-12 min-w-0 flex-1 resize-none rounded-md border px-3 py-2 text-sm outline-none disabled:opacity-50"
-        />
-        {live && (
-          <Button variant="danger" disabled={stopping} onClick={onStop} className="text-danger gap-1.5 px-2.5 py-2">
-            <Square className="size-3" aria-hidden />
-            Stop
-          </Button>
-        )}
-      </div>
+      <textarea
+        ref={area}
+        value={text}
+        rows={2}
+        disabled={disabled}
+        placeholder={disabled ? "The agent is not ready" : "Describe the task, or ask for a change"}
+        aria-label="Prompt"
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={onKeyDown}
+        className="bg-background min-h-12 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none disabled:opacity-50"
+      />
       {usage !== undefined && <UsageLine usage={usage} />}
     </div>
+  )
+}
+
+export function StopButton({ stopping, onStop }: { stopping: boolean; onStop: () => void }) {
+  return (
+    <Button variant="danger" disabled={stopping} onClick={onStop} className="text-danger ml-auto gap-1.5">
+      <Square className="size-3" aria-hidden />
+      Stop
+    </Button>
   )
 }
 

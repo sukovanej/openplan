@@ -5,7 +5,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { agentPath } from "@openplan/task-ui"
 import { Button, EmptyState, Panel, PanelHeader, PanelTitle, Skeleton, Spinner } from "@openplan/ui"
 
-import { ChatLog, Composer } from "../components/agent-chat"
+import { ChatLog, Composer, StopButton } from "../components/agent-chat"
 import type { AgentKind, SessionView } from "../lib/agent-events"
 import { type AgentSession, attachableSession, useAgentSession } from "../lib/agent-session"
 import { emptyTranscript, running } from "../lib/agent-transcript"
@@ -137,6 +137,7 @@ function AgentPage({ project, id }: { project: string; id: string | undefined })
         <PanelHeader className="gap-3">
           <PanelTitle>Agent</PanelTitle>
           <SessionState live={live} ended={ended} />
+          {running(transcript) && <StopButton stopping={stop.isPending} onStop={() => stop.mutate()} />}
         </PanelHeader>
         {status?.kind === "exited" && <Exited code={status.code} onRestart={() => setSession(undefined)} />}
         {transcript.over_budget && (
@@ -158,14 +159,12 @@ function AgentPage({ project, id }: { project: string; id: string | undefined })
         <Composer
           disabled={composerDisabled}
           sending={send.isPending}
-          stopping={stop.isPending}
           live={running(transcript)}
           usage={view === undefined ? undefined : transcript.usage}
           onSend={(text) => {
             setSends((count) => count + 1)
             send.mutate(text)
           }}
-          onStop={() => stop.mutate()}
         />
       </Panel>
     </div>
