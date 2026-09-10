@@ -1,8 +1,9 @@
 import type { D2 } from "@terrastruct/d2"
 
-// d2's built-in theme ids: 0 is "Neutral default", 200 is "Dark Mauve".
-const LIGHT_THEME = 0
+// d2's built-in theme ids: 3 is "Terrastruct", 200 is "Dark Mauve".
+const LIGHT_THEME = 3
 const DARK_THEME = 200
+const COMPILE_OPTIONS = { pad: 16, noXMLTag: true, sketch: true, layout: "elk" } as const
 
 export type DiagramSize = { width: number; height: number }
 export type DrawnDiagram = { light: string; dark: string; size: DiagramSize }
@@ -58,7 +59,7 @@ async function draw(source: string): Promise<DiagramResult> {
   try {
     const d2 = await ensureEngine()
     const { diagram, renderOptions } = await inTurn(() =>
-      d2.compile({ fs: { index: source }, options: { pad: 16, noXMLTag: true } }),
+      d2.compile({ fs: { index: source }, options: COMPILE_OPTIONS }),
     )
     const light = await inTurn(() => d2.render(diagram, { ...renderOptions, themeID: LIGHT_THEME }))
     const dark = await inTurn(() => d2.render(diagram, { ...renderOptions, themeID: DARK_THEME }))

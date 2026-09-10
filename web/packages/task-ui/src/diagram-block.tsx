@@ -23,7 +23,7 @@ function useDiagram(source: string): DiagramResult | null {
 const SCALE = 0.75
 const imageClass = "my-0 h-auto max-w-none"
 
-// The canvas colours of d2 themes 0 and 200, so the frame and the picture read as one surface.
+// The canvas colours of d2 themes 3 and 200, so the frame and the picture read as one surface.
 const canvasClass = "bg-white dark:bg-[#1e1e2e]"
 
 // The light and dark renders both mount, and the app theme picks one in CSS, so a theme change

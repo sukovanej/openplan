@@ -17,7 +17,9 @@ async function oneMessage<T>(reply: () => T): Promise<T> {
   return reply()
 }
 
-const compile = vi.fn(({ fs }: { fs: { index: string } }) =>
+type CompileRequest = { fs: { index: string }; options: { sketch?: boolean; layout?: string } }
+
+const compile = vi.fn(({ fs }: CompileRequest) =>
   oneMessage(() => {
     const source = fs.index
     if (source.includes("->\n")) {
@@ -59,12 +61,19 @@ describe("a d2 fence", () => {
     expect(root.querySelector("pre")).toBeNull()
     const images = [...figure.querySelectorAll("img")]
     expect(images).toHaveLength(2)
-    expect(decoded(images[0]!)).toContain("a -> b theme 0")
+    expect(decoded(images[0]!)).toContain("a -> b theme 3")
     expect(images[0]!.className).toContain("dark:hidden")
     expect(decoded(images[1]!)).toContain("a -> b theme 200")
     expect(images[1]!.className).toContain("dark:block")
     expect(images[0]!.getAttribute("width")).toBe("90")
     expect(images[0]!.getAttribute("height")).toBe("30")
+  })
+
+  it("asks for the sketch look and the elk layout", async () => {
+    await drawn("```d2\nm -> n\n```")
+    const request = compile.mock.calls.at(-1)![0]
+    expect(request.options.sketch).toBe(true)
+    expect(request.options.layout).toBe("elk")
   })
 
   it("keeps the source and names the problem when the compiler refuses it", async () => {
