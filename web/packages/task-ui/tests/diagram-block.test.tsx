@@ -1,5 +1,5 @@
 import { act } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { TaskBody } from "../src/task-body"
 import { render } from "./render"
@@ -31,22 +31,30 @@ const compile = vi.fn(({ fs }: CompileRequest) =>
   }),
 )
 
+const renderSvg = vi.fn((diagram: { source: string }, options: { themeID: number }) =>
+  oneMessage(() => `<svg viewBox="0 0 120 40"><text>${diagram.source.trim()} theme ${options.themeID}</text></svg>`),
+)
+
 vi.mock("@terrastruct/d2", () => ({
   D2: class {
     compile = compile
-    render(diagram: { source: string }, options: { themeID: number }): Promise<string> {
-      return oneMessage(
-        () => `<svg viewBox="0 0 120 40"><text>${diagram.source.trim()} theme ${options.themeID}</text></svg>`,
-      )
-    }
+    render = renderSvg
   },
 }))
 
-async function drawn(markdown: string): Promise<HTMLElement> {
-  const root = render(<TaskBody project="openplan" abbreviation="OPP" markdown={markdown} />)
+afterEach(() => {
+  document.documentElement.classList.remove("dark")
+})
+
+async function settle(): Promise<void> {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
+}
+
+async function drawn(markdown: string): Promise<HTMLElement> {
+  const root = render(<TaskBody project="openplan" abbreviation="OPP" markdown={markdown} />)
+  await settle()
   return root
 }
 
@@ -55,18 +63,46 @@ function decoded(img: Element): string {
 }
 
 describe("a d2 fence", () => {
-  it("draws the light and the dark theme and lets CSS pick one", async () => {
-    const root = await drawn("```d2\na -> b\n```")
-    const figure = root.querySelector("figure[data-diagram='drawn']")!
+  it("says it is drawing until the picture arrives", async () => {
+    const root = render(<TaskBody project="openplan" abbreviation="OPP" markdown={"```d2\nw -> v\n```"} />)
     expect(root.querySelector("pre")).toBeNull()
-    const images = [...figure.querySelectorAll("img")]
-    expect(images).toHaveLength(2)
+    expect(root.querySelector("[data-diagram='drawing'] [role='status']")!.textContent).toContain("Drawing")
+    await settle()
+    expect(root.querySelector("[data-diagram='drawing']")).toBeNull()
+    expect(root.querySelector("figure[data-diagram='drawn'] img")).not.toBeNull()
+  })
+
+  it("draws the current theme only", async () => {
+    renderSvg.mockClear()
+    const root = await drawn("```d2\na -> b\n```")
+    const images = [...root.querySelectorAll("figure[data-diagram='drawn'] img")]
+    expect(images).toHaveLength(1)
     expect(decoded(images[0]!)).toContain("a -> b theme 3")
-    expect(images[0]!.className).toContain("dark:hidden")
-    expect(decoded(images[1]!)).toContain("a -> b theme 200")
-    expect(images[1]!.className).toContain("dark:block")
     expect(images[0]!.getAttribute("width")).toBe("90")
     expect(images[0]!.getAttribute("height")).toBe("30")
+    expect(renderSvg).toHaveBeenCalledTimes(1)
+  })
+
+  it("draws the dark theme when the page is dark", async () => {
+    document.documentElement.classList.add("dark")
+    const root = await drawn("```d2\ne -> f\n```")
+    expect(decoded(root.querySelector("figure[data-diagram='drawn'] img")!)).toContain("e -> f theme 200")
+  })
+
+  it("keeps the picture up while a theme flip draws the other one", async () => {
+    compile.mockClear()
+    const root = await drawn("```d2\ng -> h\n```")
+    act(() => {
+      document.documentElement.classList.add("dark")
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(root.querySelector("[data-diagram='drawing']")).toBeNull()
+    expect(decoded(root.querySelector("figure[data-diagram='drawn'] img")!)).toContain("theme 3")
+    await settle()
+    expect(decoded(root.querySelector("figure[data-diagram='drawn'] img")!)).toContain("g -> h theme 200")
+    expect(compile).toHaveBeenCalledTimes(1)
   })
 
   it("asks for the sketch look and the elk layout", async () => {

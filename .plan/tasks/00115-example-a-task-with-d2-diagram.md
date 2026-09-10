@@ -29,7 +29,7 @@ browser: Web UI {
 agent -> task: writes a d2 fence
 task -> daemon: reads .plan/tasks
 daemon -> browser.markdown: raw markdown
-browser.engine -> browser.markdown: light and dark SVG
+browser.engine -> browser.markdown: SVG for the current theme
 ```
 
 The daemon never touches the diagram. It sends the raw markdown, and the
@@ -47,14 +47,15 @@ engine: d2 engine
 css: App theme (CSS)
 
 page -> block: mounts a d2 fence
+block -> page: "Drawing the diagram"
 block -> engine: compile once
 engine -> block: diagram
-block -> engine: render theme 0
-engine -> block: light SVG
-block -> engine: render theme 200
-engine -> block: dark SVG
-block -> css: two <img>, one hidden
-css -> css: theme flips, no new render
+block -> engine: render the current theme
+engine -> block: SVG
+block -> page: one <img>
+css -> block: theme flips
+block -> engine: render the other theme once
+engine -> block: SVG
 ```
 
 ## The data the engine sees
@@ -63,17 +64,17 @@ css -> css: theme flips, no new render
 fence: {
   shape: sql_table
   source: string {constraint: primary_key}
-  light: svg
-  dark: svg
+  theme: string {constraint: primary_key}
+  svg: string
   view_box: string
 }
 
 cache: {
   shape: cylinder
-  label: Map<source, result>
+  label: Map<theme + source, result>
 }
 
-fence -> cache: one entry per distinct source
+fence -> cache: one entry per theme and source
 ```
 
 ## What happens with a bad diagram

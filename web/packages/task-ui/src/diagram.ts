@@ -1,15 +1,19 @@
-import type { D2 } from "@terrastruct/d2"
+import type { D2, Diagram, RenderOptions } from "@terrastruct/d2"
+
+export type DiagramTheme = "light" | "dark"
 
 // d2's built-in theme ids: 3 is "Terrastruct", 200 is "Dark Mauve".
-const LIGHT_THEME = 3
-const DARK_THEME = 200
+const THEME_IDS: Readonly<Record<DiagramTheme, number>> = { light: 3, dark: 200 }
 const COMPILE_OPTIONS = { pad: 16, noXMLTag: true, sketch: true, layout: "elk" } as const
 
 export type DiagramSize = { width: number; height: number }
-export type DrawnDiagram = { light: string; dark: string; size: DiagramSize }
-export type DiagramResult = { svg: DrawnDiagram } | { error: string }
+export type DrawnDiagram = { svg: string; size: DiagramSize }
+export type DiagramResult = { drawn: DrawnDiagram } | { error: string }
+
+type Compiled = { diagram: Diagram; renderOptions: RenderOptions }
 
 let engine: Promise<D2> | null = null
+const compilations = new Map<string, Promise<Compiled>>()
 const drawings = new Map<string, Promise<DiagramResult>>()
 
 function ensureEngine(): Promise<D2> {
@@ -55,25 +59,31 @@ export function compileErrorMessage(error: unknown): string {
   return message
 }
 
-async function draw(source: string): Promise<DiagramResult> {
+function compile(source: string): Promise<Compiled> {
+  let pending = compilations.get(source)
+  if (pending === undefined) {
+    pending = ensureEngine().then((d2) => inTurn(() => d2.compile({ fs: { index: source }, options: COMPILE_OPTIONS })))
+    compilations.set(source, pending)
+  }
+  return pending
+}
+
+async function draw(source: string, theme: DiagramTheme): Promise<DiagramResult> {
   try {
-    const d2 = await ensureEngine()
-    const { diagram, renderOptions } = await inTurn(() =>
-      d2.compile({ fs: { index: source }, options: COMPILE_OPTIONS }),
-    )
-    const light = await inTurn(() => d2.render(diagram, { ...renderOptions, themeID: LIGHT_THEME }))
-    const dark = await inTurn(() => d2.render(diagram, { ...renderOptions, themeID: DARK_THEME }))
-    return { svg: { light, dark, size: sizeOf(light) } }
+    const [d2, { diagram, renderOptions }] = await Promise.all([ensureEngine(), compile(source)])
+    const svg = await inTurn(() => d2.render(diagram, { ...renderOptions, themeID: THEME_IDS[theme] }))
+    return { drawn: { svg, size: sizeOf(svg) } }
   } catch (error) {
     return { error: compileErrorMessage(error) }
   }
 }
 
-export function drawDiagram(source: string): Promise<DiagramResult> {
-  let pending = drawings.get(source)
+export function drawDiagram(source: string, theme: DiagramTheme): Promise<DiagramResult> {
+  const key = `${theme}\n${source}`
+  let pending = drawings.get(key)
   if (pending === undefined) {
-    pending = draw(source)
-    drawings.set(source, pending)
+    pending = draw(source, theme)
+    drawings.set(key, pending)
   }
   return pending
 }
