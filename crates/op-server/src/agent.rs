@@ -294,9 +294,11 @@ fn instructions(workspace: &Workspace, kind: AgentKind, task: Option<&str>) -> S
              after each edit."
         ),
         "Never run git. The daemon commits your edits. Never create a worktree.".to_owned(),
-        "Draw a diagram as a fenced code block tagged `d2` in the task body. The UI renders it. \
-         Use plain d2: shapes, containers, and connections. Do not use imports, icons, links, or \
-         layout settings."
+        "Prefer a diagram to prose. When a task body describes how parts connect, how data \
+         flows, or what order events take, draw it as a fenced code block tagged `d2`. The UI \
+         renders it. Use plain d2: shapes, containers, connections, sequence diagrams, and \
+         tables. Do not use imports, icons, links, or layout settings. Write prose only for a \
+         rule, a reason, or a number."
             .to_owned(),
     ];
     if let Some(task) = task {
