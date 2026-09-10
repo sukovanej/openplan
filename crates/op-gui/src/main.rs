@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use std::process::ExitCode;
 
 const USAGE: &str = "\
@@ -10,6 +12,9 @@ Options:
   -V, --version  Print the version";
 
 fn main() -> ExitCode {
+    // The Windows GUI deliberately has no daemon binary. Its daemon lives in WSL and is reached
+    // through Windows' localhost forwarding, so only Unix builds can answer a re-exec request.
+    #[cfg(not(target_os = "windows"))]
     if let Some(code) = op_daemon::serve_if_requested(std::env::args()) {
         return code;
     }

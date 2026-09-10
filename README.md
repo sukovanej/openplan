@@ -12,11 +12,13 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/sukovanej/openplan/rele
 The installer puts `openplan` in `~/.local/bin` and adds that directory to your shell profile.
 `OPENPLAN_INSTALL_DIR` picks another directory, and `OPENPLAN_NO_MODIFY_PATH=1` keeps the
 profile untouched. Releases carry binaries for macOS (Apple silicon and Intel) and Linux
-(x86_64 and arm64). Windows is not supported yet. Every archive and its checksum is on the
+(x86_64 and arm64). Every archive and its checksum is on the
 [releases page](https://github.com/sukovanej/openplan/releases).
 
 The desktop app is a separate download on the same release: `OpenPlan_<version>_<arch>.dmg` for
-macOS, `.deb` or `.AppImage` for Linux. It carries the daemon, so it needs no `openplan` on `PATH`.
+macOS, `.deb` or `.AppImage` for Linux, and `.msi` or `-setup.exe` for Windows x64. The macOS and
+Linux apps carry the daemon, so they need no `openplan` on `PATH`. The Windows GUI connects to a
+daemon you run in WSL through `127.0.0.1:7373`; it does not install, start, or stop that daemon.
 It is signed ad-hoc, not with a Developer ID, so macOS asks you to confirm the first open.
 
 In GitHub Actions:
@@ -89,6 +91,12 @@ mise run gui     # the window on the running daemon, starting one when none runs
 It loads `http://127.0.0.1:<port>/`, so it shows the SPA the daemon serves. Run `mise run install`
 after a change to the SPA. The window starts its own daemon when none runs, so it needs no
 `openplan` on `PATH`; it obeys `OPENPLAN_HOME` and `OPENPLAN_PORT` like every other command.
+
+On Windows, install the GUI and run the CLI and daemon in WSL instead. With the daemon already
+listening in WSL, open the Windows app and it connects through WSL's localhost forwarding. It
+waits up to five seconds for `http://127.0.0.1:7373/health`, then tells you if the bridge is not
+available. Set `OPENPLAN_PORT` before launching the app when the WSL daemon uses a fixed port
+other than 7373; port `0` is not supported because its randomly selected port stays in WSL.
 
 ### Icons
 

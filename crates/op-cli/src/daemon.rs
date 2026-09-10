@@ -105,7 +105,7 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
             Ok(base)
         }
         None => {
-            let info = Control::resolve()?.ensure(default_port())?.into_info();
+            let info = Control::resolve()?.ensure(default_port()?)?.into_info();
             Ok(base_url(info.port))
         }
     }

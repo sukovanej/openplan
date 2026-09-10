@@ -1,6 +1,7 @@
 [tools]
 cargo-dist = "0.32.0"
 "cargo:cargo-edit" = "0.13.7"
+"cargo:tauri-cli" = "2"
 
 [tasks.lint]
 description = "Check the task store's .plan/ files with the openplan linter"
@@ -78,6 +79,16 @@ if command -v iconutil >/dev/null 2>&1; then
   iconutil -c icns "$set" -o "$gui/icon.icns"
 else
   echo "no iconutil on this machine; $gui/icon.icns keeps its committed content" >&2
+fi
+
+# Tauri's icon command writes every platform's assets. Keep its Windows .ico in the temporary
+# directory, then copy only that format alongside the PNGs and .icns this task owns already. A
+# machine without the tauri CLI keeps the committed .ico, as it keeps the committed .icns.
+if command -v cargo-tauri >/dev/null 2>&1; then
+  cargo tauri icon "$svg" --output "$tmp/tauri-icons"
+  cp "$tmp/tauri-icons/icon.ico" "$gui/icon.ico"
+else
+  echo "no tauri CLI on this machine; $gui/icon.ico keeps its committed content" >&2
 fi
 """
 [tasks.release]

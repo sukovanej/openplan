@@ -18,6 +18,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names the files and the commands that fix them.
 - `openplan publish`, with `--dry-run` to read the list first.
 - `--branch` on `create`, `set`, and `delete`.
+- The Windows desktop app. The release page carries an `.msi` and a
+  `-setup.exe` for Windows x64. The installer carries the WebView2
+  bootstrapper, so it needs no separate download. The app connects to a daemon
+  you run in WSL; it starts no daemon of its own.
 - Default tags. A store with no tag registry gets `bug`, `feature`, and `draft`
   when it takes its first task, so a new project can tag that task without
   registering a name first. A registry that already exists stays as it is.
@@ -34,6 +38,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `openplan open` now opens the web UI in the Windows default browser when run
+  from WSL, including minimal distributions without `xdg-open`.
+- `OPENPLAN_PORT` with a value that is not a port number now stops the command.
+  The CLI, the daemon, and the Windows app used port 7373 instead.
 - The desktop app carried no bundle signature, only the ad-hoc signature the
   linker puts on every arm64 binary. macOS called a downloaded copy "damaged"
   and offered only the Trash. Tauri now signs the app before it makes the dmg,

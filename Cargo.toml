@@ -22,6 +22,7 @@ op-lint = { path = "crates/op-lint" }
 op-git = { path = "crates/op-git" }
 op-api = { path = "crates/op-api" }
 op-client = { path = "crates/op-client" }
+op-browser = { path = "crates/op-browser" }
 op-watch = { path = "crates/op-watch" }
 op-index = { path = "crates/op-index" }
 op-presence = { path = "crates/op-presence" }
@@ -62,7 +63,7 @@ fs2 = "0.4"
 nix = { version = "0.31", features = ["signal", "process"] }
 getrandom = "0.3"
 
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "blocking"] } # http only, no TLS
 
 tempfile = "3"

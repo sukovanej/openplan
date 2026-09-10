@@ -63,6 +63,15 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
         if: ${{ !cancelled() }}
 
+  windows-gui:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      # No web build: the Windows GUI links `op-client`, not `op-server`, so nothing here embeds
+      # the SPA. The window loads it from the daemon in WSL at run time.
+      - run: cargo build -p openplan-gui
+
   lint-tasks:
     runs-on: ubuntu-latest
     steps:

@@ -3600,6 +3600,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "op-browser"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "op-claude"
 version = "0.0.1"
 dependencies = [
@@ -3783,6 +3790,7 @@ dependencies = [
  "fs2",
  "nix",
  "op-api",
+ "op-browser",
  "op-client",
  "op-daemon",
  "op-git",
@@ -3805,6 +3813,7 @@ name = "openplan-gui"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "op-client",
  "op-daemon",
  "tauri",
  "tauri-build",
