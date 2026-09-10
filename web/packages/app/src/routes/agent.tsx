@@ -118,19 +118,14 @@ function AgentPage({ project, id }: { project: string; id: string | undefined })
   const branch = pinned === undefined ? view?.branch : pinned.branch
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
-      {/* The task keeps the width it has on its own page; the chat takes what is left. */}
-      <div className="min-w-0 lg:h-full lg:w-[59rem] lg:shrink-0 lg:overflow-hidden">
+    // The task and its relations keep the widths they have on their own page, and the chat takes
+    // what is left. A window too narrow for the three scrolls sideways rather than clipping one.
+    <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-x-auto lg:overflow-y-hidden">
+      <div className="min-w-0 lg:h-full lg:w-[80rem] lg:shrink-0 lg:overflow-hidden">
         {id === undefined ? (
           <NoTaskYet writing={running(transcript)} />
         ) : (
-          <TaskView
-            project={project}
-            id={id}
-            branch={branch}
-            onSelect={(next) => setPinned({ branch: next })}
-            stacked
-          />
+          <TaskView project={project} id={id} branch={branch} onSelect={(next) => setPinned({ branch: next })} />
         )}
       </div>
       <Panel className="h-[70vh] min-w-0 lg:h-full lg:min-w-[20rem] lg:flex-1">
