@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-09-06T11:45:17Z
 tags:
 - cli
