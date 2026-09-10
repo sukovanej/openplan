@@ -119,14 +119,21 @@ function AgentPage({ project, id }: { project: string; id: string | undefined })
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
-      <div className="min-w-0 lg:h-full lg:flex-1 lg:overflow-hidden">
+      {/* The task keeps the width it has on its own page; the chat takes what is left. */}
+      <div className="min-w-0 lg:h-full lg:w-[59rem] lg:shrink-0 lg:overflow-hidden">
         {id === undefined ? (
           <NoTaskYet writing={running(transcript)} />
         ) : (
-          <TaskView project={project} id={id} branch={branch} onSelect={(next) => setPinned({ branch: next })} />
+          <TaskView
+            project={project}
+            id={id}
+            branch={branch}
+            onSelect={(next) => setPinned({ branch: next })}
+            stacked
+          />
         )}
       </div>
-      <Panel className="h-[70vh] min-w-0 lg:h-full lg:w-[36rem] lg:shrink-0">
+      <Panel className="h-[70vh] min-w-0 lg:h-full lg:min-w-[20rem] lg:flex-1">
         <PanelHeader className="gap-3">
           <PanelTitle>Agent</PanelTitle>
           <SessionState live={live} ended={ended} />

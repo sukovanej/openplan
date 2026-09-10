@@ -22,6 +22,7 @@ import {
 } from "@openplan/task-ui"
 import {
   Button,
+  cn,
   type ComboOption,
   Combobox,
   EmptyState,
@@ -71,19 +72,22 @@ function listItem(client: QueryClient, project: string, id: string): TaskListIte
 
 // One task, read and drawn: the detail page is this alone, and the agent page previews the task
 // the agent writes with it. `branch` pins one version; absent means the headline. `agentLink`
-// shows the way to the agent page, which the agent page itself has no use for.
+// shows the way to the agent page, which the agent page itself has no use for. `stacked` puts
+// the relations under the task at every width, for a column that has room for the task alone.
 export function TaskView({
   project,
   id,
   branch,
   onSelect,
   agentLink = false,
+  stacked = false,
 }: {
   project: string
   id: string
   branch: string | undefined
   onSelect: (branch: string | undefined) => void
   agentLink?: boolean
+  stacked?: boolean
 }) {
   const client = useQueryClient()
   const task = useQuery({
@@ -113,6 +117,7 @@ export function TaskView({
       selected={branch}
       onSelect={onSelect}
       agentLink={agentLink}
+      stacked={stacked}
     />
   )
 }
@@ -125,6 +130,7 @@ function TaskDetailView({
   selected,
   onSelect,
   agentLink,
+  stacked,
 }: {
   project: string
   task: TaskDetail | TaskListItem
@@ -133,6 +139,7 @@ function TaskDetailView({
   selected: string | undefined
   onSelect: (branch: string | undefined) => void
   agentLink: boolean
+  stacked: boolean
 }) {
   const abbreviation = useAbbreviation(project)
   const rollingUpdates = useProject(project)?.rolling_updates_branch
@@ -145,8 +152,8 @@ function TaskDetailView({
   return (
     // Each column scrolls on its own, so the box keeps its frame and its header stays where it is
     // while the body runs. Stacked, the two are one page and the page scrolls instead.
-    <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
-      <Panel className="h-auto min-w-0 lg:h-full lg:w-[59rem]">
+    <div className={cn("flex h-full flex-col gap-4 overflow-y-auto", !stacked && "lg:flex-row lg:overflow-hidden")}>
+      <Panel className={cn("h-auto min-w-0", !stacked && "lg:h-full lg:w-[59rem]")}>
         <PanelHeader className="gap-2">
           <PanelTitle>
             <TaskIdentity
@@ -235,7 +242,12 @@ function TaskDetailView({
           Narrow enough and they drop under it instead. None of them wears a frame: a section leads
           with the rule that separates it from the one above, and the first has nothing above it to
           separate from. */}
-      <aside className="min-w-0 lg:min-w-80 lg:flex-1 lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
+      <aside
+        className={cn(
+          "min-w-0 [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0",
+          !stacked && "lg:min-w-80 lg:flex-1 lg:overflow-y-auto",
+        )}
+      >
         <RefSection project={project} title="Depends on" rows={rows.dependsOn} cursor={index} />
         <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
         <SubtasksSection
