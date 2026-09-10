@@ -8,6 +8,7 @@ import { type ChatItem, chatItems, newest, phrase, type Step } from "../lib/agen
 import type { ApprovalRequest, Transcript, Usage } from "../lib/agent-events"
 import { running } from "../lib/agent-transcript"
 import type { ApprovalDecision } from "../lib/api"
+import { useDetailAction } from "../lib/detail-actions"
 
 const FOLLOW_SLACK_PX = 8
 
@@ -209,8 +210,9 @@ function approvalDetail(input: unknown): string | undefined {
   return typeof path === "string" ? path : undefined
 }
 
-// Enter sends and Shift+Enter breaks the line; there is no send button. Escape hands the keyboard
-// back to the page. While a turn runs, Enter waits: the Stop button is in the panel header.
+// Enter sends and Shift+Enter breaks the line; there is no send button. The input takes the focus
+// when the page opens and when `e` is pressed on it; Escape hands the keyboard back to the page.
+// While a turn runs, Enter waits: the Stop button is in the panel header.
 export function Composer({
   disabled,
   sending,
@@ -226,6 +228,7 @@ export function Composer({
 }) {
   const [text, setText] = useState("")
   const area = useRef<HTMLTextAreaElement>(null)
+  useDetailAction("focus-prompt", () => area.current?.focus())
 
   const send = () => {
     const trimmed = text.trim()
@@ -254,6 +257,7 @@ export function Composer({
         disabled={disabled}
         placeholder={disabled ? "The agent is not ready" : "Describe the task, or ask for a change"}
         aria-label="Prompt"
+        autoFocus
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
         className="bg-background min-h-12 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none disabled:opacity-50"

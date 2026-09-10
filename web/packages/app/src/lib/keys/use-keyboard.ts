@@ -29,7 +29,7 @@ function routeScope(pathname: string): RouteScope {
 }
 
 // The task at hand opens the agent on itself; a board with none opens it on a task that does not
-// exist yet. The agent page is already there.
+// exist yet. The agent page is already there, so there the key goes to the prompt instead.
 export function agentPathFor(pathname: string, task: TaskRoute | undefined): string | undefined {
   if (agentRouteOf(pathname) !== undefined) return undefined
   if (task !== undefined) return agentPath(task.project, task.id)
@@ -135,6 +135,10 @@ export function useKeyboard(): Keyboard {
       },
       agent: {
         open: () => {
+          if (live.current.scope === "agent") {
+            detailActions.emit("focus-prompt")
+            return
+          }
           const to = agentPathFor(live.current.pathname, targetTask())
           if (to !== undefined) live.current.navigate(to)
         },

@@ -183,7 +183,7 @@ describe("the agent page", () => {
     expect(h.navigations).toEqual([`/${PROJECT}/agent`, `/${PROJECT}/agent/OPP-1`])
   })
 
-  it("does nothing with e on the agent page itself", () => {
+  it("stays on the agent page with e, where the page hands the key to its prompt", () => {
     const h = mount()
     h.setScope("agent")
     h.setPath(`/${PROJECT}/agent/OPP-3`)
