@@ -25,6 +25,14 @@ const WORKER_GONE: &str = "the rolling-updates worker has stopped";
 enum Signal {
     Edited,
     Publish(mpsc::Sender<Result<Published, String>>),
+    Discard(Discard, mpsc::Sender<Result<(), String>>),
+}
+
+// What a discard undoes. `Task` names the file rather than the key because only the store and the
+// object database can spell it, and neither is the worker's to read.
+pub enum Discard {
+    Task { key: String, path: String },
+    All,
 }
 
 pub struct Handle {
@@ -96,6 +104,14 @@ impl Handle {
             .map_err(|_| WORKER_GONE.to_owned())?;
         answer.recv().map_err(|_| WORKER_GONE.to_owned())?
     }
+
+    pub fn discard(&self, what: Discard) -> Result<(), String> {
+        let (reply, answer) = mpsc::channel();
+        self.signals
+            .send(Signal::Discard(what, reply))
+            .map_err(|_| WORKER_GONE.to_owned())?;
+        answer.recv().map_err(|_| WORKER_GONE.to_owned())?
+    }
 }
 
 struct Worker {
@@ -119,6 +135,10 @@ impl Worker {
                 Ok(Signal::Edited) => commit.arm(COMMIT_QUIET),
                 Ok(Signal::Publish(reply)) => {
                     let _ = reply.send(self.publish());
+                    commit.disarm();
+                }
+                Ok(Signal::Discard(what, reply)) => {
+                    let _ = reply.send(self.discard(&what));
                     commit.disarm();
                 }
                 Err(RecvTimeoutError::Disconnected) => return,
@@ -200,6 +220,31 @@ impl Worker {
             branch: self.remote_branch.clone(),
             commit,
         })
+    }
+
+    // Discard all is the exception to `rebase_stopped`: a stopped rebase is one of the things it
+    // undoes, and while it stands nothing else can leave that state from here.
+    fn discard(&self, what: &Discard) -> Result<(), String> {
+        match what {
+            Discard::Task { key, path } => {
+                if self.rebase_stopped() {
+                    return Err(STOPPED_REBASE.to_owned());
+                }
+                self.repo
+                    .discard_rolling_update(
+                        &self.default_branch,
+                        path,
+                        &format!("Discard rolling update for {key}"),
+                    )
+                    .map_err(text)?;
+            }
+            Discard::All => self
+                .repo
+                .discard_rolling_updates(&self.default_branch)
+                .map_err(text)?,
+        }
+        self.announce();
+        Ok(())
     }
 
     // A rebase that stopped owns the worktree until a person finishes it, so nothing else may

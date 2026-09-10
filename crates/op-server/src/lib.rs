@@ -308,9 +308,10 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(delete_project, rename_project))
         .routes(routes!(list_tasks, create_task))
         .routes(routes!(get_matrix))
-        .routes(routes!(get_rolling_updates))
+        .routes(routes!(get_rolling_updates, discard_rolling_updates))
         .routes(routes!(publish_rolling_updates))
         .routes(routes!(get_rolling_update_diff))
+        .routes(routes!(discard_rolling_update))
         .routes(routes!(get_board))
         .routes(routes!(get_merged_board))
         .routes(routes!(get_flow))
@@ -1176,6 +1177,81 @@ fn no_pending_change(id: &str) -> ApiError {
         StatusCode::NOT_FOUND,
         format!("task {id} has no change waiting on the rolling-updates branch"),
     )
+}
+
+// Undoes one pending edit and leaves the branch's earlier commits alone: the file goes back to what
+// the default branch says, or goes away when the default branch never had it.
+#[utoipa::path(
+    delete,
+    path = "/api/projects/{project}/rolling-updates/{task}",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("task" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$")
+    ),
+    responses(
+        (status = 204, description = "Discarded"),
+        (status = 400, description = "The task key is invalid", body = ApiErrorBody),
+        (status = 404, description = "No such project, or the task has no pending change", body = ApiErrorBody),
+        (status = 409, description = "A conflict holds the branch, so only a discard of everything can run", body = ApiErrorBody),
+        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
+        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
+    )
+)]
+async fn discard_rolling_update(
+    State(state): State<AppState>,
+    Path((project, task)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let project = project_of(&state, &project)?;
+    tokio::task::spawn_blocking(move || -> Result<(), ApiError> {
+        if project.rolling_updates_branch().is_none() {
+            return Err(no_rolling_updates());
+        }
+        let path = {
+            let index = project.rebuilt_index().map_err(index_error)?;
+            let number = reject_non_key(index.abbreviation(), &task)?;
+            pending_path(&index, project.store(), &task, number)
+                .ok_or_else(|| no_pending_change(&task))?
+        };
+        project
+            .with_rolling_updates(|rolling| {
+                rolling.discard(rolling_updates::Discard::Task { key: task, path })
+            })
+            .ok_or_else(no_rolling_updates)?
+            .map_err(ApiError::conflict)
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// Undoes every pending edit by putting the branch back on the default branch. It is also the way
+// out of a stopped rebase, which nothing else here can leave.
+#[utoipa::path(
+    delete,
+    path = "/api/projects/{project}/rolling-updates",
+    params(("project" = String, Path, description = "Project name")),
+    responses(
+        (status = 204, description = "Discarded"),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 409, description = "The branch could not be reset", body = ApiErrorBody),
+        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
+    )
+)]
+async fn discard_rolling_updates(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let project = project_of(&state, &project)?;
+    let discarded = tokio::task::spawn_blocking(move || {
+        project.with_rolling_updates(|rolling| rolling.discard(rolling_updates::Discard::All))
+    })
+    .await
+    .map_err(join_error)?;
+    match discarded {
+        None => Err(no_rolling_updates()),
+        Some(Err(why)) => Err(ApiError::conflict(why)),
+        Some(Ok(())) => Ok(StatusCode::NO_CONTENT),
+    }
 }
 
 fn no_rolling_updates() -> ApiError {

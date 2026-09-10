@@ -2,7 +2,13 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 
 import type { Conflict, MatrixCell, Published, TaskDiff } from "@openplan/api-client"
 
-import { getRollingUpdateDiff, getRollingUpdates, publishRollingUpdates } from "./api"
+import {
+  discardRollingUpdate,
+  discardRollingUpdates,
+  getRollingUpdateDiff,
+  getRollingUpdates,
+  publishRollingUpdates,
+} from "./api"
 import { useProjects } from "./projects"
 import { mergedKey, projectKey, projectMutationsKey, rollingUpdateDiffKey, rollingUpdatesKey } from "./query-client"
 import { runtime } from "./runtime"
@@ -24,9 +30,9 @@ export function conflicted(updates: ReadonlyArray<ProjectUpdates>): ReadonlyArra
 }
 
 // A conflict outranks a pending count, because it is what stops that count from ever being published.
-export function syncState(updates: ReadonlyArray<ProjectUpdates>, live: boolean, publishing: boolean): SyncState {
+export function syncState(updates: ReadonlyArray<ProjectUpdates>, live: boolean, working: boolean): SyncState {
   if (!live) return "offline"
-  if (publishing) return "syncing"
+  if (working) return "syncing"
   if (conflicted(updates).length > 0) return "blocked"
   return pendingCount(updates) > 0 ? "pending" : "idle"
 }
@@ -71,4 +77,25 @@ export function usePublish() {
         client.invalidateQueries({ queryKey: mergedKey }),
       ]),
   })
+}
+
+// `id` names one pending task; its absence discards the whole branch. Keyed like `usePublish`, so a
+// refusal reaches the same error toast.
+export function useDiscard() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationKey: projectMutationsKey,
+    mutationFn: ({ project, id }: Discarded): Promise<void> =>
+      runtime.runPromise(id === undefined ? discardRollingUpdates(project) : discardRollingUpdate(project, id)),
+    onSettled: (_done, _error, { project }) =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: projectKey(project) }),
+        client.invalidateQueries({ queryKey: mergedKey }),
+      ]),
+  })
+}
+
+export interface Discarded {
+  readonly project: string
+  readonly id?: string
 }

@@ -132,6 +132,82 @@ async fn waiting(state: &AppState) -> Value {
     body_json(response).await
 }
 
+async fn patch(state: &AppState, id: &str, query: &str, body: Value) {
+    let uri = format!("/api/projects/{PROJECT}/tasks/{id}{query}");
+    let response = send(state, "PATCH", &uri, Some(body)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+async fn discard(state: &AppState, tail: &str) -> Response {
+    let uri = format!("/api/projects/{PROJECT}/rolling-updates{tail}");
+    send(state, "DELETE", &uri, None).await
+}
+
+// A task committed on the default branch, with the rolling-updates branch replayed onto it so its
+// worktree carries the same file.
+async fn task_on_main(state: &AppState, root: &std::path::Path) -> String {
+    let created = create(state, "A task", "?branch=main").await;
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "a task"]);
+    op_git::Repo::discover(root)
+        .unwrap()
+        .rolling_updates_rebase("main")
+        .unwrap();
+    created["id"].as_str().unwrap().to_owned()
+}
+
+fn commits_above_main(root: &std::path::Path) -> usize {
+    let out = std::process::Command::new("git")
+        .current_dir(root)
+        .args([
+            "rev-list",
+            "--count",
+            &format!("main..{}", op_git::ROLLING_UPDATES_BRANCH),
+        ])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
+}
+
+fn task_file(dir: &std::path::Path) -> std::path::PathBuf {
+    let mut files: Vec<std::path::PathBuf> = dir
+        .read_dir()
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 1, "{files:?}");
+    files.pop().unwrap()
+}
+
+// The stream carries every change, and the watcher is live in these tests, so the edit that led to
+// a discard can reach it first.
+async fn await_rolling_updates_changed(response: Response) {
+    let read = async {
+        let mut body = response.into_body();
+        let mut buffer = String::new();
+        while let Some(frame) = body.frame().await {
+            if let Some(data) = frame.unwrap().data_ref() {
+                buffer.push_str(&String::from_utf8_lossy(data));
+            }
+            while let Some(end) = buffer.find("\n\n") {
+                let event: String = buffer.drain(..end + 2).collect();
+                let Some(line) = event.lines().find_map(|line| line.strip_prefix("data:")) else {
+                    continue;
+                };
+                let event: Value = serde_json::from_str(line.trim()).unwrap();
+                if event["kind"] == "rolling_updates_changed" {
+                    return;
+                }
+            }
+        }
+        panic!("the event stream closed before announcing a rolling-updates change");
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(10), read)
+        .await
+        .expect("no rolling-updates change was announced");
+}
+
 #[test]
 fn starting_the_daemon_gives_the_repository_a_rolling_updates_branch() {
     let (dir, _state) = with_rolling_updates();
@@ -547,4 +623,216 @@ async fn a_repository_without_the_branch_has_no_diff_to_answer_with() {
         diff(&state, "OPP-1").await.status(),
         StatusCode::SERVICE_UNAVAILABLE
     );
+}
+#[tokio::test]
+async fn discarding_one_task_restores_what_the_default_branch_says() {
+    let (dir, state) = with_rolling_updates();
+    let root = dir.path();
+    let id = task_on_main(&state, root).await;
+    let repo = op_git::Repo::discover(root).unwrap();
+    let rolling = repo.rolling_updates_worktree().join(".plan/tasks");
+    let on_main = std::fs::read_to_string(task_file(&root.join(".plan/tasks"))).unwrap();
+    patch(
+        &state,
+        &id,
+        "?branch=openplan/rolling-updates",
+        json!({ "status": "done" }),
+    )
+    .await;
+    repo.rolling_updates_commit("an edit for later").unwrap();
+    assert_ne!(
+        std::fs::read_to_string(task_file(&rolling)).unwrap(),
+        on_main
+    );
+
+    let response = discard(&state, &format!("/{id}")).await;
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        std::fs::read_to_string(task_file(&rolling)).unwrap(),
+        on_main
+    );
+    assert!(!repo.rolling_updates_differs("main").unwrap());
+    assert_eq!(
+        waiting(&state).await["pending"].as_array().unwrap().len(),
+        0
+    );
+}
+
+// A task the default branch never had cannot be restored, so it goes.
+#[tokio::test]
+async fn discarding_one_task_removes_a_task_the_branch_added() {
+    let (dir, state) = with_rolling_updates();
+    let repo = op_git::Repo::discover(dir.path()).unwrap();
+    let rolling = repo.rolling_updates_worktree().join(".plan/tasks");
+    let created = create(
+        &state,
+        "An edit for later",
+        "?branch=openplan/rolling-updates",
+    )
+    .await;
+    repo.rolling_updates_commit("an edit for later").unwrap();
+    let file = task_file(&rolling);
+
+    let response = discard(&state, &format!("/{}", created["id"].as_str().unwrap())).await;
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(!file.exists());
+    assert_eq!(
+        waiting(&state).await["pending"].as_array().unwrap().len(),
+        0
+    );
+}
+
+// The commit timer has not run, so the edit lives only in the worktree. The restore overwrites it
+// like any other, which is why a dirty task needs no path of its own.
+#[tokio::test]
+async fn discarding_one_task_overwrites_an_edit_the_daemon_has_not_committed() {
+    let (dir, state) = with_rolling_updates();
+    let root = dir.path();
+    let id = task_on_main(&state, root).await;
+    let repo = op_git::Repo::discover(root).unwrap();
+    let rolling = repo.rolling_updates_worktree().join(".plan/tasks");
+    let on_main = std::fs::read_to_string(task_file(&root.join(".plan/tasks"))).unwrap();
+    patch(
+        &state,
+        &id,
+        "?branch=openplan/rolling-updates",
+        json!({ "status": "done" }),
+    )
+    .await;
+    let tip = repo.branch_commit(op_git::ROLLING_UPDATES_BRANCH).unwrap();
+
+    let response = discard(&state, &format!("/{id}")).await;
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        std::fs::read_to_string(task_file(&rolling)).unwrap(),
+        on_main
+    );
+    // The edit never reached the branch, so there was nothing to commit and nothing to undo.
+    assert_eq!(
+        repo.branch_commit(op_git::ROLLING_UPDATES_BRANCH).unwrap(),
+        tip
+    );
+}
+
+// The rebase owns the worktree. Discarding everything is the only discard that can run then.
+#[tokio::test]
+async fn discarding_one_task_is_refused_while_a_conflict_holds_the_branch() {
+    let (dir, state) = with_rolling_updates();
+    stop_the_rebase(dir.path());
+
+    let response = discard(&state, "/OPP-1").await;
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert!(
+        body_json(response)
+            .await
+            .to_string()
+            .contains("resolve it first")
+    );
+}
+
+#[tokio::test]
+async fn discarding_a_task_the_branch_has_no_change_for_is_not_found() {
+    let (dir, state) = with_rolling_updates();
+    let id = task_on_main(&state, dir.path()).await;
+
+    let response = discard(&state, &format!("/{id}")).await;
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert!(
+        body_json(response)
+            .await
+            .to_string()
+            .contains("no change waiting")
+    );
+}
+
+#[tokio::test]
+async fn discarding_everything_leaves_the_branch_at_the_default_branch() {
+    let (dir, state) = with_rolling_updates();
+    let repo = op_git::Repo::discover(dir.path()).unwrap();
+    let rolling = repo.rolling_updates_worktree();
+    create(
+        &state,
+        "An edit for later",
+        "?branch=openplan/rolling-updates",
+    )
+    .await;
+    repo.rolling_updates_commit("an edit for later").unwrap();
+    create(
+        &state,
+        "One the timer never reached",
+        "?branch=openplan/rolling-updates",
+    )
+    .await;
+    let tasks: Vec<std::path::PathBuf> = rolling
+        .join(".plan/tasks")
+        .read_dir()
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(tasks.len(), 2, "{tasks:?}");
+
+    let response = discard(&state, "").await;
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(tasks.iter().all(|file| !file.exists()), "{tasks:?}");
+    assert!(!repo.rolling_updates_differs("main").unwrap());
+    // The attributes commit is the one thing the branch keeps: it is what makes git call the merge
+    // driver, and it is not something a person publishes.
+    assert!(rolling.join(".gitattributes").is_file());
+    assert_eq!(commits_above_main(dir.path()), 1);
+    assert_eq!(
+        waiting(&state).await["pending"].as_array().unwrap().len(),
+        0
+    );
+}
+
+// The UI cannot leave the blocked state any other way.
+#[tokio::test]
+async fn discarding_everything_clears_a_stopped_rebase() {
+    let (dir, state) = with_rolling_updates();
+    stop_the_rebase(dir.path());
+    assert!(!waiting(&state).await["conflict"].is_null());
+
+    let response = discard(&state, "").await;
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let held = waiting(&state).await;
+    assert!(held["conflict"].is_null(), "{held}");
+    assert_eq!(held["pending"].as_array().unwrap().len(), 0, "{held}");
+}
+
+#[tokio::test]
+async fn discarding_one_task_announces_a_rolling_updates_change() {
+    let (dir, state) = with_rolling_updates();
+    let repo = op_git::Repo::discover(dir.path()).unwrap();
+    let created = create(
+        &state,
+        "An edit for later",
+        "?branch=openplan/rolling-updates",
+    )
+    .await;
+    repo.rolling_updates_commit("an edit for later").unwrap();
+    let events = send(&state, "GET", "/api/events", None).await;
+    assert_eq!(events.status(), StatusCode::OK);
+
+    let response = discard(&state, &format!("/{}", created["id"].as_str().unwrap())).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    await_rolling_updates_changed(events).await;
+}
+
+#[tokio::test]
+async fn discarding_everything_announces_a_rolling_updates_change() {
+    let (_dir, state) = with_rolling_updates();
+    let events = send(&state, "GET", "/api/events", None).await;
+    assert_eq!(events.status(), StatusCode::OK);
+
+    assert_eq!(discard(&state, "").await.status(), StatusCode::NO_CONTENT);
+
+    await_rolling_updates_changed(events).await;
 }
