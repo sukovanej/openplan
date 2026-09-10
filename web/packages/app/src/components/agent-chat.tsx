@@ -207,7 +207,8 @@ function approvalDetail(input: unknown): string | undefined {
   return typeof path === "string" ? path : undefined
 }
 
-// Enter sends and Shift+Enter breaks the line. While a turn runs the button stops it instead.
+// Enter sends and Shift+Enter breaks the line; there is no send button. Escape hands the keyboard
+// back to the page. While a turn runs a Stop button sits beside the input.
 export function Composer({
   disabled,
   sending,
@@ -236,6 +237,10 @@ export function Composer({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      event.currentTarget.blur()
+      return
+    }
     if (event.key !== "Enter" || event.shiftKey) return
     event.preventDefault()
     if (live) return
@@ -254,21 +259,12 @@ export function Composer({
           aria-label="Prompt"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
-          className="bg-background focus-visible:ring-ring min-h-12 min-w-0 flex-1 resize-y rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50"
+          className="bg-background min-h-12 min-w-0 flex-1 resize-none rounded-md border px-3 py-2 text-sm outline-none disabled:opacity-50"
         />
-        {live ? (
+        {live && (
           <Button variant="danger" disabled={stopping} onClick={onStop} className="text-danger gap-1.5 px-2.5 py-2">
             <Square className="size-3" aria-hidden />
             Stop
-          </Button>
-        ) : (
-          <Button
-            variant="accent"
-            disabled={disabled || sending || text.trim() === ""}
-            onClick={send}
-            className="px-2.5 py-2 disabled:opacity-40"
-          >
-            Send
           </Button>
         )}
       </div>
