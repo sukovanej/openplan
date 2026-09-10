@@ -1,4 +1,4 @@
-import type { Entry } from "./agent-events"
+import type { Entry, Transcript } from "./agent-events"
 
 // What the chat says the agent is doing, in a verb phrase a reader who knows no tool names can
 // follow. Nothing here is a raw tool name or a JSON input.
@@ -64,6 +64,33 @@ export function chatItems(entries: ReadonlyArray<Entry>): ReadonlyArray<ChatItem
 
 export function newest(steps: ReadonlyArray<Step>): Step {
   return steps[steps.length - 1]
+}
+
+// The one line under the prompt: what the agent is doing now, or the last thing it said. An
+// approval waiting beats everything, since nothing moves until a person answers it.
+export type Latest =
+  | { readonly kind: "none" }
+  | { readonly kind: "approval"; readonly count: number }
+  | { readonly kind: "step"; readonly phrase: string }
+  | { readonly kind: "message"; readonly text: string; readonly done: boolean }
+  | { readonly kind: "failure"; readonly message: string }
+
+export function latest(transcript: Transcript): Latest {
+  if (transcript.approvals.length > 0) return { kind: "approval", count: transcript.approvals.length }
+  const items = chatItems(transcript.entries)
+  const last = items[items.length - 1]
+  const live = transcript.status.kind === "running"
+  if (last === undefined) return { kind: "none" }
+  switch (last.kind) {
+    case "prompt":
+      return live ? { kind: "step", phrase: "Thinking" } : { kind: "none" }
+    case "activity":
+      return { kind: "step", phrase: newest(last.steps).phrase }
+    case "message":
+      return { kind: "message", text: last.text, done: last.done }
+    case "failure":
+      return { kind: "failure", message: last.message }
+  }
 }
 
 function named(verb: string, name: string | undefined): string {

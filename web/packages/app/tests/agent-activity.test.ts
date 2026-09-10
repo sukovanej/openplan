@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import { chatItems, newest, phrase } from "../src/lib/agent-activity"
-import type { Entry } from "../src/lib/agent-events"
+import { chatItems, latest, newest, phrase } from "../src/lib/agent-activity"
+import type { Entry, Transcript } from "../src/lib/agent-events"
+import { emptyTranscript } from "../src/lib/agent-transcript"
 
 const tool = (name: string, input: unknown, failed = false, done = true): Entry => ({
   kind: "tool",
@@ -95,5 +96,45 @@ describe("chatItems", () => {
       "prompt",
       "activity",
     ])
+  })
+})
+
+describe("latest", () => {
+  const during = (entries: ReadonlyArray<Entry>, approvals: Transcript["approvals"] = []): Transcript => ({
+    ...emptyTranscript,
+    status: { kind: "running" },
+    entries,
+    approvals,
+  })
+  const prompt: Entry = { kind: "prompt", text: "do it" }
+
+  it("says nothing before the first prompt, and thinks right after it", () => {
+    expect(latest(emptyTranscript)).toEqual({ kind: "none" })
+    expect(latest(during([prompt]))).toEqual({ kind: "step", phrase: "Thinking" })
+  })
+
+  it("names the newest step of a run, then the message that closes it", () => {
+    expect(latest(during([prompt, thinking, tool("Read", { path: "a.md" }, false, false)]))).toEqual({
+      kind: "step",
+      phrase: "Reading a.md",
+    })
+    expect(latest(during([prompt, thinking, message("Done.", false)]))).toEqual({
+      kind: "message",
+      text: "Done.",
+      done: false,
+    })
+  })
+
+  it("puts a waiting approval before everything else", () => {
+    const approval = { id: "ap1", item: null, tool: "Bash", input: { command: "rm x" }, reason: null }
+    expect(latest(during([prompt, thinking], [approval]))).toEqual({ kind: "approval", count: 1 })
+  })
+
+  it("keeps the failure that ended the turn", () => {
+    const failure: Entry = { kind: "failure", message: "rate limited", retrying: true }
+    expect(latest({ ...emptyTranscript, entries: [prompt, failure] })).toEqual({
+      kind: "failure",
+      message: "rate limited",
+    })
   })
 })

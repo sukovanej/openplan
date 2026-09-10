@@ -60,7 +60,6 @@ export function AgentRoute() {
       <AgentPanel
         key={project}
         project={project}
-        task={undefined}
         session={session}
         onSession={setSession}
         onView={onView}

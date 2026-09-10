@@ -5,10 +5,16 @@ import { TaskBody } from "@openplan/task-ui"
 import { Button, cn, PanelBody, Spinner } from "@openplan/ui"
 
 import { type ChatItem, chatItems, newest, phrase, type Step } from "../lib/agent-activity"
-import type { ApprovalRequest, Transcript, Usage } from "../lib/agent-events"
+import type { AgentKind, ApprovalRequest, SessionView, Transcript, Usage } from "../lib/agent-events"
+import type { AgentSession } from "../lib/agent-session"
 import { running } from "../lib/agent-transcript"
 import type { ApprovalDecision } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
+
+const agentNames: Record<AgentKind, string> = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+}
 
 const FOLLOW_SLACK_PX = 8
 
@@ -22,6 +28,7 @@ export function ChatLog({
   sends,
   onDecide,
   deciding,
+  className,
 }: {
   project: string
   abbreviation: string | undefined
@@ -29,6 +36,7 @@ export function ChatLog({
   sends: number
   onDecide: (approval: string, decision: ApprovalDecision) => void
   deciding: boolean
+  className?: string
 }) {
   const body = useRef<HTMLDivElement>(null)
   const following = useRef(true)
@@ -54,7 +62,7 @@ export function ChatLog({
   return (
     <PanelBody
       ref={body}
-      className="flex flex-col gap-3 px-4 py-4"
+      className={cn("flex flex-col gap-3 px-4 py-4", className)}
       onScroll={() => {
         const node = body.current
         if (node === null) return
@@ -211,19 +219,17 @@ function approvalDetail(input: unknown): string | undefined {
 }
 
 // Enter sends and Shift+Enter breaks the line; there is no send button. The input takes the focus
-// when the page opens and when `e` is pressed on it; Escape hands the keyboard back to the page.
-// While a turn runs, Enter waits: the Stop button is in the panel header.
+// when it opens and when `e` is pressed on the page; Escape hands the keyboard back to the page.
+// While a turn runs, Enter waits: the Stop button is beside the input.
 export function Composer({
   disabled,
   sending,
   live,
-  usage,
   onSend,
 }: {
   disabled: boolean
   sending: boolean
   live: boolean
-  usage: Usage | undefined
   onSend: (text: string) => void
 }) {
   const [text, setText] = useState("")
@@ -249,34 +255,83 @@ export function Composer({
   }
 
   return (
-    <div className="flex shrink-0 flex-col gap-1.5 border-t px-4 py-3">
-      <textarea
-        ref={area}
-        value={text}
-        rows={2}
-        disabled={disabled}
-        placeholder={disabled ? "The agent is not ready" : "Describe the task, or ask for a change"}
-        aria-label="Prompt"
-        autoFocus
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={onKeyDown}
-        className="bg-background min-h-12 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none disabled:opacity-50"
-      />
-      {usage !== undefined && <UsageLine usage={usage} />}
-    </div>
+    <textarea
+      ref={area}
+      value={text}
+      rows={2}
+      disabled={disabled}
+      placeholder={disabled ? "The agent is not ready" : "Describe the task, or ask for a change"}
+      aria-label="Prompt"
+      autoFocus
+      onChange={(event) => setText(event.target.value)}
+      onKeyDown={onKeyDown}
+      className="bg-background min-h-12 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none disabled:opacity-50"
+    />
   )
 }
 
-export function StopButton({ stopping, onStop }: { stopping: boolean; onStop: () => void }) {
+export function StopButton({
+  stopping,
+  onStop,
+  className,
+}: {
+  stopping: boolean
+  onStop: () => void
+  className?: string
+}) {
   return (
-    <Button variant="danger" disabled={stopping} onClick={onStop} className="text-danger ml-auto gap-1.5">
+    <Button variant="danger" disabled={stopping} onClick={onStop} className={cn("text-danger gap-1.5", className)}>
       <Square className="size-3" aria-hidden />
       Stop
     </Button>
   )
 }
 
-function UsageLine({ usage }: { usage: Usage }) {
+export function SessionState({ live, ended }: { live: AgentSession | undefined; ended: boolean }) {
+  if (live === undefined) {
+    return <span className="text-muted-foreground text-xs">{ended ? "This session has ended" : "New session"}</span>
+  }
+  if (live.phase === "connecting") return <Waiting label="Connecting" />
+  if (live.phase === "ended") return <span className="text-muted-foreground text-xs">This session has ended</span>
+  return <Model view={live.view} />
+}
+
+function Model({ view }: { view: SessionView }) {
+  if (view.status.kind === "starting") return <Waiting label="Starting the agent" />
+  const name = view.transcript.info?.model ?? agentNames[view.agent]
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 text-xs">
+      <span
+        className={
+          view.status.kind === "exited" ? "bg-muted-foreground/40 size-2 rounded-full" : "bg-info size-2 rounded-full"
+        }
+      />
+      <span className="text-muted-foreground truncate normal-case">{name}</span>
+    </span>
+  )
+}
+
+export function Waiting({ label }: { label: string }) {
+  return (
+    <span className="text-info flex items-center gap-1.5 text-xs">
+      <Spinner label={label} className="size-3.5" />
+      {label}
+    </span>
+  )
+}
+
+export function Exited({ code, onRestart }: { code: number | null; onRestart: () => void }) {
+  return (
+    <div className="flex items-center gap-2 border-b px-4 py-2 text-xs">
+      <span className="text-muted-foreground">The agent exited{code !== null && ` with code ${code}`}.</span>
+      <Button variant="accent" onClick={onRestart} className="ml-auto">
+        Start a new session
+      </Button>
+    </div>
+  )
+}
+
+export function UsageLine({ usage }: { usage: Usage }) {
   const total = usage.input_tokens + usage.cache_write_tokens + usage.output_tokens
   return (
     <p className="text-muted-foreground text-xs tabular-nums">

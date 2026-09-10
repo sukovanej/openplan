@@ -69,7 +69,7 @@ function listItem(client: QueryClient, project: string, id: string): TaskListIte
 }
 
 // One task, read and drawn. `branch` pins one version; absent means the headline. `agent` is the
-// chat with the agent that edits the task, which the page shows under the relations once opened.
+// chat with the agent that edits the task, which sits at the foot of the task box once opened.
 export function TaskView({
   project,
   id,
@@ -228,36 +228,33 @@ function TaskDetailView({
             />
           )}
         </PanelBody>
+        {agent}
       </Panel>
       {/* The relations and the comment log stand beside the task and share the width it leaves.
           Narrow enough and they drop under it instead. None of them wears a frame: a section leads
           with the rule that separates it from the one above, and the first has nothing above it to
-          separate from. The agent's chat, once open, sits under them and takes the height they
-          leave; when they run long they scroll, and the chat keeps a floor. */}
-      <div className="flex min-w-0 flex-col gap-4 lg:min-w-80 lg:flex-1 lg:overflow-hidden">
-        <aside className="min-w-0 lg:shrink lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
-          <RefSection project={project} title="Depends on" rows={rows.dependsOn} cursor={index} />
-          <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
-          <SubtasksSection
-            key={writeKey}
+          separate from. */}
+      <aside className="min-w-0 lg:min-w-80 lg:flex-1 lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
+        <RefSection project={project} title="Depends on" rows={rows.dependsOn} cursor={index} />
+        <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
+        <SubtasksSection
+          key={writeKey}
+          project={project}
+          id={task.id}
+          rows={rows.subtasks}
+          cursor={index}
+          ready={detail !== null}
+          write={write}
+        />
+        {detail !== null && (
+          <CommentThread
             project={project}
-            id={task.id}
-            rows={rows.subtasks}
-            cursor={index}
-            ready={detail !== null}
-            write={write}
+            comments={detail.comments ?? NO_COMMENTS}
+            refs={detail.refs}
+            abbreviation={abbreviation}
           />
-          {detail !== null && (
-            <CommentThread
-              project={project}
-              comments={detail.comments ?? NO_COMMENTS}
-              refs={detail.refs}
-              abbreviation={abbreviation}
-            />
-          )}
-        </aside>
-        {agent}
-      </div>
+        )}
+      </aside>
     </div>
   )
 }

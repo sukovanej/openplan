@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react"
 import { useLocation, useParams, useSearchParams } from "react-router-dom"
 
-import { AgentPanel } from "../components/agent-panel"
+import { AgentDock } from "../components/agent-dock"
 import type { SessionView } from "../lib/agent-events"
 import { detailActions, useDetailAction } from "../lib/detail-actions"
 import { TaskView } from "./task-view"
@@ -74,14 +74,7 @@ function DetailPage({ project, id }: { project: string; id: string }) {
       onSelect={onSelect}
       agent={
         open ? (
-          <AgentPanel
-            project={project}
-            task={id}
-            session={session}
-            onSession={setSession}
-            onView={onView}
-            className="h-[70vh] shrink-0 lg:h-auto lg:min-h-80 lg:flex-1"
-          />
+          <AgentDock project={project} task={id} session={session} onSession={setSession} onView={onView} />
         ) : undefined
       }
     />
