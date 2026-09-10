@@ -119,6 +119,13 @@ function AgentPage({ project, id }: { project: string; id: string | undefined })
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
+      <div className="min-w-0 lg:h-full lg:flex-1 lg:overflow-hidden">
+        {id === undefined ? (
+          <NoTaskYet writing={running(transcript)} />
+        ) : (
+          <TaskView project={project} id={id} branch={branch} onSelect={(next) => setPinned({ branch: next })} />
+        )}
+      </div>
       <Panel className="h-[70vh] min-w-0 lg:h-full lg:w-[36rem] lg:shrink-0">
         <PanelHeader className="gap-3">
           <PanelTitle>Agent</PanelTitle>
@@ -154,13 +161,6 @@ function AgentPage({ project, id }: { project: string; id: string | undefined })
           onStop={() => stop.mutate()}
         />
       </Panel>
-      <div className="min-w-0 lg:h-full lg:flex-1 lg:overflow-hidden">
-        {id === undefined ? (
-          <NoTaskYet writing={running(transcript)} />
-        ) : (
-          <TaskView project={project} id={id} branch={branch} onSelect={(next) => setPinned({ branch: next })} />
-        )}
-      </div>
     </div>
   )
 }
