@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-09-06T11:43:22Z
 dependencies:
 - ./00106-port-the-cli-and-daemon-to-windo.md
@@ -30,3 +30,9 @@ Bundle `openplan-gui` for Windows and put the installer on the release page.
 
 - The app starts the daemon from its own executable, so the daemon must run on
   Windows first.
+
+## Comments
+
+### 2026-09-09T19:27:21Z by Milan Suk via claude-code
+
+> The app connects to a daemon in WSL instead of starting one from its own executable, so it shipped before OPP-106. The Constraint no longer holds. The release ships the MSI beside the NSIS installer.
