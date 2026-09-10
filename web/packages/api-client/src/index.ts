@@ -52,6 +52,14 @@ export const CreateComment = Schema.Struct({
   author: Schema.String,
   text: Schema.String,
 })
+export type CreateSession = { readonly agent?: string | null; readonly prompt: string; readonly task?: string | null }
+export const CreateSession = Schema.Struct({
+  agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  prompt: Schema.String,
+  task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+})
+export type CreatedSession = { readonly id: string }
+export const CreatedSession = Schema.Struct({ id: Schema.String })
 export type CreatedTask = { readonly id: string }
 export const CreatedTask = Schema.Struct({ id: Schema.String })
 export type DaemonInfo = {
@@ -66,6 +74,8 @@ export const DaemonInfo = Schema.Struct({
   started_at: Schema.Number.annotate({ format: "int64" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
   version: Schema.String,
 })
+export type Decision = {}
+export const Decision = Schema.Struct({})
 export type FieldError = { readonly kind: "missing" } | { readonly kind: "invalid"; readonly message: string }
 export const FieldError = Schema.Union(
   [
@@ -104,6 +114,10 @@ export type RegisterProject = { readonly path: string }
 export const RegisterProject = Schema.Struct({ path: Schema.String })
 export type RenameProject = { readonly name: string }
 export const RenameProject = Schema.Struct({ name: Schema.String })
+export type Rfc3339 = string
+export const Rfc3339 = Schema.String.annotate({ format: "date-time" })
+export type Say = { readonly text: string }
+export const Say = Schema.Struct({ text: Schema.String })
 export type SearchMatch = "key" | "title" | "text"
 export const SearchMatch = Schema.Literals(["key", "title", "text"])
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
@@ -183,6 +197,20 @@ export const ApiErrorBody = Schema.Struct({
   cycles: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
   message: Schema.String,
   reason: Schema.optionalKey(Refusal),
+})
+export type SessionSummary = {
+  readonly agent: string
+  readonly id: string
+  readonly started_at: Rfc3339
+  readonly status: {}
+  readonly task?: string | null
+}
+export const SessionSummary = Schema.Struct({
+  agent: Schema.String,
+  id: Schema.String,
+  started_at: Rfc3339,
+  status: Schema.Struct({}),
+  task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
 })
 export type CreateTask = {
   readonly body?: string | null
@@ -498,6 +526,46 @@ export type RenameProject409 = ApiErrorBody
 export const RenameProject409 = ApiErrorBody
 export type RenameProject503 = ApiErrorBody
 export const RenameProject503 = ApiErrorBody
+export type ListSessions200 = ReadonlyArray<SessionSummary>
+export const ListSessions200 = Schema.Array(SessionSummary)
+export type ListSessions404 = ApiErrorBody
+export const ListSessions404 = ApiErrorBody
+export type ListSessions503 = ApiErrorBody
+export const ListSessions503 = ApiErrorBody
+export type CreateSessionRequestJson = CreateSession
+export const CreateSessionRequestJson = CreateSession
+export type CreateSession201 = CreatedSession
+export const CreateSession201 = CreatedSession
+export type CreateSession400 = ApiErrorBody
+export const CreateSession400 = ApiErrorBody
+export type CreateSession404 = ApiErrorBody
+export const CreateSession404 = ApiErrorBody
+export type CreateSession500 = ApiErrorBody
+export const CreateSession500 = ApiErrorBody
+export type CreateSession503 = ApiErrorBody
+export const CreateSession503 = ApiErrorBody
+export type DeleteSession404 = ApiErrorBody
+export const DeleteSession404 = ApiErrorBody
+export type DeleteSession503 = ApiErrorBody
+export const DeleteSession503 = ApiErrorBody
+export type ApproveRequestJson = Decision
+export const ApproveRequestJson = Decision
+export type Approve404 = ApiErrorBody
+export const Approve404 = ApiErrorBody
+export type Approve503 = ApiErrorBody
+export const Approve503 = ApiErrorBody
+export type InterruptSession404 = ApiErrorBody
+export const InterruptSession404 = ApiErrorBody
+export type InterruptSession503 = ApiErrorBody
+export const InterruptSession503 = ApiErrorBody
+export type PromptSessionRequestJson = Say
+export const PromptSessionRequestJson = Say
+export type PromptSession404 = ApiErrorBody
+export const PromptSession404 = ApiErrorBody
+export type PromptSession409 = ApiErrorBody
+export const PromptSession409 = ApiErrorBody
+export type PromptSession503 = ApiErrorBody
+export const PromptSession503 = ApiErrorBody
 export type GetBoard200 = Board
 export const GetBoard200 = Board
 export type GetBoard400 = ApiErrorBody
@@ -966,6 +1034,78 @@ export const make = (
           }),
         ),
       ),
+    listSessions: (project, options) =>
+      HttpClientRequest.get(`/api/projects/${project}/agent/sessions`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(ListSessions200),
+            "404": decodeError("ListSessions404", ListSessions404),
+            "503": decodeError("ListSessions503", ListSessions503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    createSession: (project, options) =>
+      HttpClientRequest.post(`/api/projects/${project}/agent/sessions`).pipe(
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(CreateSession201),
+            "400": decodeError("CreateSession400", CreateSession400),
+            "404": decodeError("CreateSession404", CreateSession404),
+            "500": decodeError("CreateSession500", CreateSession500),
+            "503": decodeError("CreateSession503", CreateSession503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    deleteSession: (project, id, options) =>
+      HttpClientRequest.delete(`/api/projects/${project}/agent/sessions/${id}`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "404": decodeError("DeleteSession404", DeleteSession404),
+            "503": decodeError("DeleteSession503", DeleteSession503),
+            "204": () => Effect.void,
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    approve: (project, id, approval, options) =>
+      HttpClientRequest.post(`/api/projects/${project}/agent/sessions/${id}/approvals/${approval}`).pipe(
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "404": decodeError("Approve404", Approve404),
+            "503": decodeError("Approve503", Approve503),
+            "202": () => Effect.void,
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    interruptSession: (project, id, options) =>
+      HttpClientRequest.post(`/api/projects/${project}/agent/sessions/${id}/interrupt`).pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "404": decodeError("InterruptSession404", InterruptSession404),
+            "503": decodeError("InterruptSession503", InterruptSession503),
+            "202": () => Effect.void,
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    promptSession: (project, id, options) =>
+      HttpClientRequest.post(`/api/projects/${project}/agent/sessions/${id}/prompt`).pipe(
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "404": decodeError("PromptSession404", PromptSession404),
+            "409": decodeError("PromptSession409", PromptSession409),
+            "503": decodeError("PromptSession503", PromptSession503),
+            "202": () => Effect.void,
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     getBoard: (project, options) =>
       HttpClientRequest.get(`/api/projects/${project}/board`).pipe(
         withResponse(options?.config)(
@@ -1393,6 +1533,74 @@ export interface TasksClient {
     | TasksClientError<"RenameProject404", typeof RenameProject404.Type>
     | TasksClientError<"RenameProject409", typeof RenameProject409.Type>
     | TasksClientError<"RenameProject503", typeof RenameProject503.Type>
+  >
+  readonly listSessions: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListSessions200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"ListSessions404", typeof ListSessions404.Type>
+    | TasksClientError<"ListSessions503", typeof ListSessions503.Type>
+  >
+  readonly createSession: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly payload: typeof CreateSessionRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof CreateSession201.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"CreateSession400", typeof CreateSession400.Type>
+    | TasksClientError<"CreateSession404", typeof CreateSession404.Type>
+    | TasksClientError<"CreateSession500", typeof CreateSession500.Type>
+    | TasksClientError<"CreateSession503", typeof CreateSession503.Type>
+  >
+  readonly deleteSession: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DeleteSession404", typeof DeleteSession404.Type>
+    | TasksClientError<"DeleteSession503", typeof DeleteSession503.Type>
+  >
+  readonly approve: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    approval: string,
+    options: { readonly payload: typeof ApproveRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"Approve404", typeof Approve404.Type>
+    | TasksClientError<"Approve503", typeof Approve503.Type>
+  >
+  readonly interruptSession: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"InterruptSession404", typeof InterruptSession404.Type>
+    | TasksClientError<"InterruptSession503", typeof InterruptSession503.Type>
+  >
+  readonly promptSession: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: { readonly payload: typeof PromptSessionRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"PromptSession404", typeof PromptSession404.Type>
+    | TasksClientError<"PromptSession409", typeof PromptSession409.Type>
+    | TasksClientError<"PromptSession503", typeof PromptSession503.Type>
   >
   readonly getBoard: <Config extends OperationConfig>(
     project: string,

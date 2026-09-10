@@ -39,16 +39,18 @@ use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
+pub mod agent;
 mod project;
 pub mod pull_request;
 mod registry;
 pub mod rolling_updates;
+use agent::AgentSessions;
 pub use project::{OpenError, Project, open_projects, serve_root};
 pub use registry::{
     ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError, canonical, same_path, unique_name,
 };
 
-const EVENT_CHANNEL_CAPACITY: usize = 256;
+pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 256;
 const SLOW_REQUEST: Duration = Duration::from_millis(1000);
 const ID_ATTEMPTS: usize = 16;
 
@@ -86,6 +88,7 @@ pub struct AppState {
     shutdown: Arc<watch::Sender<bool>>,
     health: Option<Arc<DaemonInfo>>,
     events: broadcast::Sender<ChangeEvent>,
+    agents: Arc<AgentSessions>,
 }
 
 impl AppState {
@@ -105,7 +108,21 @@ impl AppState {
             shutdown: Arc::new(watch::channel(false).0),
             health: None,
             events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
+            agents: Arc::new(AgentSessions::new(agent::backends())),
         }
+    }
+
+    // A test hands in a fake here; the daemon keeps the two real backends `new` installed.
+    pub fn with_agents(
+        mut self,
+        agents: BTreeMap<op_agent::AgentKind, Arc<dyn op_agent::Agent>>,
+    ) -> Self {
+        self.agents = Arc::new(AgentSessions::new(agents));
+        self
+    }
+
+    pub fn agents(&self) -> Arc<AgentSessions> {
+        Arc::clone(&self.agents)
     }
 
     pub fn with_registry(mut self, path: PathBuf) -> Self {
@@ -274,6 +291,10 @@ impl AppState {
         let _ = self.shutdown.send(true);
     }
 
+    pub(crate) fn stopping(&self) -> watch::Receiver<bool> {
+        self.shutdown.subscribe()
+    }
+
     fn registry_path(&self) -> Result<Arc<PathBuf>, ProjectsError> {
         self.registry.clone().ok_or(ProjectsError::NoRegistry)
     }
@@ -312,6 +333,11 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(publish_rolling_updates))
         .routes(routes!(get_rolling_update_diff))
         .routes(routes!(discard_rolling_update))
+        .routes(routes!(agent::list_sessions, agent::create_session))
+        .routes(routes!(agent::delete_session))
+        .routes(routes!(agent::prompt_session))
+        .routes(routes!(agent::interrupt_session))
+        .routes(routes!(agent::approve))
         .routes(routes!(get_board))
         .routes(routes!(get_merged_board))
         .routes(routes!(get_flow))
@@ -330,7 +356,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     documented().split_for_parts().1
 }
 
-fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, ApiError> {
+pub(crate) fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, ApiError> {
     let project = state.project(name).ok_or_else(|| {
         ApiError::new(
             StatusCode::NOT_FOUND,
@@ -369,6 +395,10 @@ pub fn app(state: AppState) -> Router {
     router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
         .route("/api/events", get(events))
+        .route(
+            "/api/projects/{project}/agent/sessions/{id}/events",
+            get(agent::session_events),
+        )
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
         .layer(
@@ -424,6 +454,7 @@ pub async fn serve(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
     let stop = state.shutdown.clone();
+    let agents = state.agents();
     let watchdog = tokio::spawn(watch_roots(state.clone()));
     let result = axum::serve(listener, app(state))
         .with_graceful_shutdown(async move {
@@ -438,6 +469,7 @@ pub async fn serve(
         })
         .await;
     watchdog.abort();
+    agents.finish().await;
     result
 }
 
@@ -650,7 +682,7 @@ struct CreatedTask {
     id: String,
 }
 
-struct ApiError {
+pub(crate) struct ApiError {
     status: StatusCode,
     message: String,
     reason: Option<Refusal>,
@@ -658,7 +690,7 @@ struct ApiError {
 }
 
 impl ApiError {
-    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+    pub(crate) fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self {
             status,
             message: message.into(),
@@ -700,11 +732,11 @@ impl ApiError {
         )
     }
 
-    fn conflict(message: impl Into<String>) -> Self {
+    pub(crate) fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, message)
     }
 
-    fn unavailable(message: impl Into<String>) -> Self {
+    pub(crate) fn unavailable(message: impl Into<String>) -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
     }
 
@@ -794,7 +826,7 @@ impl IntoResponse for ApiError {
     }
 }
 
-fn join_error(err: tokio::task::JoinError) -> ApiError {
+pub(crate) fn join_error(err: tokio::task::JoinError) -> ApiError {
     ApiError::internal(format!("task failed: {err}"))
 }
 
@@ -1667,7 +1699,7 @@ async fn get_task_of(
 // such task" there sends the reader looking for a task the board still shows, so the refusal names
 // the branches that do hold it. `branch` is the branch the request resolved to — named, so a caller
 // whose branch the daemon picked reads which branch the answer is about.
-fn no_such_task(index: &Index, id: &str, branch: Option<&str>) -> ApiError {
+pub(crate) fn no_such_task(index: &Index, id: &str, branch: Option<&str>) -> ApiError {
     let elsewhere: Vec<String> = index
         .task_branch_states(id)
         .iter()
@@ -1695,13 +1727,13 @@ fn branch_label(state: &BranchState) -> String {
     }
 }
 
-fn reject_non_key(abbreviation: Abbreviation, key: &str) -> Result<u64, ApiError> {
+pub(crate) fn reject_non_key(abbreviation: Abbreviation, key: &str) -> Result<u64, ApiError> {
     abbreviation
         .parse_key(key)
         .ok_or_else(|| KeyError::new(abbreviation, key).into())
 }
 
-fn index_error(err: IndexError) -> ApiError {
+pub(crate) fn index_error(err: IndexError) -> ApiError {
     match err {
         IndexError::Store(err) => err.into(),
         IndexError::Git(err) => ApiError::internal(err.to_string()),
