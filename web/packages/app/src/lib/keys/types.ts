@@ -47,9 +47,10 @@ export interface DetailControls {
 }
 
 export interface AgentControls {
-  // The agent page for the task at hand, or for a new task on the board's project when no task is
-  // at hand. The merged board names no project, so there it opens nothing.
-  readonly open: () => void
+  // The page that drafts a task, on the project the page names when it names one.
+  readonly draft: () => void
+  // The chat with the agent on the task at hand. No task at hand, nothing to edit.
+  readonly edit: () => void
 }
 
 export interface RunContext {

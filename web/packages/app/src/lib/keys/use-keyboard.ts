@@ -3,11 +3,11 @@ import { useLocation, useNavigate } from "react-router-dom"
 
 import {
   agentPath,
-  agentRouteOf,
   boardPath,
   FLOW_ROUTE,
+  isAgentRoute,
   projectRouteOf,
-  type TaskRoute,
+  taskPath,
   taskRouteOf,
 } from "@openplan/task-ui"
 
@@ -24,17 +24,8 @@ import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types
 
 function routeScope(pathname: string): RouteScope {
   if (pathname === FLOW_ROUTE) return "flow"
-  if (agentRouteOf(pathname) !== undefined) return "agent"
+  if (isAgentRoute(pathname)) return "agent"
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
-}
-
-// The task at hand opens the agent on itself; a board with none opens it on a task that does not
-// exist yet. The agent page is already there, so there the key goes to the prompt instead.
-export function agentPathFor(pathname: string, task: TaskRoute | undefined): string | undefined {
-  if (agentRouteOf(pathname) !== undefined) return undefined
-  if (task !== undefined) return agentPath(task.project, task.id)
-  const project = projectRouteOf(pathname)
-  return project === undefined ? undefined : agentPath(project)
 }
 
 export interface Keyboard {
@@ -134,13 +125,17 @@ export function useKeyboard(): Keyboard {
         },
       },
       agent: {
-        open: () => {
-          if (live.current.scope === "agent") {
-            detailActions.emit("focus-prompt")
-            return
-          }
-          const to = agentPathFor(live.current.pathname, targetTask())
-          if (to !== undefined) live.current.navigate(to)
+        // The draft page is already there when the key lands on it, so there it goes to the prompt.
+        draft: () => {
+          if (live.current.scope === "agent") detailActions.emit("focus-prompt")
+          else live.current.navigate(agentPath(projectRouteOf(live.current.pathname)))
+        },
+        // On the task's own page the chat opens in place; from a board row the page opens with it.
+        edit: () => {
+          const task = targetTask()
+          if (task === undefined) return
+          if (live.current.scope === "detail") detailActions.emit("open-agent")
+          else live.current.navigate(taskPath(task.project, task.id), { state: { agent: true } })
         },
       },
     })

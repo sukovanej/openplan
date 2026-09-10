@@ -105,10 +105,10 @@ export const bindings: ReadonlyArray<Binding> = [
   {
     id: "agent.draft",
     keys: "n",
-    scope: "list",
+    scope: "global",
     label: "Draft a task with the agent",
     group: "Task",
-    run: (ctx) => ctx.agent.open(),
+    run: (ctx) => ctx.agent.draft(),
   },
   // `a` already adds a subtask, so the agent takes `e`: it edits the task at hand, which is the
   // row under the cursor or the pointer on a board, and the open task on its page.
@@ -118,7 +118,7 @@ export const bindings: ReadonlyArray<Binding> = [
     scope: "global",
     label: "Edit the task at hand with the agent",
     group: "Task",
-    run: (ctx) => ctx.agent.open(),
+    run: (ctx) => ctx.agent.edit(),
   },
   {
     id: "task.status",

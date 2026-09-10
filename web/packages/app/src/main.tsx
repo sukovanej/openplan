@@ -3,7 +3,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 
-import { AGENT_ROUTE, AGENT_TASK_ROUTE, BOARD_ROUTE, FLOW_ROUTE, TAGS_ROUTE, TASK_ROUTE } from "@openplan/task-ui"
+import { AGENT_ROUTE, BOARD_ROUTE, FLOW_ROUTE, TAGS_ROUTE, TASK_ROUTE } from "@openplan/task-ui"
 
 import { App } from "./App"
 import { queryClient } from "./lib/query-client"
@@ -27,7 +27,6 @@ const router = createBrowserRouter([
       { path: TAGS_ROUTE, element: <TagsRoute /> },
       { path: TASK_ROUTE, element: <DetailRoute /> },
       { path: AGENT_ROUTE, element: <AgentRoute /> },
-      { path: AGENT_TASK_ROUTE, element: <AgentRoute /> },
     ],
   },
 ])

@@ -1,11 +1,10 @@
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Sparkles, Waypoints, X } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
 import type { Board, Comment, TaskDetail, TaskListItem } from "@openplan/api-client"
 import {
-  agentPath,
   boardPath,
   BranchSwitcher,
   CommentThread,
@@ -39,7 +38,7 @@ import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { TagsField } from "../components/tags-field"
 import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
-import { useDetailAction } from "../lib/detail-actions"
+import { detailActions, useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { taskFlowPath } from "../lib/flow-selection"
 import { errorText } from "../lib/format"
@@ -69,21 +68,20 @@ function listItem(client: QueryClient, project: string, id: string): TaskListIte
   return undefined
 }
 
-// One task, read and drawn: the detail page is this alone, and the agent page previews the task
-// the agent writes with it. `branch` pins one version; absent means the headline. `agentLink`
-// shows the way to the agent page, which the agent page itself has no use for.
+// One task, read and drawn. `branch` pins one version; absent means the headline. `agent` is the
+// chat with the agent that edits the task, which the page shows under the relations once opened.
 export function TaskView({
   project,
   id,
   branch,
   onSelect,
-  agentLink = false,
+  agent,
 }: {
   project: string
   id: string
   branch: string | undefined
   onSelect: (branch: string | undefined) => void
-  agentLink?: boolean
+  agent?: ReactNode
 }) {
   const client = useQueryClient()
   const task = useQuery({
@@ -112,7 +110,7 @@ export function TaskView({
       body={shown?.body}
       selected={branch}
       onSelect={onSelect}
-      agentLink={agentLink}
+      agent={agent}
     />
   )
 }
@@ -124,7 +122,7 @@ function TaskDetailView({
   body,
   selected,
   onSelect,
-  agentLink,
+  agent,
 }: {
   project: string
   task: TaskDetail | TaskListItem
@@ -132,7 +130,7 @@ function TaskDetailView({
   body: string | undefined
   selected: string | undefined
   onSelect: (branch: string | undefined) => void
-  agentLink: boolean
+  agent: ReactNode
 }) {
   const abbreviation = useAbbreviation(project)
   const rollingUpdates = useProject(project)?.rolling_updates_branch
@@ -168,7 +166,7 @@ function TaskDetailView({
             />
           </PanelTitle>
           <FlowAction project={project} id={task.id} />
-          {agentLink && <AgentAction project={project} id={task.id} />}
+          <AgentAction />
           <div className="min-w-0">
             <HeaderParent
               key={writeKey}
@@ -234,28 +232,32 @@ function TaskDetailView({
       {/* The relations and the comment log stand beside the task and share the width it leaves.
           Narrow enough and they drop under it instead. None of them wears a frame: a section leads
           with the rule that separates it from the one above, and the first has nothing above it to
-          separate from. */}
-      <aside className="min-w-0 lg:min-w-80 lg:flex-1 lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
-        <RefSection project={project} title="Depends on" rows={rows.dependsOn} cursor={index} />
-        <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
-        <SubtasksSection
-          key={writeKey}
-          project={project}
-          id={task.id}
-          rows={rows.subtasks}
-          cursor={index}
-          ready={detail !== null}
-          write={write}
-        />
-        {detail !== null && (
-          <CommentThread
+          separate from. The agent's chat, once open, sits under them and takes the height they
+          leave; when they run long they scroll, and the chat keeps a floor. */}
+      <div className="flex min-w-0 flex-col gap-4 lg:min-w-80 lg:flex-1 lg:overflow-hidden">
+        <aside className="min-w-0 lg:shrink lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
+          <RefSection project={project} title="Depends on" rows={rows.dependsOn} cursor={index} />
+          <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
+          <SubtasksSection
+            key={writeKey}
             project={project}
-            comments={detail.comments ?? NO_COMMENTS}
-            refs={detail.refs}
-            abbreviation={abbreviation}
+            id={task.id}
+            rows={rows.subtasks}
+            cursor={index}
+            ready={detail !== null}
+            write={write}
           />
-        )}
-      </aside>
+          {detail !== null && (
+            <CommentThread
+              project={project}
+              comments={detail.comments ?? NO_COMMENTS}
+              refs={detail.refs}
+              abbreviation={abbreviation}
+            />
+          )}
+        </aside>
+        {agent}
+      </div>
     </div>
   )
 }
@@ -273,15 +275,17 @@ function FlowAction({ project, id }: { project: string; id: string }) {
   )
 }
 
-function AgentAction({ project, id }: { project: string; id: string }) {
+// Opens the chat with the agent on this task, as `e` does.
+function AgentAction() {
   return (
-    <Link
-      to={agentPath(project, id)}
-      className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1.5 text-xs"
+    <button
+      type="button"
+      onClick={() => detailActions.emit("open-agent")}
+      className="text-muted-foreground hover:text-foreground inline-flex shrink-0 cursor-pointer items-center gap-1.5 text-xs"
     >
       <Sparkles className="size-3.5" />
       Agent
-    </Link>
+    </button>
   )
 }
 

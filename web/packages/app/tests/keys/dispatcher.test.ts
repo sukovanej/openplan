@@ -1,14 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { taskPath } from "@openplan/task-ui"
+import { agentPath, projectRouteOf, taskPath } from "@openplan/task-ui"
 
 import { taskFlowPath } from "../../src/lib/flow-selection"
 import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
 import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
 import type { Binding, OverlayName, PaletteTarget, RouteScope, RunContext } from "../../src/lib/keys/types"
-import { agentPathFor } from "../../src/lib/keys/use-keyboard"
 import { detailCursor, focusedRow, liveCursor, rowCursor } from "../../src/lib/row-cursor"
 import { hoveredRow, taskAtHand } from "../../src/lib/row-target"
 import type { StatusTarget } from "../../src/lib/status-requests"
@@ -100,9 +99,11 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
       escape: () => void detail.escape++,
     },
     agent: {
-      open: () => {
-        const to = agentPathFor(pathname, targetTask())
-        if (to !== undefined) navigations.push(to)
+      draft: () => navigations.push(scope === "agent" ? "prompt" : agentPath(projectRouteOf(pathname))),
+      edit: () => {
+        const task = targetTask()
+        if (task === undefined) return
+        navigations.push(scope === "detail" ? "open-agent" : taskPath(task.project, task.id))
       },
     },
   })
@@ -153,48 +154,64 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe("the agent page", () => {
-  it("opens for a new task from a project board with n, and not from the merged board", () => {
+describe("the agent", () => {
+  it("drafts a task with n from anywhere, on the board's project when there is one", () => {
     const h = mount()
     h.setPath("/")
     press("n")
-    expect(h.navigations).toEqual([])
+    expect(h.navigations).toEqual(["/agent"])
     h.setPath(`/${PROJECT}`)
     press("n")
-    expect(h.navigations).toEqual([`/${PROJECT}/agent`])
+    expect(h.navigations).toEqual(["/agent", `/agent?project=${PROJECT}`])
   })
 
-  it("opens on the open task from its detail page with e", () => {
+  it("drafts a new task with n even on a task's page", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("OPP-3"))
+    press("n")
+    expect(h.navigations).toEqual([`/agent?project=${PROJECT}`])
+  })
+
+  it("hands n to the prompt on the draft page", () => {
+    const h = mount()
+    h.setScope("agent")
+    h.setPath(`/agent?project=${PROJECT}`)
+    press("n")
+    expect(h.navigations).toEqual(["prompt"])
+  })
+
+  it("opens the chat on the open task from its page with e", () => {
     const h = mount()
     h.setScope("detail")
     h.setPath(path("OPP-3"))
     press("e")
-    expect(h.navigations).toEqual([`/${PROJECT}/agent/OPP-3`])
+    expect(h.navigations).toEqual(["open-agent"])
   })
 
-  it("opens on the row at hand from a board with e, and on a new task when no row is", () => {
+  it("opens the row at hand from a board with e, and nothing when no row is", () => {
     const h = mount()
     h.setPath(`/${PROJECT}`)
     rowCursor.setRows(paths("OPP-1", "OPP-2"))
     press("e")
-    expect(h.navigations).toEqual([`/${PROJECT}/agent`])
+    expect(h.navigations).toEqual([])
     press("j")
     press("e")
-    expect(h.navigations).toEqual([`/${PROJECT}/agent`, `/${PROJECT}/agent/OPP-1`])
+    expect(h.navigations).toEqual([path("OPP-1")])
   })
 
-  it("stays on the agent page with e, where the page hands the key to its prompt", () => {
+  it("edits nothing with e on the draft page", () => {
     const h = mount()
     h.setScope("agent")
-    h.setPath(`/${PROJECT}/agent/OPP-3`)
+    h.setPath(`/agent?project=${PROJECT}`)
     press("e")
     expect(h.navigations).toEqual([])
   })
 
-  it("leaves with Escape", () => {
+  it("leaves the draft page with Escape", () => {
     const h = mount()
     h.setScope("agent")
-    h.setPath(`/${PROJECT}/agent/OPP-3`)
+    h.setPath("/agent")
     press("Escape")
     expect(h.went).toEqual(["back"])
   })

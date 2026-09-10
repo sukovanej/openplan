@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest"
 
-import { agentPath, agentRouteOf, boardPath, projectRouteOf, taskPath, taskRouteOf } from "../src/task-path"
+import {
+  agentPath,
+  boardPath,
+  isAgentRoute,
+  projectRouteOf,
+  taskPath,
+  taskRouteOf,
+  taskSessionPath,
+} from "../src/task-path"
 
 describe("boardPath", () => {
   it("spells the route for a project's board", () => {
@@ -37,40 +45,46 @@ describe("taskRouteOf", () => {
 })
 
 describe("agentPath", () => {
-  it("spells the page for a new task, for an existing one, and with the session it is attached to", () => {
-    expect(agentPath("openplan")).toBe("/openplan/agent")
-    expect(agentPath("openplan", "OPP-42")).toBe("/openplan/agent/OPP-42")
-    expect(agentPath("openplan", "OPP-42", "0a1b")).toBe("/openplan/agent/OPP-42?session=0a1b")
-    expect(agentPath("openplan", undefined, "0a1b")).toBe("/openplan/agent?session=0a1b")
+  it("sits above the projects and carries the chosen one and the session in the query", () => {
+    expect(agentPath()).toBe("/agent")
+    expect(agentPath("openplan")).toBe("/agent?project=openplan")
+    expect(agentPath("open plan", "0a1b")).toBe("/agent?project=open+plan&session=0a1b")
+    expect(agentPath(undefined, "0a1b")).toBe("/agent?session=0a1b")
   })
 })
 
-describe("agentRouteOf", () => {
-  it("reads the project, and the task when the route names one", () => {
-    expect(agentRouteOf("/openplan/agent")).toEqual({ project: "openplan", id: undefined })
-    expect(agentRouteOf("/openplan/agent/")).toEqual({ project: "openplan", id: undefined })
-    expect(agentRouteOf("/openplan/agent/OPP-42")).toEqual({ project: "openplan", id: "OPP-42" })
-    expect(agentRouteOf("/openplan/agent/OPP-42?session=0a1b")).toEqual({ project: "openplan", id: "OPP-42" })
+describe("taskSessionPath", () => {
+  it("is the task's page with the session on it", () => {
+    expect(taskSessionPath("openplan", "OPP-42", "0a1b")).toBe("/openplan/task/OPP-42?session=0a1b")
+  })
+})
+
+describe("isAgentRoute", () => {
+  it("is the agent page with or without a query", () => {
+    expect(isAgentRoute("/agent")).toBe(true)
+    expect(isAgentRoute("/agent/")).toBe(true)
+    expect(isAgentRoute("/agent?project=openplan&session=0a1b")).toBe(true)
   })
 
-  it("has no agent route on a board, a task, or the root", () => {
-    expect(agentRouteOf("/")).toBeUndefined()
-    expect(agentRouteOf("/openplan")).toBeUndefined()
-    expect(agentRouteOf("/openplan/task/OPP-1")).toBeUndefined()
+  it("is not a board, a task, a project named agent's board, or the root", () => {
+    expect(isAgentRoute("/")).toBe(false)
+    expect(isAgentRoute("/openplan")).toBe(false)
+    expect(isAgentRoute("/openplan/agent")).toBe(false)
+    expect(isAgentRoute("/openplan/task/OPP-1")).toBe(false)
   })
 })
 
 describe("projectRouteOf", () => {
-  it("names the project of a board, a tags page, a task, and an agent page", () => {
+  it("names the project of a board, a tags page, and a task", () => {
     expect(projectRouteOf("/openplan")).toBe("openplan")
     expect(projectRouteOf("/openplan/tags")).toBe("openplan")
-    expect(projectRouteOf("/openplan/task/OPP-1")).toBe("openplan")
-    expect(projectRouteOf("/open%20plan/agent")).toBe("open plan")
+    expect(projectRouteOf("/open%20plan/task/OPP-1")).toBe("open plan")
   })
 
-  it("names none on the merged board or the flow", () => {
+  it("names none on the merged board, the flow, or the agent page", () => {
     expect(projectRouteOf("/")).toBeUndefined()
     expect(projectRouteOf("/flow")).toBeUndefined()
     expect(projectRouteOf("/flow?task=OPP-1")).toBeUndefined()
+    expect(projectRouteOf("/agent?project=openplan")).toBeUndefined()
   })
 })

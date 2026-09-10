@@ -18,12 +18,12 @@ interface Command {
   readonly to: string
 }
 
-// The agent drafts a task in one project, so the command exists only where the page names one.
+// The draft goes to the project the page names, when it names one; the page picks otherwise.
 function commands(project: string | undefined): ReadonlyArray<Command> {
-  const flow = { label: "Show the implementation flow", icon: Waypoints, to: FLOW_ROUTE }
-  return project === undefined
-    ? [flow]
-    : [flow, { label: "Draft a task with the agent", icon: Sparkles, to: agentPath(project) }]
+  return [
+    { label: "Show the implementation flow", icon: Waypoints, to: FLOW_ROUTE },
+    { label: "Draft a task with the agent", icon: Sparkles, to: agentPath(project) },
+  ]
 }
 
 function commandItems(
