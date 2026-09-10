@@ -8,6 +8,7 @@ import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
 import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
 import type { Binding, OverlayName, PaletteTarget, RouteScope, RunContext } from "../../src/lib/keys/types"
+import { agentPathFor } from "../../src/lib/keys/use-keyboard"
 import { detailCursor, focusedRow, liveCursor, rowCursor } from "../../src/lib/row-cursor"
 import { hoveredRow, taskAtHand } from "../../src/lib/row-target"
 import type { StatusTarget } from "../../src/lib/status-requests"
@@ -98,6 +99,12 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
       goToParent: () => void detail.goToParent++,
       escape: () => void detail.escape++,
     },
+    agent: {
+      open: () => {
+        const to = agentPathFor(pathname)
+        if (to !== undefined) navigations.push(to)
+      },
+    },
   })
   const dispatcher = new Dispatcher({
     bindings: over,
@@ -144,6 +151,34 @@ afterEach(() => {
   mounted?.detach()
   mounted = undefined
   vi.useRealTimers()
+})
+
+describe("the agent page", () => {
+  it("opens for a new task from a project board with n, and not from the merged board", () => {
+    const h = mount()
+    h.setPath("/")
+    press("n")
+    expect(h.navigations).toEqual([])
+    h.setPath(`/${PROJECT}`)
+    press("n")
+    expect(h.navigations).toEqual([`/${PROJECT}/agent`])
+  })
+
+  it("opens on the open task from its detail page with e", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("OPP-3"))
+    press("e")
+    expect(h.navigations).toEqual([`/${PROJECT}/agent/OPP-3`])
+  })
+
+  it("leaves with Escape", () => {
+    const h = mount()
+    h.setScope("agent")
+    h.setPath(`/${PROJECT}/agent/OPP-3`)
+    press("Escape")
+    expect(h.went).toEqual(["back"])
+  })
 })
 
 describe("chord buffering", () => {

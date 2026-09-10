@@ -1,10 +1,10 @@
-import { Check, ChevronRight, CloudOff, CloudUpload, LoaderCircle, Trash2, TriangleAlert } from "lucide-react"
+import { Check, ChevronRight, CloudOff, CloudUpload, Trash2, TriangleAlert } from "lucide-react"
 import { useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
 import type { MatrixCell, Published } from "@openplan/api-client"
 import { ChangeMark, ROLLING_UPDATES_LABEL, taskPath } from "@openplan/task-ui"
-import { Button, cn, CountPill, DiffView, Skeleton, Tooltip, useDismissOnOutsideClick } from "@openplan/ui"
+import { Button, cn, CountPill, DiffView, Skeleton, Spinner, Tooltip, useDismissOnOutsideClick } from "@openplan/ui"
 
 import { useConnection } from "../lib/connection"
 import {
@@ -22,10 +22,9 @@ import {
 const icons = {
   idle: Check,
   pending: CloudUpload,
-  syncing: LoaderCircle,
   blocked: TriangleAlert,
   offline: CloudOff,
-} satisfies Record<SyncState, typeof Check>
+} satisfies Record<Exclude<SyncState, "syncing">, typeof Check>
 
 const colors: Record<SyncState, string> = {
   idle: "text-muted-foreground/60",
@@ -62,7 +61,6 @@ export function RollingUpdates() {
   if (updates.length === 0) return null
   const count = pendingCount(updates)
   const state = syncState(updates, live, publish.isPending || discard.isPending)
-  const Icon = icons[state]
 
   return (
     <div
@@ -80,7 +78,7 @@ export function RollingUpdates() {
           onClick={() => setOpen(!open)}
           className={cn("gap-1.5 px-1.5 py-1.5", colors[state])}
         >
-          <Icon className={cn("size-4", state === "syncing" && "animate-spin")} aria-hidden />
+          <StateIcon state={state} />
           {count > 0 && state !== "offline" && (
             <CountPill count={count} className={cn(state === "blocked" ? "text-warning" : "text-info", "bg-muted")} />
           )}
@@ -93,6 +91,12 @@ export function RollingUpdates() {
       )}
     </div>
   )
+}
+
+function StateIcon({ state }: { state: SyncState }) {
+  if (state === "syncing") return <Spinner label={tooltip(state, 0)} />
+  const Icon = icons[state]
+  return <Icon className="size-4" aria-hidden />
 }
 
 type Publish = ReturnType<typeof usePublish>

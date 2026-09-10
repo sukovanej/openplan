@@ -1,10 +1,11 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query"
-import { MessageSquare, Tags } from "lucide-react"
+import { MessageSquare, Sparkles, Tags } from "lucide-react"
 import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
 import type { Board, BoardRow } from "@openplan/api-client"
 import {
+  agentPath,
   BranchBadges,
   createdOf,
   parentOf,
@@ -73,13 +74,22 @@ function ProjectBoard({ project }: { project: string }) {
       board={board}
       title={project}
       action={
-        <Link
-          to={tagsPath(project)}
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
-        >
-          <Tags className="size-3.5" />
-          Tags
-        </Link>
+        <span className="flex items-center gap-4">
+          <Link
+            to={tagsPath(project)}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
+          >
+            <Tags className="size-3.5" />
+            Tags
+          </Link>
+          <Link
+            to={agentPath(project)}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
+          >
+            <Sparkles className="size-3.5" />
+            New task
+          </Link>
+        </span>
       }
     />
   )

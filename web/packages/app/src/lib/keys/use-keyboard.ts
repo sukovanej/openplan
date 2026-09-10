@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { boardPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
+import { agentPath, agentRouteOf, boardPath, FLOW_ROUTE, projectRouteOf, taskRouteOf } from "@openplan/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
@@ -16,7 +16,16 @@ import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types
 
 function routeScope(pathname: string): RouteScope {
   if (pathname === FLOW_ROUTE) return "flow"
+  if (agentRouteOf(pathname) !== undefined) return "agent"
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
+}
+
+// The task page opens the agent on its task; a board opens it on a task that does not exist yet.
+export function agentPathFor(pathname: string): string | undefined {
+  const task = taskRouteOf(pathname)
+  if (task !== undefined) return agentPath(task.project, task.id)
+  const project = projectRouteOf(pathname)
+  return project === undefined ? undefined : agentPath(project)
 }
 
 export interface Keyboard {
@@ -113,6 +122,12 @@ export function useKeyboard(): Keyboard {
             const task = taskRouteOf(live.current.pathname)
             live.current.navigate(task === undefined ? "/" : boardPath(task.project))
           }
+        },
+      },
+      agent: {
+        open: () => {
+          const to = agentPathFor(live.current.pathname)
+          if (to !== undefined) live.current.navigate(to)
         },
       },
     })

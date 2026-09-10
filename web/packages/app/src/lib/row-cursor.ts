@@ -134,6 +134,7 @@ export function useDetailCursor(key: string, rows: ReadonlyArray<string>): Curso
   return state
 }
 
+// The agent page previews a task with the detail page's own lists, so it walks the same cursor.
 export function liveCursor(scope: RouteScope): RowCursorStore | KeyedRowCursor {
-  return scope === "detail" ? detailCursor : rowCursor
+  return scope === "detail" || scope === "agent" ? detailCursor : rowCursor
 }

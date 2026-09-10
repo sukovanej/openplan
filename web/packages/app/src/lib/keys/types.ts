@@ -3,8 +3,8 @@
 export const OVERLAY_NAMES = ["help", "palette"] as const
 export type OverlayName = (typeof OVERLAY_NAMES)[number]
 
-export type Scope = "global" | "list" | "detail" | "flow" | "rows" | OverlayName
-export type RouteScope = "list" | "detail" | "flow"
+export type Scope = "global" | "list" | "detail" | "flow" | "agent" | "rows" | OverlayName
+export type RouteScope = "list" | "detail" | "flow" | "agent"
 
 export function isOverlayScope(scope: Scope): scope is OverlayName {
   return (OVERLAY_NAMES as ReadonlyArray<string>).includes(scope)
@@ -46,6 +46,12 @@ export interface DetailControls {
   readonly escape: () => void
 }
 
+export interface AgentControls {
+  // The agent page for the task at hand, or for a new task on the board's project. The merged
+  // board names no project, so there it opens nothing.
+  readonly open: () => void
+}
+
 export interface RunContext {
   readonly navigate: (to: string) => void
   // Back to where the reader came from, or to the board when this page opened the session.
@@ -55,6 +61,7 @@ export interface RunContext {
   readonly cursor: CursorControls
   readonly task: TaskControls
   readonly detail: DetailControls
+  readonly agent: AgentControls
 }
 
 export interface Binding {
