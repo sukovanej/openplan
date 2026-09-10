@@ -9,7 +9,7 @@ use std::time::Duration;
 use axum::{
     Json, Router,
     extract::{MatchedPath, Path, Query, State},
-    http::{HeaderMap, Request, StatusCode, Uri, header},
+    http::{HeaderMap, HeaderValue, Request, StatusCode, Uri, header},
     response::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
@@ -2396,11 +2396,19 @@ async fn static_handler(uri: Uri) -> Response {
     let path = if path.is_empty() { "index.html" } else { path };
 
     match Assets::get(path) {
-        Some(file) => (
-            [(header::CONTENT_TYPE, content_type(path))],
-            file.data.into_owned(),
-        )
-            .into_response(),
+        Some(file) => {
+            let mut response = (
+                [(header::CONTENT_TYPE, content_type(path))],
+                file.data.into_owned(),
+            )
+                .into_response();
+            if path.starts_with(HASHED_ASSETS) {
+                response
+                    .headers_mut()
+                    .insert(header::CACHE_CONTROL, IMMUTABLE_CACHE);
+            }
+            response
+        }
         None => match Assets::get("index.html") {
             Some(file) => (
                 [(header::CONTENT_TYPE, content_type("index.html"))],
@@ -2411,6 +2419,12 @@ async fn static_handler(uri: Uri) -> Response {
         },
     }
 }
+
+// Vite names every file under `assets/` by content hash, so the browser can keep one for as long
+// as it likes; a new build changes the name, never the content behind it.
+const HASHED_ASSETS: &str = "assets/";
+const IMMUTABLE_CACHE: HeaderValue =
+    HeaderValue::from_static("public, max-age=31536000, immutable");
 
 fn content_type(path: &str) -> &'static str {
     match path.rsplit_once('.').map(|(_, ext)| ext) {

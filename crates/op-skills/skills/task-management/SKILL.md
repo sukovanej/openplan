@@ -96,6 +96,34 @@ exists.
 Set `in_review` when the work is complete. A human sets `done`. The one
 exception is a merge: follow the `task-management-merge` skill.
 
+## Diagram
+
+Prefer a diagram to prose. When a task body describes how parts connect, how
+data flows, what order events take, or how a table looks, draw it. One diagram
+replaces a long paragraph and a reader takes it in faster. Write prose only for
+what a picture cannot show: a rule, a reason, or a number.
+
+Draw the diagram as a fenced code block tagged `d2`. The web UI renders the
+block as a picture. Use plain [d2](https://d2lang.com): shapes, containers,
+and connections. Do not use imports, icons, links, or layout settings.
+
+- Parts and how they connect: shapes and arrows. Group with containers.
+- Order of events: `shape: sequence_diagram`.
+- A schema or record: `shape: sql_table` or `shape: class`.
+
+Put one or two sentences before the diagram to say what it shows. Do not
+repeat the diagram in prose after it.
+
+````markdown
+The CLI reads through the daemon.
+
+```d2
+cli -> daemon: HTTP
+daemon -> store: reads .plan/tasks
+store: {shape: cylinder}
+```
+````
+
 ## Comment
 
 Follow the `task-comments` skill. Most tasks get no comment.
