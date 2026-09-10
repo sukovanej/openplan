@@ -25,8 +25,19 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Default tags. A store with no tag registry gets `bug`, `feature`, and `draft`
   when it takes its first task, so a new project can tag that task without
   registering a name first. A registry that already exists stays as it is.
+- `openplan update`. It reads the newest GitHub release, checks the published
+  SHA-256 of each download, and replaces the CLI and `OpenPlan.app`. It quits
+  the app and stops the daemon first, then starts the daemon from the new
+  binary and opens the app again when it ran before. It refuses a binary that
+  cargo, Homebrew, Nix, a system package, or a Windows drive in WSL owns and
+  prints the command that updates it instead. Nothing checks for a new version
+  on its own.
+- The release page carries `OpenPlan-<target>.app.tar.gz` for macOS and a
+  `.sha256` next to every app artifact.
 
 ### Changed
+
+- The CLI archive on the release page is a `.tar.gz`. It was a `.tar.xz`.
 
 - `openplan merge-driver` merges by frontmatter field and by markdown section.
   It conflicted on any difference before.
