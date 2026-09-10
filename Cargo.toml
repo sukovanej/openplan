@@ -29,6 +29,7 @@ op-presence = { path = "crates/op-presence" }
 op-server = { path = "crates/op-server" }
 op-daemon = { path = "crates/op-daemon" }
 op-skills = { path = "crates/op-skills" }
+op-update = { path = "crates/op-update" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -64,7 +65,13 @@ nix = { version = "0.31", features = ["signal", "process"] }
 getrandom = "0.3"
 
 clap = { version = "4", features = ["derive", "env"] }
-reqwest = { version = "0.13", default-features = false, features = ["json", "blocking"] } # http only, no TLS
+# `rustls` verifies through the platform trust store, so a machine behind a TLS proxy that installs its
+# own root still reaches github.com.
+reqwest = { version = "0.13", default-features = false, features = ["json", "blocking", "rustls"] }
+sha2 = "0.10"
+flate2 = "1"
+tar = "0.4"
+semver = "1"
 
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
@@ -93,6 +100,8 @@ github-build-setup = "../build-setup.yml"
 install-path = "~/.local/bin"
 # Whether to install an updater program
 install-updater = false
+# `openplan update` unpacks this archive, and one decompressor covers it and the app tarball.
+unix-archive = ".tar.gz"
 # `dist build` runs `cargo build --workspace` unless this is set, so it compiles `openplan-gui`
 # even though `dist = false` keeps it out of the plan. The Linux runners carry no GTK, and
 # `gdk-sys` fails there. With this, dist builds `--package=openplan` and nothing else.

@@ -6,6 +6,14 @@ use anyhow::{Context, Result};
 use fs2::FileExt as _;
 
 use op_api::DaemonInfo;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppInfo {
+    pub pid: u32,
+    pub version: String,
+    pub bundle: PathBuf,
+}
 
 pub struct Home {
     dir: PathBuf,
@@ -32,6 +40,10 @@ impl Home {
 
     pub fn info_path(&self) -> PathBuf {
         self.dir.join("daemon.json")
+    }
+
+    pub fn app_info_path(&self) -> PathBuf {
+        self.dir.join("app.json")
     }
 
     pub fn lock_path(&self) -> PathBuf {
@@ -65,6 +77,19 @@ impl Home {
 
     pub fn clear_info(&self) {
         let _ = std::fs::remove_file(self.info_path());
+    }
+
+    pub fn read_app_info(&self) -> Option<AppInfo> {
+        let text = std::fs::read_to_string(self.app_info_path()).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
+    pub fn write_app_info(&self, info: &AppInfo) -> Result<()> {
+        let bytes = serde_json::to_vec_pretty(info)?;
+        let tmp = self.dir.join(format!("app.json.{}.tmp", info.pid));
+        std::fs::write(&tmp, &bytes)?;
+        std::fs::rename(&tmp, self.app_info_path())?;
+        Ok(())
     }
 
     pub fn open_lock(&self) -> io::Result<File> {

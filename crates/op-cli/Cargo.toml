@@ -21,6 +21,7 @@ op-server.workspace = true
 op-md.workspace = true
 op-task.workspace = true
 op-skills.workspace = true
+op-update.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -29,6 +30,7 @@ anyhow.workspace = true
 serde_json.workspace = true
 fs2.workspace = true
 nix.workspace = true
+semver.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
