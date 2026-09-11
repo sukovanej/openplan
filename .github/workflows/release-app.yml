@@ -19,12 +19,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `app` keeps OpenPlan.app on disk: with `dmg` alone the bundler removes it after the
+          # dmg holds it, and the pack step below has nothing to tar.
           - runner: macos-14
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
           - runner: macos-15-intel
             target: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
           # No arm64 AppImage: nothing here proves the bundler makes one, and an x64 file under an
           # arm64 name is worse than no file.
           - runner: ubuntu-22.04
