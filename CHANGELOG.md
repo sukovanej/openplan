@@ -5,7 +5,9 @@ All notable changes to openplan are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.1...main)
+## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.2...main)
+
+## [0.0.2](https://github.com/sukovanej/openplan/compare/v0.0.1...v0.0.2) - 2026-09-11
 
 ### Added
 
@@ -32,11 +34,25 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cargo, Homebrew, Nix, a system package, or a Windows drive in WSL owns and
   prints the command that updates it instead. Nothing checks for a new version
   on its own.
+- Agent sessions. The daemon runs a coding agent (Claude Code or Codex) that
+  writes tasks in the rolling-updates worktree. The web UI gets an agent page
+  where you start a session, read its output, and send it messages.
+- `d2` fenced code blocks in a task body render as diagrams in the web UI. Dark
+  mode gets its own theme. A compile error keeps the source and prints the d2
+  message above it.
+- The review popover shows the diff of a pending rolling update and can discard
+  one update or all of them.
+- The status of a task changes from the board and the task view. Click the
+  status mark or press `s`. The subtask box moves from `s` to `a`.
 - The release page carries `OpenPlan-<target>.app.tar.gz` for macOS and a
   `.sha256` next to every app artifact.
 
 ### Changed
 
+- The web UI uses SF Pro for the interface and Menlo for code. It bundled Geist
+  before.
+- The header shows the daemon connection as a colored dot with a tooltip. It
+  showed the words "daemon up" or "daemon down" before.
 - The CLI archive on the release page is a `.tar.gz`. It was a `.tar.xz`.
 
 - `openplan merge-driver` merges by frontmatter field and by markdown section.
@@ -53,6 +69,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from WSL, including minimal distributions without `xdg-open`.
 - `OPENPLAN_PORT` with a value that is not a port number now stops the command.
   The CLI, the daemon, and the Windows app used port 7373 instead.
+- The task reference chip in prose clipped descenders. It has a taller line
+  box now.
 - The desktop app carried no bundle signature, only the ad-hoc signature the
   linker puts on every arm64 binary. macOS called a downloaded copy "damaged"
   and offered only the Trash. Tauri now signs the app before it makes the dmg,
