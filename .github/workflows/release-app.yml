@@ -6,6 +6,12 @@ on:
   workflow_run:
     workflows: ["Release"]
     types: [completed]
+  # For a tag whose Release run passed but whose app bundles did not upload.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag, for example v0.0.2"
+        required: true
 
 permissions:
   contents: write
@@ -14,7 +20,7 @@ jobs:
   bundle:
     name: bundle (${{ matrix.target }})
     # `head_branch` holds the tag name for a tag push.
-    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -41,11 +47,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      TAG: ${{ github.event.workflow_run.head_branch }}
+      TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ inputs.tag || github.event.workflow_run.head_sha }}
           persist-credentials: false
       # The `webkit2gtk` crate binds the WebKitGTK 4.1 API. 4.0 is a different package and does
       # not satisfy it.
