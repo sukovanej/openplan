@@ -1,9 +1,9 @@
-import { Context, Data, Effect } from "effect"
-import type { Schema } from "effect"
+import { Context, Data, Effect, Schema } from "effect"
 import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 
 import * as Api from "@openplan/api-client"
 
+import { Status } from "./agent-events"
 import type { FlowSelection } from "./flow-selection"
 
 export class TaskNotFound extends Data.TaggedError("TaskNotFound")<{
@@ -378,6 +378,114 @@ export const createTask = (
       CreateTask409: refusal,
       CreateTask500: refusal,
       CreateTask503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export interface AgentSessionSummary {
+  readonly id: string
+  readonly agent: string
+  readonly task: string | undefined
+  readonly status: Status
+  readonly started_at: string
+}
+
+const decodeStatus = Schema.decodeUnknownSync(Status)
+
+// The sessions the daemon holds for the project, newest first. The generated client types the
+// status as an opaque object, because the OpenAPI document does; the hand-written schema reads it.
+export const listAgentSessions = (
+  project: string,
+): Effect.Effect<ReadonlyArray<AgentSessionSummary>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.listSessions(project, undefined)).pipe(
+    Effect.map((sessions) =>
+      sessions.map((session) => ({
+        id: session.id,
+        agent: session.agent,
+        task: session.task ?? undefined,
+        status: decodeStatus(session.status),
+        started_at: session.started_at,
+      })),
+    ),
+    Effect.catchTags({
+      ListSessions404: refusal,
+      ListSessions503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// Starts the agent and sends the first prompt. `task` binds the session to a task that exists on
+// the branch the agent writes; without it the session binds to the first task the agent creates.
+export const createAgentSession = (
+  project: string,
+  prompt: string,
+  task?: string,
+): Effect.Effect<string, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.createSession(project, { payload: { prompt, task } })).pipe(
+    Effect.map((created) => created.id),
+    Effect.catchTags({
+      CreateSession400: refusal,
+      CreateSession404: refusal,
+      CreateSession500: refusal,
+      CreateSession503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// The 409 says a turn is running; the page shows Stop rather than Send meanwhile, so it reaches
+// the toast only when the two disagree.
+export const promptAgentSession = (
+  project: string,
+  session: string,
+  text: string,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.promptSession(project, session, { payload: { text } })).pipe(
+    Effect.catchTags({
+      PromptSession404: refusal,
+      PromptSession409: refusal,
+      PromptSession503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const interruptAgentSession = (
+  project: string,
+  session: string,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.interruptSession(project, session, undefined)).pipe(
+    Effect.catchTags({
+      InterruptSession404: refusal,
+      InterruptSession503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// `ApprovalDecision` is an externally tagged enum: a unit variant is its name, and `deny` carries
+// its reason.
+export type ApprovalDecision = "allow" | "allow_for_session" | { readonly deny: { readonly reason: string | null } }
+
+export const approveAgentTool = (
+  project: string,
+  session: string,
+  approval: string,
+  decision: ApprovalDecision,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.approve(project, session, approval, { payload: decision })).pipe(
+    Effect.catchTags({
+      Approve404: refusal,
+      Approve503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const deleteAgentSession = (
+  project: string,
+  session: string,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.deleteSession(project, session, undefined)).pipe(
+    Effect.catchTags({
+      DeleteSession404: refusal,
+      DeleteSession503: refusal,
       HttpClientError: unexpected,
     }),
   )

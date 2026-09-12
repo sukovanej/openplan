@@ -12,6 +12,19 @@ const tab = (node: HTMLElement, shiftKey = false) =>
 const dialogOf = (container: HTMLElement) => container.querySelector<HTMLElement>('[role="dialog"]')!
 
 describe("Dialog", () => {
+  it("closes on Escape from inside", () => {
+    const onClose = vi.fn()
+    const container = render(
+      <Dialog open onClose={onClose} title="Transcript">
+        <p>body</p>
+      </Dialog>,
+    )
+    act(() => {
+      dialogOf(container).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it("renders nothing until it is open", () => {
     expect(
       render(

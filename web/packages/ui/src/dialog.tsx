@@ -32,6 +32,11 @@ export function Dialog({
   if (!open) return null
 
   const trap = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.stopPropagation()
+      onClose()
+      return
+    }
     if (event.key !== "Tab" || dialog.current === null) return
     const focusable = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
     if (focusable.length === 0) {

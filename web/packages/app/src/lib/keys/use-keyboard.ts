@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { boardPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
+import {
+  agentPath,
+  boardPath,
+  FLOW_ROUTE,
+  isAgentRoute,
+  projectRouteOf,
+  taskPath,
+  taskRouteOf,
+} from "@openplan/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
@@ -16,6 +24,7 @@ import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types
 
 function routeScope(pathname: string): RouteScope {
   if (pathname === FLOW_ROUTE) return "flow"
+  if (isAgentRoute(pathname)) return "agent"
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
 }
 
@@ -113,6 +122,20 @@ export function useKeyboard(): Keyboard {
             const task = taskRouteOf(live.current.pathname)
             live.current.navigate(task === undefined ? "/" : boardPath(task.project))
           }
+        },
+      },
+      agent: {
+        // The draft page is already there when the key lands on it, so there it goes to the prompt.
+        draft: () => {
+          if (live.current.scope === "agent") detailActions.emit("focus-prompt")
+          else live.current.navigate(agentPath(projectRouteOf(live.current.pathname)))
+        },
+        // On the task's own page the chat opens in place; from a board row the page opens with it.
+        edit: () => {
+          const task = targetTask()
+          if (task === undefined) return
+          if (live.current.scope === "detail") detailActions.emit("open-agent")
+          else live.current.navigate(taskPath(task.project, task.id), { state: { agent: true } })
         },
       },
     })

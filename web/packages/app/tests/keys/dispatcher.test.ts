@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { taskPath } from "@openplan/task-ui"
+import { agentPath, projectRouteOf, taskPath } from "@openplan/task-ui"
 
 import { taskFlowPath } from "../../src/lib/flow-selection"
 import { bindings } from "../../src/lib/keys/bindings"
@@ -98,6 +98,14 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
       goToParent: () => void detail.goToParent++,
       escape: () => void detail.escape++,
     },
+    agent: {
+      draft: () => navigations.push(scope === "agent" ? "prompt" : agentPath(projectRouteOf(pathname))),
+      edit: () => {
+        const task = targetTask()
+        if (task === undefined) return
+        navigations.push(scope === "detail" ? "open-agent" : taskPath(task.project, task.id))
+      },
+    },
   })
   const dispatcher = new Dispatcher({
     bindings: over,
@@ -144,6 +152,69 @@ afterEach(() => {
   mounted?.detach()
   mounted = undefined
   vi.useRealTimers()
+})
+
+describe("the agent", () => {
+  it("drafts a task with n from anywhere, on the board's project when there is one", () => {
+    const h = mount()
+    h.setPath("/")
+    press("n")
+    expect(h.navigations).toEqual(["/agent"])
+    h.setPath(`/${PROJECT}`)
+    press("n")
+    expect(h.navigations).toEqual(["/agent", `/agent?project=${PROJECT}`])
+  })
+
+  it("drafts a new task with n even on a task's page", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("OPP-3"))
+    press("n")
+    expect(h.navigations).toEqual([`/agent?project=${PROJECT}`])
+  })
+
+  it("hands n to the prompt on the draft page", () => {
+    const h = mount()
+    h.setScope("agent")
+    h.setPath(`/agent?project=${PROJECT}`)
+    press("n")
+    expect(h.navigations).toEqual(["prompt"])
+  })
+
+  it("opens the chat on the open task from its page with e", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("OPP-3"))
+    press("e")
+    expect(h.navigations).toEqual(["open-agent"])
+  })
+
+  it("opens the row at hand from a board with e, and nothing when no row is", () => {
+    const h = mount()
+    h.setPath(`/${PROJECT}`)
+    rowCursor.setRows(paths("OPP-1", "OPP-2"))
+    press("e")
+    expect(h.navigations).toEqual([])
+    press("j")
+    press("e")
+    expect(h.navigations).toEqual([path("OPP-1")])
+  })
+
+  it("edits nothing with e on the draft page", () => {
+    const h = mount()
+    h.setScope("agent")
+    h.setPath(`/agent?project=${PROJECT}`)
+    press("e")
+    expect(h.navigations).toEqual([])
+  })
+
+  it("leaves the draft page with Escape", () => {
+    const h = mount()
+    h.setScope("agent")
+    h.setPath("/agent")
+    press("Escape")
+    expect(h.went).toEqual(["back"])
+  })
 })
 
 describe("chord buffering", () => {

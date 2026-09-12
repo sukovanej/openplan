@@ -23,6 +23,7 @@ export const rollingUpdatesKey = (project: string) => [...projectKey(project), "
 // every open diff with it. A commit, a rebase, a publish, and an edit to the task all send it.
 export const rollingUpdateDiffKey = (project: string, task: string) =>
   [...rollingUpdatesKey(project), "diff", task] as const
+export const agentSessionsKey = (project: string) => [...projectKey(project), "agent-sessions"] as const
 export const tagsKey = (project: string, branch?: string) =>
   branch === undefined
     ? ([...projectKey(project), "tags"] as const)

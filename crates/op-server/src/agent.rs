@@ -17,6 +17,7 @@ use op_agent::{
 use op_agent_claude::{ClaudeCode, Skills, Tools};
 use op_agent_codex::Codex;
 use op_api::{ApiErrorBody, ChangeEvent, Rfc3339};
+use op_store::Store;
 use op_task::Timestamp;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -35,6 +36,9 @@ const SESSION_ID_BYTES: usize = 8;
 // past that mark sees every session out rather than cutting one short.
 const STOP_GRACE: Duration = Duration::from_secs(6);
 const TOOLS: [&str; 6] = ["Read", "Grep", "Glob", "Bash", "Edit", "Write"];
+// The alias the `claude` binary resolves to its current Sonnet: a task is a page of prose, and
+// Sonnet writes one for a fraction of what Opus asks.
+const CLAUDE_MODEL: &str = "sonnet";
 
 // Where the agent works. `cwd` is the tree it writes; `code_root` is the tree it reads to design a
 // task, which is a different place because the worktree is a sparse checkout of `.plan` alone.
@@ -272,10 +276,17 @@ pub fn backends() -> BTreeMap<AgentKind, Arc<dyn Agent>> {
     ])
 }
 
+// The task a session starts on, with the file that holds it on the workspace branch. Naming the
+// file spares the agent a search for it, and the search is what it spent its first turn on.
+struct BoundTask {
+    key: String,
+    path: PathBuf,
+}
+
 // The appended system prompt. It names the only tree the agent may write, the tree it reads, and
 // the binary that resolves both through this daemon — the CLI writes on the worktree's own branch,
 // so nothing here needs `--branch`.
-fn instructions(workspace: &Workspace, kind: AgentKind, task: Option<&str>) -> String {
+fn instructions(workspace: &Workspace, kind: AgentKind, task: Option<&BoundTask>) -> String {
     let exe = std::env::current_exe()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|_| "openplan".to_owned());
@@ -301,9 +312,11 @@ fn instructions(workspace: &Workspace, kind: AgentKind, task: Option<&str>) -> S
          rule, a reason, or a number."
             .to_owned(),
     ];
-    if let Some(task) = task {
+    if let Some(BoundTask { key, path }) = task {
         lines.push(format!(
-            "This session works on task {task}. Write that task and no other."
+            "This session works on task {key}. Its file is {}. Read that file, then edit it. \
+             Do not search for it, and do not confirm which task it is. Write no other task.",
+            path.display()
         ));
     }
     // Claude Code reads the repository's CLAUDE.md from the worktree root; Codex does not, so the
@@ -410,30 +423,45 @@ pub(crate) async fn create_session(
         ApiError::unavailable(format!("this daemon runs no {} agent", kind_name(kind)))
     })?;
 
-    if let Some(task) = body.task.clone() {
-        let reading = Arc::clone(&project);
-        let branch = workspace.branch.clone();
-        tokio::task::spawn_blocking(move || -> Result<(), ApiError> {
-            let index = reading.read_index().map_err(crate::index_error)?;
-            reject_non_key(index.abbreviation(), &task)?;
-            match index
-                .branch_summaries(&branch)
-                .iter()
-                .any(|summary| summary.id == task)
-            {
-                true => Ok(()),
-                false => Err(no_such_task(&index, &task, Some(&branch))),
-            }
-        })
-        .await
-        .map_err(join_error)??;
-    }
+    let bound = match body.task.clone() {
+        Some(task) => {
+            let reading = Arc::clone(&project);
+            let branch = workspace.branch.clone();
+            let cwd = workspace.cwd.clone();
+            Some(
+                tokio::task::spawn_blocking(move || -> Result<BoundTask, ApiError> {
+                    let index = reading.read_index().map_err(crate::index_error)?;
+                    let abbreviation = index.abbreviation();
+                    reject_non_key(abbreviation, &task)?;
+                    let number = abbreviation.parse_key(&task);
+                    let held = index
+                        .branch_summaries(&branch)
+                        .iter()
+                        .any(|summary| summary.id == task);
+                    let Some(number) = number.filter(|_| held) else {
+                        return Err(no_such_task(&index, &task, Some(&branch)));
+                    };
+                    let path = Store::open(&cwd, abbreviation)
+                        .and_then(|store| store.task_path(number))
+                        .map_err(|err| ApiError::internal(err.to_string()))?;
+                    Ok(BoundTask { key: task, path })
+                })
+                .await
+                .map_err(join_error)??,
+            )
+        }
+        None => None,
+    };
 
     let options = SessionOptions::new(workspace.cwd.clone())
         .permissions(Permissions::Full)
         .mcp(McpPolicy::Disabled)
         .persistence(Persistence::Ephemeral)
-        .instructions(instructions(&workspace, kind, body.task.as_deref()));
+        .instructions(instructions(&workspace, kind, bound.as_ref()));
+    let options = match kind {
+        AgentKind::ClaudeCode => options.model(CLAUDE_MODEL),
+        AgentKind::Codex => options,
+    };
     let started = agent.start(options).map_err(spawn_error)?;
 
     let id = session_id();

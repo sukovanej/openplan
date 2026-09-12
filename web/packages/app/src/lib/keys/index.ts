@@ -4,6 +4,7 @@ export type { DispatcherConfig } from "./dispatcher"
 export { chordOf, fromEvent, isEditableTarget, normalizeToken } from "./match"
 export { type HelpEntry, type HelpGroup, helpGroups } from "./registry"
 export {
+  type AgentControls,
   type Binding,
   type CursorControls,
   isOverlayScope,

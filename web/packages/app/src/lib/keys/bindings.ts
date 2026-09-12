@@ -47,6 +47,14 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.back(),
   },
   {
+    id: "agent.back",
+    keys: "Escape",
+    scope: "agent",
+    label: "Leave the agent page",
+    group: "Navigation",
+    run: (ctx) => ctx.back(),
+  },
+  {
     id: "go.list",
     keys: ["g", "l"],
     scope: "global",
@@ -93,6 +101,24 @@ export const bindings: ReadonlyArray<Binding> = [
     label: "Add a tag",
     group: "Task",
     run: (ctx) => ctx.detail.editTags(),
+  },
+  {
+    id: "agent.draft",
+    keys: "n",
+    scope: "global",
+    label: "Draft a task with the agent",
+    group: "Task",
+    run: (ctx) => ctx.agent.draft(),
+  },
+  // `a` already adds a subtask, so the agent takes `e`: it edits the task at hand, which is the
+  // row under the cursor or the pointer on a board, and the open task on its page.
+  {
+    id: "agent.edit",
+    keys: "e",
+    scope: "global",
+    label: "Edit the task at hand with the agent",
+    group: "Task",
+    run: (ctx) => ctx.agent.edit(),
   },
   {
     id: "task.status",

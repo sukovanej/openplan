@@ -37,9 +37,14 @@ export { TagChip } from "./tag-chip"
 export { ColorDot, ColorPicker } from "./tag-palette"
 export { TaskBody } from "./task-body"
 export {
+  AGENT_ROUTE,
+  agentPath,
+  isAgentRoute,
+  taskSessionPath,
   BOARD_ROUTE,
   boardPath,
   FLOW_ROUTE,
+  projectRouteOf,
   TAGS_ROUTE,
   tagsPath,
   TASK_ROUTE,

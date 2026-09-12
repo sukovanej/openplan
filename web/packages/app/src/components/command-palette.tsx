@@ -1,10 +1,10 @@
 import { Effect } from "effect"
-import { Waypoints, type LucideIcon } from "lucide-react"
+import { Sparkles, Waypoints, type LucideIcon } from "lucide-react"
 import { useMemo } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 
 import type { SearchHit } from "@openplan/api-client"
-import { FLOW_ROUTE, statusField, TaskIdentity } from "@openplan/task-ui"
+import { agentPath, FLOW_ROUTE, projectRouteOf, statusField, TaskIdentity } from "@openplan/task-ui"
 import { FuzzyText, fuzzyMatch, Palette, type PaletteItem, type PaletteProvider } from "@openplan/ui"
 
 import { searchTasks } from "../lib/api"
@@ -18,13 +18,24 @@ interface Command {
   readonly to: string
 }
 
-const COMMANDS: ReadonlyArray<Command> = [{ label: "Show the implementation flow", icon: Waypoints, to: FLOW_ROUTE }]
+// The draft goes to the project the page names, when it names one; the page picks otherwise.
+function commands(project: string | undefined): ReadonlyArray<Command> {
+  return [
+    { label: "Show the implementation flow", icon: Waypoints, to: FLOW_ROUTE },
+    { label: "Draft a task with the agent", icon: Sparkles, to: agentPath(project) },
+  ]
+}
 
-function commandItems(query: string, open: (to: string) => void): ReadonlyArray<PaletteItem> {
-  return COMMANDS.flatMap((command) => {
-    const match = fuzzyMatch(query, command.label)
-    return match === null ? [] : [{ match, command }]
-  })
+function commandItems(
+  project: string | undefined,
+  query: string,
+  open: (to: string) => void,
+): ReadonlyArray<PaletteItem> {
+  return commands(project)
+    .flatMap((command) => {
+      const match = fuzzyMatch(query, command.label)
+      return match === null ? [] : [{ match, command }]
+    })
     .sort((a, b) => a.match.score - b.match.score)
     .map(({ match, command }) => ({
       key: `command ${command.to}`,
@@ -57,13 +68,16 @@ function searchProvider(open: (to: string) => void): PaletteProvider {
 // The general command interface: the commands the app answers for, and the tasks a query finds, in
 // one list. A search the daemon refuses takes the tasks with it and leaves the commands, which need
 // no daemon to run.
-function homeProvider(open: (to: string) => void): PaletteProvider {
+function homeProvider(project: string | undefined, open: (to: string) => void): PaletteProvider {
   return {
     id: "home",
     placeholder: "Search tasks or run a command",
     idleLabel: "Type to search titles, bodies, and frontmatter",
     emptyLabel: "No matching command or task",
-    items: async (query) => [...commandItems(query, open), ...(await searchItems(query, open).catch(() => []))],
+    items: async (query) => [
+      ...commandItems(project, query, open),
+      ...(await searchItems(query, open).catch(() => [])),
+    ],
   }
 }
 
@@ -75,10 +89,10 @@ function row(hit: SearchHit, open: (to: string) => void): PaletteItem {
   }
 }
 
-function providerFor(target: PaletteTarget, open: (to: string) => void): PaletteProvider {
+function providerFor(target: PaletteTarget, project: string | undefined, open: (to: string) => void): PaletteProvider {
   switch (target) {
     case "home":
-      return homeProvider(open)
+      return homeProvider(project, open)
     case "search":
       return searchProvider(open)
   }
@@ -94,6 +108,7 @@ export function CommandPalette({
   onClose: () => void
 }) {
   const navigate = useNavigate()
-  const provider = useMemo(() => providerFor(target, (to) => navigate(to)), [target, navigate])
+  const project = projectRouteOf(useLocation().pathname)
+  const provider = useMemo(() => providerFor(target, project, (to) => navigate(to)), [target, project, navigate])
   return <Palette open={open} provider={provider} onClose={onClose} />
 }
