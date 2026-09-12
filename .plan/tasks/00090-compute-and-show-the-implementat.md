@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-08-27T11:13:32Z
 tags:
 - daemon
