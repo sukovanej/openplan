@@ -11,8 +11,6 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - A click on a `d2` diagram in the web UI opens it over the whole window. Esc
   or the close button closes it.
-- Each connection in a `d2` diagram gets a colour of its own, and a dot marks
-  the end it starts from. You can follow lines that cross or merge.
 
 ### Changed
 
