@@ -1,5 +1,7 @@
 import type { D2, Diagram, RenderOptions } from "@terrastruct/d2"
 
+import { distinguishConnections } from "./connections"
+
 export type DiagramTheme = "light" | "dark"
 
 // d2's built-in theme ids: 3 is "Terrastruct", 200 is "Dark Mauve".
@@ -71,7 +73,8 @@ function compile(source: string): Promise<Compiled> {
 async function draw(source: string, theme: DiagramTheme): Promise<DiagramResult> {
   try {
     const [d2, { diagram, renderOptions }] = await Promise.all([ensureEngine(), compile(source)])
-    const svg = await inTurn(() => d2.render(diagram, { ...renderOptions, themeID: THEME_IDS[theme] }))
+    const rendered = await inTurn(() => d2.render(diagram, { ...renderOptions, themeID: THEME_IDS[theme] }))
+    const svg = distinguishConnections(rendered, theme)
     return { drawn: { svg, size: sizeOf(svg) } }
   } catch (error) {
     return { error: compileErrorMessage(error) }
