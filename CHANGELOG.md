@@ -7,6 +7,16 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.2...main)
 
+### Added
+
+- A click on a `d2` diagram in the web UI opens it over the whole window. Esc
+  or the close button closes it.
+
+### Changed
+
+- A `d2` diagram wider than the task column shrinks to fit it. It no longer
+  scrolls sideways.
+
 ## [0.0.2](https://github.com/sukovanej/openplan/compare/v0.0.1...v0.0.2) - 2026-09-11
 
 ### Added

@@ -1,6 +1,7 @@
+import { X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 
-import { Skeleton } from "@openplan/ui"
+import { Button, cn, Modal, Skeleton } from "@openplan/ui"
 
 import { type DiagramResult, type DiagramTheme, drawDiagram, type DrawnDiagram, svgDataUrl } from "./diagram"
 import { useResolvedTheme } from "./use-dark-mode"
@@ -27,12 +28,13 @@ function useDiagram(source: string): { current: Drawing | null; last: DrawnDiagr
   return { current, last }
 }
 
-// d2 draws labels at 16px, larger than the prose around them. Three quarters keeps a wide diagram
-// readable; past that, the figure scrolls sideways as a code block does.
+// d2 draws labels at 16px, larger than the prose around them. A diagram wider than the column
+// shrinks further to fit it.
 const SCALE = 0.75
 
 // The canvas colours of d2 themes 3 and 200, so the frame and the picture read as one surface.
-const frameClass = "border-border my-3 overflow-x-auto rounded-lg border bg-white p-2 dark:bg-[#1e1e2e]"
+const canvasColors = "bg-white dark:bg-[#1e1e2e]"
+const frameClass = cn("border-border my-3 rounded-lg border p-2", canvasColors)
 
 function Picture({ drawn }: { drawn: DrawnDiagram }) {
   return (
@@ -41,8 +43,48 @@ function Picture({ drawn }: { drawn: DrawnDiagram }) {
       alt="Diagram"
       width={Math.round(drawn.size.width * SCALE)}
       height={Math.round(drawn.size.height * SCALE)}
-      className="mx-auto my-0 block h-auto max-w-none"
+      className="mx-auto my-0 block h-auto max-w-full"
     />
+  )
+}
+
+// The full view holds the focus, and `data-keys-ignore` keeps the page's single-key bindings off it
+// while it is open.
+function DrawnFigure({ drawn }: { drawn: DrawnDiagram }) {
+  const [fullView, setFullView] = useState(false)
+  const close = () => setFullView(false)
+  return (
+    <>
+      <figure className={frameClass} data-diagram="drawn">
+        <button
+          type="button"
+          aria-label="Show the diagram in full view"
+          onClick={() => setFullView(true)}
+          className="block w-full cursor-zoom-in focus:outline-none"
+        >
+          <Picture drawn={drawn} />
+        </button>
+      </figure>
+      {/* The modal centres its content in a padded backdrop. The full view covers the whole window
+          instead, so the picture gets all of it. */}
+      <Modal
+        open={fullView}
+        onClose={close}
+        label="Diagram"
+        className={cn("fixed inset-0 p-4", canvasColors)}
+        data-keys-ignore
+      >
+        <img src={svgDataUrl(drawn.svg)} alt="Diagram" className="block size-full object-contain" />
+        <Button
+          size="icon"
+          aria-label="Close"
+          onClick={close}
+          className="bg-background/80 text-foreground absolute top-3 right-3 border shadow-sm"
+        >
+          <X className="size-4" aria-hidden="true" />
+        </Button>
+      </Modal>
+    </>
   )
 }
 
@@ -75,9 +117,5 @@ export function DiagramBlock({ source, children }: { source: string; children: R
     )
   }
   const drawn = current !== null && "drawn" in current.result ? current.result.drawn : last!
-  return (
-    <figure className={frameClass} data-diagram="drawn">
-      <Picture drawn={drawn} />
-    </figure>
-  )
+  return <DrawnFigure drawn={drawn} />
 }

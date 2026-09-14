@@ -141,3 +141,44 @@ describe("a d2 fence", () => {
     expect(root.querySelector("figure[data-diagram='drawn']")).not.toBeNull()
   })
 })
+
+describe("the full view of a diagram", () => {
+  async function opened(markdown: string): Promise<HTMLElement> {
+    const root = await drawn(markdown)
+    act(() => {
+      root.querySelector<HTMLElement>("figure[data-diagram='drawn'] button")!.click()
+    })
+    return document.querySelector<HTMLElement>("[role='dialog']")!
+  }
+
+  it("opens on a click and shows the same picture", async () => {
+    const dialog = await opened("```d2\ns -> t\n```")
+    expect(decoded(dialog.querySelector("img")!)).toContain("s -> t theme 3")
+  })
+
+  it("closes on Escape", async () => {
+    const dialog = await opened("```d2\nu -> v\n```")
+    act(() => {
+      dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+    })
+    expect(document.querySelector("[role='dialog']")).toBeNull()
+  })
+
+  it("gives the page to the picture, with no heading", async () => {
+    const dialog = await opened("```d2\nk -> l\n```")
+    expect(dialog.querySelector("h1, h2, h3")).toBeNull()
+  })
+
+  it("closes from the button on the picture", async () => {
+    const dialog = await opened("```d2\nm -> o\n```")
+    act(() => {
+      dialog.querySelector<HTMLElement>("[aria-label='Close']")!.click()
+    })
+    expect(document.querySelector("[role='dialog']")).toBeNull()
+  })
+
+  it("keeps the page's single-key bindings off the keys pressed in it", async () => {
+    const dialog = await opened("```d2\nw -> z\n```")
+    expect(dialog.hasAttribute("data-keys-ignore")).toBe(true)
+  })
+})
