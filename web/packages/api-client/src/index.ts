@@ -16,7 +16,79 @@ export type TaskTree = {
 export const TaskTree = Schema.suspend((): Schema.Codec<TaskTree> => __recursive_TaskTree)
 // non-recursive definitions
 export type ChangeKind = "base" | "added" | "modified" | "deleted"
-export const ChangeKind = Schema.Literals(["base", "added", "modified", "deleted"])
+export const ChangeKind = Schema.Literals(["base", "added", "modified", "deleted"]).annotate({
+  identifier: "ChangeKind",
+})
+export type FieldError = { readonly kind: "missing" } | { readonly kind: "invalid"; readonly message: string }
+export const FieldError = Schema.Union(
+  [
+    Schema.Struct({ kind: Schema.Literal("missing") }),
+    Schema.Struct({ kind: Schema.Literal("invalid"), message: Schema.String }),
+  ],
+  { mode: "oneOf" },
+).annotate({ identifier: "FieldError" })
+export type MetadataErrorTag = "error"
+export const MetadataErrorTag = Schema.Literal("error").annotate({ identifier: "MetadataErrorTag" })
+export type WriteTarget = { readonly branch: string; readonly writable: boolean }
+export const WriteTarget = Schema.Struct({ branch: Schema.String, writable: Schema.Boolean }).annotate({
+  identifier: "WriteTarget",
+})
+export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
+export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]).annotate({
+  identifier: "Status",
+})
+export type Refusal = "tag_referenced" | "tag_unregistered"
+export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"]).annotate({ identifier: "Refusal" })
+export type FlowEdge = { readonly from: string; readonly project: string; readonly to: string }
+export const FlowEdge = Schema.Struct({ from: Schema.String, project: Schema.String, to: Schema.String }).annotate({
+  identifier: "FlowEdge",
+})
+export type ProjectStatus = { readonly state: "ok" } | { readonly reason: string; readonly state: "error" }
+export const ProjectStatus = Schema.Union(
+  [
+    Schema.Struct({ state: Schema.Literal("ok") }),
+    Schema.Struct({ reason: Schema.String, state: Schema.Literal("error") }),
+  ],
+  { mode: "oneOf" },
+).annotate({ identifier: "ProjectStatus" })
+export type RegisterProject = { readonly path: string }
+export const RegisterProject = Schema.Struct({ path: Schema.String }).annotate({ identifier: "RegisterProject" })
+export type RenameProject = { readonly name: string }
+export const RenameProject = Schema.Struct({ name: Schema.String }).annotate({ identifier: "RenameProject" })
+export type Rfc3339 = string
+export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
+export type CreateSession = { readonly agent?: string | null; readonly prompt: string; readonly task?: string | null }
+export const CreateSession = Schema.Struct({
+  agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  prompt: Schema.String,
+  task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+}).annotate({ identifier: "CreateSession" })
+export type CreatedSession = { readonly id: string }
+export const CreatedSession = Schema.Struct({ id: Schema.String }).annotate({ identifier: "CreatedSession" })
+export type Decision = {}
+export const Decision = Schema.Struct({}).annotate({ identifier: "Decision" })
+export type Say = { readonly text: string }
+export const Say = Schema.Struct({ text: Schema.String }).annotate({ identifier: "Say" })
+export type Conflict = { readonly files: ReadonlyArray<string>; readonly worktree: string }
+export const Conflict = Schema.Struct({ files: Schema.Array(Schema.String), worktree: Schema.String }).annotate({
+  identifier: "Conflict",
+})
+export type Published = {
+  readonly branch: string
+  readonly commit: string
+  readonly pull_request?: string | null
+  readonly remote: string
+}
+export const Published = Schema.Struct({
+  branch: Schema.String,
+  commit: Schema.String,
+  pull_request: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  remote: Schema.String,
+}).annotate({ identifier: "Published" })
+export type TaskDiff = { readonly diff: string }
+export const TaskDiff = Schema.Struct({ diff: Schema.String }).annotate({ identifier: "TaskDiff" })
+export type SearchMatch = "key" | "title" | "text"
+export const SearchMatch = Schema.Literals(["key", "title", "text"]).annotate({ identifier: "SearchMatch" })
 export type Color =
   | "slate"
   | "red"
@@ -43,25 +115,20 @@ export const Color = Schema.Literals([
   "indigo",
   "violet",
   "pink",
-])
-export type Conflict = { readonly files: ReadonlyArray<string>; readonly worktree: string }
-export const Conflict = Schema.Struct({ files: Schema.Array(Schema.String), worktree: Schema.String })
+]).annotate({ identifier: "Color" })
+export type CreatedTask = { readonly id: string }
+export const CreatedTask = Schema.Struct({ id: Schema.String }).annotate({ identifier: "CreatedTask" })
 export type CreateComment = { readonly agent?: string; readonly author: string; readonly text: string }
 export const CreateComment = Schema.Struct({
   agent: Schema.optionalKey(Schema.String),
   author: Schema.String,
   text: Schema.String,
-})
-export type CreateSession = { readonly agent?: string | null; readonly prompt: string; readonly task?: string | null }
-export const CreateSession = Schema.Struct({
-  agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  prompt: Schema.String,
-  task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-})
-export type CreatedSession = { readonly id: string }
-export const CreatedSession = Schema.Struct({ id: Schema.String })
-export type CreatedTask = { readonly id: string }
-export const CreatedTask = Schema.Struct({ id: Schema.String })
+}).annotate({ identifier: "CreateComment" })
+export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
+export const TaskTreeView = Schema.Struct({
+  cycles: Schema.optionalKey(Schema.Array(Schema.String)),
+  tree: TaskTree,
+}).annotate({ identifier: "TaskTreeView" })
 export type DaemonInfo = {
   readonly pid: number
   readonly port: number
@@ -69,148 +136,42 @@ export type DaemonInfo = {
   readonly version: string
 }
 export const DaemonInfo = Schema.Struct({
-  pid: Schema.Number.annotate({ format: "int32" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
-  port: Schema.Number.annotate({ format: "int32" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
-  started_at: Schema.Number.annotate({ format: "int64" }).check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+  pid: Schema.Number.annotate({ format: "int32" })
+    .check(Schema.isInt().annotate({ expected: "an integer" }))
+    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  port: Schema.Number.annotate({ format: "int32" })
+    .check(Schema.isInt().annotate({ expected: "an integer" }))
+    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  started_at: Schema.Number.annotate({ format: "int64" })
+    .check(Schema.isInt().annotate({ expected: "an integer" }))
+    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
   version: Schema.String,
-})
-export type Decision = {}
-export const Decision = Schema.Struct({})
-export type FieldError = { readonly kind: "missing" } | { readonly kind: "invalid"; readonly message: string }
-export const FieldError = Schema.Union(
-  [
-    Schema.Struct({ kind: Schema.Literal("missing") }),
-    Schema.Struct({ kind: Schema.Literal("invalid"), message: Schema.String }),
-  ],
-  { mode: "oneOf" },
-)
-export type FlowEdge = { readonly from: string; readonly project: string; readonly to: string }
-export const FlowEdge = Schema.Struct({ from: Schema.String, project: Schema.String, to: Schema.String })
-export type MetadataErrorTag = "error"
-export const MetadataErrorTag = Schema.Literal("error")
-export type ProjectStatus = { readonly state: "ok" } | { readonly reason: string; readonly state: "error" }
-export const ProjectStatus = Schema.Union(
-  [
-    Schema.Struct({ state: Schema.Literal("ok") }),
-    Schema.Struct({ reason: Schema.String, state: Schema.Literal("error") }),
-  ],
-  { mode: "oneOf" },
-)
-export type Published = {
-  readonly branch: string
-  readonly commit: string
-  readonly pull_request?: string | null
-  readonly remote: string
-}
-export const Published = Schema.Struct({
-  branch: Schema.String,
-  commit: Schema.String,
-  pull_request: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  remote: Schema.String,
-})
-export type Refusal = "tag_referenced" | "tag_unregistered"
-export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"])
-export type RegisterProject = { readonly path: string }
-export const RegisterProject = Schema.Struct({ path: Schema.String })
-export type RenameProject = { readonly name: string }
-export const RenameProject = Schema.Struct({ name: Schema.String })
-export type Rfc3339 = string
-export const Rfc3339 = Schema.String.annotate({ format: "date-time" })
-export type Say = { readonly text: string }
-export const Say = Schema.Struct({ text: Schema.String })
-export type SearchMatch = "key" | "title" | "text"
-export const SearchMatch = Schema.Literals(["key", "title", "text"])
-export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
-export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"])
-export type TaskDiff = { readonly diff: string }
-export const TaskDiff = Schema.Struct({ diff: Schema.String })
-export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
-export const TaskTreeView = Schema.Struct({ cycles: Schema.optionalKey(Schema.Array(Schema.String)), tree: TaskTree })
-export type WriteTarget = { readonly branch: string; readonly writable: boolean }
-export const WriteTarget = Schema.Struct({ branch: Schema.String, writable: Schema.Boolean })
+}).annotate({ identifier: "DaemonInfo" })
 export type BranchMark = { readonly branch: string; readonly dirty: boolean; readonly kind: ChangeKind }
-export const BranchMark = Schema.Struct({ branch: Schema.String, dirty: Schema.Boolean, kind: ChangeKind })
-export type CreateTag = { readonly color?: Color; readonly description?: string; readonly name: string }
-export const CreateTag = Schema.Struct({
-  color: Schema.optionalKey(Color),
-  description: Schema.optionalKey(Schema.String),
-  name: Schema.String,
-})
-export type TagPatch = { readonly color?: Color; readonly description?: string | null; readonly name?: string }
-export const TagPatch = Schema.Struct({
-  color: Schema.optionalKey(Color),
-  description: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  name: Schema.optionalKey(Schema.String),
-})
-export type TagView = {
-  readonly color: Color
-  readonly description?: string
-  readonly display: string
-  readonly name: string
-}
-export const TagView = Schema.Struct({
-  color: Color,
-  description: Schema.optionalKey(Schema.String),
-  display: Schema.String,
-  name: Schema.String,
-})
-export type Field_Option_String = null | string | FieldError
-export const Field_Option_String = Schema.Union(
-  [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError],
-  { mode: "oneOf" },
-)
-export type Field_Rfc3339 = string | FieldError
-export const Field_Rfc3339 = Schema.Union([Schema.String.annotate({ format: "date-time" }), FieldError], {
-  mode: "oneOf",
+export const BranchMark = Schema.Struct({ branch: Schema.String, dirty: Schema.Boolean, kind: ChangeKind }).annotate({
+  identifier: "BranchMark",
 })
 export type Field_Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled" | FieldError
 export const Field_Status = Schema.Union(
   [Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]), FieldError],
   { mode: "oneOf" },
-)
-export type Field_String = string | FieldError
-export const Field_String = Schema.Union([Schema.String, FieldError], { mode: "oneOf" })
+).annotate({ identifier: "Field_Status" })
+export type Field_Rfc3339 = string | FieldError
+export const Field_Rfc3339 = Schema.Union([Schema.String.annotate({ format: "date-time" }), FieldError], {
+  mode: "oneOf",
+}).annotate({ identifier: "Field_Rfc3339" })
 export type Field_Vec_String = ReadonlyArray<string> | FieldError
-export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError], { mode: "oneOf" })
-export type ProjectView = {
-  readonly abbreviation: string
-  readonly git_common_dir: string
-  readonly name: string
-  readonly rolling_updates_branch?: string | null
-  readonly root: string
-  readonly status: ProjectStatus
-}
-export const ProjectView = Schema.Struct({
-  abbreviation: Schema.String,
-  git_common_dir: Schema.String,
-  name: Schema.String,
-  rolling_updates_branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  root: Schema.String,
-  status: ProjectStatus,
+export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError], { mode: "oneOf" }).annotate({
+  identifier: "Field_Vec_String",
 })
-export type ApiErrorBody = {
-  readonly cycles?: ReadonlyArray<ReadonlyArray<string>>
-  readonly message: string
-  readonly reason?: Refusal
-}
-export const ApiErrorBody = Schema.Struct({
-  cycles: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
-  message: Schema.String,
-  reason: Schema.optionalKey(Refusal),
-})
-export type SessionSummary = {
-  readonly agent: string
-  readonly id: string
-  readonly started_at: Rfc3339
-  readonly status: {}
-  readonly task?: string | null
-}
-export const SessionSummary = Schema.Struct({
-  agent: Schema.String,
-  id: Schema.String,
-  started_at: Rfc3339,
-  status: Schema.Struct({}),
-  task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+export type Field_Option_String = null | string | FieldError
+export const Field_Option_String = Schema.Union(
+  [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError],
+  { mode: "oneOf" },
+).annotate({ identifier: "Field_Option_String" })
+export type Field_String = string | FieldError
+export const Field_String = Schema.Union([Schema.String, FieldError], { mode: "oneOf" }).annotate({
+  identifier: "Field_String",
 })
 export type CreateTask = {
   readonly body?: string | null
@@ -227,7 +188,7 @@ export const CreateTask = Schema.Struct({
   status: Schema.optionalKey(Schema.Union([Schema.Null, Status], { mode: "oneOf" })),
   tags: Schema.optionalKey(Schema.Array(Schema.String)),
   title: Schema.String,
-})
+}).annotate({ identifier: "CreateTask" })
 export type TaskPatch = {
   readonly dependencies?: ReadonlyArray<string>
   readonly parent?: string | null
@@ -241,7 +202,71 @@ export const TaskPatch = Schema.Struct({
   rank: Schema.optionalKey(Schema.String),
   status: Schema.optionalKey(Status),
   tags: Schema.optionalKey(Schema.Array(Schema.String)),
-})
+}).annotate({ identifier: "TaskPatch" })
+export type ApiErrorBody = {
+  readonly cycles?: ReadonlyArray<ReadonlyArray<string>>
+  readonly message: string
+  readonly reason?: Refusal
+}
+export const ApiErrorBody = Schema.Struct({
+  cycles: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
+  message: Schema.String,
+  reason: Schema.optionalKey(Refusal),
+}).annotate({ identifier: "ApiErrorBody" })
+export type ProjectView = {
+  readonly abbreviation: string
+  readonly git_common_dir: string
+  readonly name: string
+  readonly rolling_updates_branch?: string | null
+  readonly root: string
+  readonly status: ProjectStatus
+}
+export const ProjectView = Schema.Struct({
+  abbreviation: Schema.String,
+  git_common_dir: Schema.String,
+  name: Schema.String,
+  rolling_updates_branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  root: Schema.String,
+  status: ProjectStatus,
+}).annotate({ identifier: "ProjectView" })
+export type SessionSummary = {
+  readonly agent: string
+  readonly id: string
+  readonly started_at: Rfc3339
+  readonly status: {}
+  readonly task?: string | null
+}
+export const SessionSummary = Schema.Struct({
+  agent: Schema.String,
+  id: Schema.String,
+  started_at: Rfc3339,
+  status: Schema.Struct({}),
+  task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+}).annotate({ identifier: "SessionSummary" })
+export type TagView = {
+  readonly color: Color
+  readonly description?: string
+  readonly display: string
+  readonly name: string
+}
+export const TagView = Schema.Struct({
+  color: Color,
+  description: Schema.optionalKey(Schema.String),
+  display: Schema.String,
+  name: Schema.String,
+}).annotate({ identifier: "TagView" })
+export type CreateTag = { readonly color?: Color; readonly description?: string; readonly name: string }
+export const CreateTag = Schema.Struct({
+  color: Schema.optionalKey(Color),
+  description: Schema.optionalKey(Schema.String),
+  name: Schema.String,
+}).annotate({ identifier: "CreateTag" })
+export type TagPatch = { readonly color?: Color; readonly description?: string | null; readonly name?: string }
+export const TagPatch = Schema.Struct({
+  color: Schema.optionalKey(Color),
+  description: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  name: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "TagPatch" })
 export type BranchState = {
   readonly blob_oid: string
   readonly branch: string
@@ -255,7 +280,7 @@ export const BranchState = Schema.Struct({
   dirty: Schema.Boolean,
   kind: ChangeKind,
   status: Field_Status,
-})
+}).annotate({ identifier: "BranchState" })
 export type FlowNode =
   | {
       readonly blocks_count: number
@@ -280,15 +305,21 @@ export type FlowNode =
 export const FlowNode = Schema.Union(
   [
     Schema.Struct({
-      blocks_count: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+      blocks_count: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
       id: Schema.String,
       kind: Schema.Literal("leaf"),
       parent: Schema.optionalKey(Schema.String),
-      position: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+      position: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
       project: Schema.String,
       status: Field_Status,
       title: Schema.String,
-      wave: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+      wave: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
     }),
     Schema.Struct({
       id: Schema.String,
@@ -301,7 +332,11 @@ export const FlowNode = Schema.Union(
     Schema.Struct({ id: Schema.String, kind: Schema.Literal("unresolved"), project: Schema.String }),
   ],
   { mode: "oneOf" },
-)
+).annotate({ identifier: "FlowNode" })
+export type TaskRef = { readonly id: string; readonly status: Field_Status; readonly title: string }
+export const TaskRef = Schema.Struct({ id: Schema.String, status: Field_Status, title: Schema.String }).annotate({
+  identifier: "TaskRef",
+})
 export type TaskChild = {
   readonly id: string
   readonly rank?: string
@@ -313,21 +348,7 @@ export const TaskChild = Schema.Struct({
   rank: Schema.optionalKey(Schema.String),
   status: Field_Status,
   title: Schema.String,
-})
-export type TaskRef = { readonly id: string; readonly status: Field_Status; readonly title: string }
-export const TaskRef = Schema.Struct({ id: Schema.String, status: Field_Status, title: Schema.String })
-export type Comment = {
-  readonly agent?: string | null
-  readonly at: Field_Rfc3339
-  readonly author: Field_String
-  readonly text: string
-}
-export const Comment = Schema.Struct({
-  agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  at: Field_Rfc3339,
-  author: Field_String,
-  text: Schema.String,
-})
+}).annotate({ identifier: "TaskChild" })
 export type FrontmatterFields = {
   readonly created: Field_Rfc3339
   readonly dependencies: Field_Vec_String
@@ -343,16 +364,60 @@ export const FrontmatterFields = Schema.Struct({
   rank: Field_Option_String,
   status: Field_Status,
   tags: Field_Vec_String,
-})
+}).annotate({ identifier: "FrontmatterFields" })
+export type Comment = {
+  readonly agent?: string | null
+  readonly at: Field_Rfc3339
+  readonly author: Field_String
+  readonly text: string
+}
+export const Comment = Schema.Struct({
+  agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  at: Field_Rfc3339,
+  author: Field_String,
+  text: Schema.String,
+}).annotate({ identifier: "Comment" })
 export type Flow = { readonly edges: ReadonlyArray<FlowEdge>; readonly nodes: ReadonlyArray<FlowNode> }
-export const Flow = Schema.Struct({ edges: Schema.Array(FlowEdge), nodes: Schema.Array(FlowNode) })
-export type BranchComments = { readonly branch: string; readonly comments: ReadonlyArray<Comment> }
-export const BranchComments = Schema.Struct({ branch: Schema.String, comments: Schema.Array(Comment) })
+export const Flow = Schema.Struct({ edges: Schema.Array(FlowEdge), nodes: Schema.Array(FlowNode) }).annotate({
+  identifier: "Flow",
+})
 export type Metadata = { readonly kind: MetadataErrorTag; readonly message: string } | FrontmatterFields
 export const Metadata = Schema.Union(
   [Schema.Struct({ kind: MetadataErrorTag, message: Schema.String }), FrontmatterFields],
   { mode: "oneOf" },
-)
+).annotate({ identifier: "Metadata" })
+export type BranchComments = { readonly branch: string; readonly comments: ReadonlyArray<Comment> }
+export const BranchComments = Schema.Struct({ branch: Schema.String, comments: Schema.Array(Comment) }).annotate({
+  identifier: "BranchComments",
+})
+export type TaskListItem = {
+  readonly branches: ReadonlyArray<BranchState>
+  readonly comment_count: number
+  readonly headline: string
+  readonly id: string
+  readonly metadata: Metadata
+  readonly project: string
+  readonly title: string
+  readonly updated: Field_Rfc3339
+  readonly write_target?: WriteTarget
+}
+export const TaskListItem = Schema.Struct({
+  branches: Schema.Array(BranchState),
+  comment_count: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  headline: Schema.String,
+  id: Schema.String,
+  metadata: Metadata,
+  project: Schema.String,
+  title: Schema.String,
+  updated: Field_Rfc3339,
+  write_target: Schema.optionalKey(WriteTarget),
+}).annotate({ identifier: "TaskListItem" })
+export type TaskSummary = { readonly id: string; readonly metadata: Metadata; readonly title: string }
+export const TaskSummary = Schema.Struct({ id: Schema.String, metadata: Metadata, title: Schema.String }).annotate({
+  identifier: "TaskSummary",
+})
 export type TaskDetail = {
   readonly blocks?: ReadonlyArray<TaskRef>
   readonly body: string
@@ -386,31 +451,7 @@ export const TaskDetail = Schema.Struct({
   title: Schema.String,
   updated: Field_Rfc3339,
   write_target: Schema.optionalKey(WriteTarget),
-})
-export type TaskListItem = {
-  readonly branches: ReadonlyArray<BranchState>
-  readonly comment_count: number
-  readonly headline: string
-  readonly id: string
-  readonly metadata: Metadata
-  readonly project: string
-  readonly title: string
-  readonly updated: Field_Rfc3339
-  readonly write_target?: WriteTarget
-}
-export const TaskListItem = Schema.Struct({
-  branches: Schema.Array(BranchState),
-  comment_count: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
-  headline: Schema.String,
-  id: Schema.String,
-  metadata: Metadata,
-  project: Schema.String,
-  title: Schema.String,
-  updated: Field_Rfc3339,
-  write_target: Schema.optionalKey(WriteTarget),
-})
-export type TaskSummary = { readonly id: string; readonly metadata: Metadata; readonly title: string }
-export const TaskSummary = Schema.Struct({ id: Schema.String, metadata: Metadata, title: Schema.String })
+}).annotate({ identifier: "TaskDetail" })
 export type BoardRow = {
   readonly depth: number
   readonly has_children: boolean
@@ -418,13 +459,17 @@ export type BoardRow = {
   readonly task: TaskListItem
 }
 export const BoardRow = Schema.Struct({
-  depth: Schema.Number.check(Schema.isInt()).check(Schema.isGreaterThanOrEqualTo(0)),
+  depth: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
   has_children: Schema.Boolean,
   parent_title: Schema.optionalKey(Schema.String),
   task: TaskListItem,
-})
+}).annotate({ identifier: "BoardRow" })
 export type SearchHit = { readonly branch: string; readonly matched: SearchMatch; readonly task: TaskListItem }
-export const SearchHit = Schema.Struct({ branch: Schema.String, matched: SearchMatch, task: TaskListItem })
+export const SearchHit = Schema.Struct({ branch: Schema.String, matched: SearchMatch, task: TaskListItem }).annotate({
+  identifier: "SearchHit",
+})
 export type MatrixCell = {
   readonly blob_oid: string
   readonly branch: string
@@ -438,7 +483,7 @@ export const MatrixCell = Schema.Struct({
   dirty: Schema.Boolean,
   kind: ChangeKind,
   task: TaskSummary,
-})
+}).annotate({ identifier: "MatrixCell" })
 export type TaskVersion = {
   readonly blob_oid: string
   readonly branches: ReadonlyArray<BranchMark>
@@ -448,27 +493,31 @@ export const TaskVersion = Schema.Struct({
   blob_oid: Schema.String,
   branches: Schema.Array(BranchMark),
   summary: TaskSummary,
-})
+}).annotate({ identifier: "TaskVersion" })
 export type BoardGroup = { readonly rows: ReadonlyArray<BoardRow>; readonly status?: Status }
-export const BoardGroup = Schema.Struct({ rows: Schema.Array(BoardRow), status: Schema.optionalKey(Status) })
+export const BoardGroup = Schema.Struct({ rows: Schema.Array(BoardRow), status: Schema.optionalKey(Status) }).annotate({
+  identifier: "BoardGroup",
+})
 export type Matrix = { readonly cells: ReadonlyArray<MatrixCell> }
-export const Matrix = Schema.Struct({ cells: Schema.Array(MatrixCell) })
+export const Matrix = Schema.Struct({ cells: Schema.Array(MatrixCell) }).annotate({ identifier: "Matrix" })
 export type RollingUpdates = { readonly conflict?: null | Conflict; readonly pending: ReadonlyArray<MatrixCell> }
 export const RollingUpdates = Schema.Struct({
   conflict: Schema.optionalKey(Schema.Union([Schema.Null, Conflict], { mode: "oneOf" })),
   pending: Schema.Array(MatrixCell),
-})
+}).annotate({ identifier: "RollingUpdates" })
 export type TaskBranches = { readonly id: string; readonly versions: ReadonlyArray<TaskVersion> }
-export const TaskBranches = Schema.Struct({ id: Schema.String, versions: Schema.Array(TaskVersion) })
+export const TaskBranches = Schema.Struct({ id: Schema.String, versions: Schema.Array(TaskVersion) }).annotate({
+  identifier: "TaskBranches",
+})
 export type Board = { readonly groups: ReadonlyArray<BoardGroup> }
-export const Board = Schema.Struct({ groups: Schema.Array(BoardGroup) })
+export const Board = Schema.Struct({ groups: Schema.Array(BoardGroup) }).annotate({ identifier: "Board" })
 // recursive definitions
 const __recursive_TaskTree = Schema.Struct({
   children: Schema.Array(Schema.suspend((): Schema.Codec<TaskTree> => TaskTree)),
   id: Schema.String,
   metadata: Metadata,
   title: Schema.String,
-})
+}).annotate({ identifier: "TaskTree" })
 // schemas
 export type GetMergedBoard200 = Board
 export const GetMergedBoard200 = Board
@@ -851,13 +900,20 @@ export type ListBranchComments500 = ApiErrorBody
 export const ListBranchComments500 = ApiErrorBody
 export type ListBranchComments503 = ApiErrorBody
 export const ListBranchComments503 = ApiErrorBody
-export type GetTaskTreeParams = { readonly branch?: string | null; readonly fresh?: boolean; readonly depth?: number }
+export type GetTaskTreeParams = {
+  readonly branch?: string | null
+  readonly fresh?: boolean
+  readonly depth?: number | null
+}
 export const GetTaskTreeParams = Schema.Struct({
   branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   fresh: Schema.optionalKey(Schema.Boolean),
   depth: Schema.optionalKey(
     Schema.Union([
-      Schema.Number.check(Schema.isInt()).check(Schema.isFinite()).check(Schema.isGreaterThanOrEqualTo(0)),
+      Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+      Schema.Null,
     ]),
   ),
 })

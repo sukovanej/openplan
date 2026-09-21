@@ -34,8 +34,8 @@ function observe(queryKey: ReadonlyArray<unknown>) {
 
 function mountMutation(project: string, showErrors = false) {
   let mutation!: ReturnType<typeof useProjectMutation>
-  const Harness = () => {
-    mutation = useProjectMutation(project)
+  const Harness = ({ onRender }: { onRender: (rendered: typeof mutation) => void }) => {
+    onRender(useProjectMutation(project))
     return null
   }
   const container = document.createElement("div")
@@ -46,7 +46,11 @@ function mountMutation(project: string, showErrors = false) {
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(Harness),
+        createElement(Harness, {
+          onRender: (rendered) => {
+            mutation = rendered
+          },
+        }),
         showErrors ? createElement(MutationError) : undefined,
       ),
     ),

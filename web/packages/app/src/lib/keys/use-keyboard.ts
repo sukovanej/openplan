@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import { boardPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
@@ -33,8 +33,7 @@ export function useKeyboard(): Keyboard {
 
   const pathname = location.pathname
   const scope = routeScope(pathname)
-  const live = useRef({ navigate, pathname, scope, activeOverlay })
-  live.current = { navigate, pathname, scope, activeOverlay }
+  const live = useEffectEvent(() => ({ navigate, pathname, scope, activeOverlay }))
 
   // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
   // route would stay the task at hand on the next one.
@@ -48,12 +47,12 @@ export function useKeyboard(): Keyboard {
   const entryIndex = useRef(historyIndex())
 
   useEffect(() => {
-    const activeCursor = () => liveCursor(live.current.scope)
-    const targetTask = () => taskAtHand(activeCursor().getSnapshot(), live.current.pathname)
+    const activeCursor = () => liveCursor(live().scope)
+    const targetTask = () => taskAtHand(activeCursor().getSnapshot(), live().pathname)
     const canGoBack = () => historyIndex() > entryIndex.current
     const context = (): RunContext => ({
-      navigate: (to) => live.current.navigate(to),
-      back: () => (canGoBack() ? live.current.navigate(-1) : live.current.navigate("/")),
+      navigate: (to) => live().navigate(to),
+      back: () => (canGoBack() ? live().navigate(-1) : live().navigate("/")),
       overlay: (name) => ({
         open: () => setActiveOverlay(name),
         close: () => setActiveOverlay((open) => (open === name ? null : open)),
@@ -90,7 +89,7 @@ export function useKeyboard(): Keyboard {
         },
         showFlow: () => {
           const task = targetTask()
-          if (task !== undefined) live.current.navigate(taskFlowPath(task.project, task.id))
+          if (task !== undefined) live().navigate(taskFlowPath(task.project, task.id))
         },
         // The row at hand opens its own menu, which is where the mark it changes is drawn.
         editStatus: () => {
@@ -106,20 +105,20 @@ export function useKeyboard(): Keyboard {
         escape: () => {
           const outcome = escapeOutcome(detailCursor.getSnapshot().index >= 0, canGoBack())
           if (outcome === "clear-selection") detailCursor.clear()
-          else if (outcome === "back") live.current.navigate(-1)
+          else if (outcome === "back") live().navigate(-1)
           else {
             // Nothing to go back to: leave for the board of the project the task belongs to, which
             // is the page this detail would have been opened from.
-            const task = taskRouteOf(live.current.pathname)
-            live.current.navigate(task === undefined ? "/" : boardPath(task.project))
+            const task = taskRouteOf(live().pathname)
+            live().navigate(task === undefined ? "/" : boardPath(task.project))
           }
         },
       },
     })
     const dispatcher = new Dispatcher({
       bindings,
-      routeScope: () => live.current.scope,
-      activeOverlay: () => live.current.activeOverlay,
+      routeScope: () => live().scope,
+      activeOverlay: () => live().activeOverlay,
       context,
     })
     return dispatcher.attach()

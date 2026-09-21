@@ -47,13 +47,17 @@ export function Combobox({
   const query = useDebounced(text, debounceMs)
   const options = useMemo(() => buildOptions(query.trim()), [buildOptions, query])
   const [active, setActive] = useState(0)
+  const [activeOptions, setActiveOptions] = useState(options)
+  if (activeOptions !== options) {
+    setActiveOptions(options)
+    setActive(0)
+  }
   const inputRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const listId = useId()
 
   useEffect(() => inputRef.current?.focus(), [])
-  useEffect(() => setActive(0), [options])
   useEffect(() => {
     if (inline) listRef.current?.scrollIntoView({ block: "nearest" })
   }, [inline, options])
