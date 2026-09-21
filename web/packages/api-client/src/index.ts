@@ -59,14 +59,16 @@ export type Rfc3339 = string
 export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
 export type CreateSession = { readonly agent?: string | null; readonly prompt: string; readonly task?: string | null }
 export const CreateSession = Schema.Struct({
-  agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null]).annotate({ examples: ["claude_code"] })),
   prompt: Schema.String,
   task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
 }).annotate({ identifier: "CreateSession" })
 export type CreatedSession = { readonly id: string }
 export const CreatedSession = Schema.Struct({ id: Schema.String }).annotate({ identifier: "CreatedSession" })
-export type Decision = {}
-export const Decision = Schema.Struct({}).annotate({ identifier: "Decision" })
+export type Decision = { readonly [x: string]: Schema.Json }
+export const Decision = Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })).annotate({
+  identifier: "Decision",
+})
 export type Say = { readonly text: string }
 export const Say = Schema.Struct({ text: Schema.String }).annotate({ identifier: "Say" })
 export type Conflict = { readonly files: ReadonlyArray<string>; readonly worktree: string }
@@ -233,14 +235,14 @@ export type SessionSummary = {
   readonly agent: string
   readonly id: string
   readonly started_at: Rfc3339
-  readonly status: {}
+  readonly status: { readonly [x: string]: Schema.Json }
   readonly task?: string | null
 }
 export const SessionSummary = Schema.Struct({
-  agent: Schema.String,
+  agent: Schema.String.annotate({ examples: ["claude_code"] }),
   id: Schema.String,
   started_at: Rfc3339,
-  status: Schema.Struct({}),
+  status: Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })),
   task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
 }).annotate({ identifier: "SessionSummary" })
 export type TagView = {
@@ -1001,6 +1003,37 @@ export const make = (
             )
         : (request) => Effect.flatMap(httpClient.execute(request), withOptionalResponse)
     }
+  const __encodePathParam = encodeURIComponent
+  const __makePathRequest = (
+    method: (url: string) => HttpClientRequest.HttpClientRequest,
+    parameters: ReadonlyArray<string>,
+    getPath: () => string,
+  ) =>
+    Effect.suspend(() => {
+      const fail = (description: string, cause?: unknown) =>
+        Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.InvalidUrlError({
+              request: method(""),
+              cause,
+              description,
+            }),
+          }),
+        )
+      if (parameters.some((value) => value === "" || /^(?:\.|%2e){1,2}$/i.test(value))) {
+        return fail("Path parameters must be non-empty and cannot be dot segments")
+      }
+      let path: string
+      try {
+        path = getPath()
+      } catch (cause) {
+        return fail("Failed to encode path parameter", cause)
+      }
+      if (path.split("/").some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) {
+        return fail("Request paths cannot contain dot segments")
+      }
+      return Effect.succeed(method(path))
+    })
   const decodeSuccess =
     <Schema extends Schema.Constraint>(schema: Schema) =>
     (response: HttpClientResponse.HttpClientResponse) =>
@@ -1014,7 +1047,7 @@ export const make = (
   return {
     httpClient,
     getMergedBoard: (options) =>
-      HttpClientRequest.get(`/api/board`).pipe(
+      HttpClientRequest.get("/api/board").pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(GetMergedBoard200),
@@ -1024,7 +1057,7 @@ export const make = (
         ),
       ),
     getFlow: (options) =>
-      HttpClientRequest.get(`/api/flow`).pipe(
+      HttpClientRequest.get("/api/flow").pipe(
         HttpClientRequest.setUrlParams({
           project: options?.params?.["project"] as any,
           status: options?.params?.["status"] as any,
@@ -1044,7 +1077,7 @@ export const make = (
         ),
       ),
     listProjects: (options) =>
-      HttpClientRequest.get(`/api/projects`).pipe(
+      HttpClientRequest.get("/api/projects").pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(ListProjects200),
@@ -1053,7 +1086,7 @@ export const make = (
         ),
       ),
     registerProject: (options) =>
-      HttpClientRequest.post(`/api/projects`).pipe(
+      HttpClientRequest.post("/api/projects").pipe(
         HttpClientRequest.bodyJsonUnsafe(options.payload),
         withResponse(options.config)(
           HttpClientResponse.matchStatus({
@@ -1066,449 +1099,707 @@ export const make = (
         ),
       ),
     deleteProject: (project, options) =>
-      HttpClientRequest.delete(`/api/projects/${project}`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "404": decodeError("DeleteProject404", DeleteProject404),
-            "503": decodeError("DeleteProject503", DeleteProject503),
-            "204": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.delete,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "404": decodeError("DeleteProject404", DeleteProject404),
+                "503": decodeError("DeleteProject503", DeleteProject503),
+                "204": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     renameProject: (project, options) =>
-      HttpClientRequest.patch(`/api/projects/${project}`).pipe(
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(RenameProject200),
-            "400": decodeError("RenameProject400", RenameProject400),
-            "404": decodeError("RenameProject404", RenameProject404),
-            "409": decodeError("RenameProject409", RenameProject409),
-            "503": decodeError("RenameProject503", RenameProject503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.patch,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(RenameProject200),
+                "400": decodeError("RenameProject400", RenameProject400),
+                "404": decodeError("RenameProject404", RenameProject404),
+                "409": decodeError("RenameProject409", RenameProject409),
+                "503": decodeError("RenameProject503", RenameProject503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     listSessions: (project, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/agent/sessions`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(ListSessions200),
-            "404": decodeError("ListSessions404", ListSessions404),
-            "503": decodeError("ListSessions503", ListSessions503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/agent/sessions",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(ListSessions200),
+                "404": decodeError("ListSessions404", ListSessions404),
+                "503": decodeError("ListSessions503", ListSessions503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     createSession: (project, options) =>
-      HttpClientRequest.post(`/api/projects/${project}/agent/sessions`).pipe(
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(CreateSession201),
-            "400": decodeError("CreateSession400", CreateSession400),
-            "404": decodeError("CreateSession404", CreateSession404),
-            "500": decodeError("CreateSession500", CreateSession500),
-            "503": decodeError("CreateSession503", CreateSession503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/agent/sessions",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(CreateSession201),
+                "400": decodeError("CreateSession400", CreateSession400),
+                "404": decodeError("CreateSession404", CreateSession404),
+                "500": decodeError("CreateSession500", CreateSession500),
+                "503": decodeError("CreateSession503", CreateSession503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     deleteSession: (project, id, options) =>
-      HttpClientRequest.delete(`/api/projects/${project}/agent/sessions/${id}`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "404": decodeError("DeleteSession404", DeleteSession404),
-            "503": decodeError("DeleteSession503", DeleteSession503),
-            "204": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.delete,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/agent/sessions/" + __encodePathParam(id) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "404": decodeError("DeleteSession404", DeleteSession404),
+                "503": decodeError("DeleteSession503", DeleteSession503),
+                "204": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     approve: (project, id, approval, options) =>
-      HttpClientRequest.post(`/api/projects/${project}/agent/sessions/${id}/approvals/${approval}`).pipe(
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "404": decodeError("Approve404", Approve404),
-            "503": decodeError("Approve503", Approve503),
-            "202": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project, id, approval],
+        () =>
+          "/api/projects/" +
+          __encodePathParam(project) +
+          "/agent/sessions/" +
+          __encodePathParam(id) +
+          "/approvals/" +
+          __encodePathParam(approval) +
+          "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "404": decodeError("Approve404", Approve404),
+                "503": decodeError("Approve503", Approve503),
+                "202": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     interruptSession: (project, id, options) =>
-      HttpClientRequest.post(`/api/projects/${project}/agent/sessions/${id}/interrupt`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "404": decodeError("InterruptSession404", InterruptSession404),
-            "503": decodeError("InterruptSession503", InterruptSession503),
-            "202": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/agent/sessions/" + __encodePathParam(id) + "/interrupt",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "404": decodeError("InterruptSession404", InterruptSession404),
+                "503": decodeError("InterruptSession503", InterruptSession503),
+                "202": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     promptSession: (project, id, options) =>
-      HttpClientRequest.post(`/api/projects/${project}/agent/sessions/${id}/prompt`).pipe(
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "404": decodeError("PromptSession404", PromptSession404),
-            "409": decodeError("PromptSession409", PromptSession409),
-            "503": decodeError("PromptSession503", PromptSession503),
-            "202": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/agent/sessions/" + __encodePathParam(id) + "/prompt",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "404": decodeError("PromptSession404", PromptSession404),
+                "409": decodeError("PromptSession409", PromptSession409),
+                "503": decodeError("PromptSession503", PromptSession503),
+                "202": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     getBoard: (project, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/board`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetBoard200),
-            "400": decodeError("GetBoard400", GetBoard400),
-            "404": decodeError("GetBoard404", GetBoard404),
-            "500": decodeError("GetBoard500", GetBoard500),
-            "503": decodeError("GetBoard503", GetBoard503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/board",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetBoard200),
+                "400": decodeError("GetBoard400", GetBoard400),
+                "404": decodeError("GetBoard404", GetBoard404),
+                "500": decodeError("GetBoard500", GetBoard500),
+                "503": decodeError("GetBoard503", GetBoard503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     getMatrix: (project, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/matrix`).pipe(
-        HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetMatrix200),
-            "404": decodeError("GetMatrix404", GetMatrix404),
-            "500": decodeError("GetMatrix500", GetMatrix500),
-            "503": decodeError("GetMatrix503", GetMatrix503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/matrix",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetMatrix200),
+                "404": decodeError("GetMatrix404", GetMatrix404),
+                "500": decodeError("GetMatrix500", GetMatrix500),
+                "503": decodeError("GetMatrix503", GetMatrix503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     getRollingUpdates: (project, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/rolling-updates`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetRollingUpdates200),
-            "404": decodeError("GetRollingUpdates404", GetRollingUpdates404),
-            "500": decodeError("GetRollingUpdates500", GetRollingUpdates500),
-            "503": decodeError("GetRollingUpdates503", GetRollingUpdates503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetRollingUpdates200),
+                "404": decodeError("GetRollingUpdates404", GetRollingUpdates404),
+                "500": decodeError("GetRollingUpdates500", GetRollingUpdates500),
+                "503": decodeError("GetRollingUpdates503", GetRollingUpdates503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     discardRollingUpdates: (project, options) =>
-      HttpClientRequest.delete(`/api/projects/${project}/rolling-updates`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "404": decodeError("DiscardRollingUpdates404", DiscardRollingUpdates404),
-            "409": decodeError("DiscardRollingUpdates409", DiscardRollingUpdates409),
-            "503": decodeError("DiscardRollingUpdates503", DiscardRollingUpdates503),
-            "204": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.delete,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "404": decodeError("DiscardRollingUpdates404", DiscardRollingUpdates404),
+                "409": decodeError("DiscardRollingUpdates409", DiscardRollingUpdates409),
+                "503": decodeError("DiscardRollingUpdates503", DiscardRollingUpdates503),
+                "204": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     publishRollingUpdates: (project, options) =>
-      HttpClientRequest.post(`/api/projects/${project}/rolling-updates/publish`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(PublishRollingUpdates200),
-            "404": decodeError("PublishRollingUpdates404", PublishRollingUpdates404),
-            "409": decodeError("PublishRollingUpdates409", PublishRollingUpdates409),
-            "503": decodeError("PublishRollingUpdates503", PublishRollingUpdates503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates/publish",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(PublishRollingUpdates200),
+                "404": decodeError("PublishRollingUpdates404", PublishRollingUpdates404),
+                "409": decodeError("PublishRollingUpdates409", PublishRollingUpdates409),
+                "503": decodeError("PublishRollingUpdates503", PublishRollingUpdates503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     discardRollingUpdate: (project, task, options) =>
-      HttpClientRequest.delete(`/api/projects/${project}/rolling-updates/${task}`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "400": decodeError("DiscardRollingUpdate400", DiscardRollingUpdate400),
-            "404": decodeError("DiscardRollingUpdate404", DiscardRollingUpdate404),
-            "409": decodeError("DiscardRollingUpdate409", DiscardRollingUpdate409),
-            "500": decodeError("DiscardRollingUpdate500", DiscardRollingUpdate500),
-            "503": decodeError("DiscardRollingUpdate503", DiscardRollingUpdate503),
-            "204": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.delete,
+        [project, task],
+        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates/" + __encodePathParam(task) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "400": decodeError("DiscardRollingUpdate400", DiscardRollingUpdate400),
+                "404": decodeError("DiscardRollingUpdate404", DiscardRollingUpdate404),
+                "409": decodeError("DiscardRollingUpdate409", DiscardRollingUpdate409),
+                "500": decodeError("DiscardRollingUpdate500", DiscardRollingUpdate500),
+                "503": decodeError("DiscardRollingUpdate503", DiscardRollingUpdate503),
+                "204": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     getRollingUpdateDiff: (project, task, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/rolling-updates/${task}/diff`).pipe(
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetRollingUpdateDiff200),
-            "400": decodeError("GetRollingUpdateDiff400", GetRollingUpdateDiff400),
-            "404": decodeError("GetRollingUpdateDiff404", GetRollingUpdateDiff404),
-            "500": decodeError("GetRollingUpdateDiff500", GetRollingUpdateDiff500),
-            "503": decodeError("GetRollingUpdateDiff503", GetRollingUpdateDiff503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, task],
+        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates/" + __encodePathParam(task) + "/diff",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetRollingUpdateDiff200),
+                "400": decodeError("GetRollingUpdateDiff400", GetRollingUpdateDiff400),
+                "404": decodeError("GetRollingUpdateDiff404", GetRollingUpdateDiff404),
+                "500": decodeError("GetRollingUpdateDiff500", GetRollingUpdateDiff500),
+                "503": decodeError("GetRollingUpdateDiff503", GetRollingUpdateDiff503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     searchProject: (project, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/search`).pipe(
-        HttpClientRequest.setUrlParams({ q: options?.params?.["q"] as any, fresh: options?.params?.["fresh"] as any }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(SearchProject200),
-            "404": decodeError("SearchProject404", SearchProject404),
-            "500": decodeError("SearchProject500", SearchProject500),
-            "503": decodeError("SearchProject503", SearchProject503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/search",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              q: options?.params?.["q"] as any,
+              fresh: options?.params?.["fresh"] as any,
+            }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(SearchProject200),
+                "404": decodeError("SearchProject404", SearchProject404),
+                "500": decodeError("SearchProject500", SearchProject500),
+                "503": decodeError("SearchProject503", SearchProject503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     listTags: (project, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/tags`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(ListTags200),
-            "400": decodeError("ListTags400", ListTags400),
-            "404": decodeError("ListTags404", ListTags404),
-            "409": decodeError("ListTags409", ListTags409),
-            "422": decodeError("ListTags422", ListTags422),
-            "500": decodeError("ListTags500", ListTags500),
-            "503": decodeError("ListTags503", ListTags503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/tags",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(ListTags200),
+                "400": decodeError("ListTags400", ListTags400),
+                "404": decodeError("ListTags404", ListTags404),
+                "409": decodeError("ListTags409", ListTags409),
+                "422": decodeError("ListTags422", ListTags422),
+                "500": decodeError("ListTags500", ListTags500),
+                "503": decodeError("ListTags503", ListTags503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     createTag: (project, options) =>
-      HttpClientRequest.post(`/api/projects/${project}/tags`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(CreateTag201),
-            "400": decodeError("CreateTag400", CreateTag400),
-            "404": decodeError("CreateTag404", CreateTag404),
-            "409": decodeError("CreateTag409", CreateTag409),
-            "422": decodeError("CreateTag422", CreateTag422),
-            "500": decodeError("CreateTag500", CreateTag500),
-            "503": decodeError("CreateTag503", CreateTag503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/tags",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(CreateTag201),
+                "400": decodeError("CreateTag400", CreateTag400),
+                "404": decodeError("CreateTag404", CreateTag404),
+                "409": decodeError("CreateTag409", CreateTag409),
+                "422": decodeError("CreateTag422", CreateTag422),
+                "500": decodeError("CreateTag500", CreateTag500),
+                "503": decodeError("CreateTag503", CreateTag503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     getTag: (project, name, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/tags/${name}`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetTag200),
-            "400": decodeError("GetTag400", GetTag400),
-            "404": decodeError("GetTag404", GetTag404),
-            "409": decodeError("GetTag409", GetTag409),
-            "422": decodeError("GetTag422", GetTag422),
-            "503": decodeError("GetTag503", GetTag503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, name],
+        () => "/api/projects/" + __encodePathParam(project) + "/tags/" + __encodePathParam(name) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetTag200),
+                "400": decodeError("GetTag400", GetTag400),
+                "404": decodeError("GetTag404", GetTag404),
+                "409": decodeError("GetTag409", GetTag409),
+                "422": decodeError("GetTag422", GetTag422),
+                "503": decodeError("GetTag503", GetTag503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     deleteTag: (project, name, options) =>
-      HttpClientRequest.delete(`/api/projects/${project}/tags/${name}`).pipe(
-        HttpClientRequest.setUrlParams({
-          branch: options?.params?.["branch"] as any,
-          force: options?.params?.["force"] as any,
-        }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "400": decodeError("DeleteTag400", DeleteTag400),
-            "404": decodeError("DeleteTag404", DeleteTag404),
-            "409": decodeError("DeleteTag409", DeleteTag409),
-            "500": decodeError("DeleteTag500", DeleteTag500),
-            "503": decodeError("DeleteTag503", DeleteTag503),
-            "204": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.delete,
+        [project, name],
+        () => "/api/projects/" + __encodePathParam(project) + "/tags/" + __encodePathParam(name) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              branch: options?.params?.["branch"] as any,
+              force: options?.params?.["force"] as any,
+            }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "400": decodeError("DeleteTag400", DeleteTag400),
+                "404": decodeError("DeleteTag404", DeleteTag404),
+                "409": decodeError("DeleteTag409", DeleteTag409),
+                "500": decodeError("DeleteTag500", DeleteTag500),
+                "503": decodeError("DeleteTag503", DeleteTag503),
+                "204": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     patchTag: (project, name, options) =>
-      HttpClientRequest.patch(`/api/projects/${project}/tags/${name}`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(PatchTag200),
-            "400": decodeError("PatchTag400", PatchTag400),
-            "404": decodeError("PatchTag404", PatchTag404),
-            "409": decodeError("PatchTag409", PatchTag409),
-            "422": decodeError("PatchTag422", PatchTag422),
-            "500": decodeError("PatchTag500", PatchTag500),
-            "503": decodeError("PatchTag503", PatchTag503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.patch,
+        [project, name],
+        () => "/api/projects/" + __encodePathParam(project) + "/tags/" + __encodePathParam(name) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(PatchTag200),
+                "400": decodeError("PatchTag400", PatchTag400),
+                "404": decodeError("PatchTag404", PatchTag404),
+                "409": decodeError("PatchTag409", PatchTag409),
+                "422": decodeError("PatchTag422", PatchTag422),
+                "500": decodeError("PatchTag500", PatchTag500),
+                "503": decodeError("PatchTag503", PatchTag503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     listTasks: (project, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/tasks`).pipe(
-        HttpClientRequest.setUrlParams({
-          branch: options?.params?.["branch"] as any,
-          fresh: options?.params?.["fresh"] as any,
-        }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(ListTasks200),
-            "400": decodeError("ListTasks400", ListTasks400),
-            "404": decodeError("ListTasks404", ListTasks404),
-            "500": decodeError("ListTasks500", ListTasks500),
-            "503": decodeError("ListTasks503", ListTasks503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              branch: options?.params?.["branch"] as any,
+              fresh: options?.params?.["fresh"] as any,
+            }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(ListTasks200),
+                "400": decodeError("ListTasks400", ListTasks400),
+                "404": decodeError("ListTasks404", ListTasks404),
+                "500": decodeError("ListTasks500", ListTasks500),
+                "503": decodeError("ListTasks503", ListTasks503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     createTask: (project, options) =>
-      HttpClientRequest.post(`/api/projects/${project}/tasks`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(CreateTask201),
-            "400": decodeError("CreateTask400", CreateTask400),
-            "404": decodeError("CreateTask404", CreateTask404),
-            "409": decodeError("CreateTask409", CreateTask409),
-            "500": decodeError("CreateTask500", CreateTask500),
-            "503": decodeError("CreateTask503", CreateTask503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(CreateTask201),
+                "400": decodeError("CreateTask400", CreateTask400),
+                "404": decodeError("CreateTask404", CreateTask404),
+                "409": decodeError("CreateTask409", CreateTask409),
+                "500": decodeError("CreateTask500", CreateTask500),
+                "503": decodeError("CreateTask503", CreateTask503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     getTask: (project, id, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}`).pipe(
-        HttpClientRequest.setUrlParams({
-          branch: options?.params?.["branch"] as any,
-          fresh: options?.params?.["fresh"] as any,
-        }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetTask200),
-            "400": decodeError("GetTask400", GetTask400),
-            "404": decodeError("GetTask404", GetTask404),
-            "500": decodeError("GetTask500", GetTask500),
-            "503": decodeError("GetTask503", GetTask503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              branch: options?.params?.["branch"] as any,
+              fresh: options?.params?.["fresh"] as any,
+            }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetTask200),
+                "400": decodeError("GetTask400", GetTask400),
+                "404": decodeError("GetTask404", GetTask404),
+                "500": decodeError("GetTask500", GetTask500),
+                "503": decodeError("GetTask503", GetTask503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     deleteTask: (project, id, options) =>
-      HttpClientRequest.delete(`/api/projects/${project}/tasks/${id}`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "400": decodeError("DeleteTask400", DeleteTask400),
-            "404": decodeError("DeleteTask404", DeleteTask404),
-            "409": decodeError("DeleteTask409", DeleteTask409),
-            "500": decodeError("DeleteTask500", DeleteTask500),
-            "503": decodeError("DeleteTask503", DeleteTask503),
-            "204": () => Effect.void,
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.delete,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "400": decodeError("DeleteTask400", DeleteTask400),
+                "404": decodeError("DeleteTask404", DeleteTask404),
+                "409": decodeError("DeleteTask409", DeleteTask409),
+                "500": decodeError("DeleteTask500", DeleteTask500),
+                "503": decodeError("DeleteTask503", DeleteTask503),
+                "204": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     patchTask: (project, id, options) =>
-      HttpClientRequest.patch(`/api/projects/${project}/tasks/${id}`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(PatchTask200),
-            "400": decodeError("PatchTask400", PatchTask400),
-            "404": decodeError("PatchTask404", PatchTask404),
-            "409": decodeError("PatchTask409", PatchTask409),
-            "500": decodeError("PatchTask500", PatchTask500),
-            "503": decodeError("PatchTask503", PatchTask503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.patch,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(PatchTask200),
+                "400": decodeError("PatchTask400", PatchTask400),
+                "404": decodeError("PatchTask404", PatchTask404),
+                "409": decodeError("PatchTask409", PatchTask409),
+                "500": decodeError("PatchTask500", PatchTask500),
+                "503": decodeError("PatchTask503", PatchTask503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     getTaskBranches: (project, id, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/branches`).pipe(
-        HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetTaskBranches200),
-            "400": decodeError("GetTaskBranches400", GetTaskBranches400),
-            "404": decodeError("GetTaskBranches404", GetTaskBranches404),
-            "500": decodeError("GetTaskBranches500", GetTaskBranches500),
-            "503": decodeError("GetTaskBranches503", GetTaskBranches503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/branches",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetTaskBranches200),
+                "400": decodeError("GetTaskBranches400", GetTaskBranches400),
+                "404": decodeError("GetTaskBranches404", GetTaskBranches404),
+                "500": decodeError("GetTaskBranches500", GetTaskBranches500),
+                "503": decodeError("GetTaskBranches503", GetTaskBranches503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     listComments: (project, id, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/comments`).pipe(
-        HttpClientRequest.setUrlParams({
-          branch: options?.params?.["branch"] as any,
-          fresh: options?.params?.["fresh"] as any,
-        }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(ListComments200),
-            "400": decodeError("ListComments400", ListComments400),
-            "404": decodeError("ListComments404", ListComments404),
-            "500": decodeError("ListComments500", ListComments500),
-            "503": decodeError("ListComments503", ListComments503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/comments",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              branch: options?.params?.["branch"] as any,
+              fresh: options?.params?.["fresh"] as any,
+            }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(ListComments200),
+                "400": decodeError("ListComments400", ListComments400),
+                "404": decodeError("ListComments404", ListComments404),
+                "500": decodeError("ListComments500", ListComments500),
+                "503": decodeError("ListComments503", ListComments503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     addComment: (project, id, options) =>
-      HttpClientRequest.post(`/api/projects/${project}/tasks/${id}/comments`).pipe(
-        HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
-        HttpClientRequest.bodyJsonUnsafe(options.payload),
-        withResponse(options.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(AddComment201),
-            "400": decodeError("AddComment400", AddComment400),
-            "404": decodeError("AddComment404", AddComment404),
-            "409": decodeError("AddComment409", AddComment409),
-            "500": decodeError("AddComment500", AddComment500),
-            "503": decodeError("AddComment503", AddComment503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/comments",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(AddComment201),
+                "400": decodeError("AddComment400", AddComment400),
+                "404": decodeError("AddComment404", AddComment404),
+                "409": decodeError("AddComment409", AddComment409),
+                "500": decodeError("AddComment500", AddComment500),
+                "503": decodeError("AddComment503", AddComment503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     listBranchComments: (project, id, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/comments/branches`).pipe(
-        HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(ListBranchComments200),
-            "400": decodeError("ListBranchComments400", ListBranchComments400),
-            "404": decodeError("ListBranchComments404", ListBranchComments404),
-            "500": decodeError("ListBranchComments500", ListBranchComments500),
-            "503": decodeError("ListBranchComments503", ListBranchComments503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/comments/branches",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(ListBranchComments200),
+                "400": decodeError("ListBranchComments400", ListBranchComments400),
+                "404": decodeError("ListBranchComments404", ListBranchComments404),
+                "500": decodeError("ListBranchComments500", ListBranchComments500),
+                "503": decodeError("ListBranchComments503", ListBranchComments503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     getTaskTree: (project, id, options) =>
-      HttpClientRequest.get(`/api/projects/${project}/tasks/${id}/tree`).pipe(
-        HttpClientRequest.setUrlParams({
-          branch: options?.params?.["branch"] as any,
-          fresh: options?.params?.["fresh"] as any,
-          depth: options?.params?.["depth"] as any,
-        }),
-        withResponse(options?.config)(
-          HttpClientResponse.matchStatus({
-            "2xx": decodeSuccess(GetTaskTree200),
-            "400": decodeError("GetTaskTree400", GetTaskTree400),
-            "404": decodeError("GetTaskTree404", GetTaskTree404),
-            "500": decodeError("GetTaskTree500", GetTaskTree500),
-            "503": decodeError("GetTaskTree503", GetTaskTree503),
-            orElse: unexpectedStatus,
-          }),
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/tree",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              branch: options?.params?.["branch"] as any,
+              fresh: options?.params?.["fresh"] as any,
+              depth: options?.params?.["depth"] as any,
+            }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetTaskTree200),
+                "400": decodeError("GetTaskTree400", GetTaskTree400),
+                "404": decodeError("GetTaskTree404", GetTaskTree404),
+                "500": decodeError("GetTaskTree500", GetTaskTree500),
+                "503": decodeError("GetTaskTree503", GetTaskTree503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
         ),
       ),
     searchAll: (options) =>
-      HttpClientRequest.get(`/api/search`).pipe(
+      HttpClientRequest.get("/api/search").pipe(
         HttpClientRequest.setUrlParams({ q: options?.params?.["q"] as any, fresh: options?.params?.["fresh"] as any }),
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
@@ -1519,7 +1810,7 @@ export const make = (
         ),
       ),
     health: (options) =>
-      HttpClientRequest.get(`/health`).pipe(
+      HttpClientRequest.get("/health").pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(Health200),
