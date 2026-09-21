@@ -6,15 +6,15 @@ onlyBuiltDependencies:
   - "@tailwindcss/oxide"
 
 catalog:
-  effect: 4.0.0-beta.98
-  "@effect/vitest": 4.0.0-beta.98
-  "@effect/platform-node": 4.0.0-beta.98
-  "@effect/openapi-generator": 4.0.0-beta.98
+  effect: 4.0.0-rc.117
+  "@effect/vitest": 4.0.0-rc.117
+  "@effect/platform-node": 4.0.0-rc.117
+  "@effect/openapi-generator": 4.0.0-rc.117
 
-  react: 19.2.7
-  react-dom: 19.2.7
-  react-router-dom: 7.18.1
-  "@tanstack/react-query": 5.101.4
+  react: 19.3.0
+  react-dom: 19.3.0
+  react-router-dom: 7.18.4
+  "@tanstack/react-query": 5.103.1
   react-markdown: 10.1.0
   remark-gfm: 4.0.1
   "@shikijs/core": 4.4.3
@@ -24,33 +24,34 @@ catalog:
   hast-util-to-jsx-runtime: 2.3.6
   class-variance-authority: 0.7.1
   clsx: 2.1.1
-  tailwind-merge: 3.6.0
-  lucide-react: 1.24.0
-  "@xyflow/react": 12.11.5
+  tailwind-merge: 3.7.0
+  lucide-react: 1.47.0
+  "@xyflow/react": 12.11.6
   elkjs: 0.12.0
   "@terrastruct/d2": 0.1.33
 
   "@types/hast": 3.0.5
-  "@types/react": 19.2.17
-  "@types/react-dom": 19.2.3
-  "@types/node": 26.1.1
+  "@types/react": 19.3.0
+  "@types/react-dom": 19.3.0
+  "@types/node": 26.6.2
 
-  tailwindcss: 4.3.2
-  "@tailwindcss/vite": 4.3.2
+  tailwindcss: 4.3.3
+  "@tailwindcss/vite": 4.3.3
   "@tailwindcss/typography": 0.5.20
-  vite: 8.1.4
-  "@vitejs/plugin-react": 6.0.3
-  vitest: 4.1.10
-  happy-dom: 20.10.6
+  vite: 8.3.0
+  "@vitejs/plugin-react": 6.1.1
+  vitest: 5.0.1
+  happy-dom: 20.14.5
   typescript: 7.0.2
-  oxlint: 1.73.0
-  oxfmt: 0.60.0
+  oxlint: 1.83.0
+  oxfmt: 0.68.0
 
 minimumReleaseAgeExclude:
-  - "@effect/vitest@4.0.0-beta.98"
-  - effect@4.0.0-beta.98
-  - "@effect/platform-node@4.0.0-beta.98"
-  - "@effect/openapi-generator@4.0.0-beta.98"
+  - "@effect/openapi-generator@4.0.0-rc.117"
+  - "@effect/platform-node-shared@4.0.0-rc.117"
+  - "@effect/platform-node@4.0.0-rc.117"
+  - "@effect/vitest@4.0.0-rc.117"
+  - effect@4.0.0-rc.117
 
 allowBuilds:
   msgpackr-extract: false

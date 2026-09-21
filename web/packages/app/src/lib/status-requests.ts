@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useEffectEvent } from "react"
 
 // The row whose status menu the keyboard asks for. A task detail can show one task under two of its
 // lists, so the place answers as well as the task: only the row at hand opens. `-1` is the page's
@@ -32,13 +32,8 @@ class StatusRequests {
 export const statusRequests = new StatusRequests()
 
 export function useStatusRequest(target: StatusTarget, open: () => void): void {
-  const latest = useRef({ target, open })
-  latest.current = { target, open }
-  useEffect(
-    () =>
-      statusRequests.on((asked) => {
-        if (sameTarget(asked, latest.current.target)) latest.current.open()
-      }),
-    [],
-  )
+  const onAsked = useEffectEvent((asked: StatusTarget) => {
+    if (sameTarget(asked, target)) open()
+  })
+  useEffect(() => statusRequests.on((asked) => onAsked(asked)), [])
 }

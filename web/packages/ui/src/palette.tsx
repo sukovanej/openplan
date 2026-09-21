@@ -59,6 +59,11 @@ function OpenPalette({
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<Results>(NOTHING)
   const [active, setActive] = useState(0)
+  const [activeResults, setActiveResults] = useState(results)
+  if (activeResults !== results) {
+    setActiveResults(results)
+    setActive(0)
+  }
   const inputRef = useRef<HTMLInputElement>(null)
   const activeRef = useRef<HTMLLIElement>(null)
   const listId = useId()
@@ -84,7 +89,6 @@ function OpenPalette({
     )
   }, [provider, query])
 
-  useEffect(() => setActive(0), [results])
   // Braces, not a concise body: Chrome's `scrollIntoView` answers with a promise, and React reads
   // whatever an effect returns as its clean-up function.
   useEffect(() => {

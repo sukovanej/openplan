@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useEffectEvent } from "react"
 
 export type DetailAction = "edit-parent" | "add-subtask" | "edit-tags" | "go-parent"
 
@@ -27,7 +27,6 @@ class DetailActionsBus {
 export const detailActions = new DetailActionsBus()
 
 export function useDetailAction(action: DetailAction, handler: () => void): void {
-  const latest = useRef(handler)
-  latest.current = handler
-  useEffect(() => detailActions.on(action, () => latest.current()), [action])
+  const onAction = useEffectEvent(handler)
+  useEffect(() => detailActions.on(action, () => onAction()), [action])
 }

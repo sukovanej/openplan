@@ -11,7 +11,7 @@ import {
   ReactFlow,
   useReactFlow,
 } from "@xyflow/react"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useEffectEvent, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 
 import type { Flow } from "@openplan/api-client"
@@ -209,15 +209,16 @@ function Diagram({ flow, box }: { flow: Flow; box: PageBox }) {
 function Refit({ on, to }: { on: number; to: Viewport }) {
   const flow = useReactFlow()
   const first = useRef(true)
-  const target = useRef(to)
-  target.current = to
+  const refit = useEffectEvent(() => {
+    void flow.setViewport(to)
+  })
   useEffect(() => {
     if (first.current) {
       first.current = false
       return
     }
-    void flow.setViewport(target.current)
-  }, [on, flow])
+    refit()
+  }, [on])
   return null
 }
 

@@ -8,7 +8,10 @@ pub fn verify_sha256(bytes: &[u8], published: &str) -> Result<()> {
     if expected.len() != 64 || !expected.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("the published digest {expected:?} is not a SHA-256 hex string");
     }
-    let actual = format!("{:x}", Sha256::digest(bytes));
+    let actual: String = Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     if !actual.eq_ignore_ascii_case(expected) {
         bail!("digest mismatch: the release publishes {expected}, the download hashes to {actual}");
     }

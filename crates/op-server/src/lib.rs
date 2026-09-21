@@ -35,6 +35,8 @@ use tokio_stream::{Stream, StreamExt as _};
 use tower_http::classify::ServerErrorsFailureClass;
 use tower_http::trace::TraceLayer;
 use tracing::Span;
+use utoipa::openapi::RefOr;
+use utoipa::openapi::schema::{AdditionalProperties, ArrayItems, Schema};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
@@ -353,7 +355,37 @@ fn documented() -> OpenApiRouter<AppState> {
 }
 
 pub fn openapi() -> utoipa::openapi::OpenApi {
-    documented().split_for_parts().1
+    let mut spec = documented().split_for_parts().1;
+    if let Some(components) = spec.components.as_mut() {
+        for schema in components.schemas.values_mut() {
+            close_objects(schema);
+        }
+    }
+    spec
+}
+
+// utoipa leaves `additionalProperties` unset, and JSON Schema reads that as "any extra field".
+// The web client generator follows it and types every response as an open record.
+fn close_objects(schema: &mut RefOr<Schema>) {
+    let RefOr::T(schema) = schema else { return };
+    match schema {
+        Schema::Object(object) => {
+            if !object.properties.is_empty() && object.additional_properties.is_none() {
+                object.additional_properties =
+                    Some(Box::new(AdditionalProperties::FreeForm(false)));
+            }
+            object.properties.values_mut().for_each(close_objects);
+        }
+        Schema::Array(array) => {
+            if let ArrayItems::RefOrSchema(items) = &mut array.items {
+                close_objects(items);
+            }
+        }
+        Schema::OneOf(one_of) => one_of.items.iter_mut().for_each(close_objects),
+        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(close_objects),
+        Schema::AnyOf(any_of) => any_of.items.iter_mut().for_each(close_objects),
+        _ => {}
+    }
 }
 
 pub(crate) fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, ApiError> {

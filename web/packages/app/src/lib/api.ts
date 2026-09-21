@@ -182,9 +182,7 @@ export const patchTag = (
   patch: Api.TagPatch,
   branch?: string,
 ): Effect.Effect<Api.TagView, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) =>
-    client.patchTag(project, encodeURIComponent(name), { payload: patch, params: { branch } }),
-  ).pipe(
+  Effect.flatMap(tasks, (client) => client.patchTag(project, name, { payload: patch, params: { branch } })).pipe(
     Effect.catchTags({
       PatchTag400: refusal,
       PatchTag404: refusal,
@@ -204,9 +202,7 @@ export const deleteTag = (
   force: boolean,
   branch?: string,
 ): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) =>
-    client.deleteTag(project, encodeURIComponent(name), { params: { force, branch } }),
-  ).pipe(
+  Effect.flatMap(tasks, (client) => client.deleteTag(project, name, { params: { force, branch } })).pipe(
     Effect.catchTags({
       DeleteTag400: refusal,
       DeleteTag404: refusal,
@@ -260,7 +256,7 @@ export const getTask = (
   id: string,
   branch?: string,
 ): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.getTask(project, encodeURIComponent(id), { params: { branch } })).pipe(
+  Effect.flatMap(tasks, (client) => client.getTask(project, id, { params: { branch } })).pipe(
     Effect.catchTags({
       GetTask400: refusal,
       GetTask404: () => Effect.fail(new TaskNotFound({ id })),
@@ -280,9 +276,7 @@ export const patchTask = (
   patch: Api.TaskPatch,
   branch?: string,
 ): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) =>
-    client.patchTask(project, encodeURIComponent(id), { payload: patch, params: { branch } }),
-  ).pipe(
+  Effect.flatMap(tasks, (client) => client.patchTask(project, id, { payload: patch, params: { branch } })).pipe(
     Effect.catchTags({
       PatchTask400: refusal,
       PatchTask404: () => Effect.fail(new TaskNotFound({ id })),
@@ -311,7 +305,7 @@ export const getRollingUpdateDiff = (
   project: string,
   task: string,
 ): Effect.Effect<Api.TaskDiff, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.getRollingUpdateDiff(project, encodeURIComponent(task), undefined)).pipe(
+  Effect.flatMap(tasks, (client) => client.getRollingUpdateDiff(project, task, undefined)).pipe(
     Effect.catchTags({
       GetRollingUpdateDiff400: refusal,
       GetRollingUpdateDiff404: refusal,
@@ -340,7 +334,7 @@ export const discardRollingUpdate = (
   project: string,
   id: string,
 ): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.discardRollingUpdate(project, encodeURIComponent(id), undefined)).pipe(
+  Effect.flatMap(tasks, (client) => client.discardRollingUpdate(project, id, undefined)).pipe(
     Effect.catchTags({
       DiscardRollingUpdate400: refusal,
       DiscardRollingUpdate404: refusal,

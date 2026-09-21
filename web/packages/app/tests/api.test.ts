@@ -379,6 +379,14 @@ it.effect("a tag delete a reference count refuses names the refusal force answer
   }),
 )
 
+it.effect("encodes a path segment exactly once", () =>
+  Effect.gen(function* () {
+    const { captured, provide } = captureRequest(() => new Response(null, { status: 204 }))
+    yield* provide(deleteTag(PROJECT, "area/web", false))
+    expect(captured.request?.url).toContain("/api/projects/openplan/tags/area%2Fweb")
+  }),
+)
+
 it.effect("a tag delete the branch refuses names no refusal force answers", () =>
   Effect.gen(function* () {
     const { provide } = captureRequest(() =>

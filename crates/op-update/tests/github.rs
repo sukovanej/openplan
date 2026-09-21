@@ -53,7 +53,11 @@ async fn asset(
 }
 
 fn digest_of(bytes: &[u8], name: &str) -> Vec<u8> {
-    format!("{:x} *{name}\n", Sha256::digest(bytes)).into_bytes()
+    let hex: String = Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("{hex} *{name}\n").into_bytes()
 }
 
 fn release_with(archive: &[u8], digest: &[u8]) -> FakeRelease {
