@@ -44,6 +44,7 @@ pub enum Code {
     TagName,
     TagColor,
     Skill,
+    Conflict,
 }
 
 impl Code {
@@ -66,6 +67,7 @@ impl Code {
             Code::TagName => "tag-name",
             Code::TagColor => "tag-color",
             Code::Skill => "skill",
+            Code::Conflict => "conflict",
         }
     }
 }

@@ -10,7 +10,7 @@ import { createTag, patchTask } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
 import { useProjectMutation, type Write } from "../lib/query-client"
 import { tagMatches, tagsWith, tagsWithout, tagSpelled, useTags } from "../lib/tags"
-import { Blocked } from "./blocked"
+import { FieldConflictControl } from "./field-conflict"
 
 // Frontmatter that did not parse at all takes the tags down with it, so it is the same refusal to
 // edit as a `tags:` line that did not: neither shows the reader the set a write would replace.
@@ -24,78 +24,62 @@ export function TagsField({
   project,
   id,
   metadata,
-  branch,
-  blocked,
   className,
 }: {
   project: string
   id: string
   metadata: Metadata
-  branch: string | undefined
-  blocked: string | undefined
   className?: string
 }) {
   const names = tagsOf(metadata)
-  // The registry a write is validated against is the one on the branch the write lands on, so a name
-  // that branch holds is never mistaken for a dangling one and pruned away. A branch no worktree can
-  // write has no registry to read either, so those chips fall back to the served worktree's.
-  const registry = blocked === undefined ? branch : undefined
-  const { byName: tags, failed: registryFailed } = useTags(project, registry)
+  const { byName: tags, failed: registryFailed } = useTags(project)
   const [adding, setAdding] = useState(false)
   const broken = unreadable(metadata)
   const mutation = useProjectMutation(project)
 
   useDetailAction("edit-tags", () => {
-    if (blocked === undefined && broken === undefined && !mutation.isPending) setAdding(true)
+    if (broken === undefined && !mutation.isPending) setAdding(true)
   })
   const close = useCallback(() => setAdding(false), [])
 
-  const editable = blocked === undefined && broken === undefined && tags !== undefined && !mutation.isPending
+  const editable = broken === undefined && tags !== undefined && !mutation.isPending
   return (
     <TaskTags
       metadata={metadata}
       tags={tags}
-      branch={registry}
       onRemove={
         editable
           ? (name) => {
               const next = tagsWithout(names, tags, name)
-              mutation.mutate(patchTask(project, id, { tags: next }, branch))
+              mutation.mutate(patchTask(project, id, { tags: next }))
             }
           : undefined
       }
       trailing={
-        registryFailed ? (
-          <Unreadable
-            what="registry"
-            reason="This branch's tag registry could not be read, so the names on this task cannot be resolved."
-          />
-        ) : broken !== undefined ? (
-          <Unreadable what="tags" reason={`The tags of this task cannot be read (${broken}).`} />
-        ) : blocked !== undefined ? (
-          <Blocked reason={blocked} />
-        ) : adding && tags !== undefined ? (
-          <TagPicker
-            project={project}
-            id={id}
-            names={names}
-            tags={tags}
-            branch={branch}
-            mutate={mutation.mutate}
-            onClose={close}
-          />
-        ) : (
-          <Button
-            variant="accent"
-            onClick={() => setAdding(true)}
-            aria-label="Add tag"
-            disabled={mutation.isPending}
-            className={names.length > 0 ? "px-1.5" : undefined}
-          >
-            <Plus className="size-3.5" />
-            {names.length === 0 && "Add tag"}
-          </Button>
-        )
+        <>
+          <FieldConflictControl project={project} id={id} metadata={metadata} field="tags" align="end" />
+          {registryFailed ? (
+            <Unreadable
+              what="registry"
+              reason="The tag registry of this project could not be read, so the names on this task cannot be resolved."
+            />
+          ) : broken !== undefined ? (
+            <Unreadable what="tags" reason={`The tags of this task cannot be read (${broken}).`} />
+          ) : adding && tags !== undefined ? (
+            <TagPicker project={project} id={id} names={names} tags={tags} mutate={mutation.mutate} onClose={close} />
+          ) : (
+            <Button
+              variant="accent"
+              onClick={() => setAdding(true)}
+              aria-label="Add tag"
+              disabled={mutation.isPending}
+              className={names.length > 0 ? "px-1.5" : undefined}
+            >
+              <Plus className="size-3.5" />
+              {names.length === 0 && "Add tag"}
+            </Button>
+          )}
+        </>
       }
       className={className}
     />
@@ -136,7 +120,6 @@ function TagPicker({
   id,
   names,
   tags,
-  branch,
   mutate,
   onClose,
 }: {
@@ -144,7 +127,6 @@ function TagPicker({
   id: string
   names: ReadonlyArray<string>
   tags: ReadonlyMap<string, TagView>
-  branch: string | undefined
   mutate: (effect: Write) => void
   onClose: () => void
 }) {
@@ -157,7 +139,7 @@ function TagPicker({
         content: <TagOption tag={tag} indices={indices} />,
         onSelect: () => {
           const next = tagsWith(names, tags, tag.name)
-          mutate(patchTask(project, id, { tags: next }, branch))
+          mutate(patchTask(project, id, { tags: next }))
         },
       }))
       if (query === "") return options
@@ -188,15 +170,15 @@ function TagPicker({
           ),
           onSelect: () =>
             mutate(
-              Effect.flatMap(createTag(project, { name: query }, branch), (tag) =>
-                patchTask(project, id, { tags: tagsWith(names, tags, tag.name) }, branch),
+              Effect.flatMap(createTag(project, { name: query }), (tag) =>
+                patchTask(project, id, { tags: tagsWith(names, tags, tag.name) }),
               ),
             ),
         })
       }
       return options
     },
-    [all, assigned, names, tags, project, id, branch, mutate, onClose],
+    [all, assigned, names, tags, project, id, mutate, onClose],
   )
 
   return (

@@ -45,6 +45,7 @@ pub const TASK_RULES: &[TaskRule] = &[
     body_refs_rewritable,
     single_title,
     comment_log,
+    no_open_conflicts,
 ];
 
 pub const TAG_RULES: &[TagRule] = &[
@@ -671,10 +672,7 @@ fn references_resolve(snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
                 }
             }
             None => {
-                // The one filesystem read left in a rule: the snapshot indexes task files, and a
-                // link into source (`../../crates/…`) has nothing there to resolve against until it
-                // indexes the paths around them too.
-                if !resolved.exists() {
+                if !snapshot.holds(&resolved) {
                     emit_ref(
                         sink,
                         file,
@@ -797,7 +795,7 @@ fn heading_problems(comment: &op_task::comment::Comment) -> Vec<String> {
 }
 
 fn has_single_title(body: &str) -> bool {
-    let titles: Vec<_> = op_md::headings(body)
+    let titles: Vec<_> = op_md::headings(&op_task::conflict::published(body))
         .into_iter()
         .filter(|heading| heading.level == 1)
         .collect();
@@ -811,6 +809,26 @@ fn single_title(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
             file.path.clone(),
             "a task needs exactly one non-empty title",
         ));
+    }
+}
+
+fn no_open_conflicts(_snapshot: &Snapshot, file: &TaskFile, sink: &mut Sink) {
+    for block in op_task::conflict::in_body(&file.source) {
+        sink.emit(
+            Diagnostic::error(
+                Code::Conflict,
+                file.path.clone(),
+                format!(
+                    "an unresolved conflict from a sync: {} or {}",
+                    block.ours.label, block.theirs.label
+                ),
+            )
+            .at(Span::new(block.range.start, block.range.end), &file.source)
+            .with_help(
+                "keep the right version, remove the markers, and write the task back with \
+                 `openplan write`, or settle a field with `openplan set`",
+            ),
+        );
     }
 }
 

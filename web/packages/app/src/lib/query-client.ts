@@ -18,19 +18,15 @@ export const flowsKey = [...mergedKey, "flow"] as const
 export const flowKey = (query: string) => [...flowsKey, query] as const
 export const boardKey = (project: string) => [...projectKey(project), "board"] as const
 export const tasksKey = (project: string) => [...projectKey(project), "tasks"] as const
-export const rollingUpdatesKey = (project: string) => [...projectKey(project), "rolling-updates"] as const
-// Under what is waiting to be published, so the invalidation that refreshes that list refreshes
-// every open diff with it. A commit, a rebase, a publish, and an edit to the task all send it.
-export const rollingUpdateDiffKey = (project: string, task: string) =>
-  [...rollingUpdatesKey(project), "diff", task] as const
-export const tagsKey = (project: string, branch?: string) =>
-  branch === undefined
-    ? ([...projectKey(project), "tags"] as const)
-    : ([...projectKey(project), "tags", branch] as const)
-export const taskKey = (project: string, id: string, branch?: string) =>
-  branch === undefined
-    ? ([...projectKey(project), "task", id] as const)
-    : ([...projectKey(project), "task", id, branch] as const)
+export const tagsKey = (project: string) => [...projectKey(project), "tags"] as const
+export const syncKey = (project: string) => [...projectKey(project), "sync"] as const
+export const historyKey = (project: string) => [...projectKey(project), "history"] as const
+export const taskKey = (project: string, id: string) => [...projectKey(project), "task", id] as const
+// Under the task, so whatever re-reads the task re-reads the revisions that changed it.
+export const taskHistoryKey = (project: string, id: string) => [...taskKey(project, id), "history"] as const
+// Apart from the task, because a revision never changes: a change to the task leaves it as it was.
+export const revisionKey = (project: string, id: string, revision: string) =>
+  [...projectKey(project), "revision", id, revision] as const
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,7 +65,8 @@ export const queryInvalidator: Invalidator = {
     invalidate(flowsKey)
   },
   refreshTask: (project, id) => invalidate(taskKey(project, id)),
-  refreshRollingUpdates: (project) => invalidate(rollingUpdatesKey(project)),
+  refreshHistory: (project) => invalidate(historyKey(project)),
+  refreshSync: (project) => invalidate(syncKey(project)),
   refreshVisible: (project) => {
     if (project === undefined) {
       invalidate(["project"])

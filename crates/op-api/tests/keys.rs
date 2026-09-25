@@ -138,3 +138,16 @@ fn keys_order_by_their_number() {
     keys.sort_by(|a, b| id_cmp(a, b));
     assert_eq!(keys, ["OPP-1", "OPP-2", "OPP-9", "OPP-10", "OPP-100"]);
 }
+
+#[test]
+fn a_header_carries_any_name_and_reads_back_the_same() {
+    for text in ["Ada Lovelace", "Milan Šuk", "100% sure", "a\nb"] {
+        let encoded = op_api::encode_header(text);
+        assert!(
+            encoded.bytes().all(|byte| byte.is_ascii_graphic()),
+            "{encoded}"
+        );
+        assert_eq!(op_api::decode_header(&encoded).as_deref(), Some(text));
+    }
+    assert_eq!(op_api::decode_header("%zz"), None);
+}

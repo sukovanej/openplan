@@ -25,10 +25,8 @@ use tokio_stream::Stream;
 use tokio_stream::wrappers::ReceiverStream;
 use utoipa::ToSchema;
 
-use crate::{
-    ApiError, AppState, EVENT_CHANNEL_CAPACITY, Project, join_error, no_such_task, project_of,
-    reject_non_key,
-};
+use crate::tasks::no_such_task;
+use crate::{ApiError, AppState, EVENT_CHANNEL_CAPACITY, Project, Published, blocking, project_of};
 
 const SESSION_ID_BYTES: usize = 8;
 // The driver kills a child that ignores a closed stdin after five seconds, so a stop that waits
@@ -36,23 +34,18 @@ const SESSION_ID_BYTES: usize = 8;
 const STOP_GRACE: Duration = Duration::from_secs(6);
 const TOOLS: [&str; 6] = ["Read", "Grep", "Glob", "Bash", "Edit", "Write"];
 
-// Where the agent works. `cwd` is the tree it writes; `code_root` is the tree it reads to design a
-// task, which is a different place because the worktree is a sparse checkout of `.plan` alone.
-// A worktree of its own, or the primary checkout, is another constructor and nothing else.
+// Where the agent works: the project's checkout, which it reads to design a task. It writes tasks
+// through the CLI and never a file.
 #[derive(Debug, Clone)]
 pub struct Workspace {
     pub cwd: PathBuf,
-    pub code_root: PathBuf,
-    pub branch: String,
 }
 
 impl Workspace {
-    pub fn rolling_updates(project: &Project) -> Option<Self> {
-        project.rolling_updates_branch().map(|branch| Self {
-            cwd: project.repo().rolling_updates_worktree(),
-            code_root: project.path.clone(),
-            branch,
-        })
+    pub fn of(project: &Project) -> Self {
+        Self {
+            cwd: project.path.clone(),
+        }
     }
 }
 
@@ -100,7 +93,6 @@ pub struct SessionView {
     pub project: String,
     pub agent: AgentKind,
     pub task: Option<String>,
-    pub branch: String,
     pub cwd: PathBuf,
     pub status: Status,
     pub started_at: Rfc3339,
@@ -148,19 +140,13 @@ impl AgentSession {
         let _ = self.events.send(SessionEvent::Agent(event));
     }
 
-    // The first task written on the workspace branch while a turn runs is the task this session is
-    // writing. A person editing the same branch in the same seconds binds the wrong one; the branch
-    // is the daemon's, so that is rare.
-    fn bind(&self, change: &ChangeEvent) {
-        let ChangeEvent::TaskChanged {
-            project,
-            id,
-            branch,
-        } = change
-        else {
+    // The first task this session's agent writes while a turn runs is the task it works on. The
+    // CLI names the agent that ran it, so a person's edit in the same seconds does not bind.
+    fn bind(&self, change: &Published) {
+        let ChangeEvent::TaskChanged { project, id } = &change.event else {
             return;
         };
-        if project != &self.project || branch != &self.workspace.branch {
+        if project != &self.project || change.via.as_deref() != Some(agent_token(self.kind)) {
             return;
         }
         let mut live = self.lock();
@@ -177,7 +163,6 @@ impl AgentSession {
             project: self.project.clone(),
             agent: self.kind,
             task: live.task.clone(),
-            branch: self.workspace.branch.clone(),
             cwd: self.workspace.cwd.clone(),
             status: live.transcript.status,
             started_at: self.started_at.into(),
@@ -272,28 +257,36 @@ pub fn backends() -> BTreeMap<AgentKind, Arc<dyn Agent>> {
     ])
 }
 
-// The appended system prompt. It names the only tree the agent may write, the tree it reads, and
-// the binary that resolves both through this daemon — the CLI writes on the worktree's own branch,
-// so nothing here needs `--branch`.
+// The tokens the CLI sends for the agents this daemon runs, as `author::agent` spells them.
+fn agent_token(kind: AgentKind) -> &'static str {
+    match kind {
+        AgentKind::ClaudeCode => "claude-code",
+        AgentKind::Codex => "codex",
+    }
+}
+
+// The appended system prompt. The tasks live in the daemon, not in files, so every write goes
+// through the CLI.
 fn instructions(workspace: &Workspace, kind: AgentKind, task: Option<&str>) -> String {
     let exe = std::env::current_exe()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|_| "openplan".to_owned());
     let cwd = workspace.cwd.display();
-    let code_root = workspace.code_root.display();
     let mut lines = vec![
-        format!("The task files are in {cwd}/.plan/tasks. That is the only place you may write."),
-        format!("The code is at {code_root}. Read it there. Never write there."),
+        format!("The code is at {cwd}. Read it there. Never write there."),
+        "The tasks are not files in the checkout. Read and write them only with the openplan CLI."
+            .to_owned(),
         format!(
             "Create a task with `{exe} create \"<title>\" --tag <tag> --body-file <file>`. It \
              prints the key. Read a task with `{exe} get <key>`. List the registered tags with \
              `{exe} tag list` and use only those names."
         ),
         format!(
-            "Edit an existing task by editing its file under {cwd}/.plan/tasks. Run `{exe} lint` \
-             after each edit."
+            "Edit an existing task this way: write the output of `{exe} get <key>` to a file, edit \
+             the file, then run `{exe} write <key> --file <file>`. Keep every comment in the file. \
+             Run `{exe} lint` after each edit."
         ),
-        "Never run git. The daemon commits your edits. Never create a worktree.".to_owned(),
+        "Never run git, and never create a worktree.".to_owned(),
         "Prefer a diagram to prose. When a task body describes how parts connect, how data \
          flows, or what order events take, draw it as a fenced code block tagged `d2`. The UI \
          renders it. Use plain d2: shapes, containers, connections, sequence diagrams, and \
@@ -306,8 +299,7 @@ fn instructions(workspace: &Workspace, kind: AgentKind, task: Option<&str>) -> S
             "This session works on task {task}. Write that task and no other."
         ));
     }
-    // Claude Code reads the repository's CLAUDE.md from the worktree root; Codex does not, so the
-    // rules that file carries are repeated here for it.
+    // Claude Code reads the repository's CLAUDE.md; Codex does not, so its rules are repeated.
     if kind == AgentKind::Codex {
         lines.push(
             "Write all prose in ASD-STE100 Simplified Technical English. Use the active voice. \
@@ -335,12 +327,6 @@ fn session_id() -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn no_agent_sessions() -> ApiError {
-    ApiError::unavailable(
-        "this repository has no rolling-updates branch, so the daemon has nowhere to run an agent",
-    )
-}
-
 fn no_such_session(id: &str) -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
@@ -350,7 +336,7 @@ fn no_such_session(id: &str) -> ApiError {
 
 fn workspace_of(state: &AppState, project: &str) -> Result<(Arc<Project>, Workspace), ApiError> {
     let project = project_of(state, project)?;
-    let workspace = Workspace::rolling_updates(&project).ok_or_else(no_agent_sessions)?;
+    let workspace = Workspace::of(&project);
     Ok((project, workspace))
 }
 
@@ -369,7 +355,7 @@ fn session_of(state: &AppState, project: &str, id: &str) -> Result<Arc<AgentSess
     responses(
         (status = 200, description = "The sessions this daemon holds for the project, newest first", body = Vec<SessionSummary>),
         (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 pub(crate) async fn list_sessions(
@@ -394,9 +380,8 @@ pub(crate) async fn list_sessions(
     responses(
         (status = 201, description = "The session started and took the prompt", body = CreatedSession),
         (status = 400, description = "The task key is invalid", body = ApiErrorBody),
-        (status = 404, description = "No such project, or no such task on the branch the agent writes", body = ApiErrorBody),
-        (status = 500, description = "The store or the repository could not be read", body = ApiErrorBody),
-        (status = 503, description = "This repository has no rolling-updates branch, or the agent could not start", body = ApiErrorBody)
+        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
+        (status = 503, description = "The project is not being served, or the agent could not start", body = ApiErrorBody)
     )
 )]
 pub(crate) async fn create_session(
@@ -412,21 +397,14 @@ pub(crate) async fn create_session(
 
     if let Some(task) = body.task.clone() {
         let reading = Arc::clone(&project);
-        let branch = workspace.branch.clone();
-        tokio::task::spawn_blocking(move || -> Result<(), ApiError> {
-            let index = reading.read_index().map_err(crate::index_error)?;
-            reject_non_key(index.abbreviation(), &task)?;
-            match index
-                .branch_summaries(&branch)
-                .iter()
-                .any(|summary| summary.id == task)
-            {
+        blocking(move || {
+            let number = reading.number(&task)?;
+            match reading.index().contains(number) {
                 true => Ok(()),
-                false => Err(no_such_task(&index, &task, Some(&branch))),
+                false => Err(no_such_task(&task)),
             }
         })
-        .await
-        .map_err(join_error)??;
+        .await?;
     }
 
     let options = SessionOptions::new(workspace.cwd.clone())
@@ -460,7 +438,7 @@ pub(crate) async fn create_session(
         Arc::clone(&state.agents),
         Arc::clone(&session),
         events,
-        state.event_sender().subscribe(),
+        state.publisher().subscribe(),
         state.stopping(),
     ));
     *session.pump.lock().expect("pump lock poisoned") = Some(pump);
@@ -481,7 +459,7 @@ pub(crate) async fn create_session(
         (status = 202, description = "The agent took the prompt"),
         (status = 404, description = "No such project, or no such session", body = ApiErrorBody),
         (status = 409, description = "A turn is already running", body = ApiErrorBody),
-        (status = 503, description = "This repository has no rolling-updates branch, or the agent has stopped", body = ApiErrorBody)
+        (status = 503, description = "The project is not being served, or the agent has stopped", body = ApiErrorBody)
     )
 )]
 pub(crate) async fn prompt_session(
@@ -513,7 +491,7 @@ pub(crate) async fn prompt_session(
     responses(
         (status = 202, description = "The agent took the interrupt"),
         (status = 404, description = "No such project, or no such session", body = ApiErrorBody),
-        (status = 503, description = "This repository has no rolling-updates branch, or the agent has stopped", body = ApiErrorBody)
+        (status = 503, description = "The project is not being served, or the agent has stopped", body = ApiErrorBody)
     )
 )]
 pub(crate) async fn interrupt_session(
@@ -537,7 +515,7 @@ pub(crate) async fn interrupt_session(
     responses(
         (status = 202, description = "The agent took the decision"),
         (status = 404, description = "No such project, no such session, or no such open approval", body = ApiErrorBody),
-        (status = 503, description = "This repository has no rolling-updates branch, or the agent has stopped", body = ApiErrorBody)
+        (status = 503, description = "The project is not being served, or the agent has stopped", body = ApiErrorBody)
     )
 )]
 pub(crate) async fn approve(
@@ -580,7 +558,7 @@ pub(crate) async fn approve(
     responses(
         (status = 204, description = "The agent was asked to stop; the entry goes when it exits"),
         (status = 404, description = "No such project, or no such session", body = ApiErrorBody),
-        (status = 503, description = "This repository has no rolling-updates branch", body = ApiErrorBody)
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
 pub(crate) async fn delete_session(
@@ -653,7 +631,7 @@ async fn pump(
     sessions: Arc<AgentSessions>,
     session: Arc<AgentSession>,
     mut events: mpsc::Receiver<AgentEvent>,
-    mut changes: broadcast::Receiver<ChangeEvent>,
+    mut changes: broadcast::Receiver<Published>,
     mut stopping: watch::Receiver<bool>,
 ) {
     let mut asked = false;

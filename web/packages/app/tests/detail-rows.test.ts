@@ -23,8 +23,6 @@ function detail(fields: Partial<TaskDetail>): TaskDetail {
     },
     body: "",
     updated: { kind: "missing" },
-    headline: "main",
-    branches: [],
     ...fields,
   } as unknown as TaskDetail
 }

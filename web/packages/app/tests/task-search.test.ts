@@ -17,8 +17,6 @@ function task(id: string, title: string): TaskListItem {
       tags: [],
     },
     updated: { kind: "missing" },
-    headline: "main",
-    branches: [],
   } as unknown as TaskListItem
 }
 

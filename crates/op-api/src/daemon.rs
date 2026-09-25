@@ -34,3 +34,41 @@ pub struct DaemonInfo {
     pub version: String,
     pub started_at: u64,
 }
+
+// Who asked for a write. The CLI sends them on every request; a request without them, such as one
+// from the web UI, is signed with the identity of the repository the daemon serves. Header values
+// are ASCII, so each carries its text percent-encoded.
+pub const AUTHOR_HEADER: &str = "x-openplan-author";
+pub const EMAIL_HEADER: &str = "x-openplan-email";
+pub const AGENT_HEADER: &str = "x-openplan-agent";
+
+pub fn encode_header(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        match byte {
+            b'!'..=b'~' if byte != b'%' => out.push(byte as char),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+pub fn decode_header(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'%' => {
+                let hex = std::str::from_utf8(bytes.get(at + 1..at + 3)?).ok()?;
+                out.push(u8::from_str_radix(hex, 16).ok()?);
+                at += 3;
+            }
+            byte => {
+                out.push(byte);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8(out).ok()
+}

@@ -22,13 +22,8 @@ fn with_metadata(id: &str, metadata: Metadata) -> TaskListItem {
         title: id.to_uppercase(),
         metadata,
         comment_count: 0,
+        conflicts: 0,
         updated: op_api::Field::Error(op_api::FieldError::Missing),
-        headline: "main".to_owned(),
-        branches: Vec::new(),
-        write_target: Some(op_api::WriteTarget {
-            branch: "main".to_owned(),
-            writable: true,
-        }),
     }
 }
 

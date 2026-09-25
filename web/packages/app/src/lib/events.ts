@@ -5,28 +5,16 @@ export const ChangeEvent = Schema.Union([
     kind: Schema.Literal("task_changed"),
     project: Schema.String,
     id: Schema.String,
-    branch: Schema.String,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("ref_moved"),
-    project: Schema.String,
-    branch: Schema.String,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("presence_changed"),
-    project: Schema.String,
-    task_id: Schema.String,
   }),
   Schema.Struct({
     kind: Schema.Literal("tags_changed"),
     project: Schema.String,
-    branch: Schema.String,
   }),
   Schema.Struct({
     kind: Schema.Literal("projects_changed"),
   }),
   Schema.Struct({
-    kind: Schema.Literal("rolling_updates_changed"),
+    kind: Schema.Literal("sync_changed"),
     project: Schema.String,
   }),
   Schema.Struct({
@@ -42,7 +30,8 @@ export interface Invalidator {
   readonly refreshProjects: () => void
   readonly refreshList: (project: string) => void
   readonly refreshTask: (project: string, id: string) => void
-  readonly refreshRollingUpdates: (project: string) => void
+  readonly refreshHistory: (project: string) => void
+  readonly refreshSync: (project: string) => void
   // Everything on screen that a change in `project` can have changed, or — with no project — every
   // read there is.
   readonly refreshVisible: (project?: string) => void
@@ -50,20 +39,12 @@ export interface Invalidator {
 
 export function applyChange(inv: Invalidator, event: ChangeEvent): void {
   switch (event.kind) {
+    // Created, edited, commented on, renumbered, or deleted — by this daemon, or by a sync that
+    // brought the change in. Every change is a new revision, so the project's activity moves too.
     case "task_changed": {
       inv.refreshTask(event.project, event.id)
       inv.refreshList(event.project)
-      inv.refreshRollingUpdates(event.project)
-      return
-    }
-    // A ref move (e.g. `openplan set`) carries no task id, so refetch everything on screen —
-    // the open task detail as well as the list.
-    case "ref_moved": {
-      inv.refreshVisible(event.project)
-      return
-    }
-    case "presence_changed": {
-      inv.refreshList(event.project)
+      inv.refreshHistory(event.project)
       return
     }
     // A tag was registered, recolored, re-described, renamed, or deleted. A rename rewrites the
@@ -80,10 +61,10 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
       inv.refreshVisible()
       return
     }
-    // The branch committed, rebased, published, or stopped at a conflict. All four change what the
-    // header control reads, and none of them changes a task the aggregation returns.
-    case "rolling_updates_changed": {
-      inv.refreshRollingUpdates(event.project)
+    // A sync ran, whether it moved anything or failed. What it brought in arrives as task changes of
+    // its own, so only the sync state is re-read.
+    case "sync_changed": {
+      inv.refreshSync(event.project)
       return
     }
     // The stream dropped events and cannot say which, so nothing on screen can be trusted.

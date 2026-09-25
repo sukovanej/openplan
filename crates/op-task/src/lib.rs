@@ -4,6 +4,10 @@ use utoipa::ToSchema;
 pub use jiff::Timestamp;
 
 pub mod comment;
+pub mod config;
+pub mod conflict;
+pub mod layout;
+pub mod merge;
 pub mod rank;
 pub mod tag;
 
@@ -101,37 +105,6 @@ pub struct Frontmatter {
     pub extra: serde_yaml::Mapping,
 }
 
-impl Frontmatter {
-    // `None` when the same field changed on both sides. A field carries no place to put conflict
-    // markers that still leaves YAML a reader can parse, so the caller falls back to the whole file.
-    pub fn merged(base: &Self, ours: &Self, theirs: &Self) -> Option<Self> {
-        let mut extra = serde_yaml::Mapping::new();
-        let keys: std::collections::BTreeSet<String> = [&base.extra, &ours.extra, &theirs.extra]
-            .into_iter()
-            .flat_map(|map| map.keys())
-            .filter_map(|key| key.as_str().map(str::to_owned))
-            .collect();
-        for key in keys {
-            let at = |map: &serde_yaml::Mapping| map.get(key.as_str()).cloned();
-            if let Some(value) = three_way(&at(&base.extra), &at(&ours.extra), &at(&theirs.extra))?
-            {
-                extra.insert(serde_yaml::Value::String(key), value);
-            }
-        }
-        Some(Frontmatter {
-            status: three_way(&base.status, &ours.status, &theirs.status)?,
-            created: three_way(&base.created, &ours.created, &theirs.created)?,
-            parent: three_way(&base.parent, &ours.parent, &theirs.parent)?,
-            rank: three_way(&base.rank, &ours.rank, &theirs.rank)?,
-            // A list of names is a set both sides may add to and remove from, so the two edits
-            // compose and nothing here can conflict.
-            dependencies: names(&base.dependencies, &ours.dependencies, &theirs.dependencies),
-            tags: names(&base.tags, &ours.tags, &theirs.tags),
-            extra,
-        })
-    }
-}
-
 // The side that changed, or `None` when both changed to different things.
 pub fn three_way<T: PartialEq + Clone>(base: &T, ours: &T, theirs: &T) -> Option<T> {
     if ours == theirs || base == theirs {
@@ -143,7 +116,7 @@ pub fn three_way<T: PartialEq + Clone>(base: &T, ours: &T, theirs: &T) -> Option
     }
 }
 
-fn names(base: &[String], ours: &[String], theirs: &[String]) -> Vec<String> {
+pub(crate) fn names(base: &[String], ours: &[String], theirs: &[String]) -> Vec<String> {
     let held = |list: &[String], name: &String| list.iter().any(|item| item == name);
     let mut out: Vec<String> = base
         .iter()
@@ -444,7 +417,30 @@ fn deserialize_tags<'de, D: serde::Deserializer<'de>>(
 #[derive(Debug, Clone, PartialEq)]
 pub struct Task {
     pub frontmatter: Frontmatter,
+    // Fields that two sides of a sync changed differently. `frontmatter` holds the published
+    // value, and each entry keeps the other one until someone sets the field.
+    pub conflicts: Vec<FieldConflict>,
     pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldConflict {
+    pub field: String,
+    // `None` when that version has no such field.
+    pub other: Option<serde_yaml::Value>,
+    pub other_label: String,
+    pub label: String,
+}
+
+impl FieldConflict {
+    // Only `field` is set, so every other field reads as missing.
+    pub fn other_fields(&self) -> PartialFrontmatter {
+        let mut map = serde_yaml::Mapping::new();
+        if let Some(value) = &self.other {
+            map.insert(serde_yaml::Value::String(self.field.clone()), value.clone());
+        }
+        extract_fields(&map)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -457,6 +453,8 @@ pub enum TaskError {
     // explain in terms of what the reader must do — see `StoreError::MissingCreated`.
     #[error("no `created:` field")]
     MissingCreated,
+    #[error("a conflict in the frontmatter does not parse: {0}")]
+    Conflict(String),
 }
 
 impl Task {
@@ -471,6 +469,7 @@ impl Task {
                 tags: Vec::new(),
                 extra: serde_yaml::Mapping::new(),
             },
+            conflicts: Vec::new(),
             body: format!("# {title}\n"),
         }
     }
@@ -486,39 +485,55 @@ impl Task {
 
     pub fn set_status(&mut self, status: Status) {
         self.frontmatter.status = status;
+        self.resolve("status");
     }
 
     pub fn set_parent(&mut self, parent: Option<String>) {
         self.frontmatter.parent = parent;
+        self.resolve("parent");
     }
 
     pub fn set_rank(&mut self, rank: Option<String>) {
         self.frontmatter.rank = rank;
+        self.resolve("rank");
     }
 
     pub fn set_dependencies(&mut self, dependencies: Vec<String>) {
         self.frontmatter.dependencies = dependencies;
+        self.resolve("dependencies");
     }
 
     pub fn set_tags(&mut self, tags: Vec<String>) {
         self.frontmatter.tags = sorted_set(tags);
+        self.resolve("tags");
+    }
+
+    fn resolve(&mut self, field: &str) {
+        self.conflicts.retain(|conflict| conflict.field != field);
     }
 
     pub fn title(&self) -> Option<String> {
-        op_md::title(&self.body)
+        op_md::title(&conflict::published(&self.body))
+    }
+
+    pub fn conflict_count(&self) -> usize {
+        self.conflicts.len() + conflict::in_body(&self.body).len()
     }
 
     pub fn to_file_string(&self) -> Result<String, TaskError> {
         let fm = serde_yaml::to_string(&self.frontmatter)?;
+        let fm = with_field_conflicts(&fm, &self.conflicts)?;
         Ok(format!("---\n{fm}---\n{}", self.body))
     }
 
     pub fn from_file_string(input: &str) -> Result<Self, TaskError> {
         let (fm_src, body) = split_frontmatter(input).ok_or(TaskError::MissingFrontmatter)?;
-        let fm_src = fm_src.replace('\r', "");
+        let with_blocks = fm_src.replace('\r', "");
+        let fm_src = conflict::published(&with_blocks);
         match serde_yaml::from_str::<Frontmatter>(&fm_src) {
             Ok(frontmatter) => Ok(Self {
                 frontmatter,
+                conflicts: field_conflicts(&with_blocks).map_err(TaskError::Conflict)?,
                 body: body.to_owned(),
             }),
             Err(err) => Err(match serde_yaml::from_str::<serde_yaml::Mapping>(&fm_src) {
@@ -563,8 +578,15 @@ pub struct PartialTask {
     // The frontmatter as raw YAML, present whenever it parsed as a mapping — so a reader can report
     // `path:line` and name which `dependencies` entry is bad rather than lose the whole list to one.
     pub frontmatter: Option<serde_yaml::Mapping>,
+    pub conflicts: Vec<FieldConflict>,
     pub title: Option<String>,
     pub body: String,
+}
+
+impl PartialTask {
+    pub fn conflict_count(&self) -> usize {
+        self.conflicts.len() + conflict::in_body(&self.body).len()
+    }
 }
 
 // The lenient counterpart to `from_file_string`: never fails, so a task with one bad field still
@@ -574,23 +596,132 @@ pub fn parse_partial(input: &str) -> PartialTask {
         None => PartialTask {
             metadata: PartialMetadata::Error("missing frontmatter fence".to_owned()),
             frontmatter: None,
-            title: op_md::title(input),
+            conflicts: Vec::new(),
+            title: op_md::title(&conflict::published(input)),
             body: input.to_owned(),
         },
         Some((fm_src, body)) => {
-            let (metadata, frontmatter) =
-                match serde_yaml::from_str::<serde_yaml::Mapping>(&fm_src.replace('\r', "")) {
-                    Ok(map) => (PartialMetadata::Fields(extract_fields(&map)), Some(map)),
-                    Err(err) => (PartialMetadata::Error(err.to_string()), None),
-                };
+            let with_blocks = fm_src.replace('\r', "");
+            let (metadata, frontmatter) = match serde_yaml::from_str::<serde_yaml::Mapping>(
+                &conflict::published(&with_blocks),
+            ) {
+                Ok(map) => (PartialMetadata::Fields(extract_fields(&map)), Some(map)),
+                Err(err) => (PartialMetadata::Error(err.to_string()), None),
+            };
             PartialTask {
                 metadata,
                 frontmatter,
-                title: op_md::title(body),
+                conflicts: field_conflicts(&with_blocks).unwrap_or_default(),
+                title: op_md::title(&conflict::published(body)),
                 body: body.to_owned(),
             }
         }
     }
+}
+
+// Each block in the frontmatter read once with its other version in place: every field that then
+// reads differently from the published version is in conflict.
+fn field_conflicts(frontmatter: &str) -> Result<Vec<FieldConflict>, String> {
+    let blocks = conflict::blocks(frontmatter);
+    if blocks.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mapping = |text: &str| {
+        serde_yaml::from_str::<Option<serde_yaml::Mapping>>(text)
+            .map(Option::unwrap_or_default)
+            .map_err(|err| err.to_string())
+    };
+    let published = mapping(&conflict::published(frontmatter))?;
+    let mut conflicts: Vec<FieldConflict> = Vec::new();
+    for (index, block) in blocks.iter().enumerate() {
+        let mut at = 0;
+        let other = mapping(&conflict::replaced(frontmatter, |each| {
+            at += 1;
+            match at - 1 == index {
+                true => each.ours.text.clone(),
+                false => each.theirs.text.clone(),
+            }
+        }))?;
+        let keys: std::collections::BTreeSet<&str> = published
+            .keys()
+            .chain(other.keys())
+            .filter_map(serde_yaml::Value::as_str)
+            .collect();
+        for key in keys {
+            if published.get(key) != other.get(key)
+                && !conflicts.iter().any(|conflict| conflict.field == key)
+            {
+                conflicts.push(FieldConflict {
+                    field: key.to_owned(),
+                    other: other.get(key).cloned(),
+                    other_label: block.ours.label.clone(),
+                    label: block.theirs.label.clone(),
+                });
+            }
+        }
+    }
+    Ok(conflicts)
+}
+
+// Each conflicting field is written as a block around its lines, the other version first as git
+// writes it. A field the published version lacks goes last.
+pub fn with_field_conflicts(
+    frontmatter: &str,
+    conflicts: &[FieldConflict],
+) -> Result<String, serde_yaml::Error> {
+    if conflicts.is_empty() {
+        return Ok(frontmatter.to_owned());
+    }
+    let mut entries = top_level_entries(frontmatter);
+    for conflict in conflicts {
+        let other = match &conflict.other {
+            Some(value) => {
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(
+                    serde_yaml::Value::String(conflict.field.clone()),
+                    value.clone(),
+                );
+                serde_yaml::to_string(&map)?
+            }
+            None => String::new(),
+        };
+        let at = entries.iter().position(|(key, _)| *key == conflict.field);
+        let block = conflict::render(
+            &conflict::Side {
+                label: conflict.other_label.clone(),
+                text: other,
+            },
+            &conflict::Side {
+                label: conflict.label.clone(),
+                text: at.map(|at| entries[at].1.clone()).unwrap_or_default(),
+            },
+        );
+        match at {
+            Some(at) => entries[at].1 = block,
+            None => entries.push((conflict.field.clone(), block)),
+        }
+    }
+    Ok(entries.into_iter().map(|(_, text)| text).collect())
+}
+
+// A key at the start of a line opens an entry; the indented lines and the `- ` items after it
+// belong to that entry.
+fn top_level_entries(yaml: &str) -> Vec<(String, String)> {
+    let mut entries: Vec<(String, String)> = Vec::new();
+    for line in yaml.split_inclusive('\n') {
+        let opens = !line.starts_with([' ', '\t', '-', '#']) && line.contains(':');
+        match (opens, entries.last_mut()) {
+            (false, Some((_, text))) => text.push_str(line),
+            _ => {
+                let key = line.split(':').next().unwrap_or_default();
+                entries.push((
+                    key.trim().trim_matches(['"', '\'']).to_owned(),
+                    line.to_owned(),
+                ));
+            }
+        }
+    }
+    entries
 }
 
 fn extract_fields(map: &serde_yaml::Mapping) -> PartialFrontmatter {

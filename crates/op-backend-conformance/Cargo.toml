@@ -1,0 +1,15 @@
+[package]
+name = "op-backend-conformance"
+description = "The behavior every op-backend implementation must show, as a test suite the implementations run"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+op-backend.workspace = true
+
+[lints]
+workspace = true

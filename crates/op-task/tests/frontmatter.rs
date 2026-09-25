@@ -7,6 +7,7 @@ fn stamp() -> Timestamp {
 fn task(frontmatter: Frontmatter, body: &str) -> Task {
     Task {
         frontmatter,
+        conflicts: Vec::new(),
         body: body.to_owned(),
     }
 }

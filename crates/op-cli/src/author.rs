@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use anyhow::{Context as _, Result};
-use op_git::Repo;
+use anyhow::Result;
+use op_client::Identity;
 
 // Tools that drive this CLI from a shell of their own. A shell is an ancestor of every command, so
 // only a known list tells a tool apart from the terminal that a person types in.
@@ -15,23 +15,26 @@ const AGENTS: &[(&str, &str)] = &[
     ("amp", "amp"),
 ];
 
-// git `user.name`, and nothing else. There is no flag and no environment override: the CLI signs
-// the entry with the name the repository already knows the writer by, and an entry no one signed
-// is worse than no entry at all.
+// Who a write is for: git `user.name` and `user.email`, and the tool that ran this command. There
+// is no flag and no environment override: the CLI signs with the name the repository already knows
+// the writer by.
+pub fn identity(root: &Path) -> Identity {
+    let actor = op_backend_git::identity(root);
+    Identity {
+        name: actor.as_ref().map(|actor| actor.name.clone()),
+        email: actor.and_then(|actor| actor.email),
+        agent: agent(),
+    }
+}
+
+// A comment is signed in the log itself, and an entry no one signed is worse than no entry.
 pub fn author(root: &Path) -> Result<String> {
-    let repo = Repo::discover(root).with_context(|| {
-        format!(
-            "openplan requires a git repository; none found at {}",
-            root.display()
-        )
-    })?;
-    let name = repo.user_name().unwrap_or_default();
-    match name.trim().is_empty() {
-        true => anyhow::bail!(
-            "a comment is signed with git `user.name`, and this repository has none. Set it with \
-             `git config user.name \"Your Name\"`."
+    match op_backend_git::identity(root) {
+        Some(actor) => Ok(actor.name),
+        None => anyhow::bail!(
+            "a comment is signed with git `user.name`, and none is set here. Set it with \
+             `git config --global user.name \"Your Name\"`."
         ),
-        false => Ok(name.trim().to_owned()),
     }
 }
 

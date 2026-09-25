@@ -23,7 +23,7 @@ describe("the set a tags write sends", () => {
     expect(tagsWithout(["backend", "wip"], registry("backend", "wip"), "wip")).toEqual(["backend"])
   })
 
-  // Validation is strict whole-set, so a name this branch's registry does not hold refuses the whole
+  // Validation is strict whole-set, so a name the registry does not hold refuses the whole
   // write — including one the task already carried. Every edit drops the danglings to land at all.
   it("prunes the names the registry does not hold", () => {
     const tags = registry("backend")

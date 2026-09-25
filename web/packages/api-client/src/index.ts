@@ -15,10 +15,8 @@ export type TaskTree = {
 }
 export const TaskTree = Schema.suspend((): Schema.Codec<TaskTree> => __recursive_TaskTree)
 // non-recursive definitions
-export type ChangeKind = "base" | "added" | "modified" | "deleted"
-export const ChangeKind = Schema.Literals(["base", "added", "modified", "deleted"]).annotate({
-  identifier: "ChangeKind",
-})
+export type MetadataErrorTag = "error"
+export const MetadataErrorTag = Schema.Literal("error").annotate({ identifier: "MetadataErrorTag" })
 export type FieldError = { readonly kind: "missing" } | { readonly kind: "invalid"; readonly message: string }
 export const FieldError = Schema.Union(
   [
@@ -27,22 +25,42 @@ export const FieldError = Schema.Union(
   ],
   { mode: "oneOf" },
 ).annotate({ identifier: "FieldError" })
-export type MetadataErrorTag = "error"
-export const MetadataErrorTag = Schema.Literal("error").annotate({ identifier: "MetadataErrorTag" })
-export type WriteTarget = { readonly branch: string; readonly writable: boolean }
-export const WriteTarget = Schema.Struct({ branch: Schema.String, writable: Schema.Boolean }).annotate({
-  identifier: "WriteTarget",
+export type ConflictTag = "conflict"
+export const ConflictTag = Schema.Literal("conflict").annotate({ identifier: "ConflictTag" })
+export type ConflictSide_Rfc3339 = { readonly label: string; readonly value: string }
+export const ConflictSide_Rfc3339 = Schema.Struct({
+  label: Schema.String,
+  value: Schema.String.annotate({ format: "date-time" }),
+}).annotate({ identifier: "ConflictSide_Rfc3339" })
+export type ConflictSide_Vec = { readonly label: string; readonly value: ReadonlyArray<string> }
+export const ConflictSide_Vec = Schema.Struct({ label: Schema.String, value: Schema.Array(Schema.String) }).annotate({
+  identifier: "ConflictSide_Vec",
 })
+export type ConflictSide_Option = { readonly label: string; readonly value: null | string }
+export const ConflictSide_Option = Schema.Struct({
+  label: Schema.String,
+  value: Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }),
+}).annotate({ identifier: "ConflictSide_Option" })
+export type ConflictSide_Status = {
+  readonly label: string
+  readonly value: "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
+}
+export const ConflictSide_Status = Schema.Struct({
+  label: Schema.String,
+  value: Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]),
+}).annotate({ identifier: "ConflictSide_Status" })
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]).annotate({
   identifier: "Status",
 })
-export type Refusal = "tag_referenced" | "tag_unregistered"
-export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"]).annotate({ identifier: "Refusal" })
 export type FlowEdge = { readonly from: string; readonly project: string; readonly to: string }
 export const FlowEdge = Schema.Struct({ from: Schema.String, project: Schema.String, to: Schema.String }).annotate({
   identifier: "FlowEdge",
 })
+export type Refusal = "tag_referenced" | "tag_unregistered"
+export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"]).annotate({ identifier: "Refusal" })
+export type BackendKind = "git" | "local"
+export const BackendKind = Schema.Literals(["git", "local"]).annotate({ identifier: "BackendKind" })
 export type ProjectStatus = { readonly state: "ok" } | { readonly reason: string; readonly state: "error" }
 export const ProjectStatus = Schema.Union(
   [
@@ -51,12 +69,10 @@ export const ProjectStatus = Schema.Union(
   ],
   { mode: "oneOf" },
 ).annotate({ identifier: "ProjectStatus" })
-export type RegisterProject = { readonly path: string }
-export const RegisterProject = Schema.Struct({ path: Schema.String }).annotate({ identifier: "RegisterProject" })
-export type RenameProject = { readonly name: string }
-export const RenameProject = Schema.Struct({ name: Schema.String }).annotate({ identifier: "RenameProject" })
 export type Rfc3339 = string
 export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
+export type RenameProject = { readonly name: string }
+export const RenameProject = Schema.Struct({ name: Schema.String }).annotate({ identifier: "RenameProject" })
 export type CreateSession = { readonly agent?: string | null; readonly prompt: string; readonly task?: string | null }
 export const CreateSession = Schema.Struct({
   agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null]).annotate({ examples: ["claude_code"] })),
@@ -71,24 +87,10 @@ export const Decision = Schema.Record(Schema.String, Schema.Json.annotate({ expe
 })
 export type Say = { readonly text: string }
 export const Say = Schema.Struct({ text: Schema.String }).annotate({ identifier: "Say" })
-export type Conflict = { readonly files: ReadonlyArray<string>; readonly worktree: string }
-export const Conflict = Schema.Struct({ files: Schema.Array(Schema.String), worktree: Schema.String }).annotate({
-  identifier: "Conflict",
+export type DocumentChangeKind = "added" | "modified" | "removed"
+export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed"]).annotate({
+  identifier: "DocumentChangeKind",
 })
-export type Published = {
-  readonly branch: string
-  readonly commit: string
-  readonly pull_request?: string | null
-  readonly remote: string
-}
-export const Published = Schema.Struct({
-  branch: Schema.String,
-  commit: Schema.String,
-  pull_request: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  remote: Schema.String,
-}).annotate({ identifier: "Published" })
-export type TaskDiff = { readonly diff: string }
-export const TaskDiff = Schema.Struct({ diff: Schema.String }).annotate({ identifier: "TaskDiff" })
 export type SearchMatch = "key" | "title" | "text"
 export const SearchMatch = Schema.Literals(["key", "title", "text"]).annotate({ identifier: "SearchMatch" })
 export type Color =
@@ -120,12 +122,22 @@ export const Color = Schema.Literals([
 ]).annotate({ identifier: "Color" })
 export type CreatedTask = { readonly id: string }
 export const CreatedTask = Schema.Struct({ id: Schema.String }).annotate({ identifier: "CreatedTask" })
+export type ConflictSide_String = { readonly label: string; readonly value: string }
+export const ConflictSide_String = Schema.Struct({ label: Schema.String, value: Schema.String }).annotate({
+  identifier: "ConflictSide_String",
+})
 export type CreateComment = { readonly agent?: string; readonly author: string; readonly text: string }
 export const CreateComment = Schema.Struct({
   agent: Schema.optionalKey(Schema.String),
   author: Schema.String,
   text: Schema.String,
 }).annotate({ identifier: "CreateComment" })
+export type WriteTaskFile = { readonly text: string }
+export const WriteTaskFile = Schema.Struct({ text: Schema.String }).annotate({ identifier: "WriteTaskFile" })
+export type ResolveConflict = { readonly block: string; readonly text: string }
+export const ResolveConflict = Schema.Struct({ block: Schema.String, text: Schema.String }).annotate({
+  identifier: "ResolveConflict",
+})
 export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
 export const TaskTreeView = Schema.Struct({
   cycles: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -149,32 +161,46 @@ export const DaemonInfo = Schema.Struct({
     .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
   version: Schema.String,
 }).annotate({ identifier: "DaemonInfo" })
-export type BranchMark = { readonly branch: string; readonly dirty: boolean; readonly kind: ChangeKind }
-export const BranchMark = Schema.Struct({ branch: Schema.String, dirty: Schema.Boolean, kind: ChangeKind }).annotate({
-  identifier: "BranchMark",
-})
-export type Field_Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled" | FieldError
-export const Field_Status = Schema.Union(
-  [Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]), FieldError],
-  { mode: "oneOf" },
-).annotate({ identifier: "Field_Status" })
-export type Field_Rfc3339 = string | FieldError
-export const Field_Rfc3339 = Schema.Union([Schema.String.annotate({ format: "date-time" }), FieldError], {
-  mode: "oneOf",
-}).annotate({ identifier: "Field_Rfc3339" })
-export type Field_Vec_String = ReadonlyArray<string> | FieldError
-export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError], { mode: "oneOf" }).annotate({
-  identifier: "Field_Vec_String",
-})
-export type Field_Option_String = null | string | FieldError
-export const Field_Option_String = Schema.Union(
-  [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError],
-  { mode: "oneOf" },
-).annotate({ identifier: "Field_Option_String" })
-export type Field_String = string | FieldError
-export const Field_String = Schema.Union([Schema.String, FieldError], { mode: "oneOf" }).annotate({
-  identifier: "Field_String",
-})
+export type FieldConflict_Rfc3339 = {
+  readonly kind: ConflictTag
+  readonly sides: ReadonlyArray<ConflictSide_Rfc3339>
+  readonly value: string
+}
+export const FieldConflict_Rfc3339 = Schema.Struct({
+  kind: ConflictTag,
+  sides: Schema.Array(ConflictSide_Rfc3339),
+  value: Schema.String.annotate({ format: "date-time" }),
+}).annotate({ identifier: "FieldConflict_Rfc3339" })
+export type FieldConflict_Vec = {
+  readonly kind: ConflictTag
+  readonly sides: ReadonlyArray<ConflictSide_Vec>
+  readonly value: ReadonlyArray<string>
+}
+export const FieldConflict_Vec = Schema.Struct({
+  kind: ConflictTag,
+  sides: Schema.Array(ConflictSide_Vec),
+  value: Schema.Array(Schema.String),
+}).annotate({ identifier: "FieldConflict_Vec" })
+export type FieldConflict_Option = {
+  readonly kind: ConflictTag
+  readonly sides: ReadonlyArray<ConflictSide_Option>
+  readonly value: null | string
+}
+export const FieldConflict_Option = Schema.Struct({
+  kind: ConflictTag,
+  sides: Schema.Array(ConflictSide_Option),
+  value: Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }),
+}).annotate({ identifier: "FieldConflict_Option" })
+export type FieldConflict_Status = {
+  readonly kind: ConflictTag
+  readonly sides: ReadonlyArray<ConflictSide_Status>
+  readonly value: "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
+}
+export const FieldConflict_Status = Schema.Struct({
+  kind: ConflictTag,
+  sides: Schema.Array(ConflictSide_Status),
+  value: Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]),
+}).annotate({ identifier: "FieldConflict_Status" })
 export type CreateTask = {
   readonly body?: string | null
   readonly dependencies?: ReadonlyArray<string>
@@ -215,22 +241,32 @@ export const ApiErrorBody = Schema.Struct({
   message: Schema.String,
   reason: Schema.optionalKey(Refusal),
 }).annotate({ identifier: "ApiErrorBody" })
-export type ProjectView = {
-  readonly abbreviation: string
-  readonly git_common_dir: string
-  readonly name: string
-  readonly rolling_updates_branch?: string | null
-  readonly root: string
-  readonly status: ProjectStatus
+export type RegisterProject = { readonly abbreviation?: string; readonly backend?: BackendKind; readonly path: string }
+export const RegisterProject = Schema.Struct({
+  abbreviation: Schema.optionalKey(Schema.String),
+  backend: Schema.optionalKey(BackendKind),
+  path: Schema.String,
+}).annotate({ identifier: "RegisterProject" })
+export type SyncView = {
+  readonly ahead: number
+  readonly behind: number
+  readonly error?: string
+  readonly last_attempt?: Rfc3339
+  readonly last_success?: Rfc3339
+  readonly remote: string
 }
-export const ProjectView = Schema.Struct({
-  abbreviation: Schema.String,
-  git_common_dir: Schema.String,
-  name: Schema.String,
-  rolling_updates_branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  root: Schema.String,
-  status: ProjectStatus,
-}).annotate({ identifier: "ProjectView" })
+export const SyncView = Schema.Struct({
+  ahead: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  behind: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  error: Schema.optionalKey(Schema.String),
+  last_attempt: Schema.optionalKey(Rfc3339),
+  last_success: Schema.optionalKey(Rfc3339),
+  remote: Schema.String,
+}).annotate({ identifier: "SyncView" })
 export type SessionSummary = {
   readonly agent: string
   readonly id: string
@@ -245,6 +281,30 @@ export const SessionSummary = Schema.Struct({
   status: Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })),
   task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
 }).annotate({ identifier: "SessionSummary" })
+export type RevisionView = {
+  readonly agent?: string
+  readonly at: Rfc3339
+  readonly author: string
+  readonly email?: string
+  readonly id: string
+  readonly message: string
+  readonly parents: ReadonlyArray<string>
+}
+export const RevisionView = Schema.Struct({
+  agent: Schema.optionalKey(Schema.String),
+  at: Rfc3339,
+  author: Schema.String,
+  email: Schema.optionalKey(Schema.String),
+  id: Schema.String,
+  message: Schema.String,
+  parents: Schema.Array(Schema.String),
+}).annotate({ identifier: "RevisionView" })
+export type DocumentChange = { readonly kind: DocumentChangeKind; readonly path: string; readonly task?: string }
+export const DocumentChange = Schema.Struct({
+  kind: DocumentChangeKind,
+  path: Schema.String,
+  task: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "DocumentChange" })
 export type TagView = {
   readonly color: Color
   readonly description?: string
@@ -269,20 +329,105 @@ export const TagPatch = Schema.Struct({
   description: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   name: Schema.optionalKey(Schema.String),
 }).annotate({ identifier: "TagPatch" })
-export type BranchState = {
-  readonly blob_oid: string
-  readonly branch: string
-  readonly dirty: boolean
-  readonly kind: ChangeKind
-  readonly status: Field_Status
+export type FieldConflict_String = {
+  readonly kind: ConflictTag
+  readonly sides: ReadonlyArray<ConflictSide_String>
+  readonly value: string
 }
-export const BranchState = Schema.Struct({
-  blob_oid: Schema.String,
-  branch: Schema.String,
-  dirty: Schema.Boolean,
-  kind: ChangeKind,
+export const FieldConflict_String = Schema.Struct({
+  kind: ConflictTag,
+  sides: Schema.Array(ConflictSide_String),
+  value: Schema.String,
+}).annotate({ identifier: "FieldConflict_String" })
+export type Field_Rfc3339 = string | FieldError | FieldConflict_Rfc3339
+export const Field_Rfc3339 = Schema.Union(
+  [Schema.String.annotate({ format: "date-time" }), FieldError, FieldConflict_Rfc3339],
+  { mode: "oneOf" },
+).annotate({ identifier: "Field_Rfc3339" })
+export type Field_Vec_String = ReadonlyArray<string> | FieldError | FieldConflict_Vec
+export const Field_Vec_String = Schema.Union([Schema.Array(Schema.String), FieldError, FieldConflict_Vec], {
+  mode: "oneOf",
+}).annotate({ identifier: "Field_Vec_String" })
+export type Field_Option_String = null | string | FieldError | FieldConflict_Option
+export const Field_Option_String = Schema.Union(
+  [Schema.Union([Schema.Null, Schema.String], { mode: "oneOf" }), FieldError, FieldConflict_Option],
+  { mode: "oneOf" },
+).annotate({ identifier: "Field_Option_String" })
+export type Field_Status =
+  | "backlog"
+  | "todo"
+  | "in_progress"
+  | "in_review"
+  | "done"
+  | "cancelled"
+  | FieldError
+  | FieldConflict_Status
+export const Field_Status = Schema.Union(
+  [
+    Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]),
+    FieldError,
+    FieldConflict_Status,
+  ],
+  { mode: "oneOf" },
+).annotate({ identifier: "Field_Status" })
+export type ProjectView = {
+  readonly abbreviation: string
+  readonly backend: BackendKind
+  readonly git_common_dir?: string
+  readonly name: string
+  readonly root: string
+  readonly status: ProjectStatus
+  readonly sync?: SyncView
+}
+export const ProjectView = Schema.Struct({
+  abbreviation: Schema.String,
+  backend: BackendKind,
+  git_common_dir: Schema.optionalKey(Schema.String),
+  name: Schema.String,
+  root: Schema.String,
+  status: ProjectStatus,
+  sync: Schema.optionalKey(SyncView),
+}).annotate({ identifier: "ProjectView" })
+export type SyncResult = {
+  readonly merged: boolean
+  readonly received: number
+  readonly sent: number
+  readonly status: SyncView
+}
+export const SyncResult = Schema.Struct({
+  merged: Schema.Boolean,
+  received: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  sent: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  status: SyncView,
+}).annotate({ identifier: "SyncResult" })
+export type HistoryEntry = { readonly changes: ReadonlyArray<DocumentChange>; readonly revision: RevisionView }
+export const HistoryEntry = Schema.Struct({ changes: Schema.Array(DocumentChange), revision: RevisionView }).annotate({
+  identifier: "HistoryEntry",
+})
+export type Field_String = string | FieldError | FieldConflict_String
+export const Field_String = Schema.Union([Schema.String, FieldError, FieldConflict_String], { mode: "oneOf" }).annotate(
+  { identifier: "Field_String" },
+)
+export type FrontmatterFields = {
+  readonly created: Field_Rfc3339
+  readonly dependencies: Field_Vec_String
+  readonly parent: Field_Option_String
+  readonly rank: Field_Option_String
+  readonly status: Field_Status
+  readonly tags: Field_Vec_String
+}
+export const FrontmatterFields = Schema.Struct({
+  created: Field_Rfc3339,
+  dependencies: Field_Vec_String,
+  parent: Field_Option_String,
+  rank: Field_Option_String,
   status: Field_Status,
-}).annotate({ identifier: "BranchState" })
+  tags: Field_Vec_String,
+}).annotate({ identifier: "FrontmatterFields" })
 export type FlowNode =
   | {
       readonly blocks_count: number
@@ -351,22 +496,6 @@ export const TaskChild = Schema.Struct({
   status: Field_Status,
   title: Schema.String,
 }).annotate({ identifier: "TaskChild" })
-export type FrontmatterFields = {
-  readonly created: Field_Rfc3339
-  readonly dependencies: Field_Vec_String
-  readonly parent: Field_Option_String
-  readonly rank: Field_Option_String
-  readonly status: Field_Status
-  readonly tags: Field_Vec_String
-}
-export const FrontmatterFields = Schema.Struct({
-  created: Field_Rfc3339,
-  dependencies: Field_Vec_String,
-  parent: Field_Option_String,
-  rank: Field_Option_String,
-  status: Field_Status,
-  tags: Field_Vec_String,
-}).annotate({ identifier: "FrontmatterFields" })
 export type Comment = {
   readonly agent?: string | null
   readonly at: Field_Rfc3339
@@ -379,55 +508,44 @@ export const Comment = Schema.Struct({
   author: Field_String,
   text: Schema.String,
 }).annotate({ identifier: "Comment" })
-export type Flow = { readonly edges: ReadonlyArray<FlowEdge>; readonly nodes: ReadonlyArray<FlowNode> }
-export const Flow = Schema.Struct({ edges: Schema.Array(FlowEdge), nodes: Schema.Array(FlowNode) }).annotate({
-  identifier: "Flow",
-})
 export type Metadata = { readonly kind: MetadataErrorTag; readonly message: string } | FrontmatterFields
 export const Metadata = Schema.Union(
   [Schema.Struct({ kind: MetadataErrorTag, message: Schema.String }), FrontmatterFields],
   { mode: "oneOf" },
 ).annotate({ identifier: "Metadata" })
-export type BranchComments = { readonly branch: string; readonly comments: ReadonlyArray<Comment> }
-export const BranchComments = Schema.Struct({ branch: Schema.String, comments: Schema.Array(Comment) }).annotate({
-  identifier: "BranchComments",
+export type Flow = { readonly edges: ReadonlyArray<FlowEdge>; readonly nodes: ReadonlyArray<FlowNode> }
+export const Flow = Schema.Struct({ edges: Schema.Array(FlowEdge), nodes: Schema.Array(FlowNode) }).annotate({
+  identifier: "Flow",
 })
 export type TaskListItem = {
-  readonly branches: ReadonlyArray<BranchState>
   readonly comment_count: number
-  readonly headline: string
+  readonly conflicts: number
   readonly id: string
   readonly metadata: Metadata
   readonly project: string
   readonly title: string
   readonly updated: Field_Rfc3339
-  readonly write_target?: WriteTarget
 }
 export const TaskListItem = Schema.Struct({
-  branches: Schema.Array(BranchState),
   comment_count: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
     Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
   ),
-  headline: Schema.String,
+  conflicts: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
   id: Schema.String,
   metadata: Metadata,
   project: Schema.String,
   title: Schema.String,
   updated: Field_Rfc3339,
-  write_target: Schema.optionalKey(WriteTarget),
 }).annotate({ identifier: "TaskListItem" })
-export type TaskSummary = { readonly id: string; readonly metadata: Metadata; readonly title: string }
-export const TaskSummary = Schema.Struct({ id: Schema.String, metadata: Metadata, title: Schema.String }).annotate({
-  identifier: "TaskSummary",
-})
 export type TaskDetail = {
   readonly blocks?: ReadonlyArray<TaskRef>
   readonly body: string
-  readonly branches: ReadonlyArray<BranchState>
   readonly children?: ReadonlyArray<TaskChild>
   readonly comments?: ReadonlyArray<Comment>
+  readonly conflicts: number
   readonly depends_on?: ReadonlyArray<TaskRef>
-  readonly headline: string
   readonly id: string
   readonly metadata: Metadata
   readonly parent_title?: string
@@ -435,16 +553,16 @@ export type TaskDetail = {
   readonly refs?: ReadonlyArray<TaskRef>
   readonly title: string
   readonly updated: Field_Rfc3339
-  readonly write_target?: WriteTarget
 }
 export const TaskDetail = Schema.Struct({
   blocks: Schema.optionalKey(Schema.Array(TaskRef)),
   body: Schema.String,
-  branches: Schema.Array(BranchState),
   children: Schema.optionalKey(Schema.Array(TaskChild)),
   comments: Schema.optionalKey(Schema.Array(Comment)),
+  conflicts: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
   depends_on: Schema.optionalKey(Schema.Array(TaskRef)),
-  headline: Schema.String,
   id: Schema.String,
   metadata: Metadata,
   parent_title: Schema.optionalKey(Schema.String),
@@ -452,8 +570,21 @@ export const TaskDetail = Schema.Struct({
   refs: Schema.optionalKey(Schema.Array(TaskRef)),
   title: Schema.String,
   updated: Field_Rfc3339,
-  write_target: Schema.optionalKey(WriteTarget),
 }).annotate({ identifier: "TaskDetail" })
+export type TaskSnapshot = {
+  readonly body: string
+  readonly comments?: ReadonlyArray<Comment>
+  readonly metadata: Metadata
+  readonly raw: string
+  readonly title: string
+}
+export const TaskSnapshot = Schema.Struct({
+  body: Schema.String,
+  comments: Schema.optionalKey(Schema.Array(Comment)),
+  metadata: Metadata,
+  raw: Schema.String,
+  title: Schema.String,
+}).annotate({ identifier: "TaskSnapshot" })
 export type BoardRow = {
   readonly depth: number
   readonly has_children: boolean
@@ -468,48 +599,19 @@ export const BoardRow = Schema.Struct({
   parent_title: Schema.optionalKey(Schema.String),
   task: TaskListItem,
 }).annotate({ identifier: "BoardRow" })
-export type SearchHit = { readonly branch: string; readonly matched: SearchMatch; readonly task: TaskListItem }
-export const SearchHit = Schema.Struct({ branch: Schema.String, matched: SearchMatch, task: TaskListItem }).annotate({
+export type SearchHit = { readonly matched: SearchMatch; readonly task: TaskListItem }
+export const SearchHit = Schema.Struct({ matched: SearchMatch, task: TaskListItem }).annotate({
   identifier: "SearchHit",
 })
-export type MatrixCell = {
-  readonly blob_oid: string
-  readonly branch: string
-  readonly dirty: boolean
-  readonly kind: ChangeKind
-  readonly task: TaskSummary
-}
-export const MatrixCell = Schema.Struct({
-  blob_oid: Schema.String,
-  branch: Schema.String,
-  dirty: Schema.Boolean,
-  kind: ChangeKind,
-  task: TaskSummary,
-}).annotate({ identifier: "MatrixCell" })
-export type TaskVersion = {
-  readonly blob_oid: string
-  readonly branches: ReadonlyArray<BranchMark>
-  readonly summary: TaskSummary
-}
-export const TaskVersion = Schema.Struct({
-  blob_oid: Schema.String,
-  branches: Schema.Array(BranchMark),
-  summary: TaskSummary,
-}).annotate({ identifier: "TaskVersion" })
+export type TaskAtRevision = { readonly id: string; readonly revision: string; readonly task?: TaskSnapshot }
+export const TaskAtRevision = Schema.Struct({
+  id: Schema.String,
+  revision: Schema.String,
+  task: Schema.optionalKey(TaskSnapshot),
+}).annotate({ identifier: "TaskAtRevision" })
 export type BoardGroup = { readonly rows: ReadonlyArray<BoardRow>; readonly status?: Status }
 export const BoardGroup = Schema.Struct({ rows: Schema.Array(BoardRow), status: Schema.optionalKey(Status) }).annotate({
   identifier: "BoardGroup",
-})
-export type Matrix = { readonly cells: ReadonlyArray<MatrixCell> }
-export const Matrix = Schema.Struct({ cells: Schema.Array(MatrixCell) }).annotate({ identifier: "Matrix" })
-export type RollingUpdates = { readonly conflict?: null | Conflict; readonly pending: ReadonlyArray<MatrixCell> }
-export const RollingUpdates = Schema.Struct({
-  conflict: Schema.optionalKey(Schema.Union([Schema.Null, Conflict], { mode: "oneOf" })),
-  pending: Schema.Array(MatrixCell),
-}).annotate({ identifier: "RollingUpdates" })
-export type TaskBranches = { readonly id: string; readonly versions: ReadonlyArray<TaskVersion> }
-export const TaskBranches = Schema.Struct({ id: Schema.String, versions: Schema.Array(TaskVersion) }).annotate({
-  identifier: "TaskBranches",
 })
 export type Board = { readonly groups: ReadonlyArray<BoardGroup> }
 export const Board = Schema.Struct({ groups: Schema.Array(BoardGroup) }).annotate({ identifier: "Board" })
@@ -523,8 +625,6 @@ const __recursive_TaskTree = Schema.Struct({
 // schemas
 export type GetMergedBoard200 = Board
 export const GetMergedBoard200 = Board
-export type GetMergedBoard500 = ApiErrorBody
-export const GetMergedBoard500 = ApiErrorBody
 export type GetFlowParams = {
   readonly project?: ReadonlyArray<string>
   readonly status?: ReadonlyArray<Status>
@@ -545,8 +645,6 @@ export type GetFlow404 = ApiErrorBody
 export const GetFlow404 = ApiErrorBody
 export type GetFlow422 = ApiErrorBody
 export const GetFlow422 = ApiErrorBody
-export type GetFlow500 = ApiErrorBody
-export const GetFlow500 = ApiErrorBody
 export type GetFlow503 = ApiErrorBody
 export const GetFlow503 = ApiErrorBody
 export type ListProjects200 = ReadonlyArray<ProjectView>
@@ -559,6 +657,8 @@ export type RegisterProject201 = ProjectView
 export const RegisterProject201 = ProjectView
 export type RegisterProject400 = ApiErrorBody
 export const RegisterProject400 = ApiErrorBody
+export type RegisterProject409 = ApiErrorBody
+export const RegisterProject409 = ApiErrorBody
 export type RegisterProject503 = ApiErrorBody
 export const RegisterProject503 = ApiErrorBody
 export type DeleteProject404 = ApiErrorBody
@@ -591,8 +691,6 @@ export type CreateSession400 = ApiErrorBody
 export const CreateSession400 = ApiErrorBody
 export type CreateSession404 = ApiErrorBody
 export const CreateSession404 = ApiErrorBody
-export type CreateSession500 = ApiErrorBody
-export const CreateSession500 = ApiErrorBody
 export type CreateSession503 = ApiErrorBody
 export const CreateSession503 = ApiErrorBody
 export type DeleteSession404 = ApiErrorBody
@@ -619,66 +717,28 @@ export type PromptSession503 = ApiErrorBody
 export const PromptSession503 = ApiErrorBody
 export type GetBoard200 = Board
 export const GetBoard200 = Board
-export type GetBoard400 = ApiErrorBody
-export const GetBoard400 = ApiErrorBody
 export type GetBoard404 = ApiErrorBody
 export const GetBoard404 = ApiErrorBody
-export type GetBoard500 = ApiErrorBody
-export const GetBoard500 = ApiErrorBody
 export type GetBoard503 = ApiErrorBody
 export const GetBoard503 = ApiErrorBody
-export type GetMatrixParams = { readonly fresh?: boolean }
-export const GetMatrixParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
-export type GetMatrix200 = Matrix
-export const GetMatrix200 = Matrix
-export type GetMatrix404 = ApiErrorBody
-export const GetMatrix404 = ApiErrorBody
-export type GetMatrix500 = ApiErrorBody
-export const GetMatrix500 = ApiErrorBody
-export type GetMatrix503 = ApiErrorBody
-export const GetMatrix503 = ApiErrorBody
-export type GetRollingUpdates200 = RollingUpdates
-export const GetRollingUpdates200 = RollingUpdates
-export type GetRollingUpdates404 = ApiErrorBody
-export const GetRollingUpdates404 = ApiErrorBody
-export type GetRollingUpdates500 = ApiErrorBody
-export const GetRollingUpdates500 = ApiErrorBody
-export type GetRollingUpdates503 = ApiErrorBody
-export const GetRollingUpdates503 = ApiErrorBody
-export type DiscardRollingUpdates404 = ApiErrorBody
-export const DiscardRollingUpdates404 = ApiErrorBody
-export type DiscardRollingUpdates409 = ApiErrorBody
-export const DiscardRollingUpdates409 = ApiErrorBody
-export type DiscardRollingUpdates503 = ApiErrorBody
-export const DiscardRollingUpdates503 = ApiErrorBody
-export type PublishRollingUpdates200 = Published
-export const PublishRollingUpdates200 = Published
-export type PublishRollingUpdates404 = ApiErrorBody
-export const PublishRollingUpdates404 = ApiErrorBody
-export type PublishRollingUpdates409 = ApiErrorBody
-export const PublishRollingUpdates409 = ApiErrorBody
-export type PublishRollingUpdates503 = ApiErrorBody
-export const PublishRollingUpdates503 = ApiErrorBody
-export type DiscardRollingUpdate400 = ApiErrorBody
-export const DiscardRollingUpdate400 = ApiErrorBody
-export type DiscardRollingUpdate404 = ApiErrorBody
-export const DiscardRollingUpdate404 = ApiErrorBody
-export type DiscardRollingUpdate409 = ApiErrorBody
-export const DiscardRollingUpdate409 = ApiErrorBody
-export type DiscardRollingUpdate500 = ApiErrorBody
-export const DiscardRollingUpdate500 = ApiErrorBody
-export type DiscardRollingUpdate503 = ApiErrorBody
-export const DiscardRollingUpdate503 = ApiErrorBody
-export type GetRollingUpdateDiff200 = TaskDiff
-export const GetRollingUpdateDiff200 = TaskDiff
-export type GetRollingUpdateDiff400 = ApiErrorBody
-export const GetRollingUpdateDiff400 = ApiErrorBody
-export type GetRollingUpdateDiff404 = ApiErrorBody
-export const GetRollingUpdateDiff404 = ApiErrorBody
-export type GetRollingUpdateDiff500 = ApiErrorBody
-export const GetRollingUpdateDiff500 = ApiErrorBody
-export type GetRollingUpdateDiff503 = ApiErrorBody
-export const GetRollingUpdateDiff503 = ApiErrorBody
+export type ProjectHistoryParams = { readonly before?: string | null; readonly limit?: number | null }
+export const ProjectHistoryParams = Schema.Struct({
+  before: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  limit: Schema.optionalKey(
+    Schema.Union([
+      Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+      Schema.Null,
+    ]),
+  ),
+})
+export type ProjectHistory200 = ReadonlyArray<HistoryEntry>
+export const ProjectHistory200 = Schema.Array(HistoryEntry)
+export type ProjectHistory404 = ApiErrorBody
+export const ProjectHistory404 = ApiErrorBody
+export type ProjectHistory503 = ApiErrorBody
+export const ProjectHistory503 = ApiErrorBody
 export type SearchProjectParams = { readonly q?: string; readonly fresh?: boolean }
 export const SearchProjectParams = Schema.Struct({
   q: Schema.optionalKey(Schema.String),
@@ -688,28 +748,30 @@ export type SearchProject200 = ReadonlyArray<SearchHit>
 export const SearchProject200 = Schema.Array(SearchHit)
 export type SearchProject404 = ApiErrorBody
 export const SearchProject404 = ApiErrorBody
-export type SearchProject500 = ApiErrorBody
-export const SearchProject500 = ApiErrorBody
 export type SearchProject503 = ApiErrorBody
 export const SearchProject503 = ApiErrorBody
-export type ListTagsParams = { readonly branch?: string }
-export const ListTagsParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
+export type GetSync200 = SyncView
+export const GetSync200 = SyncView
+export type GetSync404 = ApiErrorBody
+export const GetSync404 = ApiErrorBody
+export type GetSync503 = ApiErrorBody
+export const GetSync503 = ApiErrorBody
+export type RunSync200 = SyncResult
+export const RunSync200 = SyncResult
+export type RunSync404 = ApiErrorBody
+export const RunSync404 = ApiErrorBody
+export type RunSync502 = ApiErrorBody
+export const RunSync502 = ApiErrorBody
+export type RunSync503 = ApiErrorBody
+export const RunSync503 = ApiErrorBody
 export type ListTags200 = ReadonlyArray<TagView>
 export const ListTags200 = Schema.Array(TagView)
-export type ListTags400 = ApiErrorBody
-export const ListTags400 = ApiErrorBody
 export type ListTags404 = ApiErrorBody
 export const ListTags404 = ApiErrorBody
-export type ListTags409 = ApiErrorBody
-export const ListTags409 = ApiErrorBody
 export type ListTags422 = ApiErrorBody
 export const ListTags422 = ApiErrorBody
-export type ListTags500 = ApiErrorBody
-export const ListTags500 = ApiErrorBody
 export type ListTags503 = ApiErrorBody
 export const ListTags503 = ApiErrorBody
-export type CreateTagParams = { readonly branch?: string }
-export const CreateTagParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type CreateTagRequestJson = CreateTag
 export const CreateTagRequestJson = CreateTag
 export type CreateTag201 = TagView
@@ -722,41 +784,28 @@ export type CreateTag409 = ApiErrorBody
 export const CreateTag409 = ApiErrorBody
 export type CreateTag422 = ApiErrorBody
 export const CreateTag422 = ApiErrorBody
-export type CreateTag500 = ApiErrorBody
-export const CreateTag500 = ApiErrorBody
 export type CreateTag503 = ApiErrorBody
 export const CreateTag503 = ApiErrorBody
-export type GetTagParams = { readonly branch?: string }
-export const GetTagParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type GetTag200 = TagView
 export const GetTag200 = TagView
 export type GetTag400 = ApiErrorBody
 export const GetTag400 = ApiErrorBody
 export type GetTag404 = ApiErrorBody
 export const GetTag404 = ApiErrorBody
-export type GetTag409 = ApiErrorBody
-export const GetTag409 = ApiErrorBody
 export type GetTag422 = ApiErrorBody
 export const GetTag422 = ApiErrorBody
 export type GetTag503 = ApiErrorBody
 export const GetTag503 = ApiErrorBody
-export type DeleteTagParams = { readonly branch?: string; readonly force?: boolean }
-export const DeleteTagParams = Schema.Struct({
-  branch: Schema.optionalKey(Schema.String),
-  force: Schema.optionalKey(Schema.Boolean),
-})
+export type DeleteTagParams = { readonly force?: boolean }
+export const DeleteTagParams = Schema.Struct({ force: Schema.optionalKey(Schema.Boolean) })
 export type DeleteTag400 = ApiErrorBody
 export const DeleteTag400 = ApiErrorBody
 export type DeleteTag404 = ApiErrorBody
 export const DeleteTag404 = ApiErrorBody
 export type DeleteTag409 = ApiErrorBody
 export const DeleteTag409 = ApiErrorBody
-export type DeleteTag500 = ApiErrorBody
-export const DeleteTag500 = ApiErrorBody
 export type DeleteTag503 = ApiErrorBody
 export const DeleteTag503 = ApiErrorBody
-export type PatchTagParams = { readonly branch?: string }
-export const PatchTagParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type PatchTagRequestJson = TagPatch
 export const PatchTagRequestJson = TagPatch
 export type PatchTag200 = TagView
@@ -769,27 +818,16 @@ export type PatchTag409 = ApiErrorBody
 export const PatchTag409 = ApiErrorBody
 export type PatchTag422 = ApiErrorBody
 export const PatchTag422 = ApiErrorBody
-export type PatchTag500 = ApiErrorBody
-export const PatchTag500 = ApiErrorBody
 export type PatchTag503 = ApiErrorBody
 export const PatchTag503 = ApiErrorBody
-export type ListTasksParams = { readonly branch?: string | null; readonly fresh?: boolean }
-export const ListTasksParams = Schema.Struct({
-  branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  fresh: Schema.optionalKey(Schema.Boolean),
-})
+export type ListTasksParams = { readonly fresh?: boolean }
+export const ListTasksParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
 export type ListTasks200 = ReadonlyArray<TaskListItem>
 export const ListTasks200 = Schema.Array(TaskListItem)
-export type ListTasks400 = ApiErrorBody
-export const ListTasks400 = ApiErrorBody
 export type ListTasks404 = ApiErrorBody
 export const ListTasks404 = ApiErrorBody
-export type ListTasks500 = ApiErrorBody
-export const ListTasks500 = ApiErrorBody
 export type ListTasks503 = ApiErrorBody
 export const ListTasks503 = ApiErrorBody
-export type CreateTaskParams = { readonly branch?: string }
-export const CreateTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type CreateTaskRequestJson = CreateTask
 export const CreateTaskRequestJson = CreateTask
 export type CreateTask201 = CreatedTask
@@ -800,39 +838,24 @@ export type CreateTask404 = ApiErrorBody
 export const CreateTask404 = ApiErrorBody
 export type CreateTask409 = ApiErrorBody
 export const CreateTask409 = ApiErrorBody
-export type CreateTask500 = ApiErrorBody
-export const CreateTask500 = ApiErrorBody
 export type CreateTask503 = ApiErrorBody
 export const CreateTask503 = ApiErrorBody
-export type GetTaskParams = { readonly branch?: string | null; readonly fresh?: boolean }
-export const GetTaskParams = Schema.Struct({
-  branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  fresh: Schema.optionalKey(Schema.Boolean),
-})
+export type GetTaskParams = { readonly fresh?: boolean }
+export const GetTaskParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
 export type GetTask200 = TaskDetail
 export const GetTask200 = TaskDetail
 export type GetTask400 = ApiErrorBody
 export const GetTask400 = ApiErrorBody
 export type GetTask404 = ApiErrorBody
 export const GetTask404 = ApiErrorBody
-export type GetTask500 = ApiErrorBody
-export const GetTask500 = ApiErrorBody
 export type GetTask503 = ApiErrorBody
 export const GetTask503 = ApiErrorBody
-export type DeleteTaskParams = { readonly branch?: string }
-export const DeleteTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type DeleteTask400 = ApiErrorBody
 export const DeleteTask400 = ApiErrorBody
 export type DeleteTask404 = ApiErrorBody
 export const DeleteTask404 = ApiErrorBody
-export type DeleteTask409 = ApiErrorBody
-export const DeleteTask409 = ApiErrorBody
-export type DeleteTask500 = ApiErrorBody
-export const DeleteTask500 = ApiErrorBody
 export type DeleteTask503 = ApiErrorBody
 export const DeleteTask503 = ApiErrorBody
-export type PatchTaskParams = { readonly branch?: string }
-export const PatchTaskParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type PatchTaskRequestJson = TaskPatch
 export const PatchTaskRequestJson = TaskPatch
 export type PatchTask200 = TaskDetail
@@ -843,39 +866,18 @@ export type PatchTask404 = ApiErrorBody
 export const PatchTask404 = ApiErrorBody
 export type PatchTask409 = ApiErrorBody
 export const PatchTask409 = ApiErrorBody
-export type PatchTask500 = ApiErrorBody
-export const PatchTask500 = ApiErrorBody
 export type PatchTask503 = ApiErrorBody
 export const PatchTask503 = ApiErrorBody
-export type GetTaskBranchesParams = { readonly fresh?: boolean }
-export const GetTaskBranchesParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
-export type GetTaskBranches200 = TaskBranches
-export const GetTaskBranches200 = TaskBranches
-export type GetTaskBranches400 = ApiErrorBody
-export const GetTaskBranches400 = ApiErrorBody
-export type GetTaskBranches404 = ApiErrorBody
-export const GetTaskBranches404 = ApiErrorBody
-export type GetTaskBranches500 = ApiErrorBody
-export const GetTaskBranches500 = ApiErrorBody
-export type GetTaskBranches503 = ApiErrorBody
-export const GetTaskBranches503 = ApiErrorBody
-export type ListCommentsParams = { readonly branch?: string | null; readonly fresh?: boolean }
-export const ListCommentsParams = Schema.Struct({
-  branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-  fresh: Schema.optionalKey(Schema.Boolean),
-})
+export type ListCommentsParams = { readonly fresh?: boolean }
+export const ListCommentsParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
 export type ListComments200 = ReadonlyArray<Comment>
 export const ListComments200 = Schema.Array(Comment)
 export type ListComments400 = ApiErrorBody
 export const ListComments400 = ApiErrorBody
 export type ListComments404 = ApiErrorBody
 export const ListComments404 = ApiErrorBody
-export type ListComments500 = ApiErrorBody
-export const ListComments500 = ApiErrorBody
 export type ListComments503 = ApiErrorBody
 export const ListComments503 = ApiErrorBody
-export type AddCommentParams = { readonly branch?: string }
-export const AddCommentParams = Schema.Struct({ branch: Schema.optionalKey(Schema.String) })
 export type AddCommentRequestJson = CreateComment
 export const AddCommentRequestJson = CreateComment
 export type AddComment201 = Comment
@@ -884,31 +886,62 @@ export type AddComment400 = ApiErrorBody
 export const AddComment400 = ApiErrorBody
 export type AddComment404 = ApiErrorBody
 export const AddComment404 = ApiErrorBody
-export type AddComment409 = ApiErrorBody
-export const AddComment409 = ApiErrorBody
-export type AddComment500 = ApiErrorBody
-export const AddComment500 = ApiErrorBody
 export type AddComment503 = ApiErrorBody
 export const AddComment503 = ApiErrorBody
-export type ListBranchCommentsParams = { readonly fresh?: boolean }
-export const ListBranchCommentsParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
-export type ListBranchComments200 = ReadonlyArray<BranchComments>
-export const ListBranchComments200 = Schema.Array(BranchComments)
-export type ListBranchComments400 = ApiErrorBody
-export const ListBranchComments400 = ApiErrorBody
-export type ListBranchComments404 = ApiErrorBody
-export const ListBranchComments404 = ApiErrorBody
-export type ListBranchComments500 = ApiErrorBody
-export const ListBranchComments500 = ApiErrorBody
-export type ListBranchComments503 = ApiErrorBody
-export const ListBranchComments503 = ApiErrorBody
-export type GetTaskTreeParams = {
-  readonly branch?: string | null
-  readonly fresh?: boolean
-  readonly depth?: number | null
-}
+export type WriteTaskFileRequestJson = WriteTaskFile
+export const WriteTaskFileRequestJson = WriteTaskFile
+export type WriteTaskFile200 = TaskDetail
+export const WriteTaskFile200 = TaskDetail
+export type WriteTaskFile400 = ApiErrorBody
+export const WriteTaskFile400 = ApiErrorBody
+export type WriteTaskFile404 = ApiErrorBody
+export const WriteTaskFile404 = ApiErrorBody
+export type WriteTaskFile409 = ApiErrorBody
+export const WriteTaskFile409 = ApiErrorBody
+export type WriteTaskFile503 = ApiErrorBody
+export const WriteTaskFile503 = ApiErrorBody
+export type TaskHistoryParams = { readonly before?: string | null; readonly limit?: number | null }
+export const TaskHistoryParams = Schema.Struct({
+  before: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  limit: Schema.optionalKey(
+    Schema.Union([
+      Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+      Schema.Null,
+    ]),
+  ),
+})
+export type TaskHistory200 = ReadonlyArray<HistoryEntry>
+export const TaskHistory200 = Schema.Array(HistoryEntry)
+export type TaskHistory400 = ApiErrorBody
+export const TaskHistory400 = ApiErrorBody
+export type TaskHistory404 = ApiErrorBody
+export const TaskHistory404 = ApiErrorBody
+export type TaskHistory503 = ApiErrorBody
+export const TaskHistory503 = ApiErrorBody
+export type ResolveConflictRequestJson = ResolveConflict
+export const ResolveConflictRequestJson = ResolveConflict
+export type ResolveConflict200 = TaskDetail
+export const ResolveConflict200 = TaskDetail
+export type ResolveConflict400 = ApiErrorBody
+export const ResolveConflict400 = ApiErrorBody
+export type ResolveConflict404 = ApiErrorBody
+export const ResolveConflict404 = ApiErrorBody
+export type ResolveConflict409 = ApiErrorBody
+export const ResolveConflict409 = ApiErrorBody
+export type ResolveConflict503 = ApiErrorBody
+export const ResolveConflict503 = ApiErrorBody
+export type TaskRevision200 = TaskAtRevision
+export const TaskRevision200 = TaskAtRevision
+export type TaskRevision400 = ApiErrorBody
+export const TaskRevision400 = ApiErrorBody
+export type TaskRevision404 = ApiErrorBody
+export const TaskRevision404 = ApiErrorBody
+export type TaskRevision503 = ApiErrorBody
+export const TaskRevision503 = ApiErrorBody
+export type GetTaskTreeParams = { readonly fresh?: boolean; readonly depth?: number | null }
 export const GetTaskTreeParams = Schema.Struct({
-  branch: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   fresh: Schema.optionalKey(Schema.Boolean),
   depth: Schema.optionalKey(
     Schema.Union([
@@ -925,8 +958,6 @@ export type GetTaskTree400 = ApiErrorBody
 export const GetTaskTree400 = ApiErrorBody
 export type GetTaskTree404 = ApiErrorBody
 export const GetTaskTree404 = ApiErrorBody
-export type GetTaskTree500 = ApiErrorBody
-export const GetTaskTree500 = ApiErrorBody
 export type GetTaskTree503 = ApiErrorBody
 export const GetTaskTree503 = ApiErrorBody
 export type SearchAllParams = { readonly q?: string; readonly fresh?: boolean }
@@ -936,8 +967,6 @@ export const SearchAllParams = Schema.Struct({
 })
 export type SearchAll200 = ReadonlyArray<SearchHit>
 export const SearchAll200 = Schema.Array(SearchHit)
-export type SearchAll500 = ApiErrorBody
-export const SearchAll500 = ApiErrorBody
 export type Health200 = DaemonInfo
 export const Health200 = DaemonInfo
 
@@ -1051,7 +1080,6 @@ export const make = (
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(GetMergedBoard200),
-            "500": decodeError("GetMergedBoard500", GetMergedBoard500),
             orElse: unexpectedStatus,
           }),
         ),
@@ -1070,7 +1098,6 @@ export const make = (
             "400": decodeError("GetFlow400", GetFlow400),
             "404": decodeError("GetFlow404", GetFlow404),
             "422": decodeError("GetFlow422", GetFlow422),
-            "500": decodeError("GetFlow500", GetFlow500),
             "503": decodeError("GetFlow503", GetFlow503),
             orElse: unexpectedStatus,
           }),
@@ -1093,6 +1120,7 @@ export const make = (
             "200": decodeSuccess(RegisterProject200),
             "201": decodeSuccess(RegisterProject201),
             "400": decodeError("RegisterProject400", RegisterProject400),
+            "409": decodeError("RegisterProject409", RegisterProject409),
             "503": decodeError("RegisterProject503", RegisterProject503),
             orElse: unexpectedStatus,
           }),
@@ -1172,7 +1200,6 @@ export const make = (
                 "2xx": decodeSuccess(CreateSession201),
                 "400": decodeError("CreateSession400", CreateSession400),
                 "404": decodeError("CreateSession404", CreateSession404),
-                "500": decodeError("CreateSession500", CreateSession500),
                 "503": decodeError("CreateSession503", CreateSession503),
                 orElse: unexpectedStatus,
               }),
@@ -1277,9 +1304,7 @@ export const make = (
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "2xx": decodeSuccess(GetBoard200),
-                "400": decodeError("GetBoard400", GetBoard400),
                 "404": decodeError("GetBoard404", GetBoard404),
-                "500": decodeError("GetBoard500", GetBoard500),
                 "503": decodeError("GetBoard503", GetBoard503),
                 orElse: unexpectedStatus,
               }),
@@ -1287,124 +1312,23 @@ export const make = (
           ),
         ),
       ),
-    getMatrix: (project, options) =>
+    projectHistory: (project, options) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project],
-        () => "/api/projects/" + __encodePathParam(project) + "/matrix",
+        () => "/api/projects/" + __encodePathParam(project) + "/history",
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+            HttpClientRequest.setUrlParams({
+              before: options?.params?.["before"] as any,
+              limit: options?.params?.["limit"] as any,
+            }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
-                "2xx": decodeSuccess(GetMatrix200),
-                "404": decodeError("GetMatrix404", GetMatrix404),
-                "500": decodeError("GetMatrix500", GetMatrix500),
-                "503": decodeError("GetMatrix503", GetMatrix503),
-                orElse: unexpectedStatus,
-              }),
-            ),
-          ),
-        ),
-      ),
-    getRollingUpdates: (project, options) =>
-      __makePathRequest(
-        HttpClientRequest.get,
-        [project],
-        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates",
-      ).pipe(
-        Effect.flatMap((request) =>
-          request.pipe(
-            withResponse(options?.config)(
-              HttpClientResponse.matchStatus({
-                "2xx": decodeSuccess(GetRollingUpdates200),
-                "404": decodeError("GetRollingUpdates404", GetRollingUpdates404),
-                "500": decodeError("GetRollingUpdates500", GetRollingUpdates500),
-                "503": decodeError("GetRollingUpdates503", GetRollingUpdates503),
-                orElse: unexpectedStatus,
-              }),
-            ),
-          ),
-        ),
-      ),
-    discardRollingUpdates: (project, options) =>
-      __makePathRequest(
-        HttpClientRequest.delete,
-        [project],
-        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates",
-      ).pipe(
-        Effect.flatMap((request) =>
-          request.pipe(
-            withResponse(options?.config)(
-              HttpClientResponse.matchStatus({
-                "404": decodeError("DiscardRollingUpdates404", DiscardRollingUpdates404),
-                "409": decodeError("DiscardRollingUpdates409", DiscardRollingUpdates409),
-                "503": decodeError("DiscardRollingUpdates503", DiscardRollingUpdates503),
-                "204": () => Effect.void,
-                orElse: unexpectedStatus,
-              }),
-            ),
-          ),
-        ),
-      ),
-    publishRollingUpdates: (project, options) =>
-      __makePathRequest(
-        HttpClientRequest.post,
-        [project],
-        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates/publish",
-      ).pipe(
-        Effect.flatMap((request) =>
-          request.pipe(
-            withResponse(options?.config)(
-              HttpClientResponse.matchStatus({
-                "2xx": decodeSuccess(PublishRollingUpdates200),
-                "404": decodeError("PublishRollingUpdates404", PublishRollingUpdates404),
-                "409": decodeError("PublishRollingUpdates409", PublishRollingUpdates409),
-                "503": decodeError("PublishRollingUpdates503", PublishRollingUpdates503),
-                orElse: unexpectedStatus,
-              }),
-            ),
-          ),
-        ),
-      ),
-    discardRollingUpdate: (project, task, options) =>
-      __makePathRequest(
-        HttpClientRequest.delete,
-        [project, task],
-        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates/" + __encodePathParam(task) + "",
-      ).pipe(
-        Effect.flatMap((request) =>
-          request.pipe(
-            withResponse(options?.config)(
-              HttpClientResponse.matchStatus({
-                "400": decodeError("DiscardRollingUpdate400", DiscardRollingUpdate400),
-                "404": decodeError("DiscardRollingUpdate404", DiscardRollingUpdate404),
-                "409": decodeError("DiscardRollingUpdate409", DiscardRollingUpdate409),
-                "500": decodeError("DiscardRollingUpdate500", DiscardRollingUpdate500),
-                "503": decodeError("DiscardRollingUpdate503", DiscardRollingUpdate503),
-                "204": () => Effect.void,
-                orElse: unexpectedStatus,
-              }),
-            ),
-          ),
-        ),
-      ),
-    getRollingUpdateDiff: (project, task, options) =>
-      __makePathRequest(
-        HttpClientRequest.get,
-        [project, task],
-        () => "/api/projects/" + __encodePathParam(project) + "/rolling-updates/" + __encodePathParam(task) + "/diff",
-      ).pipe(
-        Effect.flatMap((request) =>
-          request.pipe(
-            withResponse(options?.config)(
-              HttpClientResponse.matchStatus({
-                "2xx": decodeSuccess(GetRollingUpdateDiff200),
-                "400": decodeError("GetRollingUpdateDiff400", GetRollingUpdateDiff400),
-                "404": decodeError("GetRollingUpdateDiff404", GetRollingUpdateDiff404),
-                "500": decodeError("GetRollingUpdateDiff500", GetRollingUpdateDiff500),
-                "503": decodeError("GetRollingUpdateDiff503", GetRollingUpdateDiff503),
+                "2xx": decodeSuccess(ProjectHistory200),
+                "404": decodeError("ProjectHistory404", ProjectHistory404),
+                "503": decodeError("ProjectHistory503", ProjectHistory503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -1427,8 +1351,46 @@ export const make = (
               HttpClientResponse.matchStatus({
                 "2xx": decodeSuccess(SearchProject200),
                 "404": decodeError("SearchProject404", SearchProject404),
-                "500": decodeError("SearchProject500", SearchProject500),
                 "503": decodeError("SearchProject503", SearchProject503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    getSync: (project, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/sync",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetSync200),
+                "404": decodeError("GetSync404", GetSync404),
+                "503": decodeError("GetSync503", GetSync503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    runSync: (project, options) =>
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/sync",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(RunSync200),
+                "404": decodeError("RunSync404", RunSync404),
+                "502": decodeError("RunSync502", RunSync502),
+                "503": decodeError("RunSync503", RunSync503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -1443,15 +1405,11 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "2xx": decodeSuccess(ListTags200),
-                "400": decodeError("ListTags400", ListTags400),
                 "404": decodeError("ListTags404", ListTags404),
-                "409": decodeError("ListTags409", ListTags409),
                 "422": decodeError("ListTags422", ListTags422),
-                "500": decodeError("ListTags500", ListTags500),
                 "503": decodeError("ListTags503", ListTags503),
                 orElse: unexpectedStatus,
               }),
@@ -1467,7 +1425,6 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
             HttpClientRequest.bodyJsonUnsafe(options.payload),
             withResponse(options.config)(
               HttpClientResponse.matchStatus({
@@ -1476,7 +1433,6 @@ export const make = (
                 "404": decodeError("CreateTag404", CreateTag404),
                 "409": decodeError("CreateTag409", CreateTag409),
                 "422": decodeError("CreateTag422", CreateTag422),
-                "500": decodeError("CreateTag500", CreateTag500),
                 "503": decodeError("CreateTag503", CreateTag503),
                 orElse: unexpectedStatus,
               }),
@@ -1492,13 +1448,11 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "2xx": decodeSuccess(GetTag200),
                 "400": decodeError("GetTag400", GetTag400),
                 "404": decodeError("GetTag404", GetTag404),
-                "409": decodeError("GetTag409", GetTag409),
                 "422": decodeError("GetTag422", GetTag422),
                 "503": decodeError("GetTag503", GetTag503),
                 orElse: unexpectedStatus,
@@ -1515,16 +1469,12 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({
-              branch: options?.params?.["branch"] as any,
-              force: options?.params?.["force"] as any,
-            }),
+            HttpClientRequest.setUrlParams({ force: options?.params?.["force"] as any }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "400": decodeError("DeleteTag400", DeleteTag400),
                 "404": decodeError("DeleteTag404", DeleteTag404),
                 "409": decodeError("DeleteTag409", DeleteTag409),
-                "500": decodeError("DeleteTag500", DeleteTag500),
                 "503": decodeError("DeleteTag503", DeleteTag503),
                 "204": () => Effect.void,
                 orElse: unexpectedStatus,
@@ -1541,7 +1491,6 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
             HttpClientRequest.bodyJsonUnsafe(options.payload),
             withResponse(options.config)(
               HttpClientResponse.matchStatus({
@@ -1550,7 +1499,6 @@ export const make = (
                 "404": decodeError("PatchTag404", PatchTag404),
                 "409": decodeError("PatchTag409", PatchTag409),
                 "422": decodeError("PatchTag422", PatchTag422),
-                "500": decodeError("PatchTag500", PatchTag500),
                 "503": decodeError("PatchTag503", PatchTag503),
                 orElse: unexpectedStatus,
               }),
@@ -1566,16 +1514,11 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({
-              branch: options?.params?.["branch"] as any,
-              fresh: options?.params?.["fresh"] as any,
-            }),
+            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "2xx": decodeSuccess(ListTasks200),
-                "400": decodeError("ListTasks400", ListTasks400),
                 "404": decodeError("ListTasks404", ListTasks404),
-                "500": decodeError("ListTasks500", ListTasks500),
                 "503": decodeError("ListTasks503", ListTasks503),
                 orElse: unexpectedStatus,
               }),
@@ -1591,7 +1534,6 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
             HttpClientRequest.bodyJsonUnsafe(options.payload),
             withResponse(options.config)(
               HttpClientResponse.matchStatus({
@@ -1599,7 +1541,6 @@ export const make = (
                 "400": decodeError("CreateTask400", CreateTask400),
                 "404": decodeError("CreateTask404", CreateTask404),
                 "409": decodeError("CreateTask409", CreateTask409),
-                "500": decodeError("CreateTask500", CreateTask500),
                 "503": decodeError("CreateTask503", CreateTask503),
                 orElse: unexpectedStatus,
               }),
@@ -1615,16 +1556,12 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({
-              branch: options?.params?.["branch"] as any,
-              fresh: options?.params?.["fresh"] as any,
-            }),
+            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "2xx": decodeSuccess(GetTask200),
                 "400": decodeError("GetTask400", GetTask400),
                 "404": decodeError("GetTask404", GetTask404),
-                "500": decodeError("GetTask500", GetTask500),
                 "503": decodeError("GetTask503", GetTask503),
                 orElse: unexpectedStatus,
               }),
@@ -1640,13 +1577,10 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ branch: options?.params?.["branch"] as any }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "400": decodeError("DeleteTask400", DeleteTask400),
                 "404": decodeError("DeleteTask404", DeleteTask404),
-                "409": decodeError("DeleteTask409", DeleteTask409),
-                "500": decodeError("DeleteTask500", DeleteTask500),
                 "503": decodeError("DeleteTask503", DeleteTask503),
                 "204": () => Effect.void,
                 orElse: unexpectedStatus,
@@ -1663,7 +1597,6 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
             HttpClientRequest.bodyJsonUnsafe(options.payload),
             withResponse(options.config)(
               HttpClientResponse.matchStatus({
@@ -1671,30 +1604,7 @@ export const make = (
                 "400": decodeError("PatchTask400", PatchTask400),
                 "404": decodeError("PatchTask404", PatchTask404),
                 "409": decodeError("PatchTask409", PatchTask409),
-                "500": decodeError("PatchTask500", PatchTask500),
                 "503": decodeError("PatchTask503", PatchTask503),
-                orElse: unexpectedStatus,
-              }),
-            ),
-          ),
-        ),
-      ),
-    getTaskBranches: (project, id, options) =>
-      __makePathRequest(
-        HttpClientRequest.get,
-        [project, id],
-        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/branches",
-      ).pipe(
-        Effect.flatMap((request) =>
-          request.pipe(
-            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
-            withResponse(options?.config)(
-              HttpClientResponse.matchStatus({
-                "2xx": decodeSuccess(GetTaskBranches200),
-                "400": decodeError("GetTaskBranches400", GetTaskBranches400),
-                "404": decodeError("GetTaskBranches404", GetTaskBranches404),
-                "500": decodeError("GetTaskBranches500", GetTaskBranches500),
-                "503": decodeError("GetTaskBranches503", GetTaskBranches503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -1709,16 +1619,12 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({
-              branch: options?.params?.["branch"] as any,
-              fresh: options?.params?.["fresh"] as any,
-            }),
+            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "2xx": decodeSuccess(ListComments200),
                 "400": decodeError("ListComments400", ListComments400),
                 "404": decodeError("ListComments404", ListComments404),
-                "500": decodeError("ListComments500", ListComments500),
                 "503": decodeError("ListComments503", ListComments503),
                 orElse: unexpectedStatus,
               }),
@@ -1734,15 +1640,12 @@ export const make = (
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ branch: options.params?.["branch"] as any }),
             HttpClientRequest.bodyJsonUnsafe(options.payload),
             withResponse(options.config)(
               HttpClientResponse.matchStatus({
                 "2xx": decodeSuccess(AddComment201),
                 "400": decodeError("AddComment400", AddComment400),
                 "404": decodeError("AddComment404", AddComment404),
-                "409": decodeError("AddComment409", AddComment409),
-                "500": decodeError("AddComment500", AddComment500),
                 "503": decodeError("AddComment503", AddComment503),
                 orElse: unexpectedStatus,
               }),
@@ -1750,22 +1653,95 @@ export const make = (
           ),
         ),
       ),
-    listBranchComments: (project, id, options) =>
+    writeTaskFile: (project, id, options) =>
       __makePathRequest(
-        HttpClientRequest.get,
+        HttpClientRequest.put,
         [project, id],
-        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/comments/branches",
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/file",
       ).pipe(
         Effect.flatMap((request) =>
           request.pipe(
-            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(WriteTaskFile200),
+                "400": decodeError("WriteTaskFile400", WriteTaskFile400),
+                "404": decodeError("WriteTaskFile404", WriteTaskFile404),
+                "409": decodeError("WriteTaskFile409", WriteTaskFile409),
+                "503": decodeError("WriteTaskFile503", WriteTaskFile503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    taskHistory: (project, id, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/history",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              before: options?.params?.["before"] as any,
+              limit: options?.params?.["limit"] as any,
+            }),
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
-                "2xx": decodeSuccess(ListBranchComments200),
-                "400": decodeError("ListBranchComments400", ListBranchComments400),
-                "404": decodeError("ListBranchComments404", ListBranchComments404),
-                "500": decodeError("ListBranchComments500", ListBranchComments500),
-                "503": decodeError("ListBranchComments503", ListBranchComments503),
+                "2xx": decodeSuccess(TaskHistory200),
+                "400": decodeError("TaskHistory400", TaskHistory400),
+                "404": decodeError("TaskHistory404", TaskHistory404),
+                "503": decodeError("TaskHistory503", TaskHistory503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    resolveConflict: (project, id, options) =>
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/resolve",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(ResolveConflict200),
+                "400": decodeError("ResolveConflict400", ResolveConflict400),
+                "404": decodeError("ResolveConflict404", ResolveConflict404),
+                "409": decodeError("ResolveConflict409", ResolveConflict409),
+                "503": decodeError("ResolveConflict503", ResolveConflict503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    taskRevision: (project, id, revision, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, id, revision],
+        () =>
+          "/api/projects/" +
+          __encodePathParam(project) +
+          "/tasks/" +
+          __encodePathParam(id) +
+          "/revisions/" +
+          __encodePathParam(revision) +
+          "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(TaskRevision200),
+                "400": decodeError("TaskRevision400", TaskRevision400),
+                "404": decodeError("TaskRevision404", TaskRevision404),
+                "503": decodeError("TaskRevision503", TaskRevision503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -1781,7 +1757,6 @@ export const make = (
         Effect.flatMap((request) =>
           request.pipe(
             HttpClientRequest.setUrlParams({
-              branch: options?.params?.["branch"] as any,
               fresh: options?.params?.["fresh"] as any,
               depth: options?.params?.["depth"] as any,
             }),
@@ -1790,7 +1765,6 @@ export const make = (
                 "2xx": decodeSuccess(GetTaskTree200),
                 "400": decodeError("GetTaskTree400", GetTaskTree400),
                 "404": decodeError("GetTaskTree404", GetTaskTree404),
-                "500": decodeError("GetTaskTree500", GetTaskTree500),
                 "503": decodeError("GetTaskTree503", GetTaskTree503),
                 orElse: unexpectedStatus,
               }),
@@ -1804,7 +1778,6 @@ export const make = (
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
             "2xx": decodeSuccess(SearchAll200),
-            "500": decodeError("SearchAll500", SearchAll500),
             orElse: unexpectedStatus,
           }),
         ),
@@ -1827,7 +1800,7 @@ export interface TasksClient {
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetMergedBoard200.Type, Config>,
-    HttpClientError.HttpClientError | SchemaError | TasksClientError<"GetMergedBoard500", typeof GetMergedBoard500.Type>
+    HttpClientError.HttpClientError | SchemaError
   >
   readonly getFlow: <Config extends OperationConfig>(
     options:
@@ -1840,7 +1813,6 @@ export interface TasksClient {
     | TasksClientError<"GetFlow400", typeof GetFlow400.Type>
     | TasksClientError<"GetFlow404", typeof GetFlow404.Type>
     | TasksClientError<"GetFlow422", typeof GetFlow422.Type>
-    | TasksClientError<"GetFlow500", typeof GetFlow500.Type>
     | TasksClientError<"GetFlow503", typeof GetFlow503.Type>
   >
   readonly listProjects: <Config extends OperationConfig>(
@@ -1857,6 +1829,7 @@ export interface TasksClient {
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"RegisterProject400", typeof RegisterProject400.Type>
+    | TasksClientError<"RegisterProject409", typeof RegisterProject409.Type>
     | TasksClientError<"RegisterProject503", typeof RegisterProject503.Type>
   >
   readonly deleteProject: <Config extends OperationConfig>(
@@ -1900,7 +1873,6 @@ export interface TasksClient {
     | SchemaError
     | TasksClientError<"CreateSession400", typeof CreateSession400.Type>
     | TasksClientError<"CreateSession404", typeof CreateSession404.Type>
-    | TasksClientError<"CreateSession500", typeof CreateSession500.Type>
     | TasksClientError<"CreateSession503", typeof CreateSession503.Type>
   >
   readonly deleteSession: <Config extends OperationConfig>(
@@ -1956,83 +1928,20 @@ export interface TasksClient {
     WithOptionalResponse<typeof GetBoard200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
-    | TasksClientError<"GetBoard400", typeof GetBoard400.Type>
     | TasksClientError<"GetBoard404", typeof GetBoard404.Type>
-    | TasksClientError<"GetBoard500", typeof GetBoard500.Type>
     | TasksClientError<"GetBoard503", typeof GetBoard503.Type>
   >
-  readonly getMatrix: <Config extends OperationConfig>(
+  readonly projectHistory: <Config extends OperationConfig>(
     project: string,
     options:
-      | { readonly params?: typeof GetMatrixParams.Encoded | undefined; readonly config?: Config | undefined }
+      | { readonly params?: typeof ProjectHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
       | undefined,
   ) => Effect.Effect<
-    WithOptionalResponse<typeof GetMatrix200.Type, Config>,
+    WithOptionalResponse<typeof ProjectHistory200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
-    | TasksClientError<"GetMatrix404", typeof GetMatrix404.Type>
-    | TasksClientError<"GetMatrix500", typeof GetMatrix500.Type>
-    | TasksClientError<"GetMatrix503", typeof GetMatrix503.Type>
-  >
-  readonly getRollingUpdates: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetRollingUpdates200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetRollingUpdates404", typeof GetRollingUpdates404.Type>
-    | TasksClientError<"GetRollingUpdates500", typeof GetRollingUpdates500.Type>
-    | TasksClientError<"GetRollingUpdates503", typeof GetRollingUpdates503.Type>
-  >
-  readonly discardRollingUpdates: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<void, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DiscardRollingUpdates404", typeof DiscardRollingUpdates404.Type>
-    | TasksClientError<"DiscardRollingUpdates409", typeof DiscardRollingUpdates409.Type>
-    | TasksClientError<"DiscardRollingUpdates503", typeof DiscardRollingUpdates503.Type>
-  >
-  readonly publishRollingUpdates: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof PublishRollingUpdates200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"PublishRollingUpdates404", typeof PublishRollingUpdates404.Type>
-    | TasksClientError<"PublishRollingUpdates409", typeof PublishRollingUpdates409.Type>
-    | TasksClientError<"PublishRollingUpdates503", typeof PublishRollingUpdates503.Type>
-  >
-  readonly discardRollingUpdate: <Config extends OperationConfig>(
-    project: string,
-    task: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<void, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DiscardRollingUpdate400", typeof DiscardRollingUpdate400.Type>
-    | TasksClientError<"DiscardRollingUpdate404", typeof DiscardRollingUpdate404.Type>
-    | TasksClientError<"DiscardRollingUpdate409", typeof DiscardRollingUpdate409.Type>
-    | TasksClientError<"DiscardRollingUpdate500", typeof DiscardRollingUpdate500.Type>
-    | TasksClientError<"DiscardRollingUpdate503", typeof DiscardRollingUpdate503.Type>
-  >
-  readonly getRollingUpdateDiff: <Config extends OperationConfig>(
-    project: string,
-    task: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetRollingUpdateDiff200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetRollingUpdateDiff400", typeof GetRollingUpdateDiff400.Type>
-    | TasksClientError<"GetRollingUpdateDiff404", typeof GetRollingUpdateDiff404.Type>
-    | TasksClientError<"GetRollingUpdateDiff500", typeof GetRollingUpdateDiff500.Type>
-    | TasksClientError<"GetRollingUpdateDiff503", typeof GetRollingUpdateDiff503.Type>
+    | TasksClientError<"ProjectHistory404", typeof ProjectHistory404.Type>
+    | TasksClientError<"ProjectHistory503", typeof ProjectHistory503.Type>
   >
   readonly searchProject: <Config extends OperationConfig>(
     project: string,
@@ -2044,32 +1953,43 @@ export interface TasksClient {
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"SearchProject404", typeof SearchProject404.Type>
-    | TasksClientError<"SearchProject500", typeof SearchProject500.Type>
     | TasksClientError<"SearchProject503", typeof SearchProject503.Type>
+  >
+  readonly getSync: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetSync200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetSync404", typeof GetSync404.Type>
+    | TasksClientError<"GetSync503", typeof GetSync503.Type>
+  >
+  readonly runSync: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof RunSync200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"RunSync404", typeof RunSync404.Type>
+    | TasksClientError<"RunSync502", typeof RunSync502.Type>
+    | TasksClientError<"RunSync503", typeof RunSync503.Type>
   >
   readonly listTags: <Config extends OperationConfig>(
     project: string,
-    options:
-      | { readonly params?: typeof ListTagsParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
+    options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListTags200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
-    | TasksClientError<"ListTags400", typeof ListTags400.Type>
     | TasksClientError<"ListTags404", typeof ListTags404.Type>
-    | TasksClientError<"ListTags409", typeof ListTags409.Type>
     | TasksClientError<"ListTags422", typeof ListTags422.Type>
-    | TasksClientError<"ListTags500", typeof ListTags500.Type>
     | TasksClientError<"ListTags503", typeof ListTags503.Type>
   >
   readonly createTag: <Config extends OperationConfig>(
     project: string,
-    options: {
-      readonly params?: typeof CreateTagParams.Encoded | undefined
-      readonly payload: typeof CreateTagRequestJson.Encoded
-      readonly config?: Config | undefined
-    },
+    options: { readonly payload: typeof CreateTagRequestJson.Encoded; readonly config?: Config | undefined },
   ) => Effect.Effect<
     WithOptionalResponse<typeof CreateTag201.Type, Config>,
     | HttpClientError.HttpClientError
@@ -2078,22 +1998,18 @@ export interface TasksClient {
     | TasksClientError<"CreateTag404", typeof CreateTag404.Type>
     | TasksClientError<"CreateTag409", typeof CreateTag409.Type>
     | TasksClientError<"CreateTag422", typeof CreateTag422.Type>
-    | TasksClientError<"CreateTag500", typeof CreateTag500.Type>
     | TasksClientError<"CreateTag503", typeof CreateTag503.Type>
   >
   readonly getTag: <Config extends OperationConfig>(
     project: string,
     name: string,
-    options:
-      | { readonly params?: typeof GetTagParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
+    options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetTag200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"GetTag400", typeof GetTag400.Type>
     | TasksClientError<"GetTag404", typeof GetTag404.Type>
-    | TasksClientError<"GetTag409", typeof GetTag409.Type>
     | TasksClientError<"GetTag422", typeof GetTag422.Type>
     | TasksClientError<"GetTag503", typeof GetTag503.Type>
   >
@@ -2110,17 +2026,12 @@ export interface TasksClient {
     | TasksClientError<"DeleteTag400", typeof DeleteTag400.Type>
     | TasksClientError<"DeleteTag404", typeof DeleteTag404.Type>
     | TasksClientError<"DeleteTag409", typeof DeleteTag409.Type>
-    | TasksClientError<"DeleteTag500", typeof DeleteTag500.Type>
     | TasksClientError<"DeleteTag503", typeof DeleteTag503.Type>
   >
   readonly patchTag: <Config extends OperationConfig>(
     project: string,
     name: string,
-    options: {
-      readonly params?: typeof PatchTagParams.Encoded | undefined
-      readonly payload: typeof PatchTagRequestJson.Encoded
-      readonly config?: Config | undefined
-    },
+    options: { readonly payload: typeof PatchTagRequestJson.Encoded; readonly config?: Config | undefined },
   ) => Effect.Effect<
     WithOptionalResponse<typeof PatchTag200.Type, Config>,
     | HttpClientError.HttpClientError
@@ -2129,7 +2040,6 @@ export interface TasksClient {
     | TasksClientError<"PatchTag404", typeof PatchTag404.Type>
     | TasksClientError<"PatchTag409", typeof PatchTag409.Type>
     | TasksClientError<"PatchTag422", typeof PatchTag422.Type>
-    | TasksClientError<"PatchTag500", typeof PatchTag500.Type>
     | TasksClientError<"PatchTag503", typeof PatchTag503.Type>
   >
   readonly listTasks: <Config extends OperationConfig>(
@@ -2141,18 +2051,12 @@ export interface TasksClient {
     WithOptionalResponse<typeof ListTasks200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
-    | TasksClientError<"ListTasks400", typeof ListTasks400.Type>
     | TasksClientError<"ListTasks404", typeof ListTasks404.Type>
-    | TasksClientError<"ListTasks500", typeof ListTasks500.Type>
     | TasksClientError<"ListTasks503", typeof ListTasks503.Type>
   >
   readonly createTask: <Config extends OperationConfig>(
     project: string,
-    options: {
-      readonly params?: typeof CreateTaskParams.Encoded | undefined
-      readonly payload: typeof CreateTaskRequestJson.Encoded
-      readonly config?: Config | undefined
-    },
+    options: { readonly payload: typeof CreateTaskRequestJson.Encoded; readonly config?: Config | undefined },
   ) => Effect.Effect<
     WithOptionalResponse<typeof CreateTask201.Type, Config>,
     | HttpClientError.HttpClientError
@@ -2160,7 +2064,6 @@ export interface TasksClient {
     | TasksClientError<"CreateTask400", typeof CreateTask400.Type>
     | TasksClientError<"CreateTask404", typeof CreateTask404.Type>
     | TasksClientError<"CreateTask409", typeof CreateTask409.Type>
-    | TasksClientError<"CreateTask500", typeof CreateTask500.Type>
     | TasksClientError<"CreateTask503", typeof CreateTask503.Type>
   >
   readonly getTask: <Config extends OperationConfig>(
@@ -2175,33 +2078,24 @@ export interface TasksClient {
     | SchemaError
     | TasksClientError<"GetTask400", typeof GetTask400.Type>
     | TasksClientError<"GetTask404", typeof GetTask404.Type>
-    | TasksClientError<"GetTask500", typeof GetTask500.Type>
     | TasksClientError<"GetTask503", typeof GetTask503.Type>
   >
   readonly deleteTask: <Config extends OperationConfig>(
     project: string,
     id: string,
-    options:
-      | { readonly params?: typeof DeleteTaskParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
+    options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"DeleteTask400", typeof DeleteTask400.Type>
     | TasksClientError<"DeleteTask404", typeof DeleteTask404.Type>
-    | TasksClientError<"DeleteTask409", typeof DeleteTask409.Type>
-    | TasksClientError<"DeleteTask500", typeof DeleteTask500.Type>
     | TasksClientError<"DeleteTask503", typeof DeleteTask503.Type>
   >
   readonly patchTask: <Config extends OperationConfig>(
     project: string,
     id: string,
-    options: {
-      readonly params?: typeof PatchTaskParams.Encoded | undefined
-      readonly payload: typeof PatchTaskRequestJson.Encoded
-      readonly config?: Config | undefined
-    },
+    options: { readonly payload: typeof PatchTaskRequestJson.Encoded; readonly config?: Config | undefined },
   ) => Effect.Effect<
     WithOptionalResponse<typeof PatchTask200.Type, Config>,
     | HttpClientError.HttpClientError
@@ -2209,23 +2103,7 @@ export interface TasksClient {
     | TasksClientError<"PatchTask400", typeof PatchTask400.Type>
     | TasksClientError<"PatchTask404", typeof PatchTask404.Type>
     | TasksClientError<"PatchTask409", typeof PatchTask409.Type>
-    | TasksClientError<"PatchTask500", typeof PatchTask500.Type>
     | TasksClientError<"PatchTask503", typeof PatchTask503.Type>
-  >
-  readonly getTaskBranches: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options:
-      | { readonly params?: typeof GetTaskBranchesParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetTaskBranches200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetTaskBranches400", typeof GetTaskBranches400.Type>
-    | TasksClientError<"GetTaskBranches404", typeof GetTaskBranches404.Type>
-    | TasksClientError<"GetTaskBranches500", typeof GetTaskBranches500.Type>
-    | TasksClientError<"GetTaskBranches503", typeof GetTaskBranches503.Type>
   >
   readonly listComments: <Config extends OperationConfig>(
     project: string,
@@ -2239,41 +2117,72 @@ export interface TasksClient {
     | SchemaError
     | TasksClientError<"ListComments400", typeof ListComments400.Type>
     | TasksClientError<"ListComments404", typeof ListComments404.Type>
-    | TasksClientError<"ListComments500", typeof ListComments500.Type>
     | TasksClientError<"ListComments503", typeof ListComments503.Type>
   >
   readonly addComment: <Config extends OperationConfig>(
     project: string,
     id: string,
-    options: {
-      readonly params?: typeof AddCommentParams.Encoded | undefined
-      readonly payload: typeof AddCommentRequestJson.Encoded
-      readonly config?: Config | undefined
-    },
+    options: { readonly payload: typeof AddCommentRequestJson.Encoded; readonly config?: Config | undefined },
   ) => Effect.Effect<
     WithOptionalResponse<typeof AddComment201.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"AddComment400", typeof AddComment400.Type>
     | TasksClientError<"AddComment404", typeof AddComment404.Type>
-    | TasksClientError<"AddComment409", typeof AddComment409.Type>
-    | TasksClientError<"AddComment500", typeof AddComment500.Type>
     | TasksClientError<"AddComment503", typeof AddComment503.Type>
   >
-  readonly listBranchComments: <Config extends OperationConfig>(
+  readonly writeTaskFile: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: { readonly payload: typeof WriteTaskFileRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof WriteTaskFile200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"WriteTaskFile400", typeof WriteTaskFile400.Type>
+    | TasksClientError<"WriteTaskFile404", typeof WriteTaskFile404.Type>
+    | TasksClientError<"WriteTaskFile409", typeof WriteTaskFile409.Type>
+    | TasksClientError<"WriteTaskFile503", typeof WriteTaskFile503.Type>
+  >
+  readonly taskHistory: <Config extends OperationConfig>(
     project: string,
     id: string,
     options:
-      | { readonly params?: typeof ListBranchCommentsParams.Encoded | undefined; readonly config?: Config | undefined }
+      | { readonly params?: typeof TaskHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
       | undefined,
   ) => Effect.Effect<
-    WithOptionalResponse<typeof ListBranchComments200.Type, Config>,
+    WithOptionalResponse<typeof TaskHistory200.Type, Config>,
     | HttpClientError.HttpClientError
     | SchemaError
-    | TasksClientError<"ListBranchComments400", typeof ListBranchComments400.Type>
-    | TasksClientError<"ListBranchComments404", typeof ListBranchComments404.Type>
-    | TasksClientError<"ListBranchComments500", typeof ListBranchComments500.Type>
-    | TasksClientError<"ListBranchComments503", typeof ListBranchComments503.Type>
+    | TasksClientError<"TaskHistory400", typeof TaskHistory400.Type>
+    | TasksClientError<"TaskHistory404", typeof TaskHistory404.Type>
+    | TasksClientError<"TaskHistory503", typeof TaskHistory503.Type>
+  >
+  readonly resolveConflict: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: { readonly payload: typeof ResolveConflictRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ResolveConflict200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"ResolveConflict400", typeof ResolveConflict400.Type>
+    | TasksClientError<"ResolveConflict404", typeof ResolveConflict404.Type>
+    | TasksClientError<"ResolveConflict409", typeof ResolveConflict409.Type>
+    | TasksClientError<"ResolveConflict503", typeof ResolveConflict503.Type>
+  >
+  readonly taskRevision: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    revision: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof TaskRevision200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"TaskRevision400", typeof TaskRevision400.Type>
+    | TasksClientError<"TaskRevision404", typeof TaskRevision404.Type>
+    | TasksClientError<"TaskRevision503", typeof TaskRevision503.Type>
   >
   readonly getTaskTree: <Config extends OperationConfig>(
     project: string,
@@ -2287,7 +2196,6 @@ export interface TasksClient {
     | SchemaError
     | TasksClientError<"GetTaskTree400", typeof GetTaskTree400.Type>
     | TasksClientError<"GetTaskTree404", typeof GetTaskTree404.Type>
-    | TasksClientError<"GetTaskTree500", typeof GetTaskTree500.Type>
     | TasksClientError<"GetTaskTree503", typeof GetTaskTree503.Type>
   >
   readonly searchAll: <Config extends OperationConfig>(
@@ -2296,7 +2204,7 @@ export interface TasksClient {
       | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof SearchAll200.Type, Config>,
-    HttpClientError.HttpClientError | SchemaError | TasksClientError<"SearchAll500", typeof SearchAll500.Type>
+    HttpClientError.HttpClientError | SchemaError
   >
   readonly health: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,

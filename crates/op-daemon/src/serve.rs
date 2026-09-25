@@ -13,8 +13,8 @@ use crate::home::Home;
 use crate::now_unix;
 
 // The daemon is a re-exec of whichever binary asked for one, so every binary that can start a
-// daemon answers this argument before its own parsing. A flag rather than an environment variable:
-// the daemon runs `openplan mergedriver`, and an inherited variable would make that a daemon too.
+// daemon answers this argument before its own parsing. A flag rather than an environment variable,
+// so a git command the daemon runs does not inherit it.
 pub const SERVE_ARG: &str = "--serve-daemon";
 
 pub fn serve_request(args: impl IntoIterator<Item = String>) -> Option<u16> {
@@ -102,13 +102,7 @@ async fn bind_and_serve(home: Home, port: u16) -> Result<()> {
     home.write_info(&info)?;
     let state = state.with_health(info.clone());
 
-    // Watchers scan every branch and hash each worktree's task files; keep that off the async
-    // runtime thread.
-    let starting = state.clone();
-    tokio::task::spawn_blocking(move || {
-        starting.start_watchers();
-        warm_indexes(&starting);
-    });
+    state.start_projects();
 
     ignore_sighup();
     tracing::info!(%addr, pid = info.pid, "openplan daemon serving");
@@ -118,16 +112,6 @@ async fn bind_and_serve(home: Home, port: u16) -> Result<()> {
     home.clear_info();
     fs2::FileExt::unlock(&lock).ok();
     result.map_err(Into::into)
-}
-
-// A warm index only saves the first read the work it would do anyway, so it must not delay the port
-// answering — with N projects it is N branch walks over the object DB.
-fn warm_indexes(state: &AppState) {
-    for project in state.projects() {
-        if let Err(err) = project.rebuilt_index() {
-            tracing::warn!(project = %project.name(), %err, "initial matrix build failed");
-        }
-    }
 }
 
 fn ignore_sighup() {

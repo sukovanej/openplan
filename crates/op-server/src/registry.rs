@@ -12,10 +12,13 @@ pub struct ProjectRegistry {
     entries: Vec<ProjectEntry>,
 }
 
+// An entry without `backend` predates the choice, and the daemon reads what its path holds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectEntry {
     pub name: String,
     pub path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<op_api::BackendKind>,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -4,12 +4,11 @@ import { useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 
 import type { SearchHit } from "@openplan/api-client"
-import { FLOW_ROUTE, statusField, TaskIdentity } from "@openplan/task-ui"
+import { FLOW_ROUTE, statusField, TaskIdentity, taskPath } from "@openplan/task-ui"
 import { FuzzyText, fuzzyMatch, Palette, type PaletteItem, type PaletteProvider } from "@openplan/ui"
 
 import { searchTasks } from "../lib/api"
 import type { PaletteTarget } from "../lib/keys"
-import { hitKey, hitPath } from "../lib/palette-search"
 import { runtime } from "../lib/runtime"
 
 interface Command {
@@ -67,11 +66,12 @@ function homeProvider(open: (to: string) => void): PaletteProvider {
   }
 }
 
+// A key is unique only inside its project, so the two together name a row.
 function row(hit: SearchHit, open: (to: string) => void): PaletteItem {
   return {
-    key: hitKey(hit),
+    key: `${hit.task.project} ${hit.task.id}`,
     content: <TaskIdentity status={statusField(hit.task.metadata)} id={hit.task.id} title={hit.task.title} />,
-    onSelect: () => open(hitPath(hit)),
+    onSelect: () => open(taskPath(hit.task.project, hit.task.id)),
   }
 }
 

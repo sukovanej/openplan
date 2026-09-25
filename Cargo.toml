@@ -17,15 +17,16 @@ op-agent-codex = { path = "crates/op-agent-codex" }
 op-claude = { path = "crates/op-claude" }
 op-md = { path = "crates/op-md" }
 op-task = { path = "crates/op-task" }
-op-store = { path = "crates/op-store" }
+op-backend = { path = "crates/op-backend" }
+op-backend-git = { path = "crates/op-backend-git" }
+op-backend-local = { path = "crates/op-backend-local" }
+op-backend-conformance = { path = "crates/op-backend-conformance" }
+op-tracker = { path = "crates/op-tracker" }
 op-lint = { path = "crates/op-lint" }
-op-git = { path = "crates/op-git" }
 op-api = { path = "crates/op-api" }
 op-client = { path = "crates/op-client" }
 op-browser = { path = "crates/op-browser" }
-op-watch = { path = "crates/op-watch" }
 op-index = { path = "crates/op-index" }
-op-presence = { path = "crates/op-presence" }
 op-server = { path = "crates/op-server" }
 op-daemon = { path = "crates/op-daemon" }
 op-skills = { path = "crates/op-skills" }
@@ -60,6 +61,7 @@ tauri-build = "2"
 tauri-plugin-dialog = "2"
 
 notify = "8"
+rusqlite = { version = "0.40", features = ["bundled"] }
 fs2 = "0.4"
 nix = { version = "0.31", features = ["signal", "process"] }
 getrandom = "0.4"

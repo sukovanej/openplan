@@ -40,27 +40,73 @@ pub enum MetadataErrorTag {
 }
 
 impl Metadata {
-    pub fn from_partial(partial: op_task::PartialMetadata, abbreviation: Abbreviation) -> Self {
+    // A field `conflicts` names reads as a conflict between its published and its other version.
+    pub fn from_partial(
+        partial: op_task::PartialMetadata,
+        conflicts: &[op_task::FieldConflict],
+        abbreviation: Abbreviation,
+    ) -> Self {
         match partial {
             op_task::PartialMetadata::Error(message) => Metadata::Error {
                 kind: MetadataErrorTag::Error,
                 message,
             },
-            op_task::PartialMetadata::Fields(fields) => Metadata::Fields(FrontmatterFields {
-                status: fields.status.into(),
-                created: Field::from(fields.created).map(Rfc3339),
-                parent: Field::from(fields.parent)
-                    .map(|parent| parent.map(|p| key_of(abbreviation, &p))),
-                rank: fields.rank.into(),
-                dependencies: Field::from(fields.dependencies).map(|dependencies| {
-                    dependencies
-                        .iter()
-                        .map(|d| key_of(abbreviation, d))
-                        .collect()
-                }),
-                tags: fields.tags.into(),
-            }),
+            op_task::PartialMetadata::Fields(fields) => {
+                let mut fields = fields_of(fields, abbreviation);
+                for conflict in conflicts {
+                    let other = fields_of(conflict.other_fields(), abbreviation);
+                    match conflict.field.as_str() {
+                        "status" => {
+                            fields.status = fields.status.in_conflict(other.status, conflict)
+                        }
+                        "created" => {
+                            fields.created = fields.created.in_conflict(other.created, conflict)
+                        }
+                        "parent" => {
+                            fields.parent = fields.parent.in_conflict(other.parent, conflict)
+                        }
+                        "rank" => fields.rank = fields.rank.in_conflict(other.rank, conflict),
+                        "dependencies" => {
+                            fields.dependencies = fields
+                                .dependencies
+                                .in_conflict(other.dependencies, conflict)
+                        }
+                        "tags" => fields.tags = fields.tags.in_conflict(other.tags, conflict),
+                        _ => {}
+                    }
+                }
+                Metadata::Fields(fields)
+            }
         }
+    }
+
+    pub fn from_task(task: &op_task::Task, abbreviation: Abbreviation) -> Self {
+        if task.conflicts.is_empty() {
+            return Self::from_frontmatter(&task.frontmatter, abbreviation);
+        }
+        match task.to_file_string() {
+            Ok(text) => {
+                let partial = op_task::parse_partial(&text);
+                Self::from_partial(partial.metadata, &partial.conflicts, abbreviation)
+            }
+            Err(_) => Self::from_frontmatter(&task.frontmatter, abbreviation),
+        }
+    }
+}
+
+fn fields_of(fields: op_task::PartialFrontmatter, abbreviation: Abbreviation) -> FrontmatterFields {
+    FrontmatterFields {
+        status: fields.status.into(),
+        created: Field::from(fields.created).map(Rfc3339),
+        parent: Field::from(fields.parent).map(|parent| parent.map(|p| key_of(abbreviation, &p))),
+        rank: fields.rank.into(),
+        dependencies: Field::from(fields.dependencies).map(|dependencies| {
+            dependencies
+                .iter()
+                .map(|d| key_of(abbreviation, d))
+                .collect()
+        }),
+        tags: fields.tags.into(),
     }
 }
 
@@ -143,6 +189,23 @@ impl Metadata {
         push("dependencies", fields.dependencies.as_error());
         push("tags", fields.tags.as_error());
         out
+    }
+
+    pub fn conflicted_fields(&self) -> Vec<&'static str> {
+        let Some(fields) = self.fields() else {
+            return Vec::new();
+        };
+        [
+            ("status", fields.status.is_conflict()),
+            ("created", fields.created.is_conflict()),
+            ("parent", fields.parent.is_conflict()),
+            ("rank", fields.rank.is_conflict()),
+            ("dependencies", fields.dependencies.is_conflict()),
+            ("tags", fields.tags.is_conflict()),
+        ]
+        .into_iter()
+        .filter_map(|(name, conflicted)| conflicted.then_some(name))
+        .collect()
     }
 
     pub fn dependencies(&self) -> &[String] {

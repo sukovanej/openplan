@@ -1,6 +1,7 @@
 use crate::comment::Comment;
+use crate::field::Field;
 use crate::keys::key_number;
-use crate::metadata::Metadata;
+use crate::metadata::{FrontmatterFields, Metadata};
 
 // A reference as a task file spells it. `Metadata` renders one as this store's key, which is the id
 // every surface above the store speaks — but the store reads a task file back, and there a
@@ -16,6 +17,57 @@ fn file_reference(reference: &str) -> serde_yaml::Value {
         (Some(number), false) => reference.replacen(target, &number.to_string(), 1).into(),
         (None, _) => reference.into(),
     }
+}
+
+// Each conflicting field in the spelling its published value takes above, so a file written back
+// from this rendering keeps the conflict exactly as the daemon holds it.
+fn conflicts_of(fields: &FrontmatterFields) -> Vec<op_task::FieldConflict> {
+    let references = |list: &Vec<String>| {
+        (!list.is_empty()).then(|| {
+            list.iter()
+                .map(|reference| file_reference(reference))
+                .collect::<Vec<_>>()
+                .into()
+        })
+    };
+    let mut out = Vec::new();
+    conflict(&mut out, "status", &fields.status, |status| {
+        Some(status.as_str().into())
+    });
+    conflict(&mut out, "created", &fields.created, |created| {
+        Some(created.to_string().into())
+    });
+    conflict(&mut out, "parent", &fields.parent, |parent| {
+        parent.as_deref().map(file_reference)
+    });
+    conflict(&mut out, "rank", &fields.rank, |rank| {
+        rank.as_deref().map(Into::into)
+    });
+    conflict(&mut out, "dependencies", &fields.dependencies, references);
+    conflict(&mut out, "tags", &fields.tags, |tags| {
+        (!tags.is_empty()).then(|| tags.iter().map(String::as_str).collect::<Vec<_>>().into())
+    });
+    out
+}
+
+fn conflict<T>(
+    out: &mut Vec<op_task::FieldConflict>,
+    name: &str,
+    field: &Field<T>,
+    yaml: impl Fn(&T) -> Option<serde_yaml::Value>,
+) {
+    let Field::Conflict(conflict) = field else {
+        return;
+    };
+    let (Some(other), Some(published)) = (conflict.sides.first(), conflict.sides.last()) else {
+        return;
+    };
+    out.push(op_task::FieldConflict {
+        field: name.to_owned(),
+        other: yaml(&other.value),
+        other_label: other.label.clone(),
+        label: published.label.clone(),
+    });
 }
 
 // A task the daemon could not parse well enough to write back as a file. `status` and `created` are
@@ -75,6 +127,8 @@ pub fn render_task_file(
         }
     }
     let yaml = serde_yaml::to_string(&frontmatter).map_err(|_| RenderError)?;
+    let yaml =
+        op_task::with_field_conflicts(&yaml, &conflicts_of(fields)).map_err(|_| RenderError)?;
     let parsed: Vec<op_task::comment::Comment> = comments.iter().map(Into::into).collect();
     let body = op_task::comment::with_comments(body, &parsed);
     Ok(format!("---\n{yaml}---\n{body}"))

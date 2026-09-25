@@ -9,13 +9,60 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A team shares one set of tasks. A git project keeps its tasks in the git ref
+  `refs/openplan/tasks`, apart from the code. The ref is not a branch, so
+  GitHub shows no branch for it and offers no pull request. Every daemon syncs
+  the ref with the remote every 30 seconds and 2 seconds after each write. Sync
+  merges with a merge commit. It never rebases and never force-pushes.
+- Sync merges two changes to one task by field and by line. Tags,
+  dependencies, and comments merge as sets. When two people change the same
+  field or the same lines differently, the task keeps both versions as a git
+  conflict block, and the published version is in force until someone picks:
+  - The web UI shows each conflict, with buttons to keep one version, both
+    versions, or new text.
+  - `openplan get` warns about conflicts, `openplan list` marks them, and
+    `openplan lint` reports them.
+  - The API gives a field a `conflict` state and each task a `conflicts`
+    count. `POST /api/projects/{project}/tasks/{id}/resolve` settles a block
+    in the body.
+- Two tasks created at the same time under one number both stay. The later
+  one gets the next free number, and the merge revision says so.
+- One person can keep the tasks in a local `.plan/` directory instead, with a
+  history in `.plan/.history.sqlite`. An edit made by hand becomes a revision
+  too.
+- Every write is a revision with an author, an agent, a time, and a message.
+  `openplan history [key]` lists the revisions, and `openplan get <key>
+  --revision <id>` prints a task as it stood then. The web UI shows the history
+  of a task, a task at a revision, and the activity of a project.
+- `openplan init --abbreviation <ABC>` starts the tasks of a project. In a
+  clone, the first `openplan` command fetches the tasks that a teammate already
+  pushed. `openplan init` without `--abbreviation` does the same.
+- `openplan migrate` moves a `.plan/` directory beside the code into the tasks
+  ref, with its whole history and its authors.
+- `openplan write <key> --file <path>` replaces a whole task file, as
+  `openplan get` prints it.
+- `openplan sync` syncs now, and `openplan sync --status` tells how the last
+  sync went. The web UI shows the sync state in its header.
+- A web UI that reconnects gets the changes it missed, not only a full reload.
 - A click on a `d2` diagram in the web UI opens it over the whole window. Esc
   or the close button closes it.
 
 ### Changed
 
+- The tasks are no longer files in the checkout. Read and write them with the
+  `openplan` CLI or the web UI. A task write needs no worktree and no commit.
+- A write through the daemon carries its author and its agent, so each
+  revision names who made it.
 - A `d2` diagram wider than the task column shrinks to fit it. It no longer
   scrolls sideways.
+
+### Removed
+
+- Branch-aware tasks: the task and branch matrix, `--branch`,
+  `--all-branches`, `openplan branches`, and the branch badges and switcher in
+  the web UI. A task now has one version.
+- Rolling updates and `openplan publish`. Sync replaces them.
+- `openplan merge-driver`. Sync merges the tasks itself.
 
 ## [0.0.2](https://github.com/sukovanej/openplan/compare/v0.0.1...v0.0.2) - 2026-09-11
 

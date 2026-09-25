@@ -1,6 +1,6 @@
 [package]
 name = "op-api"
-description = "Shared wire types: DTOs, matrix, presence, change events"
+description = "Shared wire types: DTOs, history, sync, and change events"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

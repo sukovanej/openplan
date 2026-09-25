@@ -62,7 +62,7 @@ export function TagsRoute() {
         </Link>
       </PanelHeader>
       <PanelBody className="p-6">
-        {/* The read and the writes resolve the same worktree, so a registry that cannot be read is a
+        {/* The read and the writes go to the same store, so a registry that cannot be read is a
             registry that cannot be written either — offering the form would only produce a toast. */}
         {tags.isError ? (
           <EmptyState title="Could not load tags" detail={errorText(tags.error)} />
@@ -211,8 +211,9 @@ function Palette({
 const FORCE_COST = "The tag goes, and every task that still names it is left holding a dangling tag."
 
 // The first attempt never carries `force`: the daemon is the only thing that knows how many tasks
-// name the tag. A conflict alone does not say that force would change it — a delete the branch
-// cannot take is refused again just the same — so the offer waits for the reason that names one.
+// name the tag. A conflict alone does not say that force would change it — a delete another writer
+// keeps moving under is refused again just the same — so the offer waits for the reason that names
+// one.
 function DeleteConfirm({
   project,
   tag,
@@ -254,7 +255,7 @@ function DeleteConfirm({
   )
 }
 
-// A rename rewrites the `tags:` of every task on this branch that names the tag, so it is sent only
+// A rename rewrites the `tags:` of every task that names the tag, so it is sent only
 // when the name really changed. Registration leaves the colour out: the registry derives one from
 // the name, and the row recolours in a click.
 function TagForm({

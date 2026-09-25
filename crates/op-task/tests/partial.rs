@@ -66,12 +66,16 @@ fn a_reference_that_names_no_task_reads_as_invalid() {
 }
 
 #[test]
-fn unresolved_merge_markers_leave_no_field_recoverable() {
+fn merge_markers_in_the_frontmatter_read_as_the_published_value_and_a_conflict() {
     let parsed = parse_partial(
-        "---\n<<<<<<< HEAD\nstatus: todo\n=======\nstatus: done\n>>>>>>> other\n---\n# Head\n",
+        "---\n<<<<<<< HEAD\nstatus: todo\n=======\nstatus: done\n>>>>>>> other\ncreated: 2026-01-01T00:00:00Z\n---\n# Head\n",
     );
-    assert!(matches!(parsed.metadata, PartialMetadata::Error(_)));
-    // The title still comes back, so the row can name itself even when its metadata cannot.
+    let PartialMetadata::Fields(fields) = &parsed.metadata else {
+        panic!("the published version parses");
+    };
+    assert_eq!(fields.status, Ok(op_task::Status::Done));
+    assert_eq!(parsed.conflicts.len(), 1);
+    assert_eq!(parsed.conflicts[0].field, "status");
     assert_eq!(parsed.title.as_deref(), Some("Head"));
 }
 

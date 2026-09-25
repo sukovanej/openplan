@@ -1,8 +1,9 @@
-import { Bot, CircleAlert } from "lucide-react"
+import { CircleAlert } from "lucide-react"
 
-import type { Comment, FieldError, TaskRef } from "@openplan/api-client"
-import { absoluteTime, MetaLine, Section, Tag, Tooltip } from "@openplan/ui"
+import type { Comment, Field_Rfc3339, Field_String, TaskRef } from "@openplan/api-client"
+import { absoluteTime, MetaLine, Section, Tooltip } from "@openplan/ui"
 
+import { AgentTag } from "./agent-tag"
 import { fieldFailure, fieldMessage, fieldValue } from "./metadata"
 import { TaskBody } from "./task-body"
 
@@ -32,12 +33,7 @@ export function CommentThread({
                   <Damaged field={comment.author}>{(author) => author}</Damaged>
                 </span>
                 <Damaged field={comment.at}>{(at) => <time dateTime={at}>{absoluteTime(at)}</time>}</Damaged>
-                {comment.agent !== undefined && comment.agent !== null && (
-                  <Tag className="border-border text-muted-foreground">
-                    <Bot aria-hidden className="size-3" />
-                    <span>{comment.agent}</span>
-                  </Tag>
-                )}
+                {comment.agent !== undefined && comment.agent !== null && <AgentTag agent={comment.agent} />}
               </MetaLine>
               <TaskBody
                 project={project}
@@ -57,7 +53,13 @@ export function CommentThread({
 
 // A hand-damaged heading still delivers the text it introduces, so the field that failed reads as
 // the reason it failed and the entry keeps its place in the thread.
-function Damaged({ field, children }: { field: string | FieldError; children: (value: string) => React.ReactNode }) {
+function Damaged({
+  field,
+  children,
+}: {
+  field: Field_String | Field_Rfc3339
+  children: (value: string) => React.ReactNode
+}) {
   const value = fieldValue(field)
   if (value !== undefined) return <>{children(value)}</>
   const failure = fieldFailure(field)

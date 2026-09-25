@@ -20,20 +20,18 @@ export interface Registry {
   readonly failed: boolean
 }
 
-// `branch` must be the branch a tags write would land on, so that what the chips call dangling is
-// what the write would refuse.
-export function useTags(project: string, branch?: string): Registry {
+export function useTags(project: string): Registry {
   const { data, isError } = useQuery({
-    queryKey: tagsKey(project, branch),
-    queryFn: () => runtime.runPromise(listTags(project, branch)),
+    queryKey: tagsKey(project),
+    queryFn: () => runtime.runPromise(listTags(project)),
     select: indexTags,
   })
   return { byName: data, failed: isError }
 }
 
-// A tags write is validated as a whole set, so one name this branch's registry does not hold refuses
-// the whole edit — including a name the task already carried. Every write therefore drops the
-// dangling names, which is what the dangling chip's tooltip forewarns.
+// A tags write is validated as a whole set, so one name the registry does not hold refuses the whole
+// edit — including a name the task already carried. Every write therefore drops the dangling names,
+// which is what the dangling chip's tooltip forewarns.
 const kept = (names: ReadonlyArray<string>, tags: ReadonlyMap<string, TagView>, dropped: string) =>
   names.filter((name) => name !== dropped && tags.has(name))
 

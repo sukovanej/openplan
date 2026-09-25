@@ -62,10 +62,8 @@ impl Build {
                 tags: Field::Value(self.tags),
             }),
             comment_count: 0,
+            conflicts: 0,
             updated: Field::Error(op_api::FieldError::Missing),
-            headline: "main".to_owned(),
-            branches: Vec::new(),
-            write_target: None,
         }
     }
 }

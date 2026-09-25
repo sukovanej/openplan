@@ -1,9 +1,11 @@
 mod author;
 mod daemon;
-mod mergedriver;
+mod history;
+mod lint;
 mod open;
 mod plan;
 mod project;
+mod start;
 mod tag;
 mod update;
 
@@ -14,15 +16,11 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use op_api::{
-    BranchMark, ChangeKind, Comment, CreateComment, CreateTask, Field, FieldError, FieldUpdate,
-    MatrixCell, Metadata, SearchHit, TaskListItem, TaskPatch, TaskTree, list_item_cmp,
+    BackendKind, Comment, CreateComment, CreateTask, Field, FieldError, FieldUpdate, Metadata,
+    SearchHit, TaskListItem, TaskPatch, TaskTree, list_item_cmp,
 };
-use op_git::Repo;
-use op_lint::{CreatedSource, Diagnostic, Snapshot};
-use op_server::canonical;
-use op_store::Store;
 use op_task::tag::Color;
-use op_task::{Status, Timestamp, rank};
+use op_task::{Status, rank};
 
 use op_daemon::Home;
 use plan::Plan;
@@ -42,6 +40,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Start the tasks of this project, or join the tasks its git remote holds
+    Init {
+        /// Where the tasks live; omit for git in a repository and local elsewhere
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
+        /// The three uppercase letters every task key starts with, like OPP in OPP-42; omit to
+        /// join the tasks on the git remote
+        #[arg(long)]
+        abbreviation: Option<String>,
+    },
+    /// Move the tasks of a repository that keeps them in .plan/ beside the code
+    Migrate {
+        /// Where the tasks go; omit for the git ref refs/openplan/tasks with the history of .plan/
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
+    },
     /// Install or update the OpenPlan agent skills in this repository
     SetupSkills {
         /// Install skills for one agent; omit to install for all agents
@@ -66,11 +80,8 @@ enum Command {
         /// Read the content from a file, or `-` for stdin
         #[arg(long = "body-file")]
         body_file: Option<String>,
-        /// Write to this branch instead of the one this worktree has checked out
-        #[arg(long)]
-        branch: Option<String>,
     },
-    /// List tasks in the store
+    /// List the tasks of this project
     List {
         #[arg(long)]
         status: Option<Status>,
@@ -78,14 +89,8 @@ enum Command {
         parent: Option<String>,
         #[arg(long)]
         json: bool,
-        /// Every task on every local branch (one matrix row per task×branch)
-        #[arg(long = "all-branches", conflicts_with_all = ["branch", "parent"])]
-        all_branches: bool,
-        /// Tasks as they stand on one branch, without checking it out
-        #[arg(long)]
-        branch: Option<String>,
     },
-    /// Find tasks whose title, body, or frontmatter contains the query, on any branch
+    /// Find tasks whose title, body, or frontmatter contains the query
     Search {
         query: String,
         #[arg(long)]
@@ -96,9 +101,16 @@ enum Command {
         id: String,
         #[arg(long)]
         json: bool,
-        /// Read the task's version on another branch (read-only)
+        /// Print the task as it stood at this revision, as `openplan history` names it
         #[arg(long)]
-        branch: Option<String>,
+        revision: Option<String>,
+    },
+    /// Replace a whole task with a task file, as `openplan get` prints one
+    Write {
+        id: String,
+        /// Read the file from this path, or `-` for stdin
+        #[arg(long)]
+        file: String,
     },
     /// Append an entry to a task's comment log
     Comment {
@@ -115,20 +127,9 @@ enum Command {
         id: String,
         #[arg(long)]
         json: bool,
-        /// Read the log on another branch (read-only)
-        #[arg(long, conflicts_with = "all_branches")]
-        branch: Option<String>,
-        /// Every branch's log, merged by timestamp and labelled with its branch
-        #[arg(long = "all-branches")]
-        all_branches: bool,
     },
     /// Print a task's metadata (status, parent, dependencies, tags)
-    Show {
-        id: String,
-        /// Show the per-branch status matrix for this task instead
-        #[arg(long)]
-        branches: bool,
-    },
+    Show { id: String },
     /// Print the subtask hierarchy rooted at a task
     Tree {
         id: String,
@@ -156,21 +157,33 @@ enum Command {
         id: String,
         field: String,
         value: String,
-        /// Write to this branch instead of the one this worktree has checked out
-        #[arg(long)]
-        branch: Option<String>,
     },
-    /// Delete a task file
+    /// Delete a task
     Delete {
         id: String,
-        /// Write to this branch instead of the one this worktree has checked out
-        #[arg(long)]
-        branch: Option<String>,
         #[arg(long)]
         yes: bool,
     },
-    /// List local git branches
-    Branches,
+    /// Print the revisions of the project, or of one task, newest first
+    History {
+        /// A task key; omit for every revision of the project
+        id: Option<String>,
+        /// Only revisions older than this one
+        #[arg(long)]
+        before: Option<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Exchange the tasks with the remote now, rather than at the next automatic sync
+    Sync {
+        /// Print how the last sync went, and sync nothing
+        #[arg(long)]
+        status: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Open the realtime web UI in the default browser
     Open,
     /// Check task files (frontmatter, references, cycles, duplicate numbers); never starts a daemon
@@ -183,7 +196,7 @@ enum Command {
         #[arg(long)]
         fix: bool,
     },
-    /// Manage the tags tasks on this branch can carry
+    /// Manage the tags tasks can carry
     Tag {
         #[command(subcommand)]
         command: TagCommand,
@@ -200,25 +213,21 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
-    /// Push the rolling-updates branch and open a pull request for it
-    Publish {
-        /// List what would be published instead of publishing it
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Git merge driver for .plan task files (git passes %O %A %B %L %P %S %X %Y)
-    MergeDriver {
-        ancestor: String,
-        current: String,
-        other: String,
-        marker_size: Option<usize>,
-        path: Option<String>,
-        // %S, the base label. The markers carry no base section, so nothing reads it; it holds the
-        // position git passes the two labels after it in.
-        label_base: Option<String>,
-        label_ours: Option<String>,
-        label_theirs: Option<String>,
-    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Backend {
+    Git,
+    Local,
+}
+
+impl Backend {
+    fn kind(self) -> BackendKind {
+        match self {
+            Self::Git => BackendKind::Git,
+            Self::Local => BackendKind::Local,
+        }
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -237,7 +246,7 @@ enum TagCommand {
         #[arg(long = "desc")]
         description: Option<String>,
     },
-    /// List every tag this branch registers
+    /// List every tag the project registers
     List {
         #[arg(long)]
         json: bool,
@@ -254,13 +263,13 @@ enum TagCommand {
         field: String,
         value: String,
     },
-    /// Rename a tag and rewrite the tasks on this branch that carry the old name
+    /// Rename a tag and rewrite the tasks that carry the old name
     Rename { from: String, to: String },
     /// Delete a tag file
     Delete {
         name: String,
-        /// Delete the tag even while tasks on this branch carry it; each of those tasks keeps a
-        /// name this branch does not register, and refuses every write until the name goes
+        /// Delete the tag even while tasks carry it; each of those tasks keeps a name the project
+        /// does not register, and refuses every write until the name goes
         #[arg(long)]
         force: bool,
         #[arg(long)]
@@ -276,7 +285,7 @@ enum ProjectCommand {
     List,
     /// Register a repository; defaults to --root
     Add { path: Option<PathBuf> },
-    /// Drop a project from the registry; its files stay on disk
+    /// Drop a project from the registry; its tasks stay where they are
     Remove { name: String },
     /// Give a project a new name; its URLs change with it
     Rename { from: String, to: String },
@@ -321,16 +330,32 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
     let daemon_url = cli.daemon.as_deref();
-    // Every command works in the current directory unless told otherwise.
-    let root = cli.root.as_deref().unwrap_or_else(|| Path::new("."));
+    // Every command works in the current directory unless told otherwise. The tasks can live in an
+    // ancestor of it, and a relative path has no ancestors to search.
+    let root = std::path::absolute(cli.root.as_deref().unwrap_or_else(|| Path::new(".")))
+        .context("resolve the directory to work in")?;
+    let root = root.as_path();
     match cli.command {
+        Command::Init {
+            backend,
+            abbreviation,
+        } => start::init(
+            root,
+            daemon_url,
+            backend.map(Backend::kind),
+            abbreviation.as_deref(),
+        )
+        .map(|()| ExitCode::SUCCESS),
+        Command::Migrate { backend } => {
+            start::migrate(root, daemon_url, backend.map(Backend::kind)).map(|()| ExitCode::SUCCESS)
+        }
         Command::SetupSkills { agent } => {
             let agents = match agent {
                 Some(Agent::Claude) => vec![op_skills::Agent::Claude],
                 Some(Agent::Codex) => vec![op_skills::Agent::Codex],
                 None => op_skills::Agent::ALL.to_vec(),
             };
-            op_skills::setup(&skills_root(root), &agents)?;
+            op_skills::setup(&lint::skills_root(root), &agents)?;
             Ok(ExitCode::SUCCESS)
         }
         Command::Create {
@@ -341,7 +366,6 @@ fn run(cli: Cli) -> Result<ExitCode> {
             tags,
             body,
             body_file,
-            branch,
         } => {
             let body = resolve_body(body, body_file)?;
             let tags = tag::identities(tags)?;
@@ -356,7 +380,6 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     tags,
                     body,
                 },
-                branch,
             )
             .map(|()| ExitCode::SUCCESS)
         }
@@ -364,23 +387,16 @@ fn run(cli: Cli) -> Result<ExitCode> {
             status,
             parent,
             json,
-            all_branches,
-            branch,
-        } => list(
-            root,
-            daemon_url,
-            status,
-            parent.as_deref(),
-            json,
-            all_branches,
-            branch.as_deref(),
-        )
-        .map(|()| ExitCode::SUCCESS),
+        } => list(root, daemon_url, status, parent.as_deref(), json).map(|()| ExitCode::SUCCESS),
         Command::Search { query, json } => {
             search(root, daemon_url, &query, json).map(|()| ExitCode::SUCCESS)
         }
-        Command::Get { id, json, branch } => {
-            get(root, daemon_url, &id, json, branch.as_deref()).map(|()| ExitCode::SUCCESS)
+        Command::Get { id, json, revision } => {
+            get(root, daemon_url, &id, json, revision.as_deref()).map(|()| ExitCode::SUCCESS)
+        }
+        Command::Write { id, file } => {
+            let text = resolve_body(None, Some(file))?.unwrap_or_default();
+            write(root, daemon_url, &id, &text).map(|()| ExitCode::SUCCESS)
         }
         Command::Comment {
             id,
@@ -390,16 +406,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
             let text = resolve_body(text, body_file)?.unwrap_or_default();
             comment(root, daemon_url, &id, &text).map(|()| ExitCode::SUCCESS)
         }
-        Command::Comments {
-            id,
-            json,
-            branch,
-            all_branches,
-        } => comments(root, daemon_url, &id, json, branch.as_deref(), all_branches)
-            .map(|()| ExitCode::SUCCESS),
-        Command::Show { id, branches } => {
-            show(root, daemon_url, &id, branches).map(|()| ExitCode::SUCCESS)
+        Command::Comments { id, json } => {
+            comments(root, daemon_url, &id, json).map(|()| ExitCode::SUCCESS)
         }
+        Command::Show { id } => show(root, daemon_url, &id).map(|()| ExitCode::SUCCESS),
         Command::Tree { id, depth, json } => {
             tree(root, daemon_url, &id, depth, json).map(|()| ExitCode::SUCCESS)
         }
@@ -409,82 +419,34 @@ fn run(cli: Cli) -> Result<ExitCode> {
             before,
             after,
         } => move_task(root, daemon_url, &id, parent, before, after).map(|()| ExitCode::SUCCESS),
-        Command::Set {
+        Command::Set { id, field, value } => {
+            set(root, daemon_url, &id, &field, &value).map(|()| ExitCode::SUCCESS)
+        }
+        Command::Delete { id, yes } => delete(root, daemon_url, &id, yes),
+        Command::History {
             id,
-            field,
-            value,
-            branch,
-        } => set(root, daemon_url, &id, &field, &value, branch).map(|()| ExitCode::SUCCESS),
-        Command::Delete { id, yes, branch } => delete(root, daemon_url, &id, yes, branch),
-        Command::Branches => branches(root).map(|()| ExitCode::SUCCESS),
+            before,
+            limit,
+            json,
+        } => history::history(
+            root,
+            daemon_url,
+            id.as_deref(),
+            before.as_deref(),
+            limit,
+            json,
+        )
+        .map(|()| ExitCode::SUCCESS),
+        Command::Sync { status, json } => history::sync(root, daemon_url, status, json),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
-        Command::Lint { targets, json, fix } => lint(root, &targets, json, fix),
+        Command::Lint { targets, json, fix } => lint::run(root, &targets, json, fix),
         Command::Tag { command } => tag::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
-        Command::Publish { dry_run } => {
-            publish(root, daemon_url, dry_run).map(|()| ExitCode::SUCCESS)
-        }
         Command::Update => update::run().map(|()| ExitCode::SUCCESS),
         Command::Server { command } => server(command, daemon_url),
-        Command::MergeDriver {
-            ancestor,
-            current,
-            other,
-            marker_size,
-            path,
-            label_ours,
-            label_theirs,
-            ..
-        } => Ok(mergedriver::run(&mergedriver::Args {
-            ancestor: &ancestor,
-            current: &current,
-            other: &other,
-            marker_size: marker_size.unwrap_or(7),
-            path: path.as_deref(),
-            label_ours: label_ours.as_deref(),
-            label_theirs: label_theirs.as_deref(),
-        })),
     }
-}
-
-fn publish(root: &Path, daemon_url: Option<&str>, dry_run: bool) -> Result<()> {
-    let plan = Plan::resolve(root, daemon_url)?;
-    if !dry_run {
-        let published = plan.publish()?;
-        println!(
-            "pushed {} to {}/{}",
-            &published.commit[..7.min(published.commit.len())],
-            published.remote,
-            published.branch
-        );
-        if let Some(url) = &published.pull_request {
-            println!("{url}");
-        }
-        return Ok(());
-    }
-    let waiting = plan.rolling_updates()?;
-    for cell in &waiting.pending {
-        println!(
-            "{:<10} {:<10} {}",
-            cell.task.id,
-            kind_str(cell.kind),
-            cell.task.title
-        );
-    }
-    if let Some(conflict) = &waiting.conflict {
-        for path in &conflict.files {
-            println!("conflict   {path}");
-        }
-        println!(
-            "\nfix them in {}, then run `git rebase --continue` there",
-            conflict.worktree
-        );
-    } else if waiting.pending.is_empty() {
-        println!("nothing to publish");
-    }
-    Ok(())
 }
 
 fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> {
@@ -545,15 +507,8 @@ fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Optio
     }
 }
 
-fn create(
-    root: &Path,
-    daemon_url: Option<&str>,
-    task: &CreateTask,
-    branch: Option<String>,
-) -> Result<()> {
-    let id = Plan::resolve(root, daemon_url)?
-        .on_branch(branch)
-        .create(task)?;
+fn create(root: &Path, daemon_url: Option<&str>, task: &CreateTask) -> Result<()> {
+    let id = Plan::resolve(root, daemon_url)?.create(task)?;
     println!("{id}");
     Ok(())
 }
@@ -564,14 +519,8 @@ fn list(
     status: Option<Status>,
     parent: Option<&str>,
     json: bool,
-    all_branches: bool,
-    branch: Option<&str>,
 ) -> Result<()> {
-    let plan = Plan::resolve(root, daemon_url)?;
-    if all_branches {
-        return list_all_branches(&plan, status, json);
-    }
-    let held = plan.list(branch.unwrap_or(plan.branch()))?;
+    let held = Plan::resolve(root, daemon_url)?.list()?;
     let matching: Vec<&TaskListItem> = held
         .iter()
         .filter(|task| status.is_none_or(|s| task.metadata.status() == Some(s)))
@@ -586,30 +535,6 @@ fn list(
         println!("no tasks yet");
     } else {
         println!("no matching tasks");
-    }
-    Ok(())
-}
-
-fn list_all_branches(plan: &Plan, status: Option<Status>, json: bool) -> Result<()> {
-    let mut matrix = plan.matrix()?;
-    matrix
-        .cells
-        .retain(|cell| status.is_none_or(|s| cell.task.metadata.status() == Some(s)));
-    if json {
-        println!("{}", serde_json::to_string_pretty(&matrix)?);
-    } else if matrix.cells.is_empty() {
-        println!("no tasks on any branch");
-    } else {
-        for cell in &matrix.cells {
-            let status = status_label(&cell.task.metadata);
-            println!(
-                "{:<22} {:<10} {status:<11} {}{}",
-                cell.branch,
-                cell.task.id,
-                cell.task.title,
-                cell_flags(cell),
-            );
-        }
     }
     Ok(())
 }
@@ -631,24 +556,44 @@ fn get(
     daemon_url: Option<&str>,
     id: &str,
     json: bool,
-    branch: Option<&str>,
+    revision: Option<&str>,
 ) -> Result<()> {
     let plan = Plan::resolve(root, daemon_url)?;
-    let detail = plan.get(id, branch.unwrap_or(plan.branch()))?;
+    if let Some(revision) = revision {
+        let then = plan.revision(id, revision)?;
+        if json {
+            println!("{}", serde_json::to_string_pretty(&then)?);
+            return Ok(());
+        }
+        match then.task {
+            Some(task) => print!("{}", task.raw),
+            None => bail!("{id} did not exist at revision {revision}"),
+        }
+        return Ok(());
+    }
+    let detail = plan.get(id)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&detail)?);
     } else {
-        // The daemon holds parsed state, not the bytes it parsed, so this is a canonical rendering
-        // of the task and not a copy of the file. A field it could not parse has no canonical form
-        // and is left out of the rendering rather than guessed at, so it is reported instead.
+        // The daemon holds parsed state, so this is a canonical rendering of the task and not a copy
+        // of its file. A field it could not parse has no canonical form, so it is reported instead.
         for problem in detail.metadata.problems() {
             eprintln!("{id}: {problem}");
+        }
+        if detail.conflicts > 0 {
+            eprintln!("{}", conflict_notice(id, detail.conflicts));
         }
         print!(
             "{}",
             op_api::render_task_file(&detail.metadata, &detail.body, &detail.comments)?
         );
     }
+    Ok(())
+}
+
+fn write(root: &Path, daemon_url: Option<&str>, id: &str, text: &str) -> Result<()> {
+    let detail = Plan::resolve(root, daemon_url)?.write(id, text)?;
+    println!("{}: {}", detail.id, detail.title);
     Ok(())
 }
 
@@ -667,69 +612,20 @@ fn comment(root: &Path, daemon_url: Option<&str>, id: &str, text: &str) -> Resul
     Ok(())
 }
 
-fn comments(
-    root: &Path,
-    daemon_url: Option<&str>,
-    id: &str,
-    json: bool,
-    branch: Option<&str>,
-    all_branches: bool,
-) -> Result<()> {
-    let tasks = Plan::resolve(root, daemon_url)?;
-    if all_branches {
-        let groups = tasks.branch_comments(id)?;
-        if json {
-            println!("{}", serde_json::to_string_pretty(&groups)?);
-            return Ok(());
-        }
-        for (branch, comment) in merged(&groups) {
-            print_comment(Some(branch), comment);
-        }
-        return Ok(());
-    }
-    let comments = tasks.comments(id, branch.unwrap_or(tasks.branch()))?;
+fn comments(root: &Path, daemon_url: Option<&str>, id: &str, json: bool) -> Result<()> {
+    let comments = Plan::resolve(root, daemon_url)?.comments(id)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&comments)?);
         return Ok(());
     }
     for comment in &comments {
-        print_comment(None, comment);
+        print_comment(comment);
     }
     Ok(())
 }
 
-// One stream out of several logs. The earlier timestamp goes first, the branch name breaks a tie,
-// and the position within a branch breaks the rest — so the file order inside a branch survives,
-// which is the only order a log promises. An entry whose timestamp does not parse takes the one
-// before it in its branch, the epoch when it leads, which holds it among the entries it was written
-// with.
-fn merged(groups: &[op_api::BranchComments]) -> Vec<(&str, &Comment)> {
-    let mut all: Vec<(Timestamp, &str, usize, &Comment)> = groups
-        .iter()
-        .flat_map(|group| {
-            let mut carried = Timestamp::default();
-            group
-                .comments
-                .iter()
-                .enumerate()
-                .map(move |(position, comment)| {
-                    carried = comment.at.as_value().map_or(carried, |at| at.0);
-                    (carried, group.branch.as_str(), position, comment)
-                })
-        })
-        .collect();
-    all.sort_by_key(|(at, branch, position, _)| (*at, *branch, *position));
-    all.into_iter()
-        .map(|(_, branch, _, comment)| (branch, comment))
-        .collect()
-}
-
-fn print_comment(branch: Option<&str>, comment: &Comment) {
-    let label = match branch {
-        Some(branch) => format!("[{branch}] "),
-        None => String::new(),
-    };
-    println!("{label}{}", heading_of(comment));
+fn print_comment(comment: &Comment) {
+    println!("{}", heading_of(comment));
     for line in comment.text.lines() {
         match line.is_empty() {
             true => println!(),
@@ -757,17 +653,14 @@ fn heading_of(comment: &Comment) -> String {
 fn shown<T: std::fmt::Display>(field: &Field<T>) -> String {
     match field {
         Field::Value(value) => value.to_string(),
+        Field::Conflict(conflict) => conflict.value.to_string(),
         Field::Error(FieldError::Missing) => "(missing)".to_owned(),
         Field::Error(FieldError::Invalid { message }) => format!("({message})"),
     }
 }
 
-fn show(root: &Path, daemon_url: Option<&str>, id: &str, branches: bool) -> Result<()> {
-    let plan = Plan::resolve(root, daemon_url)?;
-    if branches {
-        return show_branches(&plan, id);
-    }
-    let detail = plan.get(id, plan.branch())?;
+fn show(root: &Path, daemon_url: Option<&str>, id: &str) -> Result<()> {
+    let detail = Plan::resolve(root, daemon_url)?.get(id)?;
     let metadata = &detail.metadata;
     println!("id:     {id}");
     println!("title:  {}", detail.title);
@@ -794,33 +687,31 @@ fn show(root: &Path, daemon_url: Option<&str>, id: &str, branches: bool) -> Resu
     for problem in metadata.problems() {
         println!("!       {problem}");
     }
+    if detail.conflicts > 0 {
+        let fields = metadata.conflicted_fields();
+        match fields.is_empty() {
+            true => println!("conflicts: {}", detail.conflicts),
+            false => println!(
+                "conflicts: {} (fields: {})",
+                detail.conflicts,
+                fields.join(", ")
+            ),
+        }
+        eprintln!("{}", conflict_notice(id, detail.conflicts));
+    }
     Ok(())
 }
 
-fn show_branches(plan: &Plan, id: &str) -> Result<()> {
-    let view = plan.branches(id)?;
-    let branch_count: usize = view.versions.iter().map(|v| v.branches.len()).sum();
-    let divergent = view.versions.len() > 1;
-    println!("id: {}", view.id);
-    println!(
-        "{} version{} across {} branch{}{}",
-        view.versions.len(),
-        plural(view.versions.len()),
-        branch_count,
-        if branch_count == 1 { "" } else { "es" },
-        if divergent { " (divergent)" } else { "" },
-    );
-    for version in &view.versions {
-        let short = &version.blob_oid[..version.blob_oid.len().min(12)];
-        println!(
-            "  {short}  {:<11} {}",
-            status_label(&version.summary.metadata),
-            version.summary.title,
-        );
-        let branches: Vec<String> = version.branches.iter().map(mark_label).collect();
-        println!("    branches: {}", branches.join(", "));
-    }
-    Ok(())
+// Sync leaves a conflict where two people changed one thing differently; the agent or person who
+// reads the task settles it.
+fn conflict_notice(id: &str, count: usize) -> String {
+    format!(
+        "{id} has {count} unresolved conflict{} from a sync. Each block between `<<<<<<<` and \
+         `>>>>>>>` holds two versions, and the one after `=======` is in force. Keep the right \
+         version of each block, remove the markers, and write the task back with `openplan write`, \
+         or settle one field with `openplan set`.",
+        if count == 1 { "" } else { "s" }
+    )
 }
 
 fn status_label(metadata: &Metadata) -> String {
@@ -833,76 +724,25 @@ fn status_label(metadata: &Metadata) -> String {
 fn print_tasks(tasks: &[&TaskListItem]) {
     for task in tasks {
         let status = status_label(&task.metadata);
-        println!("{:<10} {status:<11} {}", task.id, task.title);
+        let conflicted = match task.conflicts {
+            0 => "",
+            _ => "  [conflict]",
+        };
+        println!("{:<10} {status:<11} {}{conflicted}", task.id, task.title);
     }
 }
 
 fn print_hits(hits: &[SearchHit]) {
     for hit in hits {
         let status = status_label(&hit.task.metadata);
-        println!(
-            "{:<22} {:<10} {status:<11} {}",
-            hit.branch, hit.task.id, hit.task.title
-        );
+        println!("{:<10} {status:<11} {}", hit.task.id, hit.task.title);
     }
 }
 
-fn cell_flags(cell: &MatrixCell) -> String {
-    let mut flags = Vec::new();
-    if cell.kind != ChangeKind::Base {
-        flags.push(kind_str(cell.kind));
-    }
-    if cell.dirty {
-        flags.push("dirty");
-    }
-    if flags.is_empty() {
-        String::new()
-    } else {
-        format!("  [{}]", flags.join(", "))
-    }
-}
-
-fn mark_label(mark: &BranchMark) -> String {
-    let mut notes = Vec::new();
-    if mark.kind != ChangeKind::Base {
-        notes.push(kind_str(mark.kind));
-    }
-    if mark.dirty {
-        notes.push("dirty");
-    }
-    if notes.is_empty() {
-        mark.branch.clone()
-    } else {
-        format!("{} ({})", mark.branch, notes.join(", "))
-    }
-}
-
-fn kind_str(kind: ChangeKind) -> &'static str {
-    match kind {
-        ChangeKind::Base => "base",
-        ChangeKind::Added => "added",
-        ChangeKind::Modified => "modified",
-        ChangeKind::Deleted => "deleted",
-    }
-}
-
-fn plural(n: usize) -> &'static str {
-    if n == 1 { "" } else { "s" }
-}
-
-fn set(
-    root: &Path,
-    daemon_url: Option<&str>,
-    id: &str,
-    field: &str,
-    value: &str,
-    branch: Option<String>,
-) -> Result<()> {
+fn set(root: &Path, daemon_url: Option<&str>, id: &str, field: &str, value: &str) -> Result<()> {
     // Parse before reaching for the daemon so a typo fails without starting one.
     let patch = parse_field(field, value)?;
-    Plan::resolve(root, daemon_url)?
-        .on_branch(branch)
-        .patch(id, &patch)?;
+    Plan::resolve(root, daemon_url)?.patch(id, &patch)?;
     Ok(())
 }
 
@@ -947,17 +787,10 @@ fn parent_update(parent: Option<String>) -> FieldUpdate<String> {
     }
 }
 
-fn delete(
-    root: &Path,
-    daemon_url: Option<&str>,
-    id: &str,
-    yes: bool,
-    branch: Option<String>,
-) -> Result<ExitCode> {
-    let plan = Plan::resolve(root, daemon_url)?.on_branch(branch);
-    // The delete targets the caller's branch, so the prompt has to be about a task that branch
-    // actually carries — a typo must refuse before it asks the reader to confirm one.
-    plan.get(id, plan.branch())?;
+fn delete(root: &Path, daemon_url: Option<&str>, id: &str, yes: bool) -> Result<ExitCode> {
+    let plan = Plan::resolve(root, daemon_url)?;
+    // A typo must refuse before it asks the reader to confirm a delete.
+    plan.get(id)?;
     if !yes && !confirm(id)? {
         println!("aborted");
         return Ok(ExitCode::SUCCESS);
@@ -978,214 +811,6 @@ fn confirm(id: &str) -> Result<bool> {
     ))
 }
 
-// The one command that asks about git rather than about plan. Branch names are refs, which every
-// worktree of the repository already agrees on; there is no store state to resolve and so nothing
-// for the daemon to be the single resolver of.
-fn branches(root: &Path) -> Result<()> {
-    let repo = Repo::discover(root)?;
-    for branch in repo.local_branches()? {
-        println!("{branch}");
-    }
-    Ok(())
-}
-
-// `lint` reads the skills under the root of the store it discovers, so an install run from a
-// subdirectory has to land there too, not under the caller's directory. A repository that has no
-// store yet takes the root it was given.
-fn skills_root(root: &Path) -> PathBuf {
-    Store::discover(root).map_or_else(|_| root.to_path_buf(), |store| store.root().to_path_buf())
-}
-
-// The other command that does not ask the daemon. Lint checks the files in front of the caller, as
-// a pre-commit hook and a bare checkout need it to — it asks what the bytes on disk say, where every
-// task query asks what a branch holds. It writes through the store for the same reason `set` goes
-// through the daemon: the advisory lock is what keeps a concurrent writer from seeing a torn file.
-fn lint(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCode> {
-    let store = Store::discover(root)?;
-    let snapshot = Snapshot::from_store(&store)?;
-    let selected = lint_target_paths(&snapshot, &store, targets)?;
-
-    let snapshot = if fix {
-        apply_fixes(&store, &snapshot, selected.as_ref())?;
-        Snapshot::from_store(&store)?
-    } else {
-        snapshot
-    };
-
-    let diagnostics = op_lint::lint(&snapshot);
-    let shown: Vec<&Diagnostic> = diagnostics
-        .iter()
-        .filter(|d| {
-            selected
-                .as_ref()
-                .is_none_or(|set| set.contains(&lint_path(&d.path)))
-        })
-        .collect();
-
-    if json {
-        println!("{}", serde_json::to_string_pretty(&shown)?);
-    } else {
-        for diagnostic in &shown {
-            println!("{diagnostic}");
-        }
-        let checked = selected.as_ref().map_or_else(
-            || snapshot.files().len() + snapshot.tags().len() + present_skills(&snapshot),
-            |set| set.len(),
-        );
-        println!(
-            "checked {checked} file{}, found {} problem{}",
-            plural(checked),
-            shown.len(),
-            plural(shown.len())
-        );
-    }
-    Ok(if shown.is_empty() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
-}
-
-fn present_skills(snapshot: &Snapshot) -> usize {
-    snapshot
-        .skills()
-        .iter()
-        .filter(|skill| skill.source.is_some())
-        .count()
-}
-
-// Writes go through the store so a concurrent daemon or `openplan set` on the same task serializes on
-// the advisory lock and never observes a torn file.
-fn apply_fixes(
-    store: &Store,
-    snapshot: &Snapshot,
-    selected: Option<&std::collections::HashSet<PathBuf>>,
-) -> Result<()> {
-    let created = GitCreated::at(store.root());
-    let Some(selected) = selected else {
-        op_lint::fix_store(store, &created)?;
-        return Ok(());
-    };
-    for skill in snapshot.skills() {
-        if selected.contains(&lint_path(&skill.path)) && !skill.matches() {
-            op_skills::install(skill)?;
-        }
-    }
-    let fixed = op_lint::fix(snapshot, &created);
-    for file in snapshot.files() {
-        if !selected.contains(&lint_path(&file.path)) {
-            continue;
-        }
-        let Some(after) = fixed.get(&file.path) else {
-            continue;
-        };
-        if after != &file.source {
-            store.replace_raw(file.number, after.as_bytes())?;
-        }
-    }
-    for tag in snapshot.tags() {
-        if !selected.contains(&lint_path(&tag.path)) {
-            continue;
-        }
-        let Some(after) = fixed.get(&tag.path) else {
-            continue;
-        };
-        if after != &tag.source {
-            store.replace_raw_tag(&tag.name, after.as_bytes())?;
-        }
-    }
-    Ok(())
-}
-
-// The whole store is always scanned; positional targets only pick which files this run reports on
-// and repairs, so an agent lints the one task it wrote and a pre-commit hook stays quiet about files
-// the commit never touched. None means no filter — report everything.
-fn lint_target_paths(
-    snapshot: &Snapshot,
-    store: &Store,
-    targets: &[String],
-) -> Result<Option<std::collections::HashSet<PathBuf>>> {
-    if targets.is_empty() {
-        return Ok(None);
-    }
-    let mut set = std::collections::HashSet::new();
-    for target in targets {
-        // A target that resolves to nothing would filter every diagnostic away and pass, so a stale
-        // key or a path spelled against the wrong directory has to stop the run instead.
-        let Some(path) = lint_target_path(snapshot, store, target) else {
-            bail!("no task, tag, or skill file matches {target}");
-        };
-        set.insert(path);
-    }
-    Ok(Some(set))
-}
-
-fn lint_target_path(snapshot: &Snapshot, store: &Store, target: &str) -> Option<PathBuf> {
-    if let Some(number) = store.abbreviation().parse_key(target) {
-        return snapshot.file(number).map(|file| lint_path(&file.path));
-    }
-    let spellings = [
-        lint_path(Path::new(target)),
-        lint_path(&store.root().join(target)),
-    ];
-    snapshot
-        .files()
-        .iter()
-        .map(|file| &file.path)
-        .chain(snapshot.tags().iter().map(|tag| &tag.path))
-        .chain(snapshot.skills().iter().map(|skill| &skill.path))
-        .map(|path| lint_path(path))
-        .find(|path| spellings.contains(path))
-}
-
-// A skill file the repository is missing is still a target a pre-commit hook can name, and
-// `canonical` gives a path that does not exist back unresolved — where the same path spelled
-// through a symlinked checkout resolves. Both spellings meet at the deepest directory that exists.
-fn lint_path(path: &Path) -> PathBuf {
-    for ancestor in path.ancestors() {
-        let Ok(resolved) = ancestor.canonicalize() else {
-            continue;
-        };
-        let rest = path.strip_prefix(ancestor).unwrap_or(Path::new(""));
-        return if rest.as_os_str().is_empty() {
-            resolved
-        } else {
-            resolved.join(rest)
-        };
-    }
-    path.to_path_buf()
-}
-
-struct GitCreated {
-    repo: Option<Repo>,
-    root: PathBuf,
-}
-
-impl GitCreated {
-    fn at(root: &Path) -> Self {
-        GitCreated {
-            repo: Repo::discover(root).ok(),
-            root: canonical(root),
-        }
-    }
-}
-
-impl CreatedSource for GitCreated {
-    fn created(&self, path: &Path) -> Option<Timestamp> {
-        // git names blobs by their path from the repo root, and a symlinked or relative `--root`
-        // spells the same file differently than the store does, so both sides resolve first.
-        let path = canonical(path);
-        let relative = path.strip_prefix(&self.root).ok()?;
-        self.repo
-            .as_ref()?
-            .first_commit(relative)
-            .ok()
-            .flatten()?
-            .at
-            .ok()
-    }
-}
-
 // "" or the "-" sentinel clears the parent (top level); any other value sets it.
 fn parse_parent(value: &str) -> Option<String> {
     if value.is_empty() || value == "-" {
@@ -1202,8 +827,7 @@ fn tree(
     depth: Option<usize>,
     json: bool,
 ) -> Result<()> {
-    let plan = Plan::resolve(root, daemon_url)?;
-    let view = plan.tree(id, plan.branch(), depth)?;
+    let view = Plan::resolve(root, daemon_url)?.tree(id, depth)?;
     for cycle in &view.cycles {
         eprintln!("warning: parent cycle at {cycle}; its subtree is truncated");
     }
@@ -1236,10 +860,9 @@ fn move_task(
     before: Option<String>,
     after: Option<String>,
 ) -> Result<()> {
-    // The ranks are computed from the same state the write lands on: the daemon's view of the
-    // caller's branch, not a second reading of the files.
+    // The ranks are computed from the daemon's view of the tasks, the state the write lands on.
     let plan = Plan::resolve(root, daemon_url)?;
-    let group = plan.list(plan.branch())?;
+    let group = plan.list()?;
     // The task's own row, from the same read the siblings come from: asking for it separately would
     // walk the repository a second time to learn what this list already says.
     let current_parent = group
@@ -1277,7 +900,7 @@ fn move_task(
             siblings: assigned,
             x_rank,
         } => {
-            // The moved task goes first: its write is the one the store validates (parent exists,
+            // The moved task goes first: its write is the one the daemon validates (parent exists,
             // no cycle), so a refused move leaves the siblings' ranks untouched.
             plan.patch(
                 id,

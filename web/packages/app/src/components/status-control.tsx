@@ -19,17 +19,12 @@ export function StatusControl({
   id,
   at,
   status,
-  branch,
-  blocked,
   className,
 }: {
   project: string
   id: string
   at: number
   status: Field_Status | undefined
-  branch?: string
-  // Why this task cannot change, when it cannot: the mark stands on its own and says so.
-  blocked?: string
   className?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -38,21 +33,11 @@ export function StatusControl({
   const current = status === undefined ? undefined : fieldValue(status)
 
   useDismissOnOutsideClick(root, open ? () => setOpen(false) : undefined)
-  useStatusRequest({ project, id, at }, () => {
-    if (blocked === undefined) setOpen(true)
-  })
-
-  if (blocked !== undefined) {
-    return (
-      <Tooltip content={`${named(current)} — ${blocked}`}>
-        <StatusMark status={status} className={className} />
-      </Tooltip>
-    )
-  }
+  useStatusRequest({ project, id, at }, () => setOpen(true))
 
   const pick = (next: Status) => {
     setOpen(false)
-    if (next !== current) mutate(patchTask(project, id, { status: next }, branch))
+    if (next !== current) mutate(patchTask(project, id, { status: next }))
   }
 
   return (

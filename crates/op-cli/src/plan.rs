@@ -2,197 +2,145 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 use op_api::{
-    BranchComments, Comment, CreateComment, CreateTag, CreateTask, Matrix, Refusal, SearchHit,
-    TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    Comment, CreateComment, CreateTag, HistoryEntry, ProjectView, Refusal, SearchHit, SyncResult,
+    SyncView, TagPatch, TagView, TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use op_client::Client;
-use op_git::Repo;
-use op_server::serve_root;
+use op_server::Location;
 
 use crate::daemon::{daemon_base_url, project_named};
 
-// The machine daemon is the store, as every task and tag command sees it: the single in-band
-// writer, which allocates ids from one counter with a view across every local branch and resolves
-// the target worktree from the branch at write time, and the single resolver for reads, so one
-// question gets one answer whether the CLI or the web UI asked it. This carries the branch the caller is on, so a
-// checkout underneath us can only ever refuse a write, never redirect it to another branch — and a
-// read reports the caller's own branch rather than the serve root's. It carries the project too,
-// because the one daemon serves every repository on the machine and a branch name means nothing
-// without one.
-//
-// Reads and writes resolve together because `move` is both: it reads a sibling group and writes the
-// ranks it computes from it, and those two must land on one branch of one project.
+// The machine daemon is the one reader and writer of every project's tasks, so every task and tag
+// command goes through it. This carries the project the caller stands in.
 pub struct Plan {
     client: Client,
     base_url: String,
     project: String,
-    branch: String,
 }
 
 impl Plan {
     pub fn resolve(root: &Path, daemon_url: Option<&str>) -> Result<Self> {
-        let repo = Repo::discover(root).with_context(|| {
-            format!(
-                "openplan requires a git repository; none found at {}",
-                root.display()
-            )
-        })?;
-        let branch = repo.current_branch().context(
-            "cannot determine the current branch (detached HEAD?); every read and write targets a \
-             branch",
-        )?;
-
-        let client = Client::default();
+        let location = Location::find_or_join(root)?;
+        let client = Client::default().with_identity(crate::author::identity(&location.root));
         let base_url = daemon_base_url(&client, daemon_url)?;
-        let project = resolve_project(&client, &base_url, &repo, root, daemon_url.is_none())?;
-
+        let project = resolve_project(&client, &base_url, &location, daemon_url.is_none())?;
         Ok(Self {
             client,
             base_url,
             project,
-            branch,
         })
     }
 
-    // The branch every read and write of this command targets unless the caller named another one
-    // to read.
-    pub fn branch(&self) -> &str {
-        &self.branch
-    }
-
-    pub fn on_branch(mut self, branch: Option<String>) -> Self {
-        if let Some(branch) = branch {
-            self.branch = branch;
-        }
-        self
-    }
-
-    pub fn list(&self, branch: &str) -> Result<Vec<TaskListItem>> {
-        served(
-            self.client
-                .tasks(&self.base_url, &self.project, Some(branch)),
-        )
-    }
-
-    pub fn publish(&self) -> Result<op_api::Published> {
-        served(self.client.publish(&self.base_url, &self.project))
-    }
-
-    pub fn rolling_updates(&self) -> Result<op_api::RollingUpdates> {
-        served(self.client.rolling_updates(&self.base_url, &self.project))
-    }
-
-    pub fn matrix(&self) -> Result<Matrix> {
-        served(self.client.matrix(&self.base_url, &self.project))
+    pub fn list(&self) -> Result<Vec<TaskListItem>> {
+        served(self.client.tasks(&self.base_url, &self.project))
     }
 
     pub fn search(&self, query: &str) -> Result<Vec<SearchHit>> {
         served(self.client.search(&self.base_url, &self.project, query))
     }
 
-    pub fn get(&self, id: &str, branch: &str) -> Result<TaskDetail> {
+    pub fn get(&self, id: &str) -> Result<TaskDetail> {
+        served(self.client.task(&self.base_url, &self.project, id))
+    }
+
+    pub fn tree(&self, id: &str, depth: Option<usize>) -> Result<TaskTreeView> {
         served(
             self.client
-                .task(&self.base_url, &self.project, id, Some(branch)),
+                .task_tree(&self.base_url, &self.project, id, depth),
         )
     }
 
-    pub fn tree(&self, id: &str, branch: &str, depth: Option<usize>) -> Result<TaskTreeView> {
-        served(
-            self.client
-                .task_tree(&self.base_url, &self.project, id, Some(branch), depth),
-        )
-    }
-
-    pub fn branches(&self, id: &str) -> Result<TaskBranches> {
-        served(self.client.task_branches(&self.base_url, &self.project, id))
-    }
-
-    pub fn comments(&self, id: &str, branch: &str) -> Result<Vec<Comment>> {
-        served(
-            self.client
-                .comments(&self.base_url, &self.project, id, Some(branch)),
-        )
-    }
-
-    pub fn branch_comments(&self, id: &str) -> Result<Vec<BranchComments>> {
-        served(
-            self.client
-                .branch_comments(&self.base_url, &self.project, id),
-        )
+    pub fn comments(&self, id: &str) -> Result<Vec<Comment>> {
+        served(self.client.comments(&self.base_url, &self.project, id))
     }
 
     pub fn comment(&self, id: &str, comment: &CreateComment) -> Result<Comment> {
         served(
             self.client
-                .add_comment(&self.base_url, &self.project, &self.branch, id, comment),
+                .add_comment(&self.base_url, &self.project, id, comment),
         )
     }
 
-    pub fn create(&self, task: &CreateTask) -> Result<String> {
-        served(
-            self.client
-                .create_task(&self.base_url, &self.project, &self.branch, task),
-        )
+    pub fn create(&self, task: &op_api::CreateTask) -> Result<String> {
+        served(self.client.create_task(&self.base_url, &self.project, task))
     }
 
     pub fn patch(&self, id: &str, patch: &TaskPatch) -> Result<TaskDetail> {
         served(
             self.client
-                .patch_task(&self.base_url, &self.project, &self.branch, id, patch),
+                .patch_task(&self.base_url, &self.project, id, patch),
+        )
+    }
+
+    pub fn write(&self, id: &str, text: &str) -> Result<TaskDetail> {
+        served(
+            self.client
+                .write_task_file(&self.base_url, &self.project, id, text),
         )
     }
 
     pub fn delete(&self, id: &str) -> Result<()> {
+        served(self.client.delete_task(&self.base_url, &self.project, id))
+    }
+
+    pub fn history(
+        &self,
+        id: Option<&str>,
+        before: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<HistoryEntry>> {
+        served(match id {
+            Some(id) => self
+                .client
+                .task_history(&self.base_url, &self.project, id, before, limit),
+            None => self
+                .client
+                .history(&self.base_url, &self.project, before, limit),
+        })
+    }
+
+    pub fn revision(&self, id: &str, revision: &str) -> Result<TaskAtRevision> {
         served(
             self.client
-                .delete_task(&self.base_url, &self.project, &self.branch, id),
+                .task_revision(&self.base_url, &self.project, id, revision),
         )
+    }
+
+    pub fn sync(&self) -> Result<SyncResult> {
+        served(self.client.sync(&self.base_url, &self.project))
+    }
+
+    pub fn sync_status(&self) -> Result<SyncView> {
+        served(self.client.sync_status(&self.base_url, &self.project))
     }
 
     pub fn tags(&self) -> Result<Vec<TagView>> {
-        served(
-            self.client
-                .tags(&self.base_url, &self.project, Some(&self.branch)),
-        )
+        served(self.client.tags(&self.base_url, &self.project))
     }
 
     pub fn tag(&self, name: &str) -> Result<TagView> {
-        served(
-            self.client
-                .tag(&self.base_url, &self.project, name, Some(&self.branch)),
-        )
+        served(self.client.tag(&self.base_url, &self.project, name))
     }
 
     pub fn create_tag(&self, tag: &CreateTag) -> Result<TagView> {
-        served(
-            self.client
-                .create_tag(&self.base_url, &self.project, &self.branch, tag),
-        )
+        served(self.client.create_tag(&self.base_url, &self.project, tag))
     }
 
     pub fn patch_tag(&self, name: &str, patch: &TagPatch) -> Result<TagView> {
         served(
             self.client
-                .patch_tag(&self.base_url, &self.project, &self.branch, name, patch),
+                .patch_tag(&self.base_url, &self.project, name, patch),
         )
     }
 
     pub fn delete_tag(&self, name: &str, force: bool) -> Result<()> {
         served(
             self.client
-                .delete_tag(&self.base_url, &self.project, &self.branch, name, force),
+                .delete_tag(&self.base_url, &self.project, name, force),
         )
     }
 }
 
-// A daemon older than these routes has two ways of saying so, and neither of them says it. One
-// that refuses unserved `/api/` paths answers 404 about a route, where every other 404 here is about
-// a task or a tag; an older one still falls those paths through to the SPA and answers the page
-// itself. Both
-// mean the same thing: stop the daemon. JSON of the wrong shape is not one of them — that is a
-// schema mismatch, which says nothing about the daemon's age and must not send anyone to stop a
-// daemon other repositories are using.
 fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
     let predates = |err: &op_client::ClientError| match err {
         op_client::ClientError::NotJson { .. } => true,
@@ -220,8 +168,7 @@ fn served<T>(outcome: Result<T, op_client::ClientError>) -> Result<T> {
     })
 }
 
-// The store states the fact and the daemon relays it. What to do about it is a spelling of this
-// interface, which only this binary knows — the web UI answers the same refusal with a button.
+// The daemon states the fact; what to do about it is a spelling of this interface.
 fn remedy(reason: Refusal) -> &'static str {
     match reason {
         Refusal::TagReferenced => "pass --force to delete it and leave those references dangling",
@@ -229,24 +176,17 @@ fn remedy(reason: Refusal) -> &'static str {
     }
 }
 
-// The repository the caller stands in, as the daemon names it. A repository the machine daemon does
-// not yet serve is registered here, so the first write from a fresh checkout needs no setup step.
-// The POST is idempotent by repository, so two concurrent first writes both land and only one of
-// them reports a registration.
+// The project the caller stands in, as the daemon names it. A project the machine daemon does not
+// serve yet is registered here, so the first command from a fresh clone needs no setup step.
 //
-// `may_register` is false when the caller named a daemon with `--daemon`. Registering there would
-// leave a repository indexed and watched by a daemon the caller only borrowed for one command, and
-// two daemons writing one checkout is exactly what the single-writer rule exists to prevent.
+// `may_register` is false when the caller named a daemon with `--daemon`: registering there would
+// leave a project served by a daemon the caller only borrowed for one command.
 pub fn resolve_project(
     client: &Client,
     base_url: &str,
-    repo: &Repo,
-    root: &Path,
+    location: &Location,
     may_register: bool,
 ) -> Result<String> {
-    // Only a daemon that answered with something this client cannot read is an out-of-date one; a
-    // daemon that is merely busy or unreachable says so itself, and telling that user to restart it
-    // would send them after the wrong thing.
     let views = client
         .projects(base_url, op_client::WRITE_TIMEOUT)
         .map_err(|err| match err {
@@ -258,27 +198,29 @@ pub fn resolve_project(
                 "the openplan daemon at {base_url} did not list its projects"
             )),
         })?;
-    let mine = repo.git_common_dir();
-    if let Some(name) = project_named(views, &mine) {
+    if let Some(name) = project_named(&views, location) {
         return Ok(name);
     }
     if !may_register {
         bail!(
             "the openplan daemon at {base_url} does not serve {}; register it there first with \
              `openplan project add --daemon {base_url}`, or drop --daemon to use the machine daemon",
-            mine.display()
+            location.root.display()
         );
     }
-    // The daemon's working directory is its own home, not the caller's, so a relative path would
-    // resolve against the wrong directory there — and register whatever repository happens to sit
-    // at that spot. `--root` defaults to `.`, so this is the ordinary case, not the exotic one.
-    let serve = serve_root(repo, root);
-    let serve = std::fs::canonicalize(&serve)
-        .with_context(|| format!("no such directory: {}", serve.display()))?;
-    let (view, created) = client.register_project(base_url, &serve)?;
+    let (view, created) =
+        register(client, base_url, location).context("the daemon did not take the project")?;
     if created {
         // stderr, because stdout carries the id `openplan create` prints and scripts read.
         eprintln!("registered project {} at {}", view.name, view.root);
     }
     Ok(view.name)
+}
+
+fn register(
+    client: &Client,
+    base_url: &str,
+    location: &Location,
+) -> Result<(ProjectView, bool), op_client::ClientError> {
+    client.register_project(base_url, &location.root, Some(location.kind), None)
 }

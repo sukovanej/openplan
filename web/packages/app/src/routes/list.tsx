@@ -1,11 +1,12 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query"
-import { MessageSquare, Tags } from "lucide-react"
+import { Activity, MessageSquare, Tags } from "lucide-react"
 import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
 import type { Board, BoardRow } from "@openplan/api-client"
 import {
-  BranchBadges,
+  activityPath,
+  ConflictBadge,
   createdOf,
   parentOf,
   ParentLink,
@@ -31,7 +32,6 @@ import { hoveredRow } from "../lib/row-target"
 import { runtime } from "../lib/runtime"
 import { useTags } from "../lib/tags"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
-import { writeHere } from "../lib/write-target"
 
 // `/` is every project at once and `/:project` is one of them. They differ only in which board they
 // read; everything below the read is the same view.
@@ -73,13 +73,22 @@ function ProjectBoard({ project }: { project: string }) {
       board={board}
       title={project}
       action={
-        <Link
-          to={tagsPath(project)}
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
-        >
-          <Tags className="size-3.5" />
-          Tags
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            to={activityPath(project)}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
+          >
+            <Activity className="size-3.5" />
+            Activity
+          </Link>
+          <Link
+            to={tagsPath(project)}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
+          >
+            <Tags className="size-3.5" />
+            Tags
+          </Link>
+        </div>
       }
     />
   )
@@ -245,8 +254,6 @@ function TaskRow({
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
   const { byName: tags } = useTags(task.project)
-  const rollingUpdates = useProject(task.project)?.rolling_updates_branch
-  const write = writeHere(task)
   const navigate = useNavigate()
 
   // The row opens its task from its own click rather than from a link stretched over it: an overlay
@@ -283,20 +290,11 @@ function TaskRow({
         rowCursor.clear()
       }}
       onMouseLeave={() => hoveredRow.leave(path, at)}
-      // Wrapping lets the branches drop to a line of their own once the title has no room left
-      // beside them, rather than the two columns overrunning each other.
-      className="flex flex-wrap cursor-pointer items-start gap-y-2 py-3"
+      className="flex cursor-pointer items-start py-3"
     >
       <TreeGuides columns={guides.columns} />
       <div role="gridcell" className="relative flex shrink-0 items-center self-stretch">
-        <StatusControl
-          project={task.project}
-          id={task.id}
-          at={at}
-          status={statusField(task.metadata)}
-          branch={write.branch}
-          blocked={write.blocked}
-        />
+        <StatusControl project={task.project} id={task.id} at={at} status={statusField(task.metadata)} />
         {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
       </div>
       <div role="gridcell" className="text-muted-foreground grid shrink-0 self-center pl-3 text-xs tabular-nums">
@@ -311,7 +309,7 @@ function TaskRow({
         ))}
         <span className="col-start-1 row-start-1">{task.id}</span>
       </div>
-      <div className="min-w-0 grow basis-56 pr-4 pl-3 sm:pr-0" role="gridcell">
+      <div className="min-w-0 grow pr-4 pl-3" role="gridcell">
         <Link
           to={path}
           tabIndex={-1}
@@ -322,6 +320,7 @@ function TaskRow({
           {task.title}
         </Link>
         <MetaLine>
+          {task.conflicts > 0 && <ConflictBadge count={task.conflicts} />}
           {parent_title !== undefined && parent !== undefined && (
             <ParentLink project={task.project} id={parent} title={parent_title} />
           )}
@@ -333,22 +332,6 @@ function TaskRow({
           )}
           <TaskTags metadata={task.metadata} tags={tags} />
         </MetaLine>
-        {task.branches.length > 0 && (
-          <BranchBadges
-            branches={task.branches}
-            headline={task.headline}
-            rollingUpdates={rollingUpdates}
-            className="mt-2 sm:hidden"
-          />
-        )}
-      </div>
-      <div role="gridcell" className="ml-auto hidden shrink-0 self-center pr-4 pl-3 sm:block">
-        <BranchBadges
-          branches={task.branches}
-          headline={task.headline}
-          rollingUpdates={rollingUpdates}
-          className="justify-end"
-        />
       </div>
     </Row>
   )

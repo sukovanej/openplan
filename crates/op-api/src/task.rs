@@ -3,7 +3,6 @@ use utoipa::ToSchema;
 
 use op_task::{Abbreviation, Status, Task, Timestamp};
 
-use crate::branch::BranchState;
 use crate::comment::Comment;
 use crate::field::{Field, Rfc3339};
 use crate::metadata::{Metadata, updated_field};
@@ -27,7 +26,7 @@ impl TaskSummary {
         Self {
             id,
             title: partial.title.unwrap_or_default(),
-            metadata: Metadata::from_partial(partial.metadata, abbreviation),
+            metadata: Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation),
         }
     }
 
@@ -35,7 +34,7 @@ impl TaskSummary {
         Self {
             id,
             title: task.title().unwrap_or_default(),
-            metadata: Metadata::from_frontmatter(&task.frontmatter, abbreviation),
+            metadata: Metadata::from_task(task, abbreviation),
         }
     }
 }
@@ -57,7 +56,7 @@ impl TaskView {
         updated: op_task::FieldResult<Timestamp>,
         abbreviation: Abbreviation,
     ) -> Self {
-        let metadata = Metadata::from_partial(partial.metadata, abbreviation);
+        let metadata = Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation);
         let created = metadata.created();
         Self {
             id,
@@ -80,7 +79,7 @@ impl TaskView {
             id,
             title: task.title().unwrap_or_default(),
             updated: updated_field(Some(task.frontmatter.created), updated),
-            metadata: Metadata::from_frontmatter(&task.frontmatter, abbreviation),
+            metadata: Metadata::from_task(task, abbreviation),
             body: task.body.clone(),
         }
     }
@@ -108,14 +107,10 @@ pub struct TaskRef {
 }
 
 // One task read for the detail page: `metadata` parsed field by field, so a file with one bad field
-// still renders everything else and flags only what failed, and `body` always the raw markdown.
-// `updated` is derived from git rather than read from the file, so it sits outside `metadata`.
-// Paired with every branch it lives on, so a cold-loaded page renders a branch switcher without the
-// list in memory; `headline` names the branch the shown version resolves to. `parent_title`,
-// `children`, and `refs` carry the immediate hierarchy so the page renders from this one read.
-// `write_target` names where an edit of the shown version lands, and whether it can land there.
-// `depends_on` is what this task waits for, in the order the file lists it; `blocks` is every task
-// that waits for this one.
+// still renders everything else and flags only what failed. `updated` is the time of the last
+// revision that changed the task. `parent_title`, `children`, and `refs` carry the immediate
+// hierarchy so the page renders from this one read. `depends_on` is what this task waits for, in
+// the order the file lists it; `blocks` is every task that waits for this one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskDetail {
     pub project: String,
@@ -123,12 +118,10 @@ pub struct TaskDetail {
     pub title: String,
     pub metadata: Metadata,
     pub body: String,
+    // The open conflicts sync left in the task: fields in `metadata`, and blocks of both versions
+    // in `body`.
+    pub conflicts: usize,
     pub updated: Field<Rfc3339>,
-    pub headline: String,
-    pub branches: Vec<BranchState>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub write_target: Option<WriteTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub parent_title: Option<String>,
@@ -144,12 +137,8 @@ pub struct TaskDetail {
     pub comments: Vec<Comment>,
 }
 
-// One logical task aggregated across every branch it lives on: `metadata` and `title` come from the
-// `headline` branch (the most recently changed one), plus one `branches` entry per branch so a
-// client can render badges, mark the headline, and spot divergence. `project` is the coordinate the
-// key alone cannot carry: two stores can commit the same abbreviation, so `id` names a task only
-// within its project. `write_target` reads as it does on `TaskDetail`: a row the aggregate shows
-// from another branch says here where acting on it would land.
+// One task as a list row. `project` is the coordinate the key alone cannot carry: two projects can
+// use the same abbreviation, so `id` names a task only within its project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskListItem {
     pub project: String,
@@ -159,23 +148,9 @@ pub struct TaskListItem {
     // How many entries the log holds, not the log itself: a row shows a count, and shipping every
     // comment of every task would make the list read carry the whole store's prose.
     pub comment_count: usize,
+    // Counted like `TaskDetail::conflicts`, so a row can call for attention to a conflict in the body.
+    pub conflicts: usize,
     pub updated: Field<Rfc3339>,
-    pub headline: String,
-    pub branches: Vec<BranchState>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub write_target: Option<WriteTarget>,
-}
-
-// Where a write to one task lands, and whether it can land there now. A read scoped to a branch
-// writes to that branch; a read of the aggregate writes wherever the task lives. `writable` is false
-// while no live worktree holds `branch` — none has it checked out, or the one that does is mid-merge
-// — and the daemon then refuses every write to the task. A client reads this to offer only the
-// actions that can succeed, and to name the branch that stops the rest.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct WriteTarget {
-    pub branch: String,
-    pub writable: bool,
 }
 
 // Which part of a task the query matched, and the order the hits come back in. A reader who types a
@@ -189,14 +164,11 @@ pub enum SearchMatch {
     Text,
 }
 
-// One task a search matched, with the branch whose version of it matched. The task itself is the
-// aggregated row every other list read answers with, so a hit renders exactly like a list row;
-// `branch` is what the hit adds — where the matching text lives, which is the headline branch
-// whenever that branch matches too.
+// One task a search matched, as the list row every other list read answers with, so a hit renders
+// exactly like a row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SearchHit {
     pub task: TaskListItem,
-    pub branch: String,
     pub matched: SearchMatch,
 }
 

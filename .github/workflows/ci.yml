@@ -76,6 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # The tasks live in their own ref, which a checkout of the code does not fetch.
+      - run: git fetch --no-tags origin refs/openplan/tasks:refs/openplan/tasks
       - uses: Swatinem/rust-cache@v2
       # `op-server` embeds the SPA from this folder at compile time, and it is a gitignored build
       # output, so `openplan` does not link without it. The linter serves no assets and needs no

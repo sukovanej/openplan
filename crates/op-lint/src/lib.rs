@@ -3,9 +3,10 @@ mod fix;
 mod rules;
 mod snapshot;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use op_store::{Store, StoreError};
+use op_backend::Actor;
+use op_tracker::{Tracker, TrackerError};
 
 pub use diagnostic::{Code, Diagnostic, Position, Severity, Span};
 pub use fix::{CreatedSource, Fix, Uncommitted, apply, file_fixes, fix, tag_fixes};
@@ -38,49 +39,53 @@ pub fn lint(snapshot: &Snapshot) -> Vec<Diagnostic> {
     sink.into_diagnostics()
 }
 
-pub fn fix_store(store: &Store, created: &dyn CreatedSource) -> Result<Vec<PathBuf>, StoreError> {
-    let snapshot = Snapshot::from_store(store)?;
-    let fixed = fix::fix(&snapshot, created);
+#[derive(Debug, thiserror::Error)]
+pub enum FixError {
+    #[error(transparent)]
+    Tracker(#[from] TrackerError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+// Every repaired document lands in one revision. `dir` is where the snapshot placed the documents,
+// and `wanted` picks the files a caller asked to repair.
+pub fn fix_plan(
+    tracker: &Tracker,
+    actor: &Actor,
+    snapshot: &Snapshot,
+    dir: &Path,
+    created: &dyn CreatedSource,
+    wanted: &dyn Fn(&Path) -> bool,
+) -> Result<Vec<PathBuf>, FixError> {
+    let fixed = fix::fix(snapshot, created);
     let mut changed = Vec::new();
-    for file in snapshot.files() {
-        let Some(after) = fixed.get(&file.path) else {
+    let mut documents = Vec::new();
+    let sources = snapshot
+        .files()
+        .iter()
+        .map(|file| (&file.path, &file.source))
+        .chain(snapshot.tags().iter().map(|tag| (&tag.path, &tag.source)));
+    for (path, source) in sources {
+        let Some(after) = fixed.get(path) else {
             continue;
         };
-        if after != &file.source {
-            replace_file(store, file, after)?;
-            changed.push(file.path.clone());
+        if after == source || !wanted(path) {
+            continue;
         }
+        let Ok(document) = path.strip_prefix(dir) else {
+            continue;
+        };
+        documents.push((document.to_string_lossy().into_owned(), after.clone()));
+        changed.push(path.clone());
     }
-    for tag in snapshot.tags() {
-        let Some(after) = fixed.get(&tag.path) else {
-            continue;
-        };
-        if after != &tag.source {
-            store.replace_raw_tag(&tag.name, after.as_bytes())?;
-            changed.push(tag.path.clone());
-        }
+    if !documents.is_empty() {
+        tracker.replace_documents(actor, "lint fixes", &documents)?;
     }
     for skill in snapshot.skills() {
-        if !skill.matches() {
+        if !skill.matches() && wanted(&skill.path) {
             op_skills::install(skill)?;
             changed.push(skill.path.clone());
         }
     }
     Ok(changed)
-}
-
-// Two files can claim one number, and `Store::replace_raw` resolves a number back to the lowest of
-// them — which would write one file's fix over the other and destroy its content. A fix belongs to
-// the file it was computed from, so it goes to that path.
-fn replace_file(store: &Store, file: &TaskFile, contents: &str) -> Result<(), StoreError> {
-    store.with_lock(file.number, || {
-        let temp = store.tasks_dir().join(format!(
-            ".op-lint-{}-{}.tmp",
-            std::process::id(),
-            file.number
-        ));
-        std::fs::write(&temp, contents)?;
-        std::fs::rename(&temp, &file.path)?;
-        Ok(())
-    })
 }

@@ -146,8 +146,7 @@ fn rename(plan: &Plan, from: &str, to: String) -> Result<()> {
 }
 
 fn delete(plan: &Plan, name: &str, force: bool, yes: bool) -> Result<()> {
-    // The delete targets the caller's branch, so the prompt has to be about a tag that branch
-    // registers — a name it does not know must refuse before it asks the reader to confirm one.
+    // The prompt has to be about a tag the project has, so a typo refuses before it asks.
     let tag = plan.tag(name)?;
     let carried = tasks_carrying(plan, &tag.name)?;
     if !yes && !confirm(&tag, carried.len())? {
@@ -156,7 +155,7 @@ fn delete(plan: &Plan, name: &str, force: bool, yes: bool) -> Result<()> {
     }
     plan.delete_tag(&tag.name, force)?;
     println!("deleted {}", tag.name);
-    // A forced delete leaves those tasks holding a name this branch no longer registers, and every
+    // A forced delete leaves those tasks holding a name the project no longer registers, and every
     // write validates the whole set, so each of them refuses even a status change until the name
     // goes. Saying so is what keeps --force from costing the reader a debugging session.
     if !carried.is_empty() {
@@ -172,7 +171,7 @@ fn delete(plan: &Plan, name: &str, force: bool, yes: bool) -> Result<()> {
 
 fn tasks_carrying(plan: &Plan, name: &str) -> Result<Vec<String>> {
     Ok(plan
-        .list(plan.branch())?
+        .list()?
         .into_iter()
         .filter(|task| task.metadata.tags().iter().any(|tag| tag == name))
         .map(|task| task.id)
