@@ -1,0 +1,13 @@
+---
+source: crates/op-diagram-render/tests/measure.rs
+expression: "format!(\"  regular  semibold  at {SIZE} px\\n{}\", rows.join(\"\\n\"))"
+input_file: crates/op-diagram-render/tests/labels/punctuation.txt
+---
+  regular  semibold  at 14 px
+   54.344    55.250  OPP-117
+  153.281   158.328  2026-09-25T21:17:34Z
+  376.531   386.891  POST /question-reports {match, question, problem_kind}
+  156.141   162.000  „Cože? 2500? Vážně?!“
+  106.562   105.547  a -> b => c <- d
+  276.266   282.312  refer to 5432, before and after a rebuild…
+  124.094   125.000  € 1 234,50 — 12 %

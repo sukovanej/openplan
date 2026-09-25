@@ -3985,6 +3985,7 @@ dependencies = [
 name = "op-diagram"
 version = "0.0.3"
 dependencies = [
+ "insta",
  "serde",
  "serde_json",
 ]
@@ -3997,6 +3998,13 @@ dependencies = [
  "op-diagram",
  "serde_json",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "op-diagram-render"
+version = "0.0.3"
+dependencies = [
+ "insta",
 ]
 
 [[package]]

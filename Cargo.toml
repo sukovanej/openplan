@@ -18,6 +18,7 @@ op-claude = { path = "crates/op-claude" }
 op-md = { path = "crates/op-md" }
 op-diagram = { path = "crates/op-diagram" }
 op-diagram-mermaid = { path = "crates/op-diagram-mermaid" }
+op-diagram-render = { path = "crates/op-diagram-render" }
 op-task = { path = "crates/op-task" }
 op-backend = { path = "crates/op-backend" }
 op-backend-git = { path = "crates/op-backend-git" }

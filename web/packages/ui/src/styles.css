@@ -1,3 +1,19 @@
+/* Only diagrams use this face, and the daemon measures their labels with its glyph widths, so the
+   browser must never swap in another font while it loads. */
+@font-face {
+  font-family: "Inter Diagram";
+  font-weight: 400;
+  font-display: block;
+  src: url("./fonts/inter-diagram-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter Diagram";
+  font-weight: 600;
+  font-display: block;
+  src: url("./fonts/inter-diagram-600.woff2") format("woff2");
+}
+
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
@@ -147,6 +163,7 @@
   --font-sans: -apple-system, "SF Pro Text", BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Source Serif 4 Variable", ui-serif, Georgia, serif;
   --font-mono: Menlo, ui-monospace, SFMono-Regular, monospace;
+  --font-diagram: "Inter Diagram", sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
