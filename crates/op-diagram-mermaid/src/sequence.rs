@@ -134,9 +134,9 @@ impl Chart {
                 });
                 Ok(())
             }
-            "else" => self.section(cursor, Operator::Alt, "else", rest),
-            "and" => self.section(cursor, Operator::Par, "and", rest),
-            "option" => self.section(cursor, Operator::Critical, "option", rest),
+            "else" => self.section(cursor, start, Operator::Alt, "else", rest),
+            "and" => self.section(cursor, start, Operator::Par, "and", rest),
+            "option" => self.section(cursor, start, Operator::Critical, "option", rest),
             "rect" => {
                 self.open_block(
                     None,
@@ -171,6 +171,7 @@ impl Chart {
     fn section(
         &mut self,
         cursor: &Cursor<'_>,
+        start: usize,
         operator: Operator,
         word: &str,
         rest: &str,
@@ -183,14 +184,17 @@ impl Chart {
                 });
                 Ok(())
             }
-            _ => Err(cursor.error(format!(
-                "`{word}` belongs inside `{}`",
-                match operator {
-                    Operator::Alt => "alt",
-                    Operator::Par => "par",
-                    _ => "critical",
-                }
-            ))),
+            _ => Err(cursor.error_at(
+                start,
+                format!(
+                    "`{word}` belongs inside `{}`",
+                    match operator {
+                        Operator::Alt => "alt",
+                        Operator::Par => "par",
+                        _ => "critical",
+                    }
+                ),
+            )),
         }
     }
 
@@ -280,6 +284,7 @@ impl Chart {
 
     fn note(&mut self, cursor: &mut Cursor<'_>) -> Result<(), ParseError> {
         cursor.skip_spaces();
+        let side_at = cursor.offset();
         let side = cursor
             .take_while(|c| c.is_alphabetic())
             .to_ascii_lowercase();
@@ -289,7 +294,7 @@ impl Chart {
             return Err(cursor.error(format!("expected `of` after `{side}`")));
         }
         if !needs_of && side != "over" {
-            return Err(cursor.error("expected `left of`, `right of`, or `over`"));
+            return Err(cursor.error_at(side_at, "expected `left of`, `right of`, or `over`"));
         }
         let rest = cursor.rest();
         let Some(colon) = rest.find(':') else {

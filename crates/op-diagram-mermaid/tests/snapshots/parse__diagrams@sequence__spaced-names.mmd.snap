@@ -1,0 +1,37 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/sequence/spaced-names.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "Game server",
+      "label": [
+        "The server"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "db",
+      "label": [
+        "db"
+      ],
+      "kind": "box"
+    }
+  ],
+  "items": [
+    {
+      "kind": "message",
+      "from": "Game server",
+      "to": "db",
+      "text": [
+        "store"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    }
+  ]
+}

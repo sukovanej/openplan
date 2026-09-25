@@ -1,0 +1,85 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/sequence/nested-blocks.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "a",
+      "label": [
+        "a"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "b",
+      "label": [
+        "b"
+      ],
+      "kind": "box"
+    }
+  ],
+  "items": [
+    {
+      "kind": "block",
+      "operator": "loop",
+      "sections": [
+        {
+          "label": [
+            "daily"
+          ],
+          "items": [
+            {
+              "kind": "block",
+              "operator": "opt",
+              "sections": [
+                {
+                  "label": [
+                    "if new"
+                  ],
+                  "items": [
+                    {
+                      "kind": "message",
+                      "from": "a",
+                      "to": "b",
+                      "text": [
+                        "sync"
+                      ],
+                      "stroke": "solid",
+                      "tail": "none",
+                      "head": "arrow"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "message",
+              "from": "a",
+              "to": "b",
+              "text": [
+                "highlighted"
+              ],
+              "stroke": "solid",
+              "tail": "none",
+              "head": "arrow"
+            },
+            {
+              "kind": "message",
+              "from": "a",
+              "to": "b",
+              "text": [
+                "after"
+              ],
+              "stroke": "solid",
+              "tail": "none",
+              "head": "arrow"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

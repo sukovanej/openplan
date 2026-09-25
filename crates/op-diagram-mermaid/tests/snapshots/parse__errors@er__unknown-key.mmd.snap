@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/er/unknown-key.mmd
+---
+line 3, column 12: `XK` is not a key; use `PK`, `FK`, or `UK`

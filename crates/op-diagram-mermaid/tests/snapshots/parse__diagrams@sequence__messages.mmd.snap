@@ -1,0 +1,92 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/sequence/messages.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "a",
+      "label": [
+        "a"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "b",
+      "label": [
+        "b"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "d",
+      "label": [
+        "d"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "m",
+      "label": [
+        "m"
+      ],
+      "kind": "box"
+    }
+  ],
+  "items": [
+    {
+      "kind": "message",
+      "from": "a",
+      "to": "a",
+      "text": [
+        "think"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "a",
+      "to": "b",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "d",
+      "to": "m",
+      "text": [
+        "„Cože? uranu-238 -> 4,5 : miliardy“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "a",
+      "to": "b",
+      "text": [
+        "one"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "b",
+      "to": "a",
+      "text": [
+        "two"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+sequenceDiagram
+  loop daily
+    opt if new
+      a->>b: sync
+    end
+    rect rgb(200, 150, 255)
+      a->>b: highlighted
+    end
+    a->>b: after
+  end

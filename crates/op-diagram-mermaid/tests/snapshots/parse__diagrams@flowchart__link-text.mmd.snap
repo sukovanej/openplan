@@ -1,0 +1,182 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/link-text.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "a",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "a"
+      ]
+    },
+    {
+      "id": "b",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "b"
+      ]
+    },
+    {
+      "id": "c",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "c"
+      ]
+    },
+    {
+      "id": "d",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "d"
+      ]
+    },
+    {
+      "id": "e",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "e"
+      ]
+    },
+    {
+      "id": "f",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "f"
+      ]
+    },
+    {
+      "id": "g",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "g"
+      ]
+    },
+    {
+      "id": "h",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "h"
+      ]
+    },
+    {
+      "id": "i",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "i"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "b",
+      "label": [
+        "yes"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "a",
+      "to": "c",
+      "label": [
+        "no"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "none",
+      "min_length": 1
+    },
+    {
+      "from": "a",
+      "to": "d",
+      "label": [
+        "far"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 2
+    },
+    {
+      "from": "a",
+      "to": "e",
+      "label": [
+        "go"
+      ],
+      "stroke": "thick",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "a",
+      "to": "f",
+      "label": [
+        "maybe"
+      ],
+      "stroke": "dotted",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "a",
+      "to": "g",
+      "label": [
+        "v1.2"
+      ],
+      "stroke": "dotted",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 2
+    },
+    {
+      "from": "a",
+      "to": "h",
+      "label": [
+        "both"
+      ],
+      "stroke": "solid",
+      "tail": "arrow",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "a",
+      "to": "i",
+      "label": [
+        "x --> y"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

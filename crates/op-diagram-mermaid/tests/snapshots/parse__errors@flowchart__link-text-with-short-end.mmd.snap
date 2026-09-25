@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/link-text-with-short-end.mmd
+---
+line 2, column 15: the link text needs an end such as `-->`

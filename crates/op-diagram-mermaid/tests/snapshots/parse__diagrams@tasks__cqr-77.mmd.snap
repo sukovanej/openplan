@@ -1,0 +1,125 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-77.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "d",
+      "label": [
+        "Dívka"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "m",
+      "label": [
+        "Mladík"
+      ],
+      "kind": "box"
+    }
+  ],
+  "items": [
+    {
+      "kind": "message",
+      "from": "d",
+      "to": "d",
+      "text": [
+        "Sama popíjí drink u baru"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "m",
+      "to": "d",
+      "text": [
+        "„Nechceš společnost?“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "d",
+      "to": "m",
+      "text": [
+        "„Nemám zájem o společnost nějakého blbečka.“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "m",
+      "to": "d",
+      "text": [
+        "„Já ale nejsem blbeček. Mám rating 2500 v Mudru.“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "d",
+      "to": "m",
+      "text": [
+        "„Cože? 2500? Vážně?! Takže víš, že poločas rozpadu uranu-238 je…“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "m",
+      "to": "d",
+      "text": [
+        "„Ano. Přibližně 4,5 miliardy let.“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "d",
+      "to": "m",
+      "text": [
+        "„To ale ví kdekdo. A kdy byla bitva na Bílé hoře?“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "m",
+      "to": "d",
+      "text": [
+        "„Samozřejmě — 8. listopadu 1620.“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "d",
+      "to": "m",
+      "text": [
+        "„Mohl bys mi prosím dělat společnost?“"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    }
+  ]
+}

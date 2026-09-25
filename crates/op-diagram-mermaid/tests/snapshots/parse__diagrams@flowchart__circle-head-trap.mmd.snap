@@ -1,0 +1,39 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/circle-head-trap.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "a",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "a"
+      ]
+    },
+    {
+      "id": "ak",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "ak"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "ak",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "circle",
+      "min_length": 1
+    }
+  ]
+}

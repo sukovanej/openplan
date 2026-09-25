@@ -1,0 +1,16 @@
+flowchart TB
+  subgraph one
+    a
+  end
+  subgraph two
+    a --> b
+  end
+  subgraph plain
+  end
+  subgraph with_id["Bracket title"]
+    c
+  end
+  c --> late
+  subgraph late
+    d
+  end

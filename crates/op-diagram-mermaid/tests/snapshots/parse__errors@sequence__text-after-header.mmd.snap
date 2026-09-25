@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/sequence/text-after-header.mmd
+---
+line 1, column 17: expected a new line after `sequenceDiagram`

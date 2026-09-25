@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/subgraph-on-shaped-node.mmd
+---
+line 3, column 12: `s` is a node with a shape, so it cannot name a subgraph

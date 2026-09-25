@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/unclosed-shape.mmd
+---
+line 2, column 10: the text of `b` has no closing `]`

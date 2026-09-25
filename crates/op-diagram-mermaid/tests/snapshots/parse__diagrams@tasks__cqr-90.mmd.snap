@@ -1,0 +1,210 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-90.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "browser",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "browser"
+      ]
+    },
+    {
+      "id": "rest",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "router(state): the shared REST handlers"
+      ],
+      "parent": "worker"
+    },
+    {
+      "id": "admit",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "admission for the five socket routes"
+      ],
+      "parent": "worker"
+    },
+    {
+      "id": "assets",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "apps/web as static assets"
+      ],
+      "parent": "worker"
+    },
+    {
+      "id": "queue",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "QueueObject"
+      ]
+    },
+    {
+      "id": "ladder",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "LadderObject"
+      ]
+    },
+    {
+      "id": "driver",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "MatchDriver"
+      ],
+      "parent": "match"
+    },
+    {
+      "id": "storage",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "snapshot in object storage"
+      ],
+      "parent": "match"
+    },
+    {
+      "id": "alarm",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "alarm = next_wake_at()"
+      ],
+      "parent": "match"
+    },
+    {
+      "id": "d1",
+      "shape": {
+        "kind": "cylinder"
+      },
+      "label": [
+        "D1"
+      ]
+    }
+  ],
+  "clusters": [
+    {
+      "id": "worker",
+      "label": [
+        "Worker fetch"
+      ]
+    },
+    {
+      "id": "match",
+      "label": [
+        "MatchObject"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "browser",
+      "to": "worker",
+      "label": [
+        "HTTPS, WebSocket upgrade"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "worker",
+      "to": "match",
+      "label": [
+        "upgrade forwarded by match id"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "worker",
+      "to": "queue",
+      "label": [
+        "by language"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "worker",
+      "to": "ladder",
+      "label": [
+        "by run id"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "queue",
+      "to": "match",
+      "label": [
+        "Host::start_match"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "worker",
+      "to": "d1",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "match",
+      "to": "d1",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "queue",
+      "to": "d1",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "ladder",
+      "to": "d1",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "OPP-2",
+      "shape": { "kind": "rounded" },
+      "label": ["Ship the parser"],
+      "caption": "OPP-2",
+      "icon": "status-in_progress",
+      "link": "/openplan/OPP-2",
+      "classes": ["status-in_progress"],
+      "rank": 1,
+      "parent": "OPP-1"
+    },
+    {
+      "id": "OPP-9",
+      "shape": { "kind": "rounded" },
+      "label": ["OPP-9"],
+      "classes": ["unresolved"]
+    }
+  ],
+  "clusters": [
+    {
+      "id": "OPP-1",
+      "label": ["Own diagram engine"],
+      "caption": "OPP-1",
+      "icon": "status-todo",
+      "link": "/openplan/OPP-1",
+      "classes": ["status-todo"],
+      "direction": "down"
+    }
+  ],
+  "edges": [
+    { "from": "OPP-9", "to": "OPP-2", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 }
+  ]
+}
