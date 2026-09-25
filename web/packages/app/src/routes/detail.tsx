@@ -65,7 +65,7 @@ import { useAbbreviation } from "../lib/projects"
 import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
-import { runtime } from "../lib/runtime"
+import { abortable } from "../lib/runtime"
 import { NO_ROW } from "../lib/status-requests"
 import { useTags } from "../lib/tags"
 import { taskMatches } from "../lib/task-search"
@@ -108,7 +108,7 @@ function LiveTask({ project, id }: { project: string; id: string }) {
   const client = useQueryClient()
   const task = useQuery({
     queryKey: taskKey(project, id),
-    queryFn: () => runtime.runPromise(getTask(project, id)),
+    queryFn: abortable(getTask(project, id)),
   })
 
   if (task.isError) {
@@ -504,7 +504,7 @@ function HeaderParent({
 function ParentPicker({ project, id, onClose }: { project: string; id: string; onClose: () => void }) {
   const tasks = useQuery({
     queryKey: tasksKey(project),
-    queryFn: () => runtime.runPromise(listTasks(project)),
+    queryFn: abortable(listTasks(project)),
     refetchOnMount: "always",
   })
   const { mutate } = useProjectMutation(project)
@@ -688,7 +688,7 @@ function SubtasksSection({
 function SubtaskPicker({ project, id, onClose }: { project: string; id: string; onClose: () => void }) {
   const tasks = useQuery({
     queryKey: tasksKey(project),
-    queryFn: () => runtime.runPromise(listTasks(project)),
+    queryFn: abortable(listTasks(project)),
     refetchOnMount: "always",
   })
   const { mutate } = useProjectMutation(project)

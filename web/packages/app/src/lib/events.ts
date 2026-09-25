@@ -79,3 +79,80 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
     }
   }
 }
+
+interface Held {
+  projects: boolean
+  everything: boolean
+  readonly screens: Set<string>
+  readonly lists: Set<string>
+  readonly tasks: Map<string, Set<string>>
+  readonly histories: Set<string>
+  readonly syncs: Set<string>
+}
+
+const nothingHeld = (): Held => ({
+  projects: false,
+  everything: false,
+  screens: new Set(),
+  lists: new Set(),
+  tasks: new Map(),
+  histories: new Set(),
+  syncs: new Set(),
+})
+
+// A refresh of a project's whole screen covers each narrower refresh in that project, and a refresh
+// of every screen covers them all.
+function release(target: Invalidator, held: Held): void {
+  if (held.projects) target.refreshProjects()
+  if (held.everything) {
+    target.refreshVisible()
+    return
+  }
+  const uncovered = (project: string) => !held.screens.has(project)
+  for (const project of held.screens) target.refreshVisible(project)
+  for (const project of [...held.lists].filter(uncovered)) target.refreshList(project)
+  for (const [project, ids] of held.tasks) {
+    if (uncovered(project)) for (const id of ids) target.refreshTask(project, id)
+  }
+  for (const project of [...held.histories].filter(uncovered)) target.refreshHistory(project)
+  for (const project of [...held.syncs].filter(uncovered)) target.refreshSync(project)
+}
+
+// A sync that brings in many tasks sends a task_changed for each of them, back to back, and each one
+// asks for the same list again. The refreshes wait until `schedule` flushes them, and then each read
+// is refreshed once, however many events asked for it.
+export function coalesced(target: Invalidator, schedule: (flush: () => void) => void): Invalidator {
+  let held: Held | undefined
+  const flush = () => {
+    const due = held
+    held = undefined
+    if (due !== undefined) release(target, due)
+  }
+  const hold = (record: (held: Held) => void) => {
+    if (held === undefined) {
+      held = nothingHeld()
+      schedule(flush)
+    }
+    record(held)
+  }
+  return {
+    refreshProjects: () =>
+      hold((due) => {
+        due.projects = true
+      }),
+    refreshList: (project) => hold((due) => due.lists.add(project)),
+    refreshTask: (project, id) =>
+      hold((due) => {
+        const ids = due.tasks.get(project) ?? new Set<string>()
+        ids.add(id)
+        due.tasks.set(project, ids)
+      }),
+    refreshHistory: (project) => hold((due) => due.histories.add(project)),
+    refreshSync: (project) => hold((due) => due.syncs.add(project)),
+    refreshVisible: (project) =>
+      hold((due) => {
+        if (project === undefined) due.everything = true
+        else due.screens.add(project)
+      }),
+  }
+}

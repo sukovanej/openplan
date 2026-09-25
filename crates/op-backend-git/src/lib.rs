@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -59,6 +60,8 @@ pub(crate) struct Inner {
     syncing: Mutex<()>,
     announced: Mutex<Option<ObjectId>>,
     cached: Mutex<Option<Arc<GitSnapshot>>>,
+    // What each revision changed. A revision never changes, so an answer stays true.
+    changed_by: Mutex<HashMap<ObjectId, Arc<[Change]>>>,
     status: Mutex<SyncStatus>,
     events: Events,
 }
@@ -90,6 +93,7 @@ impl GitBackend {
                 syncing: Mutex::new(()),
                 announced: Mutex::new(announced),
                 cached: Mutex::new(None),
+                changed_by: Mutex::new(HashMap::new()),
                 status: Mutex::new(status),
                 events: Events::default(),
             }),
@@ -209,11 +213,55 @@ impl Inner {
         Ok(Some(moved))
     }
 
-    fn entries(&self, commit: Option<ObjectId>) -> Result<objects::Entries, BackendError> {
-        Ok(match commit {
-            Some(commit) => self.snapshot_at(commit)?.entries.clone(),
-            None => objects::Entries::new(),
-        })
+    pub(crate) fn changes_between(
+        &self,
+        from: Option<ObjectId>,
+        to: Option<ObjectId>,
+    ) -> Result<Vec<Change>, BackendError> {
+        let repo = self.local();
+        let tree = |commit: Option<ObjectId>| {
+            commit
+                .map(|commit| objects::tree_of(&repo, commit))
+                .transpose()
+        };
+        objects::tree_changes(&repo, tree(from)?, tree(to)?)
+    }
+
+    // A merge keeps only what differs from every side it joined: a document it took unchanged from
+    // one side belongs to the revision that made it there.
+    fn changed_by(
+        &self,
+        repo: &gix::Repository,
+        commit: ObjectId,
+        parents: &[ObjectId],
+    ) -> Result<Arc<[Change]>, BackendError> {
+        if let Some(known) = lock(&self.changed_by).get(&commit) {
+            return Ok(Arc::clone(known));
+        }
+        let tree = objects::tree_of(repo, commit)?;
+        let first = parents
+            .first()
+            .map(|parent| objects::tree_of(repo, *parent))
+            .transpose()?;
+        let mut changes = objects::tree_changes(repo, first, Some(tree))?;
+        if let Some(others) = parents.get(1..).filter(|others| !others.is_empty()) {
+            let mut kept = Vec::with_capacity(changes.len());
+            for change in changes {
+                let ours = objects::blob_at(repo, tree, &change.path)?;
+                let mut differs = true;
+                for other in others {
+                    let theirs = objects::tree_of(repo, *other)?;
+                    differs &= objects::blob_at(repo, theirs, &change.path)? != ours;
+                }
+                if differs {
+                    kept.push(change);
+                }
+            }
+            changes = kept;
+        }
+        let changes: Arc<[Change]> = changes.into();
+        lock(&self.changed_by).insert(commit, Arc::clone(&changes));
+        Ok(changes)
     }
 
     fn snapshot_at(&self, commit: ObjectId) -> Result<Arc<GitSnapshot>, BackendError> {
@@ -238,7 +286,7 @@ impl Inner {
         if from == tip {
             return Ok(None);
         }
-        let changes = objects::changes(&self.entries(from)?, &self.entries(tip)?);
+        let changes = self.changes_between(from, tip)?;
         self.announce(tip, changes, Origin::External)
     }
 
@@ -270,19 +318,11 @@ impl Inner {
                 break;
             }
             let info = info.map_err(storage)?;
-            let now = objects::entries_under(&repo, info.id, &query.prefix)?;
-            let mut earlier = Vec::new();
-            for parent in info.parent_ids.iter() {
-                earlier.push(objects::entries_under(&repo, *parent, &query.prefix)?);
-            }
-            let first = earlier.first().cloned().unwrap_or_default();
-            let changes: Vec<Change> = objects::changes(&first, &now)
-                .into_iter()
-                .filter(|change| {
-                    earlier[1.min(earlier.len())..]
-                        .iter()
-                        .all(|other| other.get(&change.path) != now.get(&change.path))
-                })
+            let changes: Vec<Change> = self
+                .changed_by(&repo, info.id, &info.parent_ids)?
+                .iter()
+                .filter(|change| change.path.starts_with(&query.prefix))
+                .cloned()
                 .collect();
             if changes.is_empty() {
                 continue;
@@ -326,10 +366,7 @@ impl Backend for GitBackend {
     ) -> Result<Vec<Change>, BackendError> {
         let from = from.map(object_id).transpose()?;
         let to = object_id(to)?;
-        Ok(objects::changes(
-            &self.inner.entries(from)?,
-            &self.inner.entries(Some(to))?,
-        ))
+        self.inner.changes_between(from, Some(to))
     }
 
     fn refresh(&self) -> Result<Option<HeadMoved>, BackendError> {

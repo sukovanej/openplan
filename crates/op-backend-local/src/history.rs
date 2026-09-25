@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use op_backend::{
-    Actor, BackendError, Change, ChangeKind, LogEntry, LogQuery, MemorySnapshot, Revision,
-    RevisionId, Timestamp,
+    Actor, BackendError, Change, ChangeKind, LogEntry, LogQuery, Revision, RevisionId, Timestamp,
 };
 use rusqlite::{Connection, OptionalExtension as _, TransactionBehavior, params};
 use sha2::{Digest as _, Sha256};
+
+use crate::snapshot::{Blobs, HELD_BYTES, LocalSnapshot, Stored};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS revisions (
@@ -89,14 +91,19 @@ impl History {
             .map_err(storage)
     }
 
-    pub fn snapshot(&self, id: Option<i64>) -> Result<MemorySnapshot, BackendError> {
+    pub fn snapshot(
+        &self,
+        id: Option<i64>,
+        blobs: &Arc<Blobs>,
+    ) -> Result<LocalSnapshot, BackendError> {
         let Some(id) = id else {
-            return Ok(MemorySnapshot::default());
+            return Ok(LocalSnapshot::new(None, BTreeMap::new(), Arc::clone(blobs)));
         };
         let mut statement = self
             .db
             .prepare(
-                "SELECT c.path, b.bytes FROM changes c JOIN blobs b ON b.hash = c.blob
+                "SELECT c.path, c.blob, CASE WHEN length(b.bytes) <= ?2 THEN b.bytes END
+                 FROM changes c JOIN blobs b ON b.hash = c.blob
                  WHERE c.revision = (
                      SELECT MAX(c2.revision) FROM changes c2
                      WHERE c2.path = c.path AND c2.revision <= ?1
@@ -104,11 +111,78 @@ impl History {
             )
             .map_err(storage)?;
         let files = statement
-            .query_map([id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map(params![id, HELD_BYTES as i64], |row| {
+                Ok((row.get(0)?, stored(row.get(1)?, row.get(2)?)))
+            })
             .map_err(storage)?
-            .collect::<Result<BTreeMap<String, Vec<u8>>, _>>()
+            .collect::<Result<BTreeMap<String, Stored>, _>>()
             .map_err(storage)?;
-        Ok(MemorySnapshot::new(Some(revision_id(id)), files))
+        Ok(LocalSnapshot::new(
+            Some(revision_id(id)),
+            files,
+            Arc::clone(blobs),
+        ))
+    }
+
+    // What `path` holds at revision `id`, or `None` where it holds nothing.
+    pub fn stored_at(&self, id: i64, path: &str) -> Result<Option<Stored>, BackendError> {
+        let found: Option<(Option<String>, Option<Vec<u8>>)> = self
+            .db
+            .query_row(
+                "SELECT c.blob, CASE WHEN length(b.bytes) <= ?3 THEN b.bytes END
+                 FROM changes c LEFT JOIN blobs b ON b.hash = c.blob
+                 WHERE c.path = ?1 AND c.revision <= ?2
+                 ORDER BY c.revision DESC LIMIT 1",
+                params![path, id, HELD_BYTES as i64],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(storage)?;
+        Ok(match found {
+            Some((Some(hash), bytes)) => Some(stored(hash, bytes)),
+            _ => None,
+        })
+    }
+
+    // The history is one line, so what differs between two revisions is what the revisions between
+    // them changed, less what they changed back.
+    pub fn changes(&self, from: Option<i64>, to: i64) -> Result<Vec<Change>, BackendError> {
+        let from = from.unwrap_or(0);
+        let mut statement = self
+            .db
+            .prepare(
+                "SELECT p.path,
+                     (SELECT blob FROM changes WHERE path = p.path AND revision <= ?1
+                      ORDER BY revision DESC LIMIT 1),
+                     (SELECT blob FROM changes WHERE path = p.path AND revision <= ?2
+                      ORDER BY revision DESC LIMIT 1)
+                 FROM (SELECT DISTINCT path FROM changes WHERE revision > ?3 AND revision <= ?4) p
+                 ORDER BY p.path",
+            )
+            .map_err(storage)?;
+        let rows = statement
+            .query_map(params![from, to, from.min(to), from.max(to)], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })
+            .map_err(storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(path, before, after)| {
+                let kind = match (before, after) {
+                    (None, Some(_)) => ChangeKind::Added,
+                    (Some(_), None) => ChangeKind::Removed,
+                    (Some(before), Some(after)) if before != after => ChangeKind::Modified,
+                    _ => return None,
+                };
+                Some(Change::new(path, kind))
+            })
+            .collect())
     }
 
     // `None` when another writer moved the history past `expected` since the caller read it. A
@@ -323,13 +397,20 @@ fn parse_kind(name: &str) -> Result<ChangeKind, BackendError> {
     }
 }
 
-fn hash(bytes: &[u8]) -> String {
+fn stored(hash: String, bytes: Option<Vec<u8>>) -> Stored {
+    match bytes {
+        Some(bytes) => Stored::Held(bytes.into()),
+        None => Stored::InHistory { hash },
+    }
+}
+
+pub(crate) fn hash(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
 
-fn storage(err: impl std::fmt::Display) -> BackendError {
+pub(crate) fn storage(err: impl std::fmt::Display) -> BackendError {
     BackendError::storage(err)
 }

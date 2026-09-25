@@ -17,7 +17,7 @@ it("renders a fence plain until the highlighter is built", async () => {
   expect(plain.className).toBe("language-ts")
 
   await act(async () => {
-    await ensureHighlighter()
+    await ensureHighlighter("typescript")
   })
   expect(root.querySelector("pre.shiki")).not.toBeNull()
   expect(root.querySelector("pre")!.textContent).toBe(plain.textContent)

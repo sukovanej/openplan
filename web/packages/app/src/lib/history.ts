@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import type { Effect } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 
@@ -7,7 +7,7 @@ import { revisionPath, taskPath } from "@openplan/task-ui"
 
 import { type ApiError, getProjectHistory, getTaskHistory, getTaskRevision, type HistoryPage } from "./api"
 import { historyKey, revisionKey, taskHistoryKey } from "./query-client"
-import { runtime } from "./runtime"
+import { abortable, runtime } from "./runtime"
 
 export const PROJECT_HISTORY_PAGE = 50
 export const TASK_HISTORY_PAGE = 20
@@ -20,13 +20,15 @@ export function olderThan(page: ReadonlyArray<HistoryEntry>, limit: number): str
 
 type Read = (page: HistoryPage) => Effect.Effect<ReadonlyArray<HistoryEntry>, ApiError, HttpClient.HttpClient>
 
+const everyEntry = (data: InfiniteData<ReadonlyArray<HistoryEntry>, string | undefined>) => data.pages.flat()
+
 function usePagedHistory(queryKey: ReadonlyArray<unknown>, read: Read, limit: number) {
   return useInfiniteQuery({
     queryKey,
-    queryFn: ({ pageParam }) => runtime.runPromise(read({ before: pageParam, limit })),
+    queryFn: ({ pageParam, signal }) => runtime.runPromise(read({ before: pageParam, limit }), { signal }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => olderThan(last, limit),
-    select: (data) => data.pages.flat(),
+    select: everyEntry,
   })
 }
 
@@ -41,7 +43,7 @@ export function useTaskHistory(project: string, id: string) {
 export function useTaskRevision(project: string, id: string, revision: string) {
   return useQuery({
     queryKey: revisionKey(project, id, revision),
-    queryFn: () => runtime.runPromise(getTaskRevision(project, id, revision)),
+    queryFn: abortable(getTaskRevision(project, id, revision)),
   })
 }
 

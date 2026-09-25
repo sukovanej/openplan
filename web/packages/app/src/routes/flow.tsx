@@ -25,7 +25,7 @@ import { describeSelection, readSelection, selectionParams, selectsEveryTask } f
 import { errorText } from "../lib/format"
 import { flowKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
-import { runtime } from "../lib/runtime"
+import { abortable } from "../lib/runtime"
 import { useTheme } from "../lib/theme"
 
 import "@xyflow/react/dist/style.css"
@@ -52,7 +52,7 @@ export function FlowRoute() {
   const selection = useMemo(() => readSelection(new URLSearchParams(query)), [query])
   const flow = useQuery({
     queryKey: flowKey(selectionParams(selection).toString()),
-    queryFn: () => runtime.runPromise(getFlow(selection)),
+    queryFn: abortable(getFlow(selection)),
   })
   const page = useRef<HTMLDivElement>(null)
   const box = usePageBox(page)

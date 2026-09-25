@@ -1,5 +1,5 @@
 import { Square, SquareCheckBig } from "lucide-react"
-import { type ComponentProps, createContext, useContext, useMemo } from "react"
+import { type ComponentProps, createContext, memo, useContext, useMemo } from "react"
 import Markdown, { type Components } from "react-markdown"
 import { Link } from "react-router-dom"
 import remarkGfm from "remark-gfm"
@@ -65,7 +65,9 @@ const components: Components = {
   },
 }
 
-export function TaskBody({
+// react-markdown parses the whole text on each render, and the page around a body renders on each
+// move of its cursor.
+export const TaskBody = memo(function TaskBody({
   project,
   markdown,
   refs,
@@ -88,4 +90,4 @@ export function TaskBody({
       </Prose>
     </RefsContext.Provider>
   )
-}
+})

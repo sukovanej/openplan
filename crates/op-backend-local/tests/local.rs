@@ -140,3 +140,43 @@ fn a_write_from_another_process_is_announced() {
     assert!(matches!(events.try_recv(), Ok(BackendEvent::HeadMoved(_))));
     assert_eq!(watching.refresh().expect("refresh"), None);
 }
+
+fn head_text(backend: &dyn Backend, path: &str) -> Option<String> {
+    backend.head().expect("head").read_text(path).expect("read")
+}
+
+#[test]
+fn a_hand_edit_of_the_same_size_is_recorded_after_the_scan_trusts_the_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let backend = open(dir.path());
+    put(&backend, "a.md", "aaaa");
+    // A scan trusts a file's stamp only when the file is two seconds old.
+    std::thread::sleep(Duration::from_millis(2_200));
+    assert_eq!(backend.refresh().expect("refresh"), None);
+
+    std::fs::write(dir.path().join("a.md"), "bbbb").expect("write");
+    let moved = backend.refresh().expect("refresh").expect("a move");
+    assert_eq!(moved.changes.len(), 1);
+    assert_eq!(head_text(&backend, "a.md").as_deref(), Some("bbbb"));
+}
+
+#[test]
+fn a_large_asset_edited_by_hand_is_recorded_and_read_back() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let backend = open(dir.path());
+    let first = "first version of the asset\n".repeat(10_000);
+    let second = "second version of the asset\n".repeat(10_000);
+    std::fs::create_dir_all(dir.path().join("assets")).expect("mkdir");
+    std::fs::write(dir.path().join("assets/big.txt"), &first).expect("write");
+    assert!(backend.refresh().expect("refresh").is_some());
+    assert_eq!(backend.refresh().expect("refresh"), None);
+
+    std::fs::write(dir.path().join("assets/big.txt"), &second).expect("write");
+    assert!(backend.refresh().expect("refresh").is_some());
+    drop(backend);
+    let reopened = open(dir.path());
+    assert_eq!(
+        head_text(&reopened, "assets/big.txt").as_deref(),
+        Some(second.as_str())
+    );
+}

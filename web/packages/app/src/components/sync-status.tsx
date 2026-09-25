@@ -3,13 +3,14 @@ import { CloudAlert, CloudCheck, CloudOff, CloudSync, LoaderCircle, RefreshCw } 
 import { useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
+import type { TaskListItem } from "@openplan/api-client"
 import { activityPath, conflictCount, statusField, TaskIdentity, taskPath } from "@openplan/task-ui"
 import { Button, cn, CountPill, TimeAgo, Tooltip, useDismissOnOutsideClick } from "@openplan/ui"
 
-import { listTasks } from "../lib/api"
+import { getBoard } from "../lib/api"
 import { useConnection } from "../lib/connection"
-import { tasksKey } from "../lib/query-client"
-import { runtime } from "../lib/runtime"
+import { boardKey } from "../lib/query-client"
+import { abortable } from "../lib/runtime"
 import {
   type ProjectSync,
   type SyncState,
@@ -171,13 +172,14 @@ function ProjectSyncView({
   )
 }
 
-// Read only while the panel is open, so the header costs no task list.
+const NONE_IN_CONFLICT: ReadonlyArray<TaskListItem> = []
+
+// Read only while the panel is open, so the header costs no board. The board of the project is the
+// read its own page already holds, and each of its rows counts the conflicts of its task.
 function ConflictedTasks({ project, onLeave }: { project: string; onLeave: () => void }) {
-  const tasks = useQuery({
-    queryKey: tasksKey(project),
-    queryFn: () => runtime.runPromise(listTasks(project)),
-  })
-  const conflicted = tasksInConflict(tasks.data ?? [])
+  const conflicted =
+    useQuery({ queryKey: boardKey(project), queryFn: abortable(getBoard(project)), select: tasksInConflict }).data ??
+    NONE_IN_CONFLICT
   if (conflicted.length === 0) return null
   return (
     <div

@@ -8,7 +8,7 @@ import { render } from "./render"
 async function highlighted(markdown: string): Promise<HTMLElement> {
   const root = render(<TaskBody project="openplan" abbreviation="OPP" markdown={markdown} />)
   await act(async () => {
-    await ensureHighlighter()
+    await ensureHighlighter("typescript")
   })
   return root
 }

@@ -1,11 +1,58 @@
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
+use std::fs::{Metadata, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 const TEMP_ATTEMPTS: usize = 16;
+const SETTLED: Duration = Duration::from_secs(2);
 
-pub(crate) fn scan(root: &Path) -> io::Result<BTreeMap<String, Vec<u8>>> {
+// A file's size, times, and identity. A file whose stamp did not move still holds what it held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Stamp {
+    len: u64,
+    modified: Option<SystemTime>,
+    #[cfg(unix)]
+    changed: (i64, i64),
+    #[cfg(unix)]
+    inode: u64,
+}
+
+impl Stamp {
+    fn of(metadata: &Metadata) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt as _;
+        Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            #[cfg(unix)]
+            changed: (metadata.ctime(), metadata.ctime_nsec()),
+            #[cfg(unix)]
+            inode: metadata.ino(),
+        }
+    }
+
+    // A file written in the last moments can change again within one tick of the file system's
+    // clock and keep its stamp, so only an older stamp proves the file did not change since.
+    pub fn is_settled(&self, now: SystemTime) -> bool {
+        let latest = self.modified.into_iter();
+        #[cfg(unix)]
+        let latest = latest.chain(changed_at(self.changed));
+        latest
+            .max()
+            .and_then(|at| now.duration_since(at).ok())
+            .is_some_and(|age| age >= SETTLED)
+    }
+}
+
+#[cfg(unix)]
+fn changed_at((seconds, nanos): (i64, i64)) -> Option<SystemTime> {
+    let seconds = u64::try_from(seconds).ok()?;
+    let nanos = u32::try_from(nanos).ok()?;
+    std::time::UNIX_EPOCH.checked_add(Duration::new(seconds, nanos))
+}
+
+pub(crate) fn list(root: &Path) -> io::Result<BTreeMap<String, Stamp>> {
     let mut files = BTreeMap::new();
     if root.is_dir() {
         collect(root, "", &mut files)?;
@@ -13,7 +60,7 @@ pub(crate) fn scan(root: &Path) -> io::Result<BTreeMap<String, Vec<u8>>> {
     Ok(files)
 }
 
-fn collect(dir: &Path, prefix: &str, files: &mut BTreeMap<String, Vec<u8>>) -> io::Result<()> {
+fn collect(dir: &Path, prefix: &str, files: &mut BTreeMap<String, Stamp>) -> io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let Ok(name) = entry.file_name().into_string() else {
@@ -27,9 +74,9 @@ fn collect(dir: &Path, prefix: &str, files: &mut BTreeMap<String, Vec<u8>>) -> i
         if kind.is_dir() {
             collect(&entry.path(), &format!("{path}/"), files)?;
         } else if kind.is_file() {
-            match std::fs::read(entry.path()) {
-                Ok(bytes) => {
-                    files.insert(path, bytes);
+            match entry.metadata() {
+                Ok(metadata) => {
+                    files.insert(path, Stamp::of(&metadata));
                 }
                 Err(err) if err.kind() == io::ErrorKind::NotFound => {}
                 Err(err) => return Err(err),
@@ -37,6 +84,14 @@ fn collect(dir: &Path, prefix: &str, files: &mut BTreeMap<String, Vec<u8>>) -> i
         }
     }
     Ok(())
+}
+
+pub(crate) fn read(root: &Path, path: &str) -> io::Result<Option<Vec<u8>>> {
+    match std::fs::read(root.join(path)) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
 }
 
 pub(crate) fn is_hidden(name: &str) -> bool {

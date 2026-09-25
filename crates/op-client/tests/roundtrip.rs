@@ -46,7 +46,7 @@ impl Daemon {
             .tracker()
             .init(project.machine(), "OPP".parse().unwrap())
             .unwrap();
-        project.reload(None);
+        project.reload();
         (Self::spawn(AppState::new([project]).with_health(info)), dir)
     }
 

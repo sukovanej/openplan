@@ -142,6 +142,26 @@ async fn every_event_carries_a_number_and_a_reconnect_replays_what_it_missed() {
     );
 }
 
+// A page that opens a new EventSource to reconnect cannot set the header, so it sends the cursor in
+// the query.
+#[tokio::test]
+async fn a_cursor_in_the_query_replays_what_the_page_missed() {
+    let (_dir, state) = local_state();
+    state.start_projects();
+    let mut live = EventStream::open(&state, None).await;
+    create(&state, "One").await;
+    let first = live.expect().await;
+    create(&state, "Two").await;
+    let second = live.expect().await;
+
+    let cursor = first.id.expect("a numbered event");
+    let path = format!("/api/events?last_event_id={cursor}");
+    let mut reconnected = EventStream::of(send_as(&state, "GET", &path, None, &[]).await);
+    let replayed = reconnected.expect().await;
+    assert_eq!(replayed.id, second.id);
+    assert_eq!(replayed.data, second.data);
+}
+
 // A cursor from another daemon lifetime, or one this daemon never issued, cannot say what the client
 // missed, so the client reads everything on screen again.
 #[tokio::test]

@@ -1,14 +1,19 @@
-import { useQuery } from "@tanstack/react-query"
+import { queryOptions, useQueries, useQuery } from "@tanstack/react-query"
+import { useCallback } from "react"
 
 import type { TagView } from "@openplan/api-client"
 import { fuzzyMatch } from "@openplan/ui"
 
 import { listTags } from "./api"
 import { tagsKey } from "./query-client"
-import { runtime } from "./runtime"
+import { abortable } from "./runtime"
 
-const indexTags = (tags: ReadonlyArray<TagView>): ReadonlyMap<string, TagView> =>
-  new Map(tags.map((tag) => [tag.name, tag]))
+export type TagsByName = ReadonlyMap<string, TagView>
+
+const indexTags = (tags: ReadonlyArray<TagView>): TagsByName => new Map(tags.map((tag) => [tag.name, tag]))
+
+const tagsQuery = (project: string) =>
+  queryOptions({ queryKey: tagsKey(project), queryFn: abortable(listTags(project)), select: indexTags })
 
 export interface Registry {
   // `undefined` until the registry has been read, which a reader must not mistake for a registry
@@ -21,12 +26,19 @@ export interface Registry {
 }
 
 export function useTags(project: string): Registry {
-  const { data, isError } = useQuery({
-    queryKey: tagsKey(project),
-    queryFn: () => runtime.runPromise(listTags(project)),
-    select: indexTags,
-  })
+  const { data, isError } = useQuery(tagsQuery(project))
   return { byName: data, failed: isError }
+}
+
+// One read for each project, however many rows show its tags. The record keeps its identity until a
+// registry changes, so a row that takes the registry of its project renders only when that changes.
+export function useTagRegistries(projects: ReadonlyArray<string>): Readonly<Record<string, TagsByName | undefined>> {
+  const combine = useCallback(
+    (results: ReadonlyArray<{ readonly data?: TagsByName }>) =>
+      Object.fromEntries(projects.map((project, at) => [project, results[at]?.data])),
+    [projects],
+  )
+  return useQueries({ queries: projects.map(tagsQuery), combine })
 }
 
 // A tags write is validated as a whole set, so one name the registry does not hold refuses the whole

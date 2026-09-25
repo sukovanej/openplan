@@ -1,18 +1,22 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::SystemTime;
 
 use op_backend::{
-    Actor, Backend, BackendError, BackendEvent, ChangeKind, Committed, Events, HeadMoved, LogEntry,
-    LogQuery, MemorySnapshot, Op, Origin, Remote, RevisionId, Snapshot, Write, check_path,
+    Actor, Backend, BackendError, BackendEvent, Change, ChangeKind, Committed, Events, HeadMoved,
+    LogEntry, LogQuery, Op, Origin, Remote, RevisionId, Snapshot, Write, check_path,
 };
 use tokio::sync::broadcast;
 
 mod disk;
 mod history;
+mod snapshot;
 mod watch;
 
+use disk::Stamp;
 use history::{History, parse_id};
+use snapshot::{Blobs, LocalSnapshot, Stored};
 
 pub const HISTORY_FILE: &str = ".history.sqlite";
 pub const EXTERNAL_MESSAGE: &str = "Edit outside openplan";
@@ -42,13 +46,22 @@ pub struct LocalBackend {
 struct Inner {
     root: PathBuf,
     external_author: Actor,
+    blobs: Arc<Blobs>,
     state: Mutex<State>,
     events: Events,
 }
 
 struct State {
     history: History,
-    head: Arc<MemorySnapshot>,
+    head: Arc<LocalSnapshot>,
+    // Files that held what the head holds when these stamps were taken, so a scan reads only the
+    // files whose stamp moved.
+    stamps: BTreeMap<String, Stamp>,
+}
+
+struct HandEdits {
+    ops: Vec<Op>,
+    settled: Vec<(String, Stamp)>,
 }
 
 enum Source {
@@ -61,11 +74,17 @@ impl LocalBackend {
         let root = root.as_ref().to_path_buf();
         std::fs::create_dir_all(&root)?;
         let history = History::open(&root.join(HISTORY_FILE))?;
-        let head = Arc::new(history.snapshot(history.latest()?)?);
+        let blobs = Arc::new(Blobs::open(&root.join(HISTORY_FILE))?);
+        let head = Arc::new(history.snapshot(history.latest()?, &blobs)?);
         let inner = Arc::new(Inner {
             root,
             external_author: options.external_author,
-            state: Mutex::new(State { history, head }),
+            blobs,
+            state: Mutex::new(State {
+                history,
+                head,
+                stamps: BTreeMap::new(),
+            }),
             events: Events::default(),
         });
         inner.finish_interrupted()?;
@@ -126,10 +145,28 @@ impl Inner {
         if latest.map(history::revision_id).as_ref() == state.head.revision() {
             return Ok(None);
         }
-        let next = Arc::new(state.history.snapshot(latest)?);
-        let changes = op_backend::diff(&*state.head, &*next)?;
         let from = state.head.revision().cloned();
-        state.head = next;
+        let held = from.as_ref().map(parse_id).transpose()?;
+        let (changes, next) = match latest {
+            Some(latest) if held.is_none_or(|held| held < latest) => {
+                let changes = state.history.changes(held, latest)?;
+                let mut writes = Vec::with_capacity(changes.len());
+                for change in &changes {
+                    state.stamps.remove(&change.path);
+                    let stored = state.history.stored_at(latest, &change.path)?;
+                    writes.push((change.path.clone(), stored));
+                }
+                let next = state.head.with(history::revision_id(latest), writes);
+                (changes, next)
+            }
+            // A history that went back names no line of moves from the head, so read it whole.
+            _ => {
+                let next = state.history.snapshot(latest, &self.blobs)?;
+                state.stamps.clear();
+                (op_backend::diff(&*state.head, &next)?, next)
+            }
+        };
+        state.head = Arc::new(next);
         let Some(latest) = latest else {
             return Ok(None);
         };
@@ -175,9 +212,13 @@ impl Inner {
         for _ in 0..WRITE_ATTEMPTS {
             elsewhere = self.catch_up(state)?.or(elsewhere);
             let from = state.head.revision().cloned();
-            let ops = self.hand_edits(&state.head)?;
+            let edits = self.hand_edits(state)?;
             let author = self.external_author.clone();
-            match self.apply(state, &author, EXTERNAL_MESSAGE, ops, Source::Disk)? {
+            let applied = self.apply(state, &author, EXTERNAL_MESSAGE, edits.ops, Source::Disk)?;
+            if !matches!(applied, Applied::Moved) {
+                state.stamps.extend(edits.settled);
+            }
+            match applied {
                 Applied::Nothing => return Ok(elsewhere),
                 Applied::Moved => continue,
                 Applied::Done(committed) => {
@@ -188,24 +229,39 @@ impl Inner {
         Err(BackendError::Contended)
     }
 
-    fn hand_edits(&self, head: &MemorySnapshot) -> Result<Vec<Op>, BackendError> {
-        let disk = disk::scan(&self.root)?;
-        let mut ops = Vec::new();
-        for (path, bytes) in &disk {
+    // Reads only the files whose stamp moved since they last matched the head.
+    fn hand_edits(&self, state: &mut State) -> Result<HandEdits, BackendError> {
+        let now = SystemTime::now();
+        let listed = disk::list(&self.root)?;
+        state.stamps.retain(|path, _| listed.contains_key(path));
+        let mut edits = HandEdits {
+            ops: Vec::new(),
+            settled: Vec::new(),
+        };
+        for (path, stamp) in &listed {
             if check_path(path).is_err() {
                 tracing::warn!(root = %self.root.display(), %path, "a file with this name cannot be a document");
                 continue;
             }
-            if head.read(path)?.as_ref() != Some(bytes) {
-                ops.push(Op::put(path.clone(), bytes.clone()));
+            if state.stamps.get(path) == Some(stamp) {
+                continue;
+            }
+            let Some(bytes) = disk::read(&self.root, path)? else {
+                continue;
+            };
+            if stamp.is_settled(now) {
+                edits.settled.push((path.clone(), *stamp));
+            }
+            if !state.head.holds(path, &bytes) {
+                edits.ops.push(Op::put(path.clone(), bytes));
             }
         }
-        for path in head.files()? {
-            if !disk.contains_key(&path) {
-                ops.push(Op::remove(path));
+        for path in state.head.files()? {
+            if !listed.contains_key(&path) {
+                edits.ops.push(Op::remove(path));
             }
         }
-        Ok(ops)
+        Ok(edits)
     }
 
     fn apply(
@@ -226,10 +282,10 @@ impl Inner {
         }
         let mut kinds = BTreeMap::new();
         for (path, content) in &writes {
-            let kind = match (state.head.read(path)?, content) {
-                (None, Some(_)) => ChangeKind::Added,
-                (Some(_), None) => ChangeKind::Removed,
-                (Some(old), Some(new)) if old != *new => ChangeKind::Modified,
+            let kind = match (state.head.contains(path), content) {
+                (false, Some(_)) => ChangeKind::Added,
+                (true, None) => ChangeKind::Removed,
+                (true, Some(new)) if !state.head.holds(path, new) => ChangeKind::Modified,
                 _ => continue,
             };
             kinds.insert(path.clone(), kind);
@@ -256,20 +312,14 @@ impl Inner {
         if let Source::Openplan = source {
             for (path, content) in &writes {
                 disk::write(&self.root, path, content.as_deref())?;
+                state.stamps.remove(path);
             }
         }
         state.history.settle(parse_id(&recorded.revision.id)?)?;
-        let mut files = MemorySnapshot::copy_of(&*state.head)?.into_files();
-        for (path, content) in writes {
-            match content {
-                Some(bytes) => files.insert(path, bytes),
-                None => files.remove(&path),
-            };
-        }
-        state.head = Arc::new(MemorySnapshot::new(
-            Some(recorded.revision.id.clone()),
-            files,
-        ));
+        let writes = writes
+            .into_iter()
+            .map(|(path, content)| (path, content.map(Stored::of)));
+        state.head = Arc::new(state.head.with(recorded.revision.id.clone(), writes));
         Ok(Applied::Done(Committed {
             revision: recorded.revision,
             changes: recorded.changes,
@@ -312,7 +362,9 @@ impl Backend for LocalBackend {
         if !state.history.exists(id)? {
             return Err(BackendError::UnknownRevision(revision.clone()));
         }
-        Ok(Arc::new(state.history.snapshot(Some(id))?))
+        Ok(Arc::new(
+            state.history.snapshot(Some(id), &self.inner.blobs)?,
+        ))
     }
 
     fn commit(&self, author: &Actor, write: Write<'_>) -> Result<Option<Committed>, BackendError> {
@@ -321,6 +373,22 @@ impl Backend for LocalBackend {
 
     fn log(&self, query: &LogQuery) -> Result<Vec<LogEntry>, BackendError> {
         self.inner.lock().history.log(query)
+    }
+
+    fn changes(
+        &self,
+        from: Option<&RevisionId>,
+        to: &RevisionId,
+    ) -> Result<Vec<Change>, BackendError> {
+        let state = self.inner.lock();
+        for revision in from.into_iter().chain([to]) {
+            if !state.history.exists(parse_id(revision)?)? {
+                return Err(BackendError::UnknownRevision(revision.clone()));
+            }
+        }
+        state
+            .history
+            .changes(from.map(parse_id).transpose()?, parse_id(to)?)
     }
 
     fn refresh(&self) -> Result<Option<HeadMoved>, BackendError> {

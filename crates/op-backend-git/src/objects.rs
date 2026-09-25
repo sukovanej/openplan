@@ -1,7 +1,8 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use gix::ObjectId;
-use gix::objs::tree::EntryKind;
+use gix::objs::tree::{EntryKind, EntryRef};
 use gix::refs::Target;
 use gix::refs::transaction::{Change as RefChange, LogChange, PreviousValue, RefEdit, RefLog};
 use op_backend::{
@@ -114,51 +115,6 @@ fn collect(
     Ok(())
 }
 
-// Every entry whose path starts with `prefix`, read from the one subtree that can hold them.
-pub(crate) fn entries_under(
-    repo: &gix::Repository,
-    commit: ObjectId,
-    prefix: &str,
-) -> Result<Entries, BackendError> {
-    let root = tree_of(repo, commit)?;
-    let (dir, name) = match prefix.rsplit_once('/') {
-        Some((dir, name)) => (dir, name),
-        None => ("", prefix),
-    };
-    let tree = match dir.is_empty() {
-        true => Some(root),
-        false => subtree(repo, root, dir)?,
-    };
-    let Some(tree) = tree else {
-        return Ok(Entries::new());
-    };
-    let base = match dir.is_empty() {
-        true => String::new(),
-        false => format!("{dir}/"),
-    };
-    let mut entries = Entries::new();
-    let decoded = repo.find_tree(tree).map_err(storage)?;
-    for entry in decoded.decode().map_err(storage)?.entries.iter() {
-        if !entry.filename.starts_with(name.as_bytes()) {
-            continue;
-        }
-        let path = format!("{base}{}", entry.filename);
-        match entry.mode.kind() {
-            EntryKind::Tree => collect(
-                repo,
-                entry.oid.to_owned(),
-                &format!("{path}/"),
-                &mut entries,
-            )?,
-            EntryKind::Blob | EntryKind::BlobExecutable => {
-                entries.insert(path, entry.oid.to_owned());
-            }
-            EntryKind::Link | EntryKind::Commit => {}
-        }
-    }
-    Ok(entries)
-}
-
 pub(crate) fn subtree(
     repo: &gix::Repository,
     root: ObjectId,
@@ -169,6 +125,123 @@ pub(crate) fn subtree(
         return Ok(None);
     };
     Ok(entry.mode().is_tree().then(|| entry.object_id()))
+}
+
+// Compares object ids, so a subtree both sides share is never read.
+pub(crate) fn tree_changes(
+    repo: &gix::Repository,
+    from: Option<ObjectId>,
+    to: Option<ObjectId>,
+) -> Result<Vec<Change>, BackendError> {
+    let mut changes = Vec::new();
+    diff_trees(repo, from, to, "", &mut changes)?;
+    changes.sort();
+    Ok(changes)
+}
+
+fn diff_trees(
+    repo: &gix::Repository,
+    from: Option<ObjectId>,
+    to: Option<ObjectId>,
+    prefix: &str,
+    changes: &mut Vec<Change>,
+) -> Result<(), BackendError> {
+    if from == to {
+        return Ok(());
+    }
+    let find = |id: Option<ObjectId>| id.map(|id| repo.find_tree(id)).transpose();
+    let (old, new) = (find(from).map_err(storage)?, find(to).map_err(storage)?);
+    let (old, new) = (documents(old.as_ref())?, documents(new.as_ref())?);
+    let (mut old, mut new) = (old.iter().peekable(), new.iter().peekable());
+    loop {
+        let order = match (old.peek(), new.peek()) {
+            (None, None) => return Ok(()),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (Some(a), Some(b)) => git_order(a, b),
+        };
+        let (a, b) = match order {
+            Ordering::Less => (old.next(), None),
+            Ordering::Greater => (None, new.next()),
+            Ordering::Equal => (old.next(), new.next()),
+        };
+        compare(repo, a, b, prefix, changes)?;
+    }
+}
+
+// Two entries of one name are both trees or both blobs: `git_order` sorts a tree as its name and a
+// slash, so a blob that became a tree reads as one removed and one added path.
+fn compare(
+    repo: &gix::Repository,
+    old: Option<&EntryRef<'_>>,
+    new: Option<&EntryRef<'_>>,
+    prefix: &str,
+    changes: &mut Vec<Change>,
+) -> Result<(), BackendError> {
+    let Some(entry) = new.or(old) else {
+        return Ok(());
+    };
+    let path = format!("{prefix}{}", entry.filename);
+    if entry.mode.is_tree() {
+        let id = |entry: Option<&EntryRef<'_>>| entry.map(|entry| entry.oid.to_owned());
+        return diff_trees(repo, id(old), id(new), &format!("{path}/"), changes);
+    }
+    let kind = match (old, new) {
+        (None, Some(_)) => ChangeKind::Added,
+        (Some(_), None) => ChangeKind::Removed,
+        (Some(old), Some(new)) if old.oid != new.oid => ChangeKind::Modified,
+        _ => return Ok(()),
+    };
+    changes.push(Change::new(path, kind));
+    Ok(())
+}
+
+// Symlinks and submodules name no document, as in `flatten`.
+fn documents<'a>(tree: Option<&'a gix::Tree<'_>>) -> Result<Vec<EntryRef<'a>>, BackendError> {
+    let Some(tree) = tree else {
+        return Ok(Vec::new());
+    };
+    let mut entries: Vec<EntryRef<'a>> = tree
+        .decode()
+        .map_err(storage)?
+        .entries
+        .into_iter()
+        .filter(|entry| {
+            matches!(
+                entry.mode.kind(),
+                EntryKind::Tree | EntryKind::Blob | EntryKind::BlobExecutable
+            )
+        })
+        .collect();
+    entries.sort_by(git_order);
+    Ok(entries)
+}
+
+fn git_order(a: &EntryRef<'_>, b: &EntryRef<'_>) -> Ordering {
+    sort_key(a).cmp(sort_key(b))
+}
+
+fn sort_key<'a>(entry: &EntryRef<'a>) -> impl Iterator<Item = u8> + 'a {
+    let slash = entry.mode.is_tree().then_some(b'/');
+    entry.filename.iter().copied().chain(slash)
+}
+
+// The blob a revision holds at `path`, or `None` where it holds no document there.
+pub(crate) fn blob_at(
+    repo: &gix::Repository,
+    tree: ObjectId,
+    path: &str,
+) -> Result<Option<ObjectId>, BackendError> {
+    let tree = repo.find_tree(tree).map_err(storage)?;
+    let entry = tree.lookup_entry_by_path(path).map_err(storage)?;
+    Ok(entry
+        .filter(|entry| {
+            matches!(
+                entry.mode().kind(),
+                EntryKind::Blob | EntryKind::BlobExecutable
+            )
+        })
+        .map(|entry| entry.object_id()))
 }
 
 pub(crate) fn changes(from: &Entries, to: &Entries) -> Vec<Change> {

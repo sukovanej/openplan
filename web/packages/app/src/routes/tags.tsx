@@ -25,7 +25,7 @@ import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
 import { tagsKey, useProjectMutation } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
-import { runtime } from "../lib/runtime"
+import { abortable } from "../lib/runtime"
 
 // This page holds no task rows, and the cursor is the board's — left as it was, `j` then Enter here
 // would open a task the reader can no longer see.
@@ -39,7 +39,7 @@ export function TagsRoute() {
   const known = useProject(project)
   const tags = useQuery({
     queryKey: tagsKey(project),
-    queryFn: () => runtime.runPromise(listTags(project)),
+    queryFn: abortable(listTags(project)),
   })
   const registration = useProjectMutation(project)
   useRowCursor(NO_ROWS)

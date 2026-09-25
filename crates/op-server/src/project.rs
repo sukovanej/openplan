@@ -231,7 +231,7 @@ impl Project {
             health: Mutex::new(Health::default()),
             root_misses: AtomicU32::new(0),
         };
-        project.reload(None);
+        project.reload();
         Ok(project)
     }
 
@@ -311,10 +311,20 @@ impl Project {
         }
     }
 
-    // Reads the head again. `changed` names what moved, so only those tasks are dated anew; `None`
-    // dates every task from the log.
-    pub fn reload(&self, changed: Option<&[Change]>) {
-        let result = self.load(changed);
+    // Reads every task again and dates each one from the log.
+    pub fn reload(&self) {
+        let result = self.load(Scope::Everything);
+        self.record_health(result);
+    }
+
+    // Reads only what moved between the revision the index holds and the head, and nothing when
+    // the head did not move. A write and the event pump both call it for the same move.
+    pub(crate) fn catch_up(&self) {
+        let result = self.load(Scope::Moved);
+        self.record_health(result);
+    }
+
+    fn record_health(&self, result: Result<Option<String>, TrackerError>) {
         let error = match &result {
             Ok(plan_error) => plan_error.clone(),
             Err(err) => Some(err.to_string()),
@@ -327,67 +337,68 @@ impl Project {
 
     // The head is read under the index lock: two writes that reload at once could otherwise finish
     // in the other order and leave the index on the older head.
-    fn load(&self, changed: Option<&[Change]>) -> Result<Option<String>, TrackerError> {
+    fn load(&self, scope: Scope) -> Result<Option<String>, TrackerError> {
         let mut index = self.index();
         let plan = self.tracker.plan()?;
-        let dates = match changed {
-            None => Dates::All(self.tracker.backend().log(&LogQuery {
-                prefix: format!("{}/", layout::TASKS),
-                before: None,
-                limit: Some(DATING_BUDGET),
-            })?),
-            Some(changes) => {
-                let mut dated = Vec::new();
-                for number in task_numbers(changes) {
-                    let last = self.tracker.task_history(
-                        number,
-                        &HistoryQuery {
-                            before: None,
-                            limit: Some(1),
-                        },
-                    )?;
-                    if let Some(entry) = last.first() {
-                        dated.push((number, entry.revision.at));
-                    }
-                }
-                Dates::Some(dated)
+        let mut loaded = self.loaded.lock().expect("loaded mutex poisoned");
+        let head = plan.revision().cloned();
+        let moved = match (scope, loaded.as_ref(), head.as_ref()) {
+            (Scope::Everything, _, _) => None,
+            (Scope::Moved, Some(from), Some(to)) if from == to => Some(Vec::new()),
+            (Scope::Moved, Some(from), Some(to)) => {
+                self.tracker.backend().changes(Some(from), to).ok()
             }
+            (Scope::Moved, _, _) => None,
         };
-        index.load(&plan)?;
-        *self.loaded.lock().expect("loaded mutex poisoned") = plan.revision().cloned();
-        match dates {
-            Dates::All(log) => index.date(&log),
-            Dates::Some(dated) => {
+        match moved {
+            None => {
+                let log = self.tracker.backend().log(&LogQuery {
+                    prefix: format!("{}/", layout::TASKS),
+                    before: None,
+                    limit: Some(DATING_BUDGET),
+                })?;
+                index.load(&plan)?;
+                index.date(&log);
+            }
+            Some(changes) if changes.is_empty() => {}
+            Some(changes) => {
+                let numbers = task_numbers(&changes);
+                let dated = self.last_changed(&numbers)?;
+                match changes.iter().any(|change| change.path == layout::CONFIG) {
+                    true => index.load(&plan)?,
+                    false => index.update(&plan, &numbers)?,
+                }
                 for (number, at) in dated {
                     index.touch(number, at);
                 }
             }
         }
+        *loaded = head;
         Ok(plan.config().err().map(|err| err.to_string()))
     }
 
-    // Reads what moved between the revision the index holds and the head.
-    pub(crate) fn catch_up(&self) {
-        let backend = self.tracker.backend();
-        let head = match backend.head() {
-            Ok(head) => head.revision().cloned(),
-            Err(err) => {
-                tracing::warn!(project = %self.name(), error = %err, "the head could not be read");
-                return;
+    fn last_changed(
+        &self,
+        numbers: &BTreeSet<u64>,
+    ) -> Result<Vec<(u64, op_backend::Timestamp)>, TrackerError> {
+        let mut dated = Vec::new();
+        for &number in numbers {
+            let last = self.tracker.task_history(
+                number,
+                &HistoryQuery {
+                    before: None,
+                    limit: Some(1),
+                },
+            )?;
+            if let Some(entry) = last.first() {
+                dated.push((number, entry.revision.at));
             }
-        };
-        let loaded = self.loaded.lock().expect("loaded mutex poisoned").clone();
-        let Some(head) = head.filter(|head| Some(head) != loaded.as_ref()) else {
-            return;
-        };
-        match backend.changes(loaded.as_ref(), &head) {
-            Ok(changes) => self.reload(Some(&changes)),
-            Err(_) => self.reload(None),
         }
+        Ok(dated)
     }
 
     fn moved(&self, moved: &HeadMoved, publisher: &Publisher) {
-        self.reload(Some(&moved.changes));
+        self.catch_up();
         let project = self.name();
         let via = moved.to.author.via.clone();
         let (mut tags, mut config) = (false, false);
@@ -493,9 +504,10 @@ impl std::fmt::Debug for Project {
     }
 }
 
-enum Dates {
-    All(Vec<op_backend::LogEntry>),
-    Some(Vec<(u64, op_backend::Timestamp)>),
+#[derive(Clone, Copy)]
+enum Scope {
+    Everything,
+    Moved,
 }
 
 fn task_numbers(changes: &[Change]) -> BTreeSet<u64> {
@@ -528,7 +540,7 @@ fn pump(
                 let Some(project) = project.upgrade() else {
                     return;
                 };
-                project.reload(None);
+                project.reload();
                 publisher.publish(ChangeEvent::Resync, None);
                 continue;
             }

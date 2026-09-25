@@ -122,7 +122,7 @@ fn integrate(
         if !objects::move_reference(&repo, TASKS_REF, ours, next, &inner.machine, &message)? {
             continue;
         }
-        let changes = objects::changes(&inner.entries(ours)?, &inner.entries(Some(next))?);
+        let changes = inner.changes_between(ours, Some(next))?;
         report.received += count(&repo, theirs, ours)?;
         report.merged |= !fast_forward;
         report.changes = changes.clone();

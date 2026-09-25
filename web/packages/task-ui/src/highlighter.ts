@@ -1,6 +1,6 @@
 import type { HighlighterCore, ShikiTransformer } from "@shikijs/core"
 import type { Root } from "hast"
-import { useSyncExternalStore } from "react"
+import { useEffect, useSyncExternalStore } from "react"
 
 const LIGHT_THEME = "github-light"
 const DARK_THEME = "github-dark"
@@ -61,19 +61,21 @@ export function resolveLang(tag: string | undefined): CodeLanguage | null {
   return TAGS[tag.trim().toLowerCase()] ?? null
 }
 
-let highlighter: HighlighterCore | null = null
-let build: Promise<void> | null = null
+let building: Promise<HighlighterCore | null> | null = null
+let built: HighlighterCore | null = null
+const grammars = new Map<CodeLanguage, Promise<void>>()
+const ready = new Set<CodeLanguage>()
 const listeners = new Set<() => void>()
 
-async function createHighlighter(): Promise<void> {
+async function createHighlighter(): Promise<HighlighterCore | null> {
   try {
     const [{ createHighlighterCore }, { createJavaScriptRegexEngine }] = await Promise.all([
       import("@shikijs/core"),
       import("@shikijs/engine-javascript"),
     ])
-    highlighter = await createHighlighterCore({
+    built = await createHighlighterCore({
       themes: [() => import("@shikijs/themes/github-light"), () => import("@shikijs/themes/github-dark")],
-      langs: Object.values(GRAMMARS),
+      langs: [],
       // The JavaScript engine is what makes `codeToHast` synchronous, which react-markdown's
       // synchronous pipeline needs; `forgiving` keeps a pattern it cannot compile from throwing.
       engine: createJavaScriptRegexEngine({ forgiving: true }),
@@ -81,18 +83,37 @@ async function createHighlighter(): Promise<void> {
   } catch (error) {
     console.error("Syntax highlighting is unavailable", error)
   }
+  return built
+}
+
+async function loadGrammar(lang: CodeLanguage): Promise<void> {
+  building ??= createHighlighter()
+  const core = await building
+  if (core === null) return
+  try {
+    await core.loadLanguage(GRAMMARS[lang])
+    ready.add(lang)
+  } catch (error) {
+    console.error(`The ${lang} grammar is unavailable`, error)
+  }
   for (const listener of listeners) listener()
 }
 
-export function ensureHighlighter(): Promise<void> {
-  build ??= createHighlighter()
-  return build
+// Each grammar is a chunk of its own, and a task body seldom holds more than one or two languages, so
+// a grammar loads when the first block of its language needs it.
+export function ensureHighlighter(lang: CodeLanguage): Promise<void> {
+  let pending = grammars.get(lang)
+  if (pending === undefined) {
+    pending = loadGrammar(lang)
+    grammars.set(lang, pending)
+  }
+  return pending
 }
 
 export function highlightToHast(code: string, lang: CodeLanguage, transformers?: Array<ShikiTransformer>): Root | null {
-  if (highlighter === null) return null
+  if (built === null || !ready.has(lang)) return null
   try {
-    return highlighter.codeToHast(code, {
+    return built.codeToHast(code, {
       lang,
       themes: { light: LIGHT_THEME, dark: DARK_THEME },
       defaultColor: false,
@@ -106,16 +127,14 @@ export function highlightToHast(code: string, lang: CodeLanguage, transformers?:
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
-  void ensureHighlighter()
   return () => {
     listeners.delete(listener)
   }
 }
 
-function isReady(): boolean {
-  return highlighter !== null
-}
-
-export function useHighlighterReady(): boolean {
-  return useSyncExternalStore(subscribe, isReady)
+export function useHighlighterReady(lang: CodeLanguage): boolean {
+  useEffect(() => {
+    void ensureHighlighter(lang)
+  }, [lang])
+  return useSyncExternalStore(subscribe, () => ready.has(lang))
 }

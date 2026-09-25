@@ -1,5 +1,7 @@
 import type { D2, Diagram, RenderOptions } from "@terrastruct/d2"
 
+import { BoundedCache } from "./bounded-cache"
+
 export type DiagramTheme = "light" | "dark"
 
 // d2's built-in theme ids: 3 is "Terrastruct", 200 is "Dark Mauve".
@@ -13,8 +15,10 @@ export type DiagramResult = { drawn: DrawnDiagram } | { error: string }
 type Compiled = { diagram: Diagram; renderOptions: RenderOptions }
 
 let engine: Promise<D2> | null = null
-const compilations = new Map<string, Promise<Compiled>>()
-const drawings = new Map<string, Promise<DiagramResult>>()
+// A drawing holds its whole SVG, and a reader who walks through the revisions of a task draws each
+// version again. Only the latest few stay.
+const compilations = new BoundedCache<string, Promise<Compiled>>(16)
+const drawings = new BoundedCache<string, Promise<DiagramResult>>(32)
 
 function ensureEngine(): Promise<D2> {
   engine ??= import("@terrastruct/d2").then(({ D2 }) => new D2())
@@ -60,12 +64,9 @@ export function compileErrorMessage(error: unknown): string {
 }
 
 function compile(source: string): Promise<Compiled> {
-  let pending = compilations.get(source)
-  if (pending === undefined) {
-    pending = ensureEngine().then((d2) => inTurn(() => d2.compile({ fs: { index: source }, options: COMPILE_OPTIONS })))
-    compilations.set(source, pending)
-  }
-  return pending
+  return compilations.remember(source, () =>
+    ensureEngine().then((d2) => inTurn(() => d2.compile({ fs: { index: source }, options: COMPILE_OPTIONS }))),
+  )
 }
 
 async function draw(source: string, theme: DiagramTheme): Promise<DiagramResult> {
@@ -79,13 +80,7 @@ async function draw(source: string, theme: DiagramTheme): Promise<DiagramResult>
 }
 
 export function drawDiagram(source: string, theme: DiagramTheme): Promise<DiagramResult> {
-  const key = `${theme}\n${source}`
-  let pending = drawings.get(key)
-  if (pending === undefined) {
-    pending = draw(source, theme)
-    drawings.set(key, pending)
-  }
-  return pending
+  return drawings.remember(`${theme}\n${source}`, () => draw(source, theme))
 }
 
 export function svgDataUrl(svg: string): string {
