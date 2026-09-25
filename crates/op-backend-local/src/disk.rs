@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs::{Metadata, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 const TEMP_ATTEMPTS: usize = 16;
 const SETTLED: Duration = Duration::from_secs(2);
@@ -49,7 +49,7 @@ impl Stamp {
 fn changed_at((seconds, nanos): (i64, i64)) -> Option<SystemTime> {
     let seconds = u64::try_from(seconds).ok()?;
     let nanos = u32::try_from(nanos).ok()?;
-    UNIX_EPOCH.checked_add(Duration::new(seconds, nanos))
+    std::time::UNIX_EPOCH.checked_add(Duration::new(seconds, nanos))
 }
 
 pub(crate) fn list(root: &Path) -> io::Result<BTreeMap<String, Stamp>> {
