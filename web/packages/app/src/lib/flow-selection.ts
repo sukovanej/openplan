@@ -35,6 +35,12 @@ export function taskFlowPath(project: string, id: string): string {
   return `${FLOW_ROUTE}?${selectionParams({ ...EVERY_TASK, projects: [project], tasks: [id] })}`
 }
 
+// A dependency names a task of its own store, so a flow holds only the projects it names — or every
+// project, when it names none.
+export function selectionShows(selection: FlowSelection, project: string): boolean {
+  return selection.projects.length === 0 || selection.projects.includes(project)
+}
+
 export function selectsEveryTask(selection: FlowSelection): boolean {
   return [selection.projects, selection.statuses, selection.tasks, selection.tags].every((named) => named.length === 0)
 }

@@ -48,7 +48,7 @@ function fencedCode(node: Element | undefined): Fence | null {
 
 // Only a block Shiki can colour mounts this, so a fence with no language never pulls the chunk in.
 function HighlightedCode({ source, lang, children }: { source: string; lang: CodeLanguage; children: ReactNode }) {
-  const ready = useHighlighterReady()
+  const ready = useHighlighterReady(lang)
   const tree = useMemo(() => (ready ? highlightToHast(source, lang, [paintTokens]) : null), [ready, source, lang])
   return tree === null ? children : toJsxRuntime(tree, { Fragment, jsx, jsxs })
 }

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { memo } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import type { Board, FieldError, HistoryEntry, TaskRef } from "@openplan/api-client"
@@ -20,7 +21,7 @@ import { changePath, revisionChanges, useProjectHistory } from "../lib/history"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
 import { boardKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
-import { runtime } from "../lib/runtime"
+import { abortable } from "../lib/runtime"
 
 // This page holds no task rows, and the cursor is the board's — left as it was, `j` then Enter here
 // would open a task the reader can no longer see.
@@ -62,7 +63,7 @@ function Activity({ project }: { project: string }) {
   const history = useProjectHistory(project)
   const refs = useQuery({
     queryKey: boardKey(project),
-    queryFn: () => runtime.runPromise(getBoard(project)),
+    queryFn: abortable(getBoard(project)),
     select: refsOf,
   }).data
   return (
@@ -97,7 +98,8 @@ function Activity({ project }: { project: string }) {
   )
 }
 
-function Revision({
+// A revision never changes, so a row renders again only when the titles on the board do.
+const Revision = memo(function Revision({
   project,
   entry,
   refs,
@@ -146,4 +148,4 @@ function Revision({
       )}
     </Row>
   )
-}
+})

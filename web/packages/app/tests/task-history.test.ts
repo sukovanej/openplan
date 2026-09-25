@@ -131,4 +131,20 @@ describe("the history of a task", () => {
     queryInvalidator.refreshTask("openplan", "OPP-1")
     await until(() => entries(root)[0]?.getAttribute("href") === "/openplan/task/OPP-1?revision=r25")
   })
+
+  // The change adds a revision at the top, and the pages the reader went back through stay as they were.
+  it("reads only the newest page again when the task changes after the reader paged back", async () => {
+    const root = await show(undefined)
+    await act(async () => older(root)?.click())
+    await until(() => entries(root).length === 25)
+    served.revisions = ["r25", ...served.revisions]
+    served.pages = []
+
+    queryInvalidator.refreshTask("openplan", "OPP-1")
+    await until(() => entries(root)[0]?.getAttribute("href") === "/openplan/task/OPP-1?revision=r25")
+
+    expect(served.pages).toEqual([{ before: undefined, limit: TASK_HISTORY_PAGE }])
+    expect(entries(root)).toHaveLength(TASK_HISTORY_PAGE)
+    expect(older(root)).toBeDefined()
+  })
 })

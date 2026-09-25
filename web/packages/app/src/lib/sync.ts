@@ -1,11 +1,11 @@
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
 
-import type { ProjectView, SyncResult, SyncView, TaskListItem } from "@openplan/api-client"
+import type { Board, ProjectView, SyncResult, SyncView, TaskListItem } from "@openplan/api-client"
 
 import { getSync, runSync } from "./api"
 import { useProjects } from "./projects"
 import { projectMutationsKey, syncKey } from "./query-client"
-import { runtime } from "./runtime"
+import { abortable, runtime } from "./runtime"
 
 export type SyncState = "offline" | "syncing" | "failed" | "waiting" | "idle"
 
@@ -22,8 +22,8 @@ export function failed(syncs: ReadonlyArray<ProjectSync>): ReadonlyArray<Project
   return syncs.filter((one) => one.view.error !== undefined)
 }
 
-export function tasksInConflict(tasks: ReadonlyArray<TaskListItem>): ReadonlyArray<TaskListItem> {
-  return tasks.filter((task) => task.conflicts > 0)
+export function tasksInConflict(board: Board): ReadonlyArray<TaskListItem> {
+  return board.groups.flatMap((group) => group.rows.map((row) => row.task)).filter((task) => task.conflicts > 0)
 }
 
 // A failure outranks a count, because it is what keeps the count from going down.
@@ -58,7 +58,7 @@ export function useProjectSyncs(): ReadonlyArray<ProjectSync> {
   return useQueries({
     queries: projects.map((project) => ({
       queryKey: syncKey(project.name),
-      queryFn: () => runtime.runPromise(getSync(project.name)),
+      queryFn: abortable(getSync(project.name)),
       initialData: project.sync,
     })),
     combine: (results) =>

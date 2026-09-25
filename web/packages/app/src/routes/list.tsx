@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 import { Activity, MessageSquare, Tags } from "lucide-react"
-import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
+import { memo, useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
 import type { Board, BoardRow } from "@openplan/api-client"
@@ -30,8 +30,8 @@ import { demotedReason, useProject, useProjects } from "../lib/projects"
 import { boardKey, mergedBoardKey } from "../lib/query-client"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
-import { runtime } from "../lib/runtime"
-import { useTags } from "../lib/tags"
+import { abortable } from "../lib/runtime"
+import { type TagsByName, useTagRegistries } from "../lib/tags"
 import { treeGuides, type RowGuides } from "../lib/tree-guides"
 
 // `/` is every project at once and `/:project` is one of them. They differ only in which board they
@@ -45,7 +45,7 @@ function MergedBoard() {
   const projects = useProjects()
   const board = useQuery({
     queryKey: mergedBoardKey,
-    queryFn: () => runtime.runPromise(getMergedBoard),
+    queryFn: abortable(getMergedBoard),
   })
   if (projects !== undefined && projects.length === 0) {
     return <EmptyState title="No projects yet" detail="Register a repository with `openplan project add`." />
@@ -58,7 +58,7 @@ function ProjectBoard({ project }: { project: string }) {
   const known = useProject(project)
   const board = useQuery({
     queryKey: boardKey(project),
-    queryFn: () => runtime.runPromise(getBoard(project)),
+    queryFn: abortable(getBoard(project)),
   })
   // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
   // the daemon has answered.
@@ -148,6 +148,8 @@ function TaskGrid({ board, title, action }: { board: Board; title: string; actio
   // A task and its subtasks part ways when their statuses differ, so the tree the guides draw is the
   // one visible inside a group, not the whole parentage.
   const guides = useMemo(() => board.groups.map((group) => treeGuides(group.rows)), [board])
+  const projects = useMemo(() => [...new Set(rows.map((row) => row.task.project))], [rows])
+  const tags = useTagRegistries(projects)
 
   let base = 0
   return (
@@ -162,7 +164,10 @@ function TaskGrid({ board, title, action }: { board: Board; title: string; actio
         <PanelTitle>{title}</PanelTitle>
         {action !== undefined && <div className="ml-auto">{action}</div>}
       </PanelHeader>
-      <PanelBody onMouseLeave={hoveredRow.clear}>
+      {/* The pointer only marks a row while the keyboard cursor is idle, so the two never claim one
+          at once. The rows read that from this attribute, and a cursor that starts or stops draws
+          none of them again. */}
+      <PanelBody onMouseLeave={hoveredRow.clear} data-pointer={index === -1 ? "free" : "held"}>
         {board.groups.map((group, groupIndex) => {
           const lastGroup = groupIndex === board.groups.length - 1
           return (
@@ -179,12 +184,9 @@ function TaskGrid({ board, title, action }: { board: Board; title: string; actio
                     at={i}
                     sizers={sizers}
                     guides={guides[groupIndex][j]}
+                    tags={tags[row.task.project]}
                     active={i === index}
-                    // The pointer only marks the current row while the keyboard cursor is idle, so
-                    // the two never claim it at once.
-                    hoverable={index === -1}
                     tableLast={lastGroup && j === group.rows.length - 1}
-                    onFocus={() => rowCursor.focus(i)}
                   />
                 )
               })}
@@ -227,17 +229,18 @@ function TreeGuides({ columns }: { columns: ReadonlyArray<boolean> }) {
   )
 }
 
-function TaskRow({
+// Every prop keeps its identity while its row stays as it was, so a move of the cursor renders only
+// the row it leaves and the row it reaches.
+const TaskRow = memo(function TaskRow({
   ref,
   row,
   path,
   at,
   sizers,
   guides,
+  tags,
   active,
-  hoverable,
   tableLast,
-  onFocus,
 }: {
   ref?: Ref<HTMLDivElement>
   row: BoardRow
@@ -245,23 +248,21 @@ function TaskRow({
   at: number
   sizers: ReadonlyArray<string>
   guides: RowGuides
+  tags: TagsByName | undefined
   active: boolean
-  hoverable: boolean
   tableLast: boolean
-  onFocus: () => void
 }) {
   const { task, parent_title } = row
   const parent = parentOf(task.metadata)
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
-  const { byName: tags } = useTags(task.project)
   const navigate = useNavigate()
 
   // The row opens its task from its own click rather than from a link stretched over it: an overlay
   // that size takes every hover in the row with it, leaving the tooltips underneath unreachable. The
   // links the row does contain answer their own clicks, and a modified click is the browser's.
   const open = (event: MouseEvent<HTMLDivElement>) => {
-    onFocus()
+    rowCursor.focus(at)
     const link = event.target instanceof Element && event.target.closest("a") !== null
     if (link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     navigate(path)
@@ -274,7 +275,7 @@ function TaskRow({
       role="row"
       aria-selected={active}
       active={active}
-      hoverable={hoverable}
+      hoverable="while-free"
       last={tableLast}
       onClick={open}
       // Scrolling a list under a still pointer moves `:hover` to another row without a mousemove,
@@ -282,7 +283,7 @@ function TaskRow({
       // not count while the keyboard drives, or walking with `j` would hand rows it scrolls past
       // back to the pointer.
       onMouseEnter={() => {
-        if (hoverable) hoveredRow.enter(path, at)
+        if (rowCursor.getSnapshot().index === -1) hoveredRow.enter(path, at)
       }}
       // Moving the pointer is what hands the current row back to it — and only over a row, so a
       // nudge across a group header or the scrollbar leaves the keyboard's row where it was.
@@ -337,4 +338,4 @@ function TaskRow({
       </div>
     </Row>
   )
-}
+})

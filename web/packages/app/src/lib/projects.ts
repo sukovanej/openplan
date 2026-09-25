@@ -4,12 +4,12 @@ import type { ProjectView } from "@openplan/api-client"
 
 import { listProjects } from "./api"
 import { projectsKey } from "./query-client"
-import { runtime } from "./runtime"
+import { abortable } from "./runtime"
 
 export function useProjects(): ReadonlyArray<ProjectView> | undefined {
   return useQuery({
     queryKey: projectsKey,
-    queryFn: () => runtime.runPromise(listProjects),
+    queryFn: abortable(listProjects),
   }).data
 }
 

@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import { Schema } from "effect"
 
-import { applyChange, ChangeEvent, type Invalidator } from "../src/lib/events"
+import { applyChange, ChangeEvent, coalesced, type Invalidator } from "../src/lib/events"
 
 function spy() {
   const calls: {
@@ -103,4 +103,69 @@ it("daemon_stopping changes no read", () => {
 it("refuses the events of the branch model", () => {
   expect(() => decode({ kind: "ref_moved", project: "openplan", branch: "main" })).toThrow()
   expect(() => decode({ kind: "rolling_updates_changed", project: "openplan" })).toThrow()
+})
+
+function held() {
+  const { inv, calls } = spy()
+  const flushes: Array<() => void> = []
+  const coalescing = coalesced(inv, (flush) => flushes.push(flush))
+  const flush = () => {
+    for (const one of flushes.splice(0)) one()
+  }
+  return { coalescing, calls, flush, flushes }
+}
+
+// A sync that brings in many tasks sends one task_changed for each of them.
+it("refreshes a list once for a burst of task changes, and each changed task once", () => {
+  const { coalescing, calls, flush, flushes } = held()
+  for (const id of ["OPP-1", "OPP-2", "OPP-1"]) {
+    applyChange(coalescing, { kind: "task_changed", project: "openplan", id })
+  }
+  applyChange(coalescing, { kind: "task_changed", project: "notes", id: "NTS-1" })
+
+  expect(calls).toEqual(quiet)
+  expect(flushes).toHaveLength(1)
+  flush()
+  expect(calls).toEqual({
+    ...quiet,
+    lists: ["openplan", "notes"],
+    tasks: ["openplan/OPP-1", "openplan/OPP-2", "notes/NTS-1"],
+    history: ["openplan", "notes"],
+  })
+})
+
+it("holds the refreshes that come after a flush for the next flush", () => {
+  const { coalescing, calls, flush } = held()
+  applyChange(coalescing, { kind: "sync_changed", project: "openplan" })
+  flush()
+  applyChange(coalescing, { kind: "sync_changed", project: "openplan" })
+  expect(calls.sync).toEqual(["openplan"])
+  flush()
+  expect(calls.sync).toEqual(["openplan", "openplan"])
+})
+
+// A tag rename sends a task_changed for each task that carries the tag, and a tags_changed after them.
+it("lets a refresh of a project's screen cover the narrower refreshes in that project", () => {
+  const { coalescing, calls, flush } = held()
+  applyChange(coalescing, { kind: "task_changed", project: "openplan", id: "OPP-1" })
+  applyChange(coalescing, { kind: "sync_changed", project: "openplan" })
+  applyChange(coalescing, { kind: "tags_changed", project: "openplan" })
+  applyChange(coalescing, { kind: "task_changed", project: "notes", id: "NTS-1" })
+  flush()
+  expect(calls).toEqual({
+    ...quiet,
+    visible: ["openplan"],
+    lists: ["notes"],
+    tasks: ["notes/NTS-1"],
+    history: ["notes"],
+  })
+})
+
+it("lets a refresh of every screen cover every other refresh but the projects", () => {
+  const { coalescing, calls, flush } = held()
+  applyChange(coalescing, { kind: "task_changed", project: "openplan", id: "OPP-1" })
+  applyChange(coalescing, { kind: "tags_changed", project: "notes" })
+  applyChange(coalescing, { kind: "resync" })
+  flush()
+  expect(calls).toEqual({ ...quiet, projects: 1, visible: [undefined] })
 })

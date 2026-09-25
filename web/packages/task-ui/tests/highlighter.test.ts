@@ -18,13 +18,20 @@ describe("resolveLang", () => {
 })
 
 describe("the highlighter", () => {
-  it("builds once", async () => {
-    expect(ensureHighlighter()).toBe(ensureHighlighter())
-    await ensureHighlighter()
+  it("loads each grammar once", async () => {
+    expect(ensureHighlighter("typescript")).toBe(ensureHighlighter("typescript"))
+    await ensureHighlighter("typescript")
+  })
+
+  // A body seldom holds more than one or two languages, so the grammars of the others stay unloaded.
+  it("highlights only the languages whose grammar a block asked for", async () => {
+    await ensureHighlighter("rust")
+    expect(highlightToHast("fn main() {}", "rust")).not.toBeNull()
+    expect(highlightToHast("def main(): pass", "python")).toBeNull()
   })
 
   it("colours a token with both palettes once it is built", async () => {
-    await ensureHighlighter()
+    await ensureHighlighter("typescript")
     const tree = highlightToHast("const a = 1", "typescript")!
     const pre = tree.children[0]
     expect(pre.type === "element" && pre.tagName).toBe("pre")

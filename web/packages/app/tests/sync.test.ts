@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client"
 import { MemoryRouter } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { ProjectView, SyncView, TaskListItem } from "@openplan/api-client"
+import type { Board, ProjectView, SyncView, TaskListItem } from "@openplan/api-client"
 
 import { SYNC_LABEL, SyncStatus } from "../src/components/sync-status"
 import { connectionStore } from "../src/lib/connection"
@@ -67,9 +67,13 @@ const task = (id: string, conflicts: number): TaskListItem => ({
   problems: [],
 })
 
+const board = (...tasks: ReadonlyArray<TaskListItem>): Board => ({
+  groups: [{ status: "todo", rows: tasks.map((one) => ({ task: one, depth: 0, has_children: false })) }],
+})
+
 describe("the tasks a sync left in conflict", () => {
-  it("are the tasks that hold at least one conflict, in list order", () => {
-    const ids = tasksInConflict([task("OPP-1", 0), task("OPP-2", 2), task("OPP-3", 1)]).map((one) => one.id)
+  it("are the tasks that hold at least one conflict, in board order", () => {
+    const ids = tasksInConflict(board(task("OPP-1", 0), task("OPP-2", 2), task("OPP-3", 1))).map((one) => one.id)
     expect(ids).toEqual(["OPP-2", "OPP-3"])
   })
 })
@@ -137,7 +141,10 @@ vi.mock("../src/lib/api", async () => {
       },
       { name: "notes", root: "/notes", backend: "local", abbreviation: "NTS", status: { state: "ok" } },
     ]),
-    listTasks: () => Effect.sync(() => served.tasks),
+    getBoard: () =>
+      Effect.sync(() => ({
+        groups: [{ status: "todo", rows: served.tasks.map((one) => ({ task: one, depth: 0, has_children: false })) }],
+      })),
     getSync: () =>
       Effect.sync(() => {
         served.reads += 1

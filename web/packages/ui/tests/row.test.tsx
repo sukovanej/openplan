@@ -21,6 +21,18 @@ describe("Row", () => {
     expect(classes).not.toContain("after:absolute")
   })
 
+  // The list marks the pointer free on one ancestor, so a keyboard cursor that starts or stops
+  // renders no row again.
+  it("gives the treatment under the pointer only inside an ancestor that marks the pointer free", () => {
+    const classes = classesOf(render(<Row hoverable="while-free" />))
+    expect(classes).toContain("in-data-[pointer=free]:hover:after:absolute")
+    expect(classes).toContain("in-data-[pointer=free]:hover:bg-muted/30")
+    expect(classes).not.toContain("hover:bg-muted/30")
+    expect(classesOf(render(<Row active hoverable="while-free" />))).not.toContain(
+      "in-data-[pointer=free]:hover:after:absolute",
+    )
+  })
+
   it("leaves the current row to its own treatment rather than layering hover over it", () => {
     const classes = classesOf(render(<Row active hoverable />))
     expect(classes).toContain("after:absolute")
