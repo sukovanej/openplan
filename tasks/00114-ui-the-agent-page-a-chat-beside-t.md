@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_review
 created: 2026-09-10T00:16:28Z
 dependencies:
 - ./00113-agent-sessions-the-daemon-runs-a.md
@@ -163,3 +163,9 @@ from the board with `n`, ask for a task, watch the activity row change as the
 agent reads the code, see the preview mount when the task binds, refine it
 with a second prompt, see the preview update, reload the page, and find the
 same session attached.
+
+## Comments
+
+### 2026-09-10T01:30:25Z by Milan Suk via claude-code
+
+> The task detail page already binds `a` to Add subtask, so the agent page takes `e` there: it edits the task. `n` on a project board is as specified.
