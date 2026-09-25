@@ -30,13 +30,14 @@ daemon cannot know it. One bundled font removes the difference.
    a fallback font: wait for `document.fonts.load()` before the first
    paint.
 5. Generate a glyph width table once and commit it as Rust source in the
-   new crate `op-diagram`. The table holds the advance width of each code
-   point in font units, the units per em, the ascender, and the
-   descender. A `mise` task regenerates it. The tool that the generator
-   uses is not a dependency of any crate.
+   crate `op-diagram-render`. Create the crate if it does not exist yet.
+   The table holds the advance width of each code point in font units,
+   the units per em, the ascender, and the descender. A `mise` task
+   regenerates it. The tool that the generator uses is not a dependency
+   of any crate.
 6. Add `text_width(text, size, weight)` and the line metrics to
-   `op-diagram`. A code point that is not in the table takes a fixed
-   fallback width (1 em for a wide character).
+   `op-diagram-render`. A code point that is not in the table takes a
+   fixed fallback width (1 em for a wide character).
 
 Kerning is not in the table. The width that Rust gives must be the same
 as or a little more than the width in the browser, so a label never
