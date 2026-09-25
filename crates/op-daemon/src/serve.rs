@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use fs2::FileExt as _;
-use op_server::{AppState, ProjectRegistry, REGISTRY_FILE, open_projects};
+use op_server::{AGENT_SESSIONS_FILE, AppState, ProjectRegistry, REGISTRY_FILE, open_projects};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
@@ -84,7 +84,9 @@ async fn bind_and_serve(home: Home, port: u16) -> Result<()> {
     // Behind the lifetime lock, so this read cannot race the registration writes of a second daemon.
     let registry_path = home.dir().join(REGISTRY_FILE);
     let registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
-    let state = AppState::new(open_projects(registry.entries())).with_registry(registry_path);
+    let state = AppState::new(open_projects(registry.entries()))
+        .with_registry(registry_path)
+        .with_agent_store(&home.dir().join(AGENT_SESSIONS_FILE))?;
 
     // 127.0.0.1 keeps /admin/shutdown and every other route reachable only from this machine.
     let addr = SocketAddr::from(([127, 0, 0, 1], port));

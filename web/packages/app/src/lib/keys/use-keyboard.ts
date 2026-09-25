@@ -6,6 +6,8 @@ import { boardPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
 import { taskFlowPath } from "../flow-selection"
+import { overlayRequests } from "../overlay-requests"
+import { promptBar } from "../prompt-bar"
 import { detailCursor, focusedRow, liveCursor } from "../row-cursor"
 import { hoveredRow, taskAtHand } from "../row-target"
 import { statusRequests } from "../status-requests"
@@ -40,6 +42,9 @@ export function useKeyboard(): Keyboard {
   useEffect(() => {
     hoveredRow.clear()
   }, [pathname])
+
+  // Buttons and palette commands open an overlay the same way a key does.
+  useEffect(() => overlayRequests.on(setActiveOverlay), [])
 
   // How many entries Esc can pop before leaving the stack we arrived on. Read from the router's own
   // history index rather than counted from navigation types, which report Back and Forward
@@ -113,6 +118,9 @@ export function useKeyboard(): Keyboard {
             live().navigate(task === undefined ? "/" : boardPath(task.project))
           }
         },
+      },
+      agent: {
+        newPrompt: promptBar.startNew,
       },
     })
     const dispatcher = new Dispatcher({

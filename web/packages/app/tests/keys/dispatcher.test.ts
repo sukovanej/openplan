@@ -22,6 +22,7 @@ interface Harness {
   readonly closed: Array<OverlayName>
   readonly opened: Array<PaletteTarget>
   readonly went: Array<"back">
+  readonly agent: { newPrompts: number }
   readonly detail: {
     editParent: number
     addSubtask: number
@@ -49,6 +50,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const opened: Array<PaletteTarget> = []
   const went: Array<"back"> = []
   const detail = { editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 }
+  const agent = { newPrompts: 0 }
   const activeCursor = () => liveCursor(scope)
   const targetTask = () => taskAtHand(activeCursor().getSnapshot(), pathname)
   const context = (): RunContext => ({
@@ -98,6 +100,9 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
       goToParent: () => void detail.goToParent++,
       escape: () => void detail.escape++,
     },
+    agent: {
+      newPrompt: () => void agent.newPrompts++,
+    },
   })
   const dispatcher = new Dispatcher({
     bindings: over,
@@ -115,6 +120,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     overlay,
     closed,
     opened,
+    agent,
     detail,
     setScope: (next) => void (scope = next),
     setPath: (next) => void (pathname = next),
@@ -144,6 +150,34 @@ afterEach(() => {
   mounted?.detach()
   mounted = undefined
   vi.useRealTimers()
+})
+
+describe("the agent", () => {
+  it("opens the prompt bar with e from every route, and a new prompt with n", () => {
+    const h = mount()
+    press("e")
+    expect(h.overlay.open).toBe(1)
+    h.setScope("detail")
+    h.setPath(path("OPP-3"))
+    press("e")
+    expect(h.overlay.open).toBe(2)
+    press("n")
+    expect(h.agent.newPrompts).toBe(1)
+    expect(h.navigations).toEqual([])
+  })
+
+  it("hides the bar with e or Escape, and keeps the page's keys out of it", () => {
+    const h = mount()
+    rowCursor.setRows(paths("a", "b"))
+    h.setOverlay("prompt")
+    press("j")
+    expect(rowCursor.getSnapshot().index).toBe(-1)
+    press("e")
+    press("Escape")
+    expect(h.closed).toEqual(["prompt", "prompt"])
+    press("n")
+    expect(h.agent.newPrompts).toBe(1)
+  })
 })
 
 describe("chord buffering", () => {
@@ -411,6 +445,26 @@ describe("scope resolution", () => {
 
     press("p")
     expect(h.detail).toMatchObject({ goToParent: 1, editParent: 1 })
+  })
+
+  it("suppresses route and global bindings while a component's own modal dialog is open", () => {
+    const h = mount()
+    const transcript = document.createElement("div")
+    transcript.setAttribute("role", "dialog")
+    transcript.setAttribute("aria-modal", "true")
+    document.body.append(transcript)
+
+    press("e")
+    press("n")
+    press("?")
+    press("/")
+    expect(h.overlay).toEqual({ open: 0, close: 0, toggle: 0 })
+    expect(h.agent.newPrompts).toBe(0)
+    expect(h.opened).toEqual([])
+
+    transcript.remove()
+    press("e")
+    expect(h.overlay.open).toBe(1)
   })
 
   it("suppresses route and global bindings while the help overlay is open", () => {

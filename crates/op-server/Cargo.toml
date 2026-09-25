@@ -21,6 +21,7 @@ op-task.workspace = true
 op-tracker.workspace = true
 axum.workspace = true
 getrandom.workspace = true
+rusqlite.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tower-http.workspace = true

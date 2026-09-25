@@ -3,12 +3,14 @@ import { Link, Outlet } from "react-router-dom"
 
 import { FLOW_ROUTE } from "@openplan/task-ui"
 
+import { AgentControl } from "./components/agent-control"
 import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"
 import { Flash } from "./components/flash"
 import { HelpOverlay } from "./components/help-overlay"
 import { MutationError } from "./components/mutation-error"
 import { ProjectSwitcher } from "./components/project-switcher"
+import { PromptBar } from "./components/prompt-bar"
 import { SyncStatus } from "./components/sync-status"
 import { ThemeToggle } from "./components/theme-toggle"
 import { useKeyboard } from "./lib/keys"
@@ -31,6 +33,7 @@ export function App() {
             <Waypoints className="size-3.5" />
             Flow
           </Link>
+          <AgentControl />
           <SyncStatus />
           <ThemeToggle />
         </div>
@@ -40,6 +43,7 @@ export function App() {
       </main>
       <HelpOverlay open={activeOverlay === "help"} onClose={closeOverlay} />
       <CommandPalette open={activeOverlay === "palette"} target={paletteTarget} onClose={closeOverlay} />
+      <PromptBar open={activeOverlay === "prompt"} onClose={closeOverlay} />
       <MutationError />
       <Flash />
     </div>

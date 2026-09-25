@@ -12,6 +12,7 @@ function spy() {
     sync: Array<string>
     visible: Array<string | undefined>
   } = { projects: 0, lists: [], tasks: [], history: [], sync: [], visible: [] }
+  const agentSessions = { reads: 0 }
   const inv: Invalidator = {
     refreshProjects: () => {
       calls.projects += 1
@@ -31,8 +32,11 @@ function spy() {
     refreshVisible: (project) => {
       calls.visible.push(project)
     },
+    refreshAgentSessions: () => {
+      agentSessions.reads += 1
+    },
   }
-  return { inv, calls }
+  return { inv, calls, agentSessions }
 }
 
 const quiet = { projects: 0, lists: [], tasks: [], history: [], sync: [], visible: [] }
@@ -106,13 +110,13 @@ it("refuses the events of the branch model", () => {
 })
 
 function held() {
-  const { inv, calls } = spy()
+  const { inv, calls, agentSessions } = spy()
   const flushes: Array<() => void> = []
   const coalescing = coalesced(inv, (flush) => flushes.push(flush))
   const flush = () => {
     for (const one of flushes.splice(0)) one()
   }
-  return { coalescing, calls, flush, flushes }
+  return { coalescing, calls, agentSessions, flush, flushes }
 }
 
 // A sync that brings in many tasks sends one task_changed for each of them.
@@ -168,4 +172,22 @@ it("lets a refresh of every screen cover every other refresh but the projects", 
   applyChange(coalescing, { kind: "resync" })
   flush()
   expect(calls).toEqual({ ...quiet, projects: 1, visible: [undefined] })
+})
+
+it("re-reads the one session list when a session changes in any project", () => {
+  const { inv, calls, agentSessions } = spy()
+  applyChange(inv, Schema.decodeUnknownSync(ChangeEvent)({ kind: "agent_sessions_changed", project: "openplan" }))
+  expect(agentSessions.reads).toBe(1)
+  expect(calls.lists).toEqual([])
+  expect(calls.visible).toEqual([])
+})
+
+it("re-reads the session list once for a burst of session changes", () => {
+  const { coalescing, agentSessions, flush } = held()
+  applyChange(coalescing, { kind: "agent_sessions_changed", project: "openplan" })
+  applyChange(coalescing, { kind: "agent_sessions_changed", project: "notes" })
+
+  expect(agentSessions.reads).toBe(0)
+  flush()
+  expect(agentSessions.reads).toBe(1)
 })
