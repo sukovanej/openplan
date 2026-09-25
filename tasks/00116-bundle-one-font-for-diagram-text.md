@@ -15,10 +15,8 @@ daemon cannot know it. One bundled font removes the difference.
 
 ## Scope
 
-1. Choose the font. It must have an open license (OFL or similar), Latin
-   and Latin Extended-A (Czech labels exist), and tabular digits for task
-   keys. Inter is the first candidate. Ask the user before the work
-   starts.
+1. The font is Inter. It has an open license (OFL), Latin and Latin
+   Extended-A (Czech labels exist), and tabular digits.
 2. Use static weights, not a variable font, because a width table for a
    variable axis is much larger. Take only the weights the diagrams use,
    for example 400 and 600.
@@ -39,9 +37,13 @@ daemon cannot know it. One bundled font removes the difference.
    `op-diagram-render`. A code point that is not in the table takes a
    fixed fallback width (1 em for a wide character).
 
-Kerning is not in the table. The width that Rust gives must be the same
-as or a little more than the width in the browser, so a label never
-overflows its shape.
+The table holds no kerning and no contextual alternates. Inter draws
+`->` as one arrow glyph through its contextual alternates, and the table
+cannot know that. The diagram CSS turns both off (`font-kerning: none`,
+`font-feature-settings: "calt" 0, "liga" 0`), so the browser draws each
+glyph at the advance that the table holds. The width that Rust gives must
+be the same as or a little more than the width in the browser, so a label
+never overflows its shape.
 
 ## Acceptance
 
