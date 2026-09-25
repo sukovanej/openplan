@@ -31,6 +31,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The web UI refreshes each read once for a burst of changes, such as a sync
   that brings in many tasks. A key press on a big board renders only the rows
   that change.
+- The CLI help shows the permitted values of `--status` on `create` and `list`,
+  and of `--color` on `tag create`. Shell completion offers them too.
 
 ## [0.0.3](https://github.com/sukovanej/openplan/compare/v0.0.2...v0.0.3) - 2026-09-25
 
