@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/sequence/else-outside-alt.mmd
+---
+line 2, column 3: `else` belongs inside `alt`

@@ -1,0 +1,178 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/er/all.mmd
+---
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "CUSTOMER",
+      "shape": {
+        "kind": "table",
+        "rows": [
+          {
+            "cells": [
+              "string",
+              "id",
+              "PK"
+            ]
+          },
+          {
+            "cells": [
+              "string",
+              "email",
+              "UK",
+              "login"
+            ]
+          },
+          {
+            "cells": [
+              "int",
+              "address_id",
+              "FK"
+            ]
+          },
+          {
+            "cells": [
+              "string",
+              "code",
+              "PK, FK"
+            ]
+          },
+          {
+            "cells": [
+              "string",
+              "note",
+              "",
+              "free text"
+            ]
+          },
+          {
+            "cells": [
+              "varchar(255)",
+              "title"
+            ]
+          },
+          {
+            "cells": [
+              "string[]",
+              "tags"
+            ]
+          }
+        ]
+      },
+      "label": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "id": "ORDER",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "ORDER"
+      ]
+    },
+    {
+      "id": "line item",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "line item"
+      ]
+    },
+    {
+      "id": "PRODUCT",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "PRODUCT"
+      ]
+    },
+    {
+      "id": "PROFILE",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "PROFILE"
+      ]
+    },
+    {
+      "id": "ACCOUNT",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "ACCOUNT"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "CUSTOMER",
+      "to": "ORDER",
+      "label": [
+        "places"
+      ],
+      "stroke": "solid",
+      "tail": "exactly_one",
+      "head": "zero_or_more",
+      "min_length": 1
+    },
+    {
+      "from": "ORDER",
+      "to": "line item",
+      "label": [
+        "contains"
+      ],
+      "stroke": "solid",
+      "tail": "exactly_one",
+      "head": "one_or_more",
+      "min_length": 1
+    },
+    {
+      "from": "line item",
+      "to": "PRODUCT",
+      "label": [
+        "refers to"
+      ],
+      "stroke": "dotted",
+      "tail": "zero_or_more",
+      "head": "exactly_one",
+      "min_length": 1
+    },
+    {
+      "from": "CUSTOMER",
+      "to": "PROFILE",
+      "label": [
+        "has"
+      ],
+      "stroke": "solid",
+      "tail": "zero_or_one",
+      "head": "zero_or_one",
+      "min_length": 1
+    },
+    {
+      "from": "ACCOUNT",
+      "to": "CUSTOMER",
+      "label": [
+        "owns"
+      ],
+      "stroke": "solid",
+      "tail": "one_or_more",
+      "head": "exactly_one",
+      "min_length": 1
+    }
+  ]
+}

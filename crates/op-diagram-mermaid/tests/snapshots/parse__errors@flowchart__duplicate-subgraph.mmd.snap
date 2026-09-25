@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/duplicate-subgraph.mmd
+---
+line 4, column 12: the subgraph `s` is already defined

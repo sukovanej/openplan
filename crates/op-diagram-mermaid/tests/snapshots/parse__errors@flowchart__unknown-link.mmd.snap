@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/unknown-link.mmd
+---
+line 2, column 5: expected a link such as `-->`, or the end of the statement

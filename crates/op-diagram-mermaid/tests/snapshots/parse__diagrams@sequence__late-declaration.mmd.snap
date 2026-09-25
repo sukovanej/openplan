@@ -1,0 +1,37 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/sequence/late-declaration.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "a",
+      "label": [
+        "Alice"
+      ],
+      "kind": "actor"
+    },
+    {
+      "id": "b",
+      "label": [
+        "b"
+      ],
+      "kind": "box"
+    }
+  ],
+  "items": [
+    {
+      "kind": "message",
+      "from": "a",
+      "to": "b",
+      "text": [
+        "hi"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    }
+  ]
+}

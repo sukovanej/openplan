@@ -1,0 +1,8 @@
+flowchart LR
+  source[Mermaid source] --> parser[op-diagram-mermaid]
+  tasks[Flow tasks] --> flow[op-api flow]
+  lint[openplan lint] --> parser
+  parser --> ir{{op-diagram IR}}
+  flow --> ir
+  ir --> render[op-diagram-render: measure, layout, SVG]
+  render -- SVG --> browser[browser: viewport and theme CSS]

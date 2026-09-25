@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/er/attribute-without-name.mmd
+---
+line 3, column 8: expected the name of the attribute after its type

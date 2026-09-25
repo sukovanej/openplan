@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/er/unclosed-entity.mmd
+---
+line 3, column 11: this entity has no closing `}`

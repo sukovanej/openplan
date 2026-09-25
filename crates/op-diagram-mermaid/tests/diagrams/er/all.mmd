@@ -1,0 +1,17 @@
+erDiagram
+  direction LR
+  CUSTOMER {
+    string id PK
+    string email UK "login"
+    int address_id FK
+    string code PK, FK
+    string note "free text"
+    varchar(255) title
+    string[] tags
+  }
+  CUSTOMER ||--o{ ORDER : places
+  ORDER ||--|{ "line item" : contains
+  "line item" }o..|| PRODUCT : "refers to"
+  CUSTOMER |o--o| PROFILE : has
+  ACCOUNT }|--|| CUSTOMER : owns
+  PRODUCT

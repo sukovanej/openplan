@@ -1,0 +1,39 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/direction-rl.mmd
+---
+{
+  "kind": "graph",
+  "direction": "left",
+  "nodes": [
+    {
+      "id": "a",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "a"
+      ]
+    },
+    {
+      "id": "b",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "b"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "b",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

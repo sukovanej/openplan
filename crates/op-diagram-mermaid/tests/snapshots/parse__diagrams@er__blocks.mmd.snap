@@ -1,0 +1,84 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/er/blocks.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "A",
+      "shape": {
+        "kind": "table",
+        "rows": [
+          {
+            "cells": [
+              "int",
+              "one"
+            ]
+          },
+          {
+            "cells": [
+              "int",
+              "two"
+            ]
+          }
+        ]
+      },
+      "label": [
+        "A"
+      ]
+    },
+    {
+      "id": "B",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "B"
+      ]
+    },
+    {
+      "id": "C",
+      "shape": {
+        "kind": "table",
+        "rows": [
+          {
+            "cells": [
+              "int",
+              "three"
+            ]
+          }
+        ]
+      },
+      "label": [
+        "C"
+      ]
+    },
+    {
+      "id": "D",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "D"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "A",
+      "to": "B",
+      "label": [
+        "is"
+      ],
+      "stroke": "solid",
+      "tail": "exactly_one",
+      "head": "exactly_one",
+      "min_length": 1
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/ids.mmd
+---
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "my-node",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "my-node"
+      ]
+    },
+    {
+      "id": "b-2",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "b-2"
+      ]
+    },
+    {
+      "id": "dívka",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Dívka u baru"
+      ]
+    },
+    {
+      "id": "mladík",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "mladík"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "my-node",
+      "to": "b-2",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "dívka",
+      "to": "mladík",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/subgraph-membership.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "a",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "a"
+      ],
+      "parent": "one"
+    },
+    {
+      "id": "b",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "b"
+      ],
+      "parent": "two"
+    },
+    {
+      "id": "c",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "c"
+      ],
+      "parent": "with_id"
+    },
+    {
+      "id": "d",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "d"
+      ],
+      "parent": "late"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "one",
+      "label": [
+        "one"
+      ]
+    },
+    {
+      "id": "two",
+      "label": [
+        "two"
+      ]
+    },
+    {
+      "id": "plain",
+      "label": [
+        "plain"
+      ]
+    },
+    {
+      "id": "with_id",
+      "label": [
+        "Bracket title"
+      ]
+    },
+    {
+      "id": "late",
+      "label": [
+        "late"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "b",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "c",
+      "to": "late",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

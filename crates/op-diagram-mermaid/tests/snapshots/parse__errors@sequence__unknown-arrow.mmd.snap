@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/sequence/unknown-arrow.mmd
+---
+line 2, column 4: this is not a message arrow; use one such as `->>`

@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/new-shape-syntax.mmd
+---
+line 2, column 4: the `@{ }` shape syntax is not supported

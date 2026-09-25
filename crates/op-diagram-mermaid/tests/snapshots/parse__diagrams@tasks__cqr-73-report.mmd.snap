@@ -1,0 +1,106 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-73-report.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "player",
+      "label": [
+        "Player"
+      ],
+      "kind": "actor"
+    },
+    {
+      "id": "web",
+      "label": [
+        "Browser"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "server",
+      "label": [
+        "Game server"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "db",
+      "label": [
+        "Database"
+      ],
+      "kind": "box"
+    }
+  ],
+  "items": [
+    {
+      "kind": "message",
+      "from": "player",
+      "to": "web",
+      "text": [
+        "taps the flag on the question"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "web",
+      "to": "player",
+      "text": [
+        "popover with the problem kinds"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "player",
+      "to": "web",
+      "text": [
+        "picks one"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "web",
+      "to": "server",
+      "text": [
+        "POST /question-reports {match, question, problem_kind}"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "server",
+      "to": "db",
+      "text": [
+        "stores the report"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "web",
+      "to": "player",
+      "text": [
+        "flag shows the question as reported"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    }
+  ]
+}

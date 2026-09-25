@@ -1,0 +1,44 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/er/compact.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "CUSTOMER",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "id": "ORDER",
+      "shape": {
+        "kind": "table",
+        "rows": []
+      },
+      "label": [
+        "ORDER"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "CUSTOMER",
+      "to": "ORDER",
+      "label": [
+        "places"
+      ],
+      "stroke": "solid",
+      "tail": "exactly_one",
+      "head": "zero_or_more",
+      "min_length": 1
+    }
+  ]
+}

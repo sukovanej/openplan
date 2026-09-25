@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/start-head-differs.mmd
+---
+line 2, column 5: a link with a head at its start needs the same head at its end, as in `<-->`

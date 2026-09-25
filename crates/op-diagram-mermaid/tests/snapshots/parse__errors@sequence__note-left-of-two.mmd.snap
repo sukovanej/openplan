@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/sequence/note-left-of-two.mmd
+---
+line 2, column 15: a note names one participant, or two after `over`, as in `over A,B`

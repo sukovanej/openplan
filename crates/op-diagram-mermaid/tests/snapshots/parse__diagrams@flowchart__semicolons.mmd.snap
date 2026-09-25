@@ -1,0 +1,56 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/semicolons.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "a",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "a"
+      ]
+    },
+    {
+      "id": "b",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "b"
+      ]
+    },
+    {
+      "id": "c",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "c"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "b",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "b",
+      "to": "c",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

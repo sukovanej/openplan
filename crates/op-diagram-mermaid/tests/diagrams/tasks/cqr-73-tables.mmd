@@ -1,0 +1,13 @@
+erDiagram
+  question_reports {
+    INTEGER id PK
+    INTEGER user_id
+    INTEGER question_id
+    TEXT language
+    TEXT problem_kind
+    INTEGER created_at "seconds"
+  }
+  questions {
+    INTEGER id PK "stable"
+  }
+  question_reports }o..|| questions : "no FK, separate store"

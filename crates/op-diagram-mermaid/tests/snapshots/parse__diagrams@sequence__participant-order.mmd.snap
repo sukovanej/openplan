@@ -1,0 +1,55 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/sequence/participant-order.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "b",
+      "label": [
+        "Bob"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "a",
+      "label": [
+        "a"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "c",
+      "label": [
+        "c"
+      ],
+      "kind": "actor"
+    }
+  ],
+  "items": [
+    {
+      "kind": "message",
+      "from": "a",
+      "to": "b",
+      "text": [
+        "hi"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "b",
+      "to": "c",
+      "text": [
+        "hello"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    }
+  ]
+}
