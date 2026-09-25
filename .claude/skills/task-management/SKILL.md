@@ -136,11 +136,9 @@ the repository, plan, or start a subagent:
 1. `openplan get <key>` reads the task.
 2. `openplan set <key> status in_progress`.
 
-A task write does not depend on the checkout, so run these anywhere in the
-project. Code changes still follow the repository's own rules.
-
 Set `in_review` when the work is complete. A human sets `done`. The one
-exception is a merge: follow the `task-management-merge` skill.
+exception is a merge: when the user asks you to merge the work, follow the
+`task-management-merge` skill.
 
 ## Diagram
 

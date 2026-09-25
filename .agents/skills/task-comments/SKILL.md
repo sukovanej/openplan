@@ -6,7 +6,7 @@ description: Every task carries an append-only comment log, written with `openpl
 # Commenting on a task
 
 The log is append-only, and it is what a reader gets when the chat is gone and
-the pull request is closed.
+the code review is closed.
 
 Most tasks get no entry. Write one only when the fact passes both tests:
 
@@ -22,7 +22,7 @@ Most tasks get no entry. Write one only when the fact passes both tests:
 
 **Never for:** progress (the status field), a summary of the diff (the commit),
 the specification (edit the body), a question for a user who is here (ask them),
-line-level review talk (the pull request), a report that the work is complete or
+line-level review talk (the code review), a report that the work is complete or
 that the tests pass, a manual check that a test repeats, a doubt you resolved,
 your thoughts during the work.
 
