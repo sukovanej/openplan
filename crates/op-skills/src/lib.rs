@@ -27,23 +27,35 @@ impl Agent {
 
 struct Skill {
     name: &'static str,
-    contents: &'static str,
+    expected: Expected,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Expected {
+    Contents(&'static str),
+    Retired,
 }
 
 const FILE_NAME: &str = "SKILL.md";
 
+// Releases up to 0.0.3 split the openplan skill in three. An agent that kept those files would read
+// two sets of rules, so `setup` removes them.
 const SKILLS: &[Skill] = &[
     Skill {
+        name: "openplan",
+        expected: Expected::Contents(include_str!("../skills/openplan/SKILL.md")),
+    },
+    Skill {
         name: "task-comments",
-        contents: include_str!("../skills/task-comments/SKILL.md"),
+        expected: Expected::Retired,
     },
     Skill {
         name: "task-management-merge",
-        contents: include_str!("../skills/task-management-merge/SKILL.md"),
+        expected: Expected::Retired,
     },
     Skill {
         name: "task-management",
-        contents: include_str!("../skills/task-management/SKILL.md"),
+        expected: Expected::Retired,
     },
 ];
 
@@ -53,13 +65,16 @@ const SKILLS: &[Skill] = &[
 pub struct SkillFile {
     pub name: &'static str,
     pub path: PathBuf,
-    pub contents: &'static str,
+    pub expected: Expected,
     pub source: Option<Vec<u8>>,
 }
 
 impl SkillFile {
     pub fn matches(&self) -> bool {
-        self.source.as_deref() == Some(self.contents.as_bytes())
+        match self.expected {
+            Expected::Contents(contents) => self.source.as_deref() == Some(contents.as_bytes()),
+            Expected::Retired => self.source.is_none(),
+        }
     }
 }
 
@@ -75,7 +90,7 @@ pub fn installed(root: &Path) -> io::Result<Vec<SkillFile>> {
             of_agent.push(SkillFile {
                 name: skill.name,
                 source: read(&path)?,
-                contents: skill.contents,
+                expected: skill.expected,
                 path,
             });
         }
@@ -86,15 +101,18 @@ pub fn installed(root: &Path) -> io::Result<Vec<SkillFile>> {
     Ok(files)
 }
 
-pub fn install(file: &SkillFile) -> io::Result<()> {
-    write(&file.path, file.contents)
-}
-
 pub fn setup(root: &Path, agents: &[Agent]) -> Result<()> {
     for agent in agents {
         for skill in SKILLS {
             let path = agent.skill_path(root, skill);
-            write(&path, skill.contents).with_context(|| format!("write {}", path.display()))?;
+            match skill.expected {
+                Expected::Contents(contents) => {
+                    write(&path, contents).with_context(|| format!("write {}", path.display()))
+                }
+                Expected::Retired => {
+                    remove(&path).with_context(|| format!("remove {}", path.display()))
+                }
+            }?;
         }
     }
     Ok(())
@@ -105,6 +123,23 @@ fn read(path: &Path) -> io::Result<Option<Vec<u8>>> {
         Ok(source) => Ok(Some(source)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
+    }
+}
+
+// The user may keep files of their own beside a retired skill, and those keep its directory.
+fn remove(path: &Path) -> io::Result<()> {
+    if let Err(error) = fs::remove_file(path) {
+        return match error.kind() {
+            io::ErrorKind::NotFound => Ok(()),
+            _ => Err(error),
+        };
+    }
+    let Some(dir) = path.parent() else {
+        return Ok(());
+    };
+    match fs::remove_dir(dir) {
+        Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(()),
+        result => result,
     }
 }
 

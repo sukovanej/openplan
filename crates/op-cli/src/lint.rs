@@ -6,6 +6,7 @@ use anyhow::{Result, bail};
 use op_api::{ProblemCode, TaskListItem};
 use op_index::Index;
 use op_server::Location;
+use op_skills::Expected;
 use op_tracker::Tracker;
 use serde::Serialize;
 
@@ -61,9 +62,15 @@ pub fn run(root: &Path, keys: &[String], json: bool, skills_only: bool) -> Resul
                     task: None,
                     path: Some(skill.path.clone()),
                     code: "skill",
-                    message: match skill.source {
-                        None => format!("skill {} is missing", skill.name),
-                        Some(_) => format!("skill {} differs from the openplan binary", skill.name),
+                    message: match (skill.expected, &skill.source) {
+                        (Expected::Retired, _) => format!(
+                            "skill {} is retired: the openplan skill replaces it",
+                            skill.name
+                        ),
+                        (Expected::Contents(_), None) => format!("skill {} is missing", skill.name),
+                        (Expected::Contents(_), Some(_)) => {
+                            format!("skill {} differs from the openplan binary", skill.name)
+                        }
                     },
                     help: "run `openplan setup-skills`",
                 }),

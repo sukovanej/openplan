@@ -15,6 +15,13 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- One `openplan` agent skill replaces the `task-management`, `task-comments`,
+  and `task-management-merge` skills. `openplan setup-skills` removes the three
+  old skills, and `openplan lint --skills` reports an old skill that stays.
+- The agent skill teaches openplan only, and does not set a code workflow. At a
+  merge, it settles the task status and lets the repository's own process do
+  the merge. It does not require a worktree, a squash merge, or `gh`, and it
+  does not delete the branch or sync main.
 - The daemon reads only the tasks that changed. Before, each write read every
   task file two times. On 1,500 tasks a write takes 5 ms instead of 33 ms, and
   the history of one task takes 10 ms instead of 231 ms.
