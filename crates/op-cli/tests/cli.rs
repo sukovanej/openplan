@@ -8,7 +8,8 @@ use common::{
     Home, Project, combined, git, git_repo, git_stdout, json, ok, stderr, stdout, task_body,
     task_count, write,
 };
-use op_task::Timestamp;
+use op_task::tag::Color;
+use op_task::{Status, Timestamp};
 
 fn frontmatter_value(contents: &str, key: &str) -> String {
     let prefix = format!("{key}: ");
@@ -1980,4 +1981,33 @@ fn setup_skills_in_a_worktree_writes_into_that_worktree() {
     assert!(!sub.join(".claude").exists());
     let checked = home.run(&sub, &["lint", "--skills"]);
     assert!(checked.status.success(), "{}", combined(&checked));
+}
+
+#[test]
+fn help_lists_every_status() {
+    let home = Home::new();
+    let root = tempfile::tempdir().unwrap();
+
+    for command in [&["create", "--help"][..], &["list", "--help"]] {
+        let help = ok(home.run(root.path(), command));
+        let expected = format!(
+            "[possible values: {}]",
+            Status::ALL.map(|s| s.as_str()).join(", ")
+        );
+        assert!(help.contains(&expected), "{command:?} help: {help}");
+    }
+}
+
+#[test]
+fn help_lists_every_tag_color() {
+    let home = Home::new();
+    let root = tempfile::tempdir().unwrap();
+
+    let help = ok(home.run(root.path(), &["tag", "create", "--help"]));
+
+    let expected = format!(
+        "[possible values: {}]",
+        Color::ALL.map(|c| c.as_str()).join(", ")
+    );
+    assert!(help.contains(&expected), "{help}");
 }
