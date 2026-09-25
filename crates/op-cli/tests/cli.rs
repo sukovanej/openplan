@@ -40,12 +40,12 @@ fn setup_skills_installs_both_agents_by_default() {
 
     assert!(
         root.path()
-            .join(".claude/skills/task-management/SKILL.md")
+            .join(".claude/skills/openplan/SKILL.md")
             .is_file()
     );
     assert!(
         root.path()
-            .join(".agents/skills/task-management/SKILL.md")
+            .join(".agents/skills/openplan/SKILL.md")
             .is_file()
     );
 }
@@ -1853,13 +1853,13 @@ fn lint_skills_checks_the_skill_files_alone() {
     let clean = home.run(root.path(), &["lint", "--skills"]);
     assert!(clean.status.success(), "{}", combined(&clean));
 
-    let skill = root.path().join(".claude/skills/task-management/SKILL.md");
+    let skill = root.path().join(".claude/skills/openplan/SKILL.md");
     std::fs::write(&skill, "stale\n").unwrap();
     let stale = home.run(root.path(), &["lint", "--skills"]);
     assert!(!stale.status.success());
     let report = stdout(&stale);
     assert!(
-        report.contains("error[skill]: skill task-management differs from the openplan binary"),
+        report.contains("error[skill]: skill openplan differs from the openplan binary"),
         "{report}"
     );
     assert!(report.contains("run `openplan setup-skills`"), "{report}");
@@ -1867,6 +1867,33 @@ fn lint_skills_checks_the_skill_files_alone() {
         !home.path().join("daemon.json").exists(),
         "lint never starts a daemon"
     );
+}
+
+#[test]
+fn lint_skills_reports_retired_skills_until_setup_skills_removes_them() {
+    let home = Home::new();
+    let root = tempfile::tempdir().unwrap();
+    let retired = root.path().join(".claude/skills/task-management");
+    std::fs::create_dir_all(&retired).unwrap();
+    std::fs::write(retired.join("SKILL.md"), "old\n").unwrap();
+
+    let before = home.run(root.path(), &["lint", "--skills"]);
+    assert!(!before.status.success());
+    let report = stdout(&before);
+    assert!(
+        report.contains("error[skill]: skill task-management is retired"),
+        "{report}"
+    );
+    assert!(
+        report.contains("error[skill]: skill openplan is missing"),
+        "{report}"
+    );
+
+    ok(home.run(root.path(), &["setup-skills", "--agent=claude"]));
+
+    let after = home.run(root.path(), &["lint", "--skills"]);
+    assert!(after.status.success(), "{}", combined(&after));
+    assert!(!retired.exists());
 }
 
 // `lint` reads the skills under the project root it discovers, so an install run from a

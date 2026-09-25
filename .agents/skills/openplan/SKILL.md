@@ -1,6 +1,6 @@
 ---
-name: task-management
-description: Work items in this repo are called "tasks" (kept by the `openplan` CLI, not as files in the checkout), NOT the TODO list or subagent tools. Invoke this skill when the user names a task key (OPP-42), says "the plan", or asks in these words to create a task, list/show/get tasks, work on a task, set a status/parent/dependency, block, reparent, cancel, or delete a task. A request to do work is not a request to track it: do the work, and create no task.
+name: openplan
+description: Work items in this repo are called "tasks" (kept by the `openplan` CLI, not as files in the checkout), NOT the TODO list or subagent tools. Invoke this skill when the user names a task key (OPP-42) or says "the plan"; when the user asks in these words to create a task, list/show/get tasks, work on a task, set a status/parent/dependency/tag, block, reparent, cancel, or delete a task; when the user asks to merge a task's work ("merge OPP-42", "merge this branch", "merge the PR", "land it", "ship it"); and when the user asks to comment on a task or to read its comments. A request to do work is not a request to track it: do the work, and create no task.
 ---
 
 # Task management
@@ -137,8 +137,63 @@ the repository, plan, or start a subagent:
 2. `openplan set <key> status in_progress`.
 
 Set `in_review` when the work is complete. A human sets `done`. The one
-exception is a merge: when the user asks you to merge the work, follow the
-`task-management-merge` skill.
+exception is a merge: read the `Merge` section below.
+
+## Comment
+
+Every task carries an append-only comment log. The log is what a reader gets
+when the chat is gone and the code review is closed.
+
+Most tasks get no entry. Write one only when the fact passes both tests:
+
+1. The task file, the diff, and the commit message all lose it.
+2. It changes what the next person does.
+
+**Write an entry for:**
+
+- a departure from what the task says, and the reason
+- work you left out, or a defect you found and did not fix
+- a stop before the end: what is done, what is not
+- a decision or a limit that binds a later task, when the code does not show it
+
+**Never for:** progress (the status field), a summary of the diff (the commit),
+the specification (edit the body), a question for a user who is here (ask them),
+line-level review talk (the code review), a report that the work is complete or
+that the tests pass, a manual check that a test repeats, a doubt you resolved,
+your thoughts during the work.
+
+Keep an entry to one or two lines. Write it when the fact appears, on the task
+the fact belongs to.
+
+```sh
+openplan comments <key>                    # read the log; --json
+openplan comment  <key> "One short line."  # append; --body-file - for markdown
+```
+
+## Merge
+
+A merge does not change the status of a task. Only `openplan set` changes it.
+When the user asks you to merge the work of a task, do these steps. Take the
+task key from the conversation or from the branch name. Work with no task key
+has no status to change.
+
+1. Decide the status before the merge. Answer from your own context, and do not
+   re-read the diff. Does this work finish everything the task asks for?
+   - Certain it does: set `done` after the merge.
+   - Certain it finishes only part: leave the status, and say which part stays
+     open.
+   - Anything else, including work you did not write: ask the user, and wait
+     for the answer.
+2. Merge the way the repository merges. This skill does not choose the method
+   or the tools.
+3. When step 1 decided `done`, run `openplan set <key> status done` after the
+   merge lands. When the merge fails, leave the status.
+
+Never guess. A wrong `done` closes work that is still open. A request to merge
+is the review that `in_review` waits for, so the agent writes `done` here and
+nowhere else.
+
+Report the merge and the task status.
 
 ## Diagram
 
@@ -167,15 +222,6 @@ daemon -> tasks: reads the tasks ref
 tasks: {shape: cylinder}
 ```
 ````
-
-## Comment
-
-Follow the `task-comments` skill. Most tasks get no comment.
-
-```sh
-openplan comments <key>              # read the log
-openplan comment <key> "text"        # append an entry
-```
 
 ## Delete
 
