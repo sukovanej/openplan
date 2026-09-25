@@ -15,6 +15,15 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The history reads what each revision changed from the task files, not from
+  the commit message. `openplan history` and the web UI show the same result
+  for every revision, also for a revision that plain git or an import wrote.
+  Examples: `OPP-114: status → in_review, description`, a new title, tags
+  added or removed, new comments, a task that a sync moved to a new number, and
+  a renamed tag. The history API gives each entry a `summary` (one line for each
+  document), `tasks` (the changed fields of each task), and `tags`. openplan
+  writes its commit messages from the same description, so `git log
+  openplan/tasks` agrees with `openplan history`.
 - One `openplan` agent skill replaces the `task-management`, `task-comments`,
   and `task-management-merge` skills. `openplan setup-skills` removes the three
   old skills, and `openplan lint --skills` reports an old skill that stays.

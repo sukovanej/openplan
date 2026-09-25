@@ -20,6 +20,7 @@ macro_rules! suite {
             remove_reports_the_removed_path,
             aborted_write_leaves_the_head,
             old_revision_stays_readable,
+            read_at_reads_one_document_of_a_revision,
             log_filters_by_prefix_newest_first,
             log_pages_with_before_and_limit,
             changes_between_revisions,
@@ -163,6 +164,33 @@ pub fn old_revision_stays_readable(subject: &impl Subject) {
     assert_eq!(old.read_text("a.md").expect("read").as_deref(), Some("old"));
     assert_eq!(old.revision(), Some(&first.revision.id));
     assert_eq!(text(&*backend, "a.md").as_deref(), Some("new"));
+}
+
+pub fn read_at_reads_one_document_of_a_revision(subject: &impl Subject) {
+    let backend = subject.open();
+    let first = put(&*backend, "a.md", "old");
+    let second = put(&*backend, "a.md", "new");
+    let removed = backend
+        .commit(&author(), &mut |_| {
+            Ok(Edit::new("Drop", vec![Op::remove("a.md")]))
+        })
+        .expect("commit")
+        .expect("a revision");
+    let read = |revision: &op_backend::RevisionId, path: &str| {
+        backend
+            .read_at(revision, path)
+            .expect("read_at")
+            .map(|bytes| String::from_utf8(bytes).expect("text"))
+    };
+    assert_eq!(read(&first.revision.id, "a.md").as_deref(), Some("old"));
+    assert_eq!(read(&second.revision.id, "a.md").as_deref(), Some("new"));
+    assert_eq!(read(&removed.revision.id, "a.md"), None);
+    assert_eq!(read(&first.revision.id, "b.md"), None);
+    let unknown = backend.read_at(&op_backend::RevisionId::new("999999"), "a.md");
+    assert!(
+        matches!(unknown, Err(BackendError::UnknownRevision(_))),
+        "{unknown:?}"
+    );
 }
 
 pub fn log_filters_by_prefix_newest_first(subject: &impl Subject) {

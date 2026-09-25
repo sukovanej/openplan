@@ -33,6 +33,13 @@ vi.mock("../src/lib/api", async () => {
             message: `Change ${id}\n\nThe details.`,
           },
           changes: [{ path: "tasks/00001-first.md", kind: id === "r0" ? "added" : "modified", task: "OPP-1" }],
+          summary: [`OPP-1: ${id}`],
+          tasks: [
+            id === "r0"
+              ? { task: "OPP-1", kind: "added", title: "First" }
+              : { task: "OPP-1", kind: "modified", title: "First", fields: [{ field: "other", name: id }] },
+          ],
+          tags: [],
         }))
       }),
   }
@@ -100,8 +107,8 @@ describe("the history of a task", () => {
     expect(entries(root)).toHaveLength(TASK_HISTORY_PAGE)
     const newest = entries(root)[0]
     expect(newest.getAttribute("href")).toBe("/openplan/task/OPP-1?revision=r24")
-    expect(newest.textContent).toContain("Change r24")
-    expect(newest.textContent).not.toContain("The details.")
+    expect(newest.textContent).toContain("Field r24")
+    expect(newest.textContent).not.toContain("Change r24")
     expect(newest.textContent).toContain("claude_code")
   })
 
@@ -112,7 +119,7 @@ describe("the history of a task", () => {
     await until(() => entries(root).length === 25)
 
     expect(served.pages.at(-1)).toEqual({ before: "r5", limit: TASK_HISTORY_PAGE })
-    expect(entries(root).at(-1)?.textContent).toContain("added")
+    expect(entries(root).at(-1)?.textContent).toContain("Created")
     expect(older(root)).toBeUndefined()
   })
 

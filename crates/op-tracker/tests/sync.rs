@@ -142,6 +142,16 @@ fn two_new_tasks_under_one_number_both_survive() {
             .contains("OPP-2 \"From Bob\" is now OPP-3")),
         "the merge revision tells of the move"
     );
+    let merge = history
+        .iter()
+        .find(|entry| entry.revision.parents.len() > 1)
+        .expect("a merge");
+    let described = bob.tracker.describe(merge).expect("describe");
+    assert_eq!(
+        described.lines(Some("OPP".parse().expect("abbr"))),
+        ["OPP-3: moved from OPP-2"],
+        "the history finds the move in the documents too"
+    );
 }
 
 #[test]

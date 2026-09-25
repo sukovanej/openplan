@@ -2,7 +2,7 @@ import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-q
 import type { Effect } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 
-import type { DocumentChange, DocumentChangeKind, HistoryEntry } from "@openplan/api-client"
+import type { DocumentChange, HistoryEntry, TaskChange } from "@openplan/api-client"
 import { revisionPath, taskPath } from "@openplan/task-ui"
 
 import { type ApiError, getProjectHistory, getTaskHistory, getTaskRevision, type HistoryPage } from "./api"
@@ -47,31 +47,13 @@ export function useTaskRevision(project: string, id: string, revision: string) {
   })
 }
 
-export interface TaskChange {
-  readonly id: string
-  readonly kind: DocumentChangeKind
-}
+// The daemon reads the tasks and the tags into changes of their own, and this is the rest, such as
+// the config and the assets.
+export const otherChanges = (entry: HistoryEntry): ReadonlyArray<DocumentChange> =>
+  entry.changes.filter((change) => change.task === undefined && change.tag === undefined)
 
-export interface RevisionChanges {
-  readonly tasks: ReadonlyArray<TaskChange>
-  readonly others: ReadonlyArray<DocumentChange>
-}
-
-// A new title moves the task to a file with a new name, which the revision records as one file
-// removed and one added. Both name the same task, and for the task that is one modification.
-export function revisionChanges(entry: HistoryEntry): RevisionChanges {
-  const kinds = new Map<string, DocumentChangeKind>()
-  const others: Array<DocumentChange> = []
-  for (const change of entry.changes) {
-    if (change.task === undefined) {
-      others.push(change)
-      continue
-    }
-    const held = kinds.get(change.task)
-    kinds.set(change.task, held === undefined || held === change.kind ? change.kind : "modified")
-  }
-  return { tasks: [...kinds].map(([id, kind]) => ({ id, kind })), others }
-}
+export const taskChangeOf = (entry: HistoryEntry, id: string): TaskChange | undefined =>
+  entry.tasks.find((change) => change.task === id)
 
 // A task that is gone has no page of its own, so its link opens the task as the revision left it — or,
 // where the revision removed it, as it was just before.
@@ -82,8 +64,8 @@ export function changePath(
   exists: boolean,
 ): string | undefined {
   if (change.kind !== "removed") {
-    return exists ? taskPath(project, change.id) : revisionPath(project, change.id, entry.revision.id)
+    return exists ? taskPath(project, change.task) : revisionPath(project, change.task, entry.revision.id)
   }
   const before = entry.revision.parents[0]
-  return before === undefined ? undefined : revisionPath(project, change.id, before)
+  return before === undefined ? undefined : revisionPath(project, change.task, before)
 }

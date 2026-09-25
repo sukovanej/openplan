@@ -92,6 +92,61 @@ async fn the_history_lists_every_revision_newest_first() {
     }
 }
 
+// The daemon reads each change from the documents, so it never depends on what the message says.
+#[tokio::test]
+async fn the_history_says_what_each_revision_changed() {
+    for (_dir, state) in [local_state(), git_state()] {
+        create(&state, "One").await;
+        patch(
+            &state,
+            "OPP-1",
+            json!({ "status": "done", "tags": ["bug", "feature"] }),
+        )
+        .await;
+
+        let entries = history(&state, "").await;
+        assert_eq!(
+            entries[0]["summary"],
+            json!(["OPP-1: status → done, tags → bug, feature"])
+        );
+        assert_eq!(
+            entries[0]["tasks"],
+            json!([{
+                "task": "OPP-1",
+                "kind": "modified",
+                "title": "One",
+                "fields": [
+                    { "field": "status", "from": "backlog", "to": "done" },
+                    { "field": "tags", "from": [], "to": ["bug", "feature"] },
+                ],
+            }])
+        );
+        assert_eq!(
+            entries[1]["tasks"],
+            json!([{ "task": "OPP-1", "kind": "added", "title": "One" }])
+        );
+        let start = &entries[2];
+        assert_eq!(
+            start["summary"],
+            json!([
+                "Start the OPP tasks",
+                "tag bug: create",
+                "tag draft: create",
+                "tag feature: create"
+            ])
+        );
+        assert_eq!(start["tags"][0], json!({ "tag": "bug", "kind": "added" }));
+        assert!(
+            start["changes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|change| change["tag"] == "bug"),
+            "{start}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn the_history_pages_with_before_and_limit() {
     for (_dir, state) in [local_state(), git_state()] {

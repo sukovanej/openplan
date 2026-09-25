@@ -367,6 +367,20 @@ impl Backend for LocalBackend {
         ))
     }
 
+    fn read_at(&self, revision: &RevisionId, path: &str) -> Result<Option<Vec<u8>>, BackendError> {
+        let id = parse_id(revision)?;
+        let stored = {
+            let state = self.inner.lock();
+            if !state.history.exists(id)? {
+                return Err(BackendError::UnknownRevision(revision.clone()));
+            }
+            state.history.stored_at(id, path)?
+        };
+        stored
+            .map(|stored| self.inner.blobs.bytes(&stored))
+            .transpose()
+    }
+
     fn commit(&self, author: &Actor, write: Write<'_>) -> Result<Option<Committed>, BackendError> {
         self.inner.commit(author, write)
     }

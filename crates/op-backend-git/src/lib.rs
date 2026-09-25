@@ -351,6 +351,19 @@ impl Backend for GitBackend {
         Ok(self.inner.snapshot_at(id)?)
     }
 
+    fn read_at(&self, revision: &RevisionId, path: &str) -> Result<Option<Vec<u8>>, BackendError> {
+        let id = object_id(revision)?;
+        let repo = self.inner.local();
+        let Ok(commit) = repo.find_commit(id) else {
+            return Err(BackendError::UnknownRevision(revision.clone()));
+        };
+        let tree = commit.tree_id().map_err(storage)?.detach();
+        let Some(blob) = objects::blob_at(&repo, tree, path)? else {
+            return Ok(None);
+        };
+        Ok(Some(repo.find_blob(blob).map_err(storage)?.data.clone()))
+    }
+
     fn commit(&self, author: &Actor, write: Write<'_>) -> Result<Option<Committed>, BackendError> {
         self.inner.commit(author, write)
     }

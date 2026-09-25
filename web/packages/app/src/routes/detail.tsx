@@ -26,10 +26,10 @@ import {
   problems,
   REVISION_PARAM,
   RevisionMeta,
-  revisionSummary,
   shortRevision,
   statusField,
   TaskBodyWithConflicts,
+  taskChangeText,
   TaskIdentity,
   taskPath,
   TaskTags,
@@ -60,7 +60,7 @@ import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { taskFlowPath } from "../lib/flow-selection"
 import { errorText } from "../lib/format"
-import { useTaskHistory, useTaskRevision } from "../lib/history"
+import { taskChangeOf, useTaskHistory, useTaskRevision } from "../lib/history"
 import { useAbbreviation } from "../lib/projects"
 import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
@@ -309,7 +309,7 @@ function TaskAtRevision({ project, id, revision }: { project: string; id: string
             </Link>
           </PanelHeader>
           <PanelBody className="p-6">
-            <RevisionNotice revision={revision} entry={entry} />
+            <RevisionNotice id={id} revision={revision} entry={entry} />
             {snapshot.isPending ? (
               <BodySkeleton />
             ) : snapshot.isError ? (
@@ -327,7 +327,8 @@ function TaskAtRevision({ project, id, revision }: { project: string; id: string
   )
 }
 
-function RevisionNotice({ revision, entry }: { revision: string; entry: HistoryEntry | undefined }) {
+function RevisionNotice({ id, revision, entry }: { id: string; revision: string; entry: HistoryEntry | undefined }) {
+  const change = entry === undefined ? undefined : taskChangeOf(entry, id)
   return (
     <div role="note" className="border-info/40 bg-info/5 mb-5 flex flex-col gap-1 rounded-md border px-3 py-2 text-xs">
       <p className="text-info">
@@ -336,7 +337,7 @@ function RevisionNotice({ revision, entry }: { revision: string; entry: HistoryE
       </p>
       {entry !== undefined && (
         <>
-          <p className="text-foreground/90 text-sm">{revisionSummary(entry.revision.message)}</p>
+          {change !== undefined && <p className="text-foreground/90 text-sm">{taskChangeText(change)}</p>}
           <RevisionMeta revision={entry.revision} />
         </>
       )}

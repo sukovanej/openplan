@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom"
 
-import { ChangeMark, RevisionMeta, revisionPath, revisionSummary, shortRevision } from "@openplan/task-ui"
+import { RevisionMeta, revisionPath, shortRevision, taskChangeText } from "@openplan/task-ui"
 import { Row, Section, SkeletonList } from "@openplan/ui"
 
 import { errorText } from "../lib/format"
-import { revisionChanges, useTaskHistory } from "../lib/history"
+import { taskChangeOf, useTaskHistory } from "../lib/history"
 import { OlderRevisions } from "./older-revisions"
 
 export function TaskHistory({ project, id, selected }: { project: string; id: string; selected: string | undefined }) {
@@ -22,7 +22,7 @@ export function TaskHistory({ project, id, selected }: { project: string; id: st
           <ol className="space-y-0.5">
             {history.data.map((entry) => {
               const revision = entry.revision
-              const kind = revisionChanges(entry).tasks.find((change) => change.id === id)?.kind
+              const change = taskChangeOf(entry, id)
               const current = revision.id === selected
               return (
                 <li key={revision.id}>
@@ -35,11 +35,8 @@ export function TaskHistory({ project, id, selected }: { project: string; id: st
                     to={revisionPath(project, id, revision.id)}
                     className="flex-col items-stretch gap-1"
                   >
-                    <span className="flex min-w-0 items-baseline gap-2">
-                      <span className="min-w-0 flex-1 truncate">
-                        {revisionSummary(revision.message) || shortRevision(revision.id)}
-                      </span>
-                      {kind !== undefined && kind !== "modified" && <ChangeMark kind={kind} />}
+                    <span className="min-w-0 truncate">
+                      {change === undefined ? shortRevision(revision.id) : taskChangeText(change)}
                     </span>
                     <RevisionMeta revision={revision} />
                   </Row>

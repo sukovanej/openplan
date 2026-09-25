@@ -273,11 +273,16 @@ fn migrate_copies_the_history_of_the_plan_directory_to_the_tasks_branch() {
     assert_eq!(
         messages,
         vec![
-            "Import task edits not yet committed",
-            "Finish alpha",
-            "Plan alpha and beta"
+            "OPP-1: description",
+            "OPP-1: status → done",
+            "OPP-1: create \"Alpha\""
         ],
-        "{history}"
+        "the history says what each revision changed, whatever its message says: {history}"
+    );
+    let log = git_stdout(root, &["log", "--format=%s", "openplan/tasks", "--"]);
+    assert!(
+        log.contains("Finish alpha") && log.contains("Plan alpha and beta"),
+        "a copied revision keeps its message: {log}"
     );
     assert!(
         history.contains("2004-11-09T11:33:20Z  Test"),
@@ -375,7 +380,10 @@ fn migrate_to_a_local_directory_keeps_the_files_where_they_are() {
         "{listed}"
     );
     let history = ok(home.run(root, &["history"]));
-    assert!(history.contains("Edit outside openplan"), "{history}");
+    assert!(
+        history.contains("Start the OPP tasks") && history.contains("OPP-2: create \"Beta\""),
+        "{history}"
+    );
 }
 
 #[test]

@@ -222,6 +222,68 @@ export const FieldConflict_Status = Schema.Struct({
 }).annotate({ identifier: "FieldConflict_Status" })
 export type Problem = { readonly code: ProblemCode; readonly message: string }
 export const Problem = Schema.Struct({ code: ProblemCode, message: Schema.String }).annotate({ identifier: "Problem" })
+export type FieldChange =
+  | { readonly field: "number"; readonly from: string; readonly to: string }
+  | { readonly field: "status"; readonly from: Status; readonly to: Status }
+  | { readonly field: "parent"; readonly from?: string; readonly to?: string }
+  | { readonly field: "order" }
+  | { readonly field: "dependencies"; readonly from: ReadonlyArray<string>; readonly to: ReadonlyArray<string> }
+  | { readonly field: "tags"; readonly from: ReadonlyArray<string>; readonly to: ReadonlyArray<string> }
+  | { readonly field: "title"; readonly from?: string; readonly to?: string }
+  | { readonly field: "description" }
+  | { readonly added: number; readonly field: "comments"; readonly removed: number }
+  | { readonly field: "conflicts"; readonly from: number; readonly to: number }
+  | { readonly field: "other"; readonly name: string }
+  | { readonly field: "frontmatter" }
+export const FieldChange = Schema.Union(
+  [
+    Schema.Struct({ field: Schema.Literal("number"), from: Schema.String, to: Schema.String }),
+    Schema.Struct({ field: Schema.Literal("status"), from: Status, to: Status }),
+    Schema.Struct({
+      field: Schema.Literal("parent"),
+      from: Schema.optionalKey(Schema.String),
+      to: Schema.optionalKey(Schema.String),
+    }),
+    Schema.Struct({ field: Schema.Literal("order") }),
+    Schema.Struct({
+      field: Schema.Literal("dependencies"),
+      from: Schema.Array(Schema.String),
+      to: Schema.Array(Schema.String),
+    }),
+    Schema.Struct({
+      field: Schema.Literal("tags"),
+      from: Schema.Array(Schema.String),
+      to: Schema.Array(Schema.String),
+    }),
+    Schema.Struct({
+      field: Schema.Literal("title"),
+      from: Schema.optionalKey(Schema.String),
+      to: Schema.optionalKey(Schema.String),
+    }),
+    Schema.Struct({ field: Schema.Literal("description") }),
+    Schema.Struct({
+      added: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+      field: Schema.Literal("comments"),
+      removed: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+    }),
+    Schema.Struct({
+      field: Schema.Literal("conflicts"),
+      from: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+      to: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+    }),
+    Schema.Struct({ field: Schema.Literal("other"), name: Schema.String }),
+    Schema.Struct({ field: Schema.Literal("frontmatter") }),
+  ],
+  { mode: "oneOf" },
+).annotate({ identifier: "FieldChange" })
 export type CreateTask = {
   readonly body?: string | null
   readonly dependencies?: ReadonlyArray<string>
@@ -320,12 +382,24 @@ export const RevisionView = Schema.Struct({
   message: Schema.String,
   parents: Schema.Array(Schema.String),
 }).annotate({ identifier: "RevisionView" })
-export type DocumentChange = { readonly kind: DocumentChangeKind; readonly path: string; readonly task?: string }
+export type DocumentChange = {
+  readonly kind: DocumentChangeKind
+  readonly path: string
+  readonly tag?: string
+  readonly task?: string
+}
 export const DocumentChange = Schema.Struct({
   kind: DocumentChangeKind,
   path: Schema.String,
+  tag: Schema.optionalKey(Schema.String),
   task: Schema.optionalKey(Schema.String),
 }).annotate({ identifier: "DocumentChange" })
+export type TagChange = { readonly kind: DocumentChangeKind; readonly renamed_from?: string; readonly tag: string }
+export const TagChange = Schema.Struct({
+  kind: DocumentChangeKind,
+  renamed_from: Schema.optionalKey(Schema.String),
+  tag: Schema.String,
+}).annotate({ identifier: "TagChange" })
 export type TagView = {
   readonly color: Color
   readonly description?: string
@@ -391,6 +465,18 @@ export const Field_Status = Schema.Union(
   ],
   { mode: "oneOf" },
 ).annotate({ identifier: "Field_Status" })
+export type TaskChange = {
+  readonly fields?: ReadonlyArray<FieldChange>
+  readonly kind: DocumentChangeKind
+  readonly task: string
+  readonly title?: string
+}
+export const TaskChange = Schema.Struct({
+  fields: Schema.optionalKey(Schema.Array(FieldChange)),
+  kind: DocumentChangeKind,
+  task: Schema.String,
+  title: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "TaskChange" })
 export type ProjectView = {
   readonly abbreviation: string
   readonly backend: BackendKind
@@ -425,10 +511,6 @@ export const SyncResult = Schema.Struct({
   ),
   status: SyncView,
 }).annotate({ identifier: "SyncResult" })
-export type HistoryEntry = { readonly changes: ReadonlyArray<DocumentChange>; readonly revision: RevisionView }
-export const HistoryEntry = Schema.Struct({ changes: Schema.Array(DocumentChange), revision: RevisionView }).annotate({
-  identifier: "HistoryEntry",
-})
 export type Field_String = string | FieldError | FieldConflict_String
 export const Field_String = Schema.Union([Schema.String, FieldError, FieldConflict_String], { mode: "oneOf" }).annotate(
   { identifier: "Field_String" },
@@ -517,6 +599,20 @@ export const TaskChild = Schema.Struct({
   status: Field_Status,
   title: Schema.String,
 }).annotate({ identifier: "TaskChild" })
+export type HistoryEntry = {
+  readonly changes: ReadonlyArray<DocumentChange>
+  readonly revision: RevisionView
+  readonly summary: ReadonlyArray<string>
+  readonly tags: ReadonlyArray<TagChange>
+  readonly tasks: ReadonlyArray<TaskChange>
+}
+export const HistoryEntry = Schema.Struct({
+  changes: Schema.Array(DocumentChange),
+  revision: RevisionView,
+  summary: Schema.Array(Schema.String),
+  tags: Schema.Array(TagChange),
+  tasks: Schema.Array(TaskChange),
+}).annotate({ identifier: "HistoryEntry" })
 export type Comment = {
   readonly agent?: string | null
   readonly at: Field_Rfc3339

@@ -429,6 +429,9 @@ it.effect("a refused POST carries the server's reason", () =>
 const entry = (id: string, parents: ReadonlyArray<string>) => ({
   revision: { id, parents, author: "Milan", at: "2026-01-02T00:00:00Z", message: `Revision ${id}` },
   changes: [{ path: "tasks/00001-first.md", kind: "modified", task: "OPP-1" }],
+  summary: ["OPP-1: description"],
+  tasks: [{ task: "OPP-1", kind: "modified", title: "First", fields: [{ field: "description" }] }],
+  tags: [],
 })
 
 it.effect("reads a page of the project's history older than a revision", () =>

@@ -29,15 +29,15 @@ pub fn history(
             Some(agent) => format!(" via {agent}"),
             None => String::new(),
         };
-        let mut lines = revision.message.lines();
+        let mut lines = entry.summary.iter();
         println!(
             "{}  {}  {}{agent}  {}",
             revision.id,
             revision.at,
             revision.author,
-            lines.next().unwrap_or_default()
+            lines.next().map_or("", String::as_str)
         );
-        for line in lines.filter(|line| !line.trim().is_empty()) {
+        for line in lines {
             println!("    {line}");
         }
     }

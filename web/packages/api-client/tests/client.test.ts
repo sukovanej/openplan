@@ -159,6 +159,16 @@ it.effect("decodes the revisions of a task, and pages with `before`", () =>
                   message: "Set OPP-1 to done",
                 },
                 changes: [{ path: "tasks/00001-first.md", kind: "modified", task: "OPP-1" }],
+                summary: ["OPP-1: status → done"],
+                tasks: [
+                  {
+                    task: "OPP-1",
+                    kind: "modified",
+                    title: "First",
+                    fields: [{ field: "status", from: "todo", to: "done" }],
+                  },
+                ],
+                tags: [],
               },
             ]),
           ),
@@ -170,6 +180,7 @@ it.effect("decodes the revisions of a task, and pages with `before`", () =>
     expect(history[0].revision.agent).toBe("claude_code")
     expect(history[0].revision.email).toBeUndefined()
     expect(history[0].changes[0]).toEqual({ path: "tasks/00001-first.md", kind: "modified", task: "OPP-1" })
+    expect(history[0].tasks[0].fields).toEqual([{ field: "status", from: "todo", to: "done" }])
   }),
 )
 
