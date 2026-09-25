@@ -43,7 +43,7 @@ export function StatusControl({
   return (
     <div
       ref={root}
-      className="relative"
+      className="relative flex"
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
