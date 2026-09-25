@@ -2,6 +2,7 @@
 cargo-dist = "0.32.0"
 "cargo:cargo-edit" = "0.13.7"
 "cargo:tauri-cli" = "2"
+"cargo:cargo-insta" = "1.48.0"
 
 [tasks.lint]
 description = "Report the problems in the tasks of this project and stale agent skills"

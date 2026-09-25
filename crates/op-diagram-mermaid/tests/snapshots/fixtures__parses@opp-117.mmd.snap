@@ -1,0 +1,144 @@
+---
+source: crates/op-diagram-mermaid/tests/fixtures.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/fixtures/opp-117.mmd
+---
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "source",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Mermaid source"
+      ]
+    },
+    {
+      "id": "parser",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "op-diagram-mermaid"
+      ]
+    },
+    {
+      "id": "tasks",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Flow tasks"
+      ]
+    },
+    {
+      "id": "flow",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "op-api flow"
+      ]
+    },
+    {
+      "id": "lint",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "openplan lint"
+      ]
+    },
+    {
+      "id": "ir",
+      "shape": {
+        "kind": "hexagon"
+      },
+      "label": [
+        "op-diagram IR"
+      ]
+    },
+    {
+      "id": "render",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "op-diagram-render: measure, layout, SVG"
+      ]
+    },
+    {
+      "id": "browser",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "browser: viewport and theme CSS"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "source",
+      "to": "parser",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "tasks",
+      "to": "flow",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "lint",
+      "to": "parser",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "parser",
+      "to": "ir",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "flow",
+      "to": "ir",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "ir",
+      "to": "render",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "render",
+      "to": "browser",
+      "label": [
+        "SVG"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

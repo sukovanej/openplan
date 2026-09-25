@@ -1,0 +1,91 @@
+---
+source: crates/op-diagram-mermaid/tests/fixtures.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/fixtures/cqr-74.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "q",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "{ id: 5432, text: [...], ... }"
+      ],
+      "parent": "fixture"
+    },
+    {
+      "id": "seed",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "conquer db init"
+      ]
+    },
+    {
+      "id": "db",
+      "shape": {
+        "kind": "cylinder"
+      },
+      "label": [
+        "questions.id = 5432"
+      ]
+    },
+    {
+      "id": "runtime",
+      "shape": {
+        "kind": "cylinder"
+      },
+      "label": [
+        "commands, daily_questions, question_reports"
+      ]
+    }
+  ],
+  "clusters": [
+    {
+      "id": "fixture",
+      "label": [
+        "bank/<tag>/choice.json"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "fixture",
+      "to": "seed",
+      "label": [
+        "reads the id"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "seed",
+      "to": "db",
+      "label": [
+        "writes it unchanged"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "runtime",
+      "to": "db",
+      "label": [
+        "refer to 5432, before and after a rebuild"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

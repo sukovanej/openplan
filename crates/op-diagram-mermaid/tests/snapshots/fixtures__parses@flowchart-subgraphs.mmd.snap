@@ -1,0 +1,132 @@
+---
+source: crates/op-diagram-mermaid/tests/fixtures.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/fixtures/flowchart-subgraphs.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "top",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "top"
+      ]
+    },
+    {
+      "id": "inner_node",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "inner_node"
+      ],
+      "parent": "inner"
+    },
+    {
+      "id": "first",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "first"
+      ],
+      "parent": "outer"
+    },
+    {
+      "id": "second",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "second"
+      ],
+      "parent": "inner"
+    },
+    {
+      "id": "third",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "third"
+      ],
+      "parent": "subgraph 1"
+    },
+    {
+      "id": "fourth",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "fourth"
+      ],
+      "parent": "subgraph 2"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "outer",
+      "label": [
+        "Outer box"
+      ],
+      "direction": "right"
+    },
+    {
+      "id": "inner",
+      "label": [
+        "Inner box"
+      ],
+      "parent": "outer"
+    },
+    {
+      "id": "subgraph 1",
+      "label": [
+        "Quoted title"
+      ]
+    },
+    {
+      "id": "subgraph 2",
+      "label": [
+        "A title with spaces"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "top",
+      "to": "inner_node",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "inner_node",
+      "to": "second",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "top",
+      "to": "outer",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "outer",
+      "to": "third",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

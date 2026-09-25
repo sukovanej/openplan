@@ -1,0 +1,84 @@
+---
+source: crates/op-diagram-mermaid/tests/fixtures.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/fixtures/cqr-71.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "sessions",
+      "shape": {
+        "kind": "table",
+        "rows": [
+          {
+            "cells": [
+              "BLOB",
+              "token_hash",
+              "PK",
+              "32 bytes"
+            ]
+          },
+          {
+            "cells": [
+              "INTEGER",
+              "user_id",
+              "FK"
+            ]
+          },
+          {
+            "cells": [
+              "INTEGER",
+              "created_at",
+              "",
+              "seconds"
+            ]
+          },
+          {
+            "cells": [
+              "INTEGER",
+              "expires_at",
+              "",
+              "seconds"
+            ]
+          }
+        ]
+      },
+      "label": [
+        "sessions"
+      ]
+    },
+    {
+      "id": "users",
+      "shape": {
+        "kind": "table",
+        "rows": [
+          {
+            "cells": [
+              "INTEGER",
+              "id",
+              "PK"
+            ]
+          }
+        ]
+      },
+      "label": [
+        "users"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "sessions",
+      "to": "users",
+      "label": [
+        "user_id"
+      ],
+      "stroke": "solid",
+      "tail": "zero_or_more",
+      "head": "exactly_one",
+      "min_length": 1
+    }
+  ]
+}

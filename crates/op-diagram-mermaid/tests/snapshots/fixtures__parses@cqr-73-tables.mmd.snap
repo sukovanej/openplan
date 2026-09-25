@@ -1,0 +1,93 @@
+---
+source: crates/op-diagram-mermaid/tests/fixtures.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/fixtures/cqr-73-tables.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "question_reports",
+      "shape": {
+        "kind": "table",
+        "rows": [
+          {
+            "cells": [
+              "INTEGER",
+              "id",
+              "PK"
+            ]
+          },
+          {
+            "cells": [
+              "INTEGER",
+              "user_id"
+            ]
+          },
+          {
+            "cells": [
+              "INTEGER",
+              "question_id"
+            ]
+          },
+          {
+            "cells": [
+              "TEXT",
+              "language"
+            ]
+          },
+          {
+            "cells": [
+              "TEXT",
+              "problem_kind"
+            ]
+          },
+          {
+            "cells": [
+              "INTEGER",
+              "created_at",
+              "",
+              "seconds"
+            ]
+          }
+        ]
+      },
+      "label": [
+        "question_reports"
+      ]
+    },
+    {
+      "id": "questions",
+      "shape": {
+        "kind": "table",
+        "rows": [
+          {
+            "cells": [
+              "INTEGER",
+              "id",
+              "PK",
+              "stable"
+            ]
+          }
+        ]
+      },
+      "label": [
+        "questions"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "question_reports",
+      "to": "questions",
+      "label": [
+        "no FK, separate store"
+      ],
+      "stroke": "dotted",
+      "tail": "zero_or_more",
+      "head": "exactly_one",
+      "min_length": 1
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+flowchart TB
+  top --> inner_node
+  subgraph outer [Outer box]
+    direction LR
+    first
+    subgraph inner [Inner box]
+      inner_node --> second
+    end
+  end
+  subgraph "Quoted title"
+    third
+  end
+  subgraph A title with spaces
+    fourth
+  end
+  top --> outer
+  outer --> third

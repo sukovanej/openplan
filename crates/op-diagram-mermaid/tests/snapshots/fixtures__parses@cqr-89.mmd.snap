@@ -1,0 +1,129 @@
+---
+source: crates/op-diagram-mermaid/tests/fixtures.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/fixtures/cqr-89.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "rest",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "router(state): the REST handlers, unchanged"
+      ],
+      "parent": "core"
+    },
+    {
+      "id": "admission",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "admit_*_socket: cookie, seat, origin"
+      ],
+      "parent": "core"
+    },
+    {
+      "id": "drivers",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "MatchDriver, QueueDriver, LadderDriver"
+      ],
+      "parent": "core"
+    },
+    {
+      "id": "host",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "trait Host, Clock, OAuthHttp, ServerSettings"
+      ],
+      "parent": "core"
+    },
+    {
+      "id": "loop",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "one tokio task per driver: recv or sleep_until, then on()"
+      ],
+      "parent": "standalone"
+    },
+    {
+      "id": "ws",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "axum ws routes, OpenSocket writer and pinger"
+      ],
+      "parent": "standalone"
+    },
+    {
+      "id": "bind",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "TcpListener, reqwest, SystemTime, std::env"
+      ],
+      "parent": "standalone"
+    },
+    {
+      "id": "serve",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "conquer serve"
+      ],
+      "parent": "cli"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "core",
+      "label": [
+        "conquer-server"
+      ]
+    },
+    {
+      "id": "standalone",
+      "label": [
+        "conquer-server-standalone"
+      ]
+    },
+    {
+      "id": "cli",
+      "label": [
+        "conquer-cli"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "core",
+      "to": "standalone",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "standalone",
+      "to": "cli",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}
