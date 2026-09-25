@@ -28,7 +28,7 @@ In GitHub Actions:
 - uses: sukovanej/openplan/.github/actions/setup@v0.0.1
   with:
     version: 0.0.1   # omit for the latest release
-- run: openplan lint
+- run: openplan lint --skills   # the agent skills; the tasks change apart from the code
 ```
 
 ## Build

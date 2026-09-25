@@ -10,6 +10,7 @@ import {
   createdOf,
   parentOf,
   ParentLink,
+  ProblemBadge,
   problems,
   statusField,
   StatusGroupHeader,
@@ -321,6 +322,7 @@ function TaskRow({
         </Link>
         <MetaLine>
           {task.conflicts > 0 && <ConflictBadge count={task.conflicts} />}
+          {task.problems.length > 0 && <ProblemBadge problems={task.problems} />}
           {parent_title !== undefined && parent !== undefined && (
             <ParentLink project={task.project} id={parent} title={parent_title} />
           )}

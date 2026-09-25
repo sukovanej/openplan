@@ -63,6 +63,7 @@ impl Build {
             }),
             comment_count: 0,
             conflicts: 0,
+            problems: Vec::new(),
             updated: Field::Error(op_api::FieldError::Missing),
         }
     }

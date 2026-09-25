@@ -68,6 +68,7 @@ it.effect("decodes the task list from GET /api/projects/:project/tasks", () =>
         updated: "2026-01-02T00:00:00Z",
         comment_count: 0,
         conflicts: 0,
+        problems: [],
       },
       {
         project: "openplan",
@@ -84,6 +85,7 @@ it.effect("decodes the task list from GET /api/projects/:project/tasks", () =>
         updated: "2026-01-02T00:00:00Z",
         comment_count: 3,
         conflicts: 0,
+        problems: [],
       },
     ]),
   )(
@@ -104,6 +106,7 @@ it.effect("decodes a task detail with its hierarchy from GET /api/projects/:proj
       title: "First",
       body: "# First\n",
       conflicts: 0,
+      problems: [],
       metadata: {
         status: "todo",
         created: "2026-01-01T00:00:00Z",
@@ -146,6 +149,7 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
       },
       body: "# Solo\n",
       conflicts: 0,
+      problems: [],
       updated: "2026-01-02T00:00:00Z",
     }),
   )(
@@ -175,6 +179,7 @@ it.effect("sends no query for a task read", () =>
         },
         body: "# First\n",
         conflicts: 0,
+        problems: [],
         updated: "2026-01-02T00:00:00Z",
       }),
     )
@@ -244,6 +249,7 @@ it.effect("rejects a malformed status with a decode failure", () =>
         updated: "2026-01-02T00:00:00Z",
         comment_count: 0,
         conflicts: 0,
+        problems: [],
       },
     ]),
   )(
@@ -271,6 +277,7 @@ it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
         },
         body: "# Child\n",
         conflicts: 0,
+        problems: [],
         updated: "2026-01-02T00:00:00Z",
       }),
     )
@@ -299,6 +306,7 @@ it.effect("PATCH sends a parent id to reparent", () =>
         },
         body: "# Child\n",
         conflicts: 0,
+        problems: [],
         updated: "2026-01-02T00:00:00Z",
       }),
     )
@@ -528,6 +536,7 @@ it.effect("a resolve posts the exact block and its replacement, and decodes the 
         },
         body: "# First\n\nUse OAuth only.\n",
         conflicts: 0,
+        problems: [],
         updated: "2026-01-02T00:00:00Z",
       }),
     )

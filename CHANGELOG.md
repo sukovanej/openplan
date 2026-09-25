@@ -27,6 +27,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     in the body.
 - Two tasks created at the same time under one number both stay. The later
   one gets the next free number, and the merge revision says so.
+- The daemon finds the problems in the tasks after every change: a reference to
+  a task that does not exist, a parent or dependency cycle, a tag that is not
+  registered, a field or a comment log that does not parse, a missing or second
+  title, and two files with one number. The API gives each task a `problems`
+  list, the web UI shows it, and `openplan list`, `show`, and `get` point the
+  problems out.
 - One person can keep the tasks in a local `.plan/` directory instead, with a
   history in `.plan/.history.sqlite`. An edit made by hand becomes a revision
   too.
@@ -53,6 +59,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `openplan` CLI or the web UI. A task write needs no worktree and no commit.
 - A write through the daemon carries its author and its agent, so each
   revision names who made it.
+- `openplan lint` reports the problems that the daemon finds, the conflicts,
+  and agent skill files that differ from the binary. It takes task keys, not
+  file paths. `openplan lint --skills` checks only the skill files, and the CI
+  job runs it.
 - A `d2` diagram wider than the task column shrinks to fit it. It no longer
   scrolls sideways.
 
@@ -63,6 +73,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the web UI. A task now has one version.
 - Rolling updates and `openplan publish`. Sync replaces them.
 - `openplan merge-driver`. Sync merges the tasks itself.
+- `openplan lint --fix`, the check of links from a task into the source code,
+  and the checks of tag files. The write path now keeps references canonical
+  and tag files valid.
 
 ## [0.0.2](https://github.com/sukovanej/openplan/compare/v0.0.1...v0.0.2) - 2026-09-11
 

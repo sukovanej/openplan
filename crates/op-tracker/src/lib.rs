@@ -216,27 +216,6 @@ impl Tracker {
         Ok(committed)
     }
 
-    // The text as given, past the model: `lint --fix` splices text it computed itself and must not
-    // have it reflowed. Every path must name a document that exists.
-    pub fn replace_documents(
-        &self,
-        actor: &Actor,
-        message: &str,
-        documents: &[(String, String)],
-    ) -> Result<Option<Committed>, TrackerError> {
-        let (committed, ()) = self.write(actor, |plan| {
-            let mut ops = Vec::new();
-            for (path, text) in documents {
-                if plan.snapshot().read(path)?.is_none() {
-                    return Err(TrackerError::Invalid(format!("no document at {path}")));
-                }
-                ops.push(Op::put(path, text.as_str()));
-            }
-            Ok((Edit::new(message, ops), ()))
-        })?;
-        Ok(committed)
-    }
-
     pub fn delete_task(
         &self,
         actor: &Actor,

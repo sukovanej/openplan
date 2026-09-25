@@ -17,6 +17,8 @@ pub struct Plan {
     snapshot: Arc<dyn Snapshot>,
     config: Option<Result<Config, ConfigError>>,
     tasks: BTreeMap<u64, String>,
+    // The other files of a number that two files claim; readers see only the one in `tasks`.
+    shadowed: BTreeMap<u64, Vec<String>>,
     tags: BTreeSet<String>,
 }
 
@@ -25,7 +27,8 @@ impl Plan {
         let config = snapshot
             .read_text(layout::CONFIG)?
             .map(|text| Config::parse(&text));
-        let mut tasks = BTreeMap::new();
+        let mut tasks: BTreeMap<u64, String> = BTreeMap::new();
+        let mut shadowed: BTreeMap<u64, Vec<String>> = BTreeMap::new();
         let mut tags = BTreeSet::new();
         for path in snapshot.files()? {
             match Document::of(&path) {
@@ -34,10 +37,13 @@ impl Plan {
                     Entry::Vacant(slot) => {
                         slot.insert(path);
                     }
-                    Entry::Occupied(mut slot) if path < *slot.get() => {
-                        slot.insert(path);
+                    Entry::Occupied(mut slot) => {
+                        let hidden = match path < *slot.get() {
+                            true => slot.insert(path),
+                            false => path,
+                        };
+                        shadowed.entry(number).or_default().push(hidden);
                     }
-                    Entry::Occupied(_) => {}
                 },
                 Document::Tag(name)
                     if normalize_name(&name).is_ok_and(|normalized| normalized == name) =>
@@ -51,6 +57,7 @@ impl Plan {
             snapshot,
             config,
             tasks,
+            shadowed,
             tags,
         })
     }
@@ -88,6 +95,10 @@ impl Plan {
 
     pub fn numbers(&self) -> impl Iterator<Item = u64> + '_ {
         self.tasks.keys().copied()
+    }
+
+    pub fn shadowed(&self) -> &BTreeMap<u64, Vec<String>> {
+        &self.shadowed
     }
 
     pub fn max_number(&self) -> Option<u64> {

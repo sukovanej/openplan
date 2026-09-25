@@ -23,6 +23,7 @@ fn with_metadata(id: &str, metadata: Metadata) -> TaskListItem {
         metadata,
         comment_count: 0,
         conflicts: 0,
+        problems: Vec::new(),
         updated: op_api::Field::Error(op_api::FieldError::Missing),
     }
 }

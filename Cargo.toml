@@ -22,7 +22,6 @@ op-backend-git = { path = "crates/op-backend-git" }
 op-backend-local = { path = "crates/op-backend-local" }
 op-backend-conformance = { path = "crates/op-backend-conformance" }
 op-tracker = { path = "crates/op-tracker" }
-op-lint = { path = "crates/op-lint" }
 op-api = { path = "crates/op-api" }
 op-client = { path = "crates/op-client" }
 op-browser = { path = "crates/op-browser" }

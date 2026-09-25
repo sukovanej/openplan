@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 op-api.workspace = true
 op-backend.workspace = true
+op-md.workspace = true
 op-task.workspace = true
 op-tracker.workspace = true
 

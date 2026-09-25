@@ -1739,286 +1739,133 @@ const VALID: &str = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ti
 fn lint_clean_project_exits_zero() {
     let store = LintStore::new();
     store.put("tasks/00001-clean.md", VALID);
-
-    let out = store.lint(&[]);
-
-    assert!(
-        out.status.success(),
-        "a clean store must lint clean; output: {}",
-        combined(&out)
-    );
-}
-
-#[test]
-fn lint_counts_the_files_it_checked() {
-    let store = LintStore::new();
-    store.put("tasks/00001-clean.md", VALID);
     store.put("tasks/00002-clean.md", VALID);
-    store.put("tags/backend.md", "---\ncolor: cyan\n---\n# backend\n");
 
-    let report = combined(&store.lint(&[]));
-    assert!(
-        report.contains("checked 3 files, found 0 problems"),
-        "a clean run must count every task and tag file: {report}"
-    );
+    let out = store.lint(&[]);
 
-    let report = combined(&store.lint(&["OPP-1"]));
+    assert!(out.status.success(), "{}", combined(&out));
     assert!(
-        report.contains("checked 1 file, found 0 problems"),
-        "a targeted run must count the targets: {report}"
+        stdout(&out).contains("checked 2 tasks and 0 skill files, found 0 problems"),
+        "{}",
+        stdout(&out)
     );
 }
 
 #[test]
-fn lint_seeded_defect_exits_nonzero_and_prints_it() {
+fn lint_reports_a_problem_by_its_task_and_fails() {
     let store = LintStore::new();
     store.put("tasks/00001-clean.md", VALID);
     store.put(
-        "tasks/00002-seeded-defect.md",
-        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Seeded defect\n",
+        "tasks/00002-orphan.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00009-gone.md\n---\n# Orphan\n",
     );
 
     let out = store.lint(&[]);
 
+    assert!(!out.status.success(), "{}", combined(&out));
     assert!(
-        !out.status.success(),
-        "a defect must fail the run; output: {}",
-        combined(&out)
+        stdout(&out).contains("OPP-2: error[reference]: the parent OPP-9 does not exist"),
+        "{}",
+        stdout(&out)
     );
-    assert!(
-        combined(&out).contains(".plan/tasks/00002-seeded-defect.md"),
-        "the diagnostic must name the offending file where it lives: {}",
-        combined(&out)
-    );
+    assert!(stdout(&out).contains("found 1 problem"), "{}", stdout(&out));
 }
 
 #[test]
-fn lint_json_carries_severity_error() {
+fn lint_json_names_the_task_the_code_and_the_help() {
     let store = LintStore::new();
     store.put(
-        "tasks/00001-seeded-defect.md",
-        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Seeded defect\n",
+        "tasks/00001-defect.md",
+        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Defect\n",
     );
 
     let out = store.lint(&["--json"]);
 
+    assert!(!out.status.success());
+    let findings: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(findings[0]["task"], "OPP-1");
+    assert_eq!(findings[0]["code"], "field");
     assert!(
-        !out.status.success(),
-        "a defect must fail even under --json"
-    );
-    let diagnostics: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout)
-        .unwrap_or_else(|err| panic!("--json must emit a diagnostics array: {err}"));
-    let first = diagnostics
-        .first()
-        .unwrap_or_else(|| panic!("expected at least one diagnostic: {diagnostics:?}"));
-    assert_eq!(
-        first["severity"], "error",
-        "every diagnostic carries the severity field: {first}"
-    );
-    assert!(
-        first.get("code").is_some() && first.get("path").is_some(),
-        "a diagnostic names its code and file: {first}"
+        findings[0]["help"]
+            .as_str()
+            .is_some_and(|help| !help.is_empty())
     );
 }
 
 #[test]
-fn lint_targets_filter_output_and_ignore_breakage_elsewhere() {
+fn lint_keys_filter_the_report_and_an_unknown_key_fails() {
     let store = LintStore::new();
-    store.put(
-        "tasks/00001-alpha-broken.md",
-        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Alpha\n",
-    );
-    store.put(
-        "tasks/00002-beta-broken.md",
-        "---\nstatus: bogus\ncreated: 2026-01-01T00:00:00Z\n---\n# Beta\n",
-    );
-    store.put("tasks/00003-gamma-clean.md", VALID);
+    let broken = |title: &str| {
+        format!("---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags: [gone]\n---\n# {title}\n")
+    };
+    store.put("tasks/00001-alpha.md", &broken("Alpha"));
+    store.put("tasks/00002-beta.md", &broken("Beta"));
 
-    // Targeting the one clean task: breakage in the others is off the caller's path, so the run
-    // passes and says nothing about them.
-    let clean = store.lint(&["OPP-3"]);
+    let out = store.lint(&["OPP-1"]);
+    assert!(!out.status.success());
     assert!(
-        clean.status.success(),
-        "breakage outside the targets must not fail the run; output: {}",
-        combined(&clean)
+        stdout(&out).contains("OPP-1: error[tag]"),
+        "{}",
+        stdout(&out)
     );
-    let clean_report = combined(&clean);
+    assert!(!stdout(&out).contains("OPP-2"), "{}", stdout(&out));
     assert!(
-        !clean_report.contains("alpha-broken") && !clean_report.contains("beta-broken"),
-        "output must be filtered to the targets: {clean_report}"
+        stdout(&out).contains("checked 1 task and"),
+        "{}",
+        stdout(&out)
     );
 
-    // Targeting a broken task reports only that task, not its equally broken neighbour.
-    let alpha = store.lint(&["OPP-1"]);
-    assert!(
-        !alpha.status.success(),
-        "a targeted defect must fail the run"
-    );
-    let alpha_report = combined(&alpha);
-    assert!(
-        alpha_report.contains("alpha-broken"),
-        "the targeted task's diagnostic must show: {alpha_report}"
-    );
-    assert!(
-        !alpha_report.contains("beta-broken"),
-        "a non-targeted task must not leak into the output: {alpha_report}"
-    );
-
-    // A target that names no file would filter every diagnostic away and pass, so it stops the run.
-    let unknown = store.lint(&["OPP-9"]);
+    let unknown = store.lint(&["OPP-7"]);
     assert!(!unknown.status.success());
     assert!(
-        combined(&unknown).contains("no task, tag, or skill file matches OPP-9"),
+        stderr(&unknown).contains("no task matches OPP-7"),
         "{}",
-        combined(&unknown)
+        stderr(&unknown)
     );
 }
 
 #[test]
-fn lint_fix_rewrites_then_reports_clean() {
+fn lint_reports_a_conflict_left_by_a_sync() {
     let store = LintStore::new();
-    store.put("tasks/00001-root.md", VALID);
     store.put(
-        "tasks/00002-child.md",
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00001-wrong-slug.md\n---\n# Child\n",
+        "tasks/00001-login.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Login\n\n<<<<<<< Ann (1111111)\nOAuth only.\n=======\nOAuth and email.\n>>>>>>> Ben (2222222)\n",
     );
 
-    let fixed = store.lint(&["--fix"]);
-    assert!(
-        fixed.status.success(),
-        "--fix must repair the derivable defect and re-check clean; output: {}",
-        combined(&fixed)
-    );
+    let out = store.lint(&[]);
 
-    let after = std::fs::read_to_string(store.path().join(".plan/tasks/00002-child.md")).unwrap();
+    assert!(!out.status.success());
     assert!(
-        after.contains("parent: ./00001-root.md"),
-        "the stale slug must be canonicalized to the target's path: {after}"
-    );
-    assert!(
-        !after.contains("wrong-slug"),
-        "the stale slug must be gone: {after}"
-    );
-
-    let relint = store.lint(&[]);
-    assert!(
-        relint.status.success(),
-        "a plain lint after --fix must be clean; output: {}",
-        combined(&relint)
+        stdout(&out).contains("OPP-1: error[conflict]: 1 unresolved conflict from a sync"),
+        "{}",
+        stdout(&out)
     );
 }
 
-// A fix is a write like any other, so it lands as one revision the history names.
+// CI checks a code change, and the tasks are not part of one: `--skills` needs no tasks at all.
 #[test]
-fn lint_fix_lands_as_one_revision() {
-    let project = Project::local();
-    let root = project.create("Root");
-    project.edit(
-        "tasks/00002-child.md",
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00001-wrong-slug.md\n---\n# Child\n",
-    );
-    assert_eq!(root, "OPP-1");
+fn lint_skills_checks_the_skill_files_alone() {
+    let home = Home::new();
+    let root = tempfile::tempdir().unwrap();
+    ok(home.run(root.path(), &["setup-skills", "--agent=claude"]));
 
-    ok(project.run(&["lint", "--fix"]));
+    let clean = home.run(root.path(), &["lint", "--skills"]);
+    assert!(clean.status.success(), "{}", combined(&clean));
 
-    let history = ok(project.run(&["history", "--limit", "1"]));
-    assert!(history.contains("lint fixes"), "{history}");
+    let skill = root.path().join(".claude/skills/task-management/SKILL.md");
+    std::fs::write(&skill, "stale\n").unwrap();
+    let stale = home.run(root.path(), &["lint", "--skills"]);
+    assert!(!stale.status.success());
+    let report = stdout(&stale);
     assert!(
-        ok(project.run(&["show", "OPP-2"])).contains("parent: OPP-1"),
-        "the daemon reads the fix"
+        report.contains("error[skill]: skill task-management differs from the openplan binary"),
+        "{report}"
     );
-}
-
-#[test]
-fn lint_reports_and_repairs_a_tag_file_by_its_path() {
-    let store = LintStore::new();
-    store.put("tasks/00001-clean.md", VALID);
-    store.put("tags/backend.md", "---\n---\n# Backend\n");
-
-    let reported = store.lint(&[".plan/tags/backend.md"]);
+    assert!(report.contains("run `openplan setup-skills`"), "{report}");
     assert!(
-        !reported.status.success(),
-        "a tag target must be resolvable, not rejected as naming no file; output: {}",
-        combined(&reported)
-    );
-    assert!(
-        combined(&reported).contains("tag-color"),
-        "the missing color must be reported: {}",
-        combined(&reported)
-    );
-
-    let fixed = store.lint(&[".plan/tags/backend.md", "--fix"]);
-    assert!(
-        fixed.status.success(),
-        "--fix must materialize the derived color and re-check clean; output: {}",
-        combined(&fixed)
-    );
-    assert_eq!(
-        std::fs::read_to_string(store.path().join(".plan/tags/backend.md")).unwrap(),
-        "---\ncolor: amber\n---\n# Backend\n"
-    );
-}
-
-#[test]
-fn lint_reports_and_repairs_a_skill_file_by_its_path() {
-    let store = LintStore::new();
-    let skill = store.path().join(".claude/skills/task-management/SKILL.md");
-    write(&skill, "hand-written\n");
-
-    let reported = store.lint(&[".claude/skills/task-management/SKILL.md"]);
-    assert!(
-        !reported.status.success(),
-        "a skill target must be resolvable, not rejected as naming no file; output: {}",
-        combined(&reported)
-    );
-    assert!(
-        combined(&reported).contains("error[skill]: skill task-management differs"),
-        "the edited skill must be reported: {}",
-        combined(&reported)
-    );
-
-    let fixed = store.lint(&[".claude/skills/task-management/SKILL.md", "--fix"]);
-    assert!(
-        fixed.status.success(),
-        "--fix must write the binary's skill back and re-check clean; output: {}",
-        combined(&fixed)
-    );
-    assert!(
-        std::fs::read_to_string(&skill)
-            .unwrap()
-            .starts_with("---\nname: task-management\n"),
-        "the repaired file must hold the skill the binary carries"
-    );
-
-    write(&skill, "hand-written again\n");
-    let whole_store = store.lint(&["--fix"]);
-    assert!(
-        whole_store.status.success(),
-        "an untargeted --fix must repair the skill too; output: {}",
-        combined(&whole_store)
-    );
-}
-
-// A pre-commit hook names the paths the commit touched, and a deleted skill file is one of them.
-// The target has to resolve to the skill the binary knows even where the checkout is reached
-// through a symlink, which is how a canonicalized store root and a raw target spelling differ.
-#[test]
-fn lint_targets_a_missing_skill_through_a_symlinked_path() {
-    let store = LintStore::new();
-    ok(store
-        .home
-        .run(store.path(), &["setup-skills", "--agent=claude"]));
-    std::fs::remove_file(store.path().join(".claude/skills/task-comments/SKILL.md")).unwrap();
-
-    let link = store.path().join("link");
-    std::os::unix::fs::symlink(store.path(), &link).unwrap();
-    let target = link.join(".claude/skills/task-comments/SKILL.md");
-
-    let out = store.lint(&[target.to_str().unwrap()]);
-    assert!(
-        combined(&out).contains("error[skill]: skill task-comments is missing"),
-        "the missing skill must be reported through the aliased spelling: {}",
-        combined(&out)
+        !home.path().join("daemon.json").exists(),
+        "lint never starts a daemon"
     );
 }
 
@@ -2042,7 +1889,7 @@ fn setup_skills_installs_at_the_project_root() {
 }
 
 #[test]
-fn lint_reports_every_comment_failure_with_a_span() {
+fn lint_reports_every_comment_failure() {
     let project = Project::local();
     project.edit(
         "tasks/00001-ship-it.md",
@@ -2057,7 +1904,7 @@ fn lint_reports_every_comment_failure_with_a_span() {
     assert!(!out.status.success(), "{report}");
     let reported: Vec<&str> = report
         .lines()
-        .filter(|line| line.contains("error[comment]"))
+        .filter(|line| line.starts_with("OPP-1: error[comment]"))
         .collect();
     assert_eq!(reported.len(), 5, "{report}");
     for expected in [
@@ -2072,27 +1919,38 @@ fn lint_reports_every_comment_failure_with_a_span() {
             "{expected} is not reported: {report}"
         );
     }
-    for line in reported {
-        assert!(
-            line.contains("00001-ship-it.md:"),
-            "every diagnostic carries a span: {line}"
-        );
-    }
 }
 
+// A worktree is a checkout of its own, so the skills a person installs there stay there.
 #[test]
-fn lint_fix_leaves_the_comment_log_alone() {
-    let project = Project::local();
-    let target = project.create("Target");
-    assert_eq!(target, "OPP-1");
-    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n\n## \
-                  Comments\n\n### 2026-01-01T00:00:00Z by Test\n\n> see [[OPP-1]]\n";
-    project.edit("tasks/00002-ship-it.md", source);
-
-    project.run(&["lint", "--fix"]);
-
-    assert_eq!(
-        std::fs::read_to_string(project.store().join("tasks/00002-ship-it.md")).unwrap(),
-        source
+fn setup_skills_in_a_worktree_writes_into_that_worktree() {
+    let home = Home::new();
+    let dir = tempfile::tempdir().unwrap();
+    let main = dir.path().join("main");
+    git_repo(&main);
+    write(&main.join("README.md"), "# Code\n");
+    git(&main, &["add", "-A"]);
+    git(&main, &["commit", "-qm", "Start"]);
+    let worktree = dir.path().join("feature");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            worktree.to_str().unwrap(),
+            "-b",
+            "feature",
+        ],
     );
+    let sub = worktree.join("src");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    ok(home.run(&sub, &["setup-skills", "--agent=claude"]));
+
+    assert!(worktree.join(".claude/skills").is_dir());
+    assert!(!main.join(".claude").exists());
+    assert!(!sub.join(".claude").exists());
+    let checked = home.run(&sub, &["lint", "--skills"]);
+    assert!(checked.status.success(), "{}", combined(&checked));
 }

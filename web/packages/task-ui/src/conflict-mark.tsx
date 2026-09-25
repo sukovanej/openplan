@@ -5,10 +5,10 @@ import { cn, Tooltip } from "@openplan/ui"
 export const CONFLICT_TINT = "border-warning/40 bg-warning/10 text-warning"
 
 // Borders included, a badge is as tall as the 16px meta line it sits in.
-export const CONFLICT_BADGE = cn(
-  "inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] leading-[14px] font-medium whitespace-nowrap",
-  CONFLICT_TINT,
-)
+export const META_BADGE =
+  "inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] leading-[14px] font-medium whitespace-nowrap"
+
+export const CONFLICT_BADGE = cn(META_BADGE, CONFLICT_TINT)
 
 export const conflictCount = (count: number): string => `${count} ${count === 1 ? "conflict" : "conflicts"}`
 

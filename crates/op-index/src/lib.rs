@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+mod problems;
+
 use op_api::{
-    Comment, Metadata, SearchHit, SearchMatch, TaskChild, TaskDetail, TaskListItem, TaskRef,
-    hit_cmp, list_item_cmp, updated_field,
+    Comment, Metadata, Problem, SearchHit, SearchMatch, TaskChild, TaskDetail, TaskListItem,
+    TaskRef, hit_cmp, list_item_cmp, updated_field,
 };
 use op_backend::{LogEntry, Timestamp};
 use op_task::{Abbreviation, FieldError, layout};
@@ -13,6 +15,7 @@ pub struct Index {
     abbreviation: Option<Abbreviation>,
     tasks: BTreeMap<u64, Entry>,
     updated: HashMap<u64, Timestamp>,
+    problems: HashMap<u64, Vec<Problem>>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +25,11 @@ struct Entry {
     metadata: Metadata,
     comment_count: usize,
     conflicts: usize,
+    // `# ` headings in the published version of the text, outside the comment log.
+    titles: usize,
+    // The tasks the text names with `[[…]]`, found or not.
+    body_refs: Vec<u64>,
+    comment_problems: Vec<String>,
     haystack: Haystack,
 }
 
@@ -55,6 +63,7 @@ impl Index {
         }
         let Some(abbreviation) = abbreviation else {
             self.tasks.clear();
+            self.problems.clear();
             return Ok(());
         };
         let raw = plan.raw_all()?;
@@ -69,7 +78,12 @@ impl Index {
             }
             self.tasks.insert(number, Entry::parse(text, abbreviation));
         }
+        self.problems = self.find_problems(plan.tag_names(), plan.shadowed());
         Ok(())
+    }
+
+    fn problems_of(&self, number: u64) -> Vec<Problem> {
+        self.problems.get(&number).cloned().unwrap_or_default()
     }
 
     // A log lists the newest revision first, so the first entry to name a task dates it.
@@ -137,6 +151,7 @@ impl Index {
             metadata: entry.metadata.clone(),
             comments: comments_of(&partial.body),
             conflicts: entry.conflicts,
+            problems: self.problems_of(number),
             body: op_task::comment::strip(&partial.body),
             updated: self.updated_of(number, entry),
             parent_title: hierarchy.parent_title,
@@ -244,6 +259,7 @@ impl Index {
             metadata: entry.metadata.clone(),
             comment_count: entry.comment_count,
             conflicts: entry.conflicts,
+            problems: self.problems_of(number),
             updated: self.updated_of(number, entry),
         }
     }
@@ -264,8 +280,20 @@ impl Entry {
         let partial = op_task::parse_partial(&raw);
         let title = partial.title.clone().unwrap_or_default();
         let conflicts = partial.conflict_count();
+        let text = op_task::comment::strip(&op_task::conflict::published(&partial.body));
+        let titles = op_md::headings(&text)
+            .iter()
+            .filter(|heading| heading.level == 1)
+            .count();
+        let body_refs = op_task::body_ref_spans(&text)
+            .into_iter()
+            .filter_map(|(_, inner)| op_task::body_ref_id(abbreviation, inner))
+            .collect();
         let metadata = Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation);
         Self {
+            titles,
+            body_refs,
+            comment_problems: op_task::comment::problems(&partial.body),
             haystack: haystack(&title, &partial.body, &metadata),
             comment_count: op_task::comment::parse(&partial.body).len(),
             conflicts,

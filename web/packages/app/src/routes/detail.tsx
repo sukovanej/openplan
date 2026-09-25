@@ -22,6 +22,7 @@ import {
   frontmatterFields,
   parentOf,
   ParentLink,
+  ProblemBanner,
   problems,
   REVISION_PARAM,
   RevisionMeta,
@@ -191,6 +192,7 @@ function TaskDetailView({
           </PanelHeader>
           <PanelBody className="p-6">
             <ConflictBanner project={project} id={task.id} metadata={task.metadata} count={task.conflicts} />
+            <ProblemBanner problems={task.problems} />
             {/* The tags sit level with the first line of the title: the row aligns to the top, and the
                 chips centre inside a box as tall as that line. They wrap inside half the row rather
                 than holding their width — a task carrying a handful of them squeezed the title to

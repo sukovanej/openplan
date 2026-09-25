@@ -3943,25 +3943,10 @@ dependencies = [
  "op-api",
  "op-backend",
  "op-backend-local",
- "op-task",
- "op-tracker",
- "tempfile",
-]
-
-[[package]]
-name = "op-lint"
-version = "0.0.2"
-dependencies = [
- "op-backend",
- "op-backend-local",
  "op-md",
- "op-skills",
  "op-task",
  "op-tracker",
- "serde",
- "serde_yaml",
  "tempfile",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4071,13 +4056,14 @@ dependencies = [
  "op-browser",
  "op-client",
  "op-daemon",
- "op-lint",
+ "op-index",
  "op-server",
  "op-skills",
  "op-task",
  "op-tracker",
  "op-update",
  "semver",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
