@@ -1,0 +1,25 @@
+[package]
+name = "op-backend-local"
+description = "An op-backend on a plain directory of documents, with its revision history in sqlite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+op-backend.workspace = true
+getrandom.workspace = true
+notify.workspace = true
+rusqlite.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+op-backend-conformance.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

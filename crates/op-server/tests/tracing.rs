@@ -1,9 +1,11 @@
-use std::path::Path;
+mod common;
+
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
 use axum::http::Request;
-use op_server::{AppState, Project, app};
+use common::*;
+use op_server::{AppState, app};
 use tower::ServiceExt as _;
 use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::EnvFilter;
@@ -35,50 +37,23 @@ impl<'a> MakeWriter<'a> for Buffer {
     }
 }
 
-fn git(dir: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .current_dir(dir)
-        .args(args)
-        .status()
-        .expect("git must be installed for this test");
-    assert!(status.success(), "git {args:?} failed");
-}
+const TAGS: &str = "/api/projects/test/tags";
 
-fn project_state(root: impl AsRef<Path>, repo: op_git::Repo, store: op_store::Store) -> AppState {
-    let config = op_store::Config::read(store.root()).unwrap();
-    AppState::new([Project::new(
-        "test",
-        root.as_ref().to_path_buf(),
-        repo,
-        store,
-        &config,
-    )])
-}
-
-// A git-backed serve root, the shape the daemon always serves. With `broken` true a task path in
-// the live worktree is a directory rather than a file, so reading its "raw" text during a
-// branch-aware index rebuild fails with an IO error and `GET /api/projects/{project}/tasks` returns
-// 500 — the shape the failure-logging tests need now that there is no degraded no-repo path to
-// force an error through.
+// With `broken` true the tasks reference names a commit the repository does not hold, so every read of
+// the head fails in storage and the tag list answers 500.
 fn state(broken: bool) -> (tempfile::TempDir, AppState) {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
-    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
-    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    let (dir, state) = git_state();
     if broken {
-        std::fs::create_dir_all(root.join(".plan/tasks/00001-broken.md")).unwrap();
+        std::fs::write(
+            dir.path().join(".git/refs/openplan/tasks"),
+            "0123456789012345678901234567890123456789\n",
+        )
+        .unwrap();
     }
-    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
-    let store = op_store::Store::discover(root).unwrap();
-    let repo = op_git::Repo::discover(root).unwrap();
-    let state = project_state(root, repo, store);
     (dir, state)
 }
 
-async fn capture(filter: &str, method: &str, uri: &str, broken: bool) -> String {
+async fn capture(filter: &str, uri: &str, broken: bool) -> String {
     let (_dir, app_state) = state(broken);
     let buffer = Buffer::default();
     let subscriber = tracing_subscriber::fmt()
@@ -86,36 +61,32 @@ async fn capture(filter: &str, method: &str, uri: &str, broken: bool) -> String 
         .with_writer(buffer.clone())
         .with_ansi(false)
         .finish();
-    let request = Request::builder()
-        .method(method)
-        .uri(uri)
-        .body(Body::empty())
-        .unwrap();
-    // Attach the subscriber to the future so every span/event the router emits while it runs is
-    // captured, regardless of which worker thread polls it.
-    app(app_state)
+    let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+    // The subscriber rides on the future, so every span and event the router emits is captured,
+    // whichever worker thread polls it.
+    let response = app(app_state)
         .oneshot(request)
         .with_subscriber(subscriber)
         .await
         .unwrap();
+    assert_eq!(response.status().is_server_error(), broken);
     buffer.contents()
 }
 
-// A 5xx logs exactly one ERROR line, and it carries route, request id, cause, classification, and
-// latency — no separate "handler failed" event.
+// A 5xx logs exactly one ERROR line, and it carries the route, the request id, the cause, the
+// classification, and the latency.
 #[tokio::test]
 async fn failure_logs_one_error_line_with_full_context() {
-    let logs = capture("debug", "GET", "/api/projects/test/tasks", true).await;
+    let logs = capture("debug", TAGS, true).await;
 
     assert_eq!(
         logs.matches("request failed").count(),
         1,
         "exactly one failure line expected:\n{logs}"
     );
-    assert!(!logs.contains("request handler failed"), "logs:\n{logs}");
     assert!(!logs.contains("request served"), "logs:\n{logs}");
     for field in [
-        "route=/api/projects/{project}/tasks",
+        "route=/api/projects/{project}/tags",
         "request_id=",
         "method=GET",
         "error=",
@@ -126,16 +97,16 @@ async fn failure_logs_one_error_line_with_full_context() {
     }
 }
 
-// The request span is created at ERROR level, so its route/id fields survive even when RUST_LOG is
-// turned down to only show failures.
+// The request span is made at ERROR level, so its route and id survive a filter that shows only
+// failures.
 #[tokio::test]
 async fn failure_context_survives_a_warn_filter() {
-    let logs = capture("warn", "GET", "/api/projects/test/tasks", true).await;
+    let logs = capture("warn", TAGS, true).await;
 
     assert!(logs.contains("request failed"), "logs:\n{logs}");
     assert!(!logs.contains("request served"), "logs:\n{logs}");
     for field in [
-        "route=/api/projects/{project}/tasks",
+        "route=/api/projects/{project}/tags",
         "request_id=",
         "error=",
     ] {
@@ -145,7 +116,7 @@ async fn failure_context_survives_a_warn_filter() {
 
 #[tokio::test]
 async fn debug_logs_one_line_per_served_request() {
-    let logs = capture("debug", "GET", "/health", false).await;
+    let logs = capture("debug", "/health", false).await;
 
     assert_eq!(
         logs.matches("request served").count(),
@@ -166,79 +137,16 @@ async fn debug_logs_one_line_per_served_request() {
 
 #[tokio::test]
 async fn info_filter_stays_quiet_for_a_fast_success() {
-    let logs = capture("info", "GET", "/health", false).await;
+    let logs = capture("info", "/health", false).await;
     assert!(
         logs.trim().is_empty(),
         "expected no per-request logs:\n{logs}"
     );
 }
 
-// A `default_branch` no local branch carries is not an error, so nothing refuses it and nothing
-// demotes the project. The reload line is the only place a reader can find out that the key it
-// committed does nothing, so it must report the branch the rebuild will use, not the one asked for.
 #[tokio::test]
-async fn a_reload_reports_the_resolved_default_branch_and_warns_when_it_is_not_the_configured_one()
-{
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
-    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
-    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
-    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
-    let project = Project::open("test", root.to_path_buf()).unwrap();
-
-    std::fs::write(
-        root.join(".plan/config.toml"),
-        "abbreviation = \"OPP\"\ndefault_branch = \"develp\"\n",
-    )
-    .unwrap();
-    let logs = capture_reload(&project);
-
-    assert!(logs.contains("default_branch=main"), "logs:\n{logs}");
-    assert!(
-        logs.contains("default_branch names no local branch"),
-        "logs:\n{logs}"
-    );
-    assert!(logs.contains("configured=develp"), "logs:\n{logs}");
-}
-
-// A branch the repository does carry is applied, so there is nothing to warn about.
-#[tokio::test]
-async fn a_reload_that_resolves_the_configured_branch_warns_about_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
-    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
-    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
-    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
-    git(root, &["branch", "dev"]);
-    let project = Project::open("test", root.to_path_buf()).unwrap();
-
-    std::fs::write(
-        root.join(".plan/config.toml"),
-        "abbreviation = \"OPP\"\ndefault_branch = \"dev\"\n",
-    )
-    .unwrap();
-    let logs = capture_reload(&project);
-
-    assert!(logs.contains("default_branch=dev"), "logs:\n{logs}");
-    assert!(
-        !logs.contains("names no local branch"),
-        "an applied branch is not worth a warning:\n{logs}"
-    );
-}
-
-fn capture_reload(project: &Project) -> String {
-    let buffer = Buffer::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::new("info"))
-        .with_writer(buffer.clone())
-        .with_ansi(false)
-        .finish();
-    tracing::subscriber::with_default(subscriber, || project.reload_config());
-    buffer.contents()
+async fn a_refusal_is_not_logged_as_a_failure() {
+    let logs = capture("debug", "/api/projects/test/tasks/OPP-9", false).await;
+    assert!(!logs.contains("request failed"), "logs:\n{logs}");
+    assert!(logs.contains("status=404"), "logs:\n{logs}");
 }

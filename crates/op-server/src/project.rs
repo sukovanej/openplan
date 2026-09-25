@@ -1,219 +1,253 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, RwLock};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock, Weak};
+use std::time::Duration;
 
-use op_api::{Abbreviation, ChangeEvent, ProjectStatus, ProjectView};
-use op_git::Repo;
-use op_index::{Index, IndexError};
-use op_store::{Config, STORE_DIR, Store, StoreError};
-use op_watch::{Change, Watcher};
-use tokio::sync::broadcast;
+use op_api::{BackendKind, ChangeEvent, ProjectStatus, ProjectView, Rfc3339, SyncView};
+use op_backend::{
+    Actor, Backend, BackendError, BackendEvent, Change, HeadMoved, LogQuery, Origin, RevisionId,
+    Schedule, SyncLoop, SyncStatus,
+};
+use op_backend_git::GitBackend;
+use op_backend_local::LocalBackend;
+use op_index::Index;
+use op_task::layout::{self, Document};
+use op_tracker::{HistoryQuery, TaskMergePolicy, Tracker, TrackerError};
+use tokio::sync::broadcast::error::RecvError;
 
-use crate::ProjectEntry;
+use crate::Publisher;
 
-// How long a rebuild is trusted while nothing has invalidated it. The watcher is what clears the
-// gate, and [[OPP-52]] says it can miss a working-tree edit; without a ceiling a missed event would
-// turn "stale until the next refresh" into "stale until the next watched change".
-const TRUSTED: Duration = Duration::from_secs(3);
+pub const STORE_DIR: &str = ".plan";
 
-// Two misses in sequence, so a root that momentarily reads as absent does not demote the project.
+// How far back the first load looks for the last change of each task. A task changed longer ago
+// than this reads as undated.
+const DATING_BUDGET: usize = 4096;
+// Two misses in sequence, so a root that reads as absent for a moment does not demote the project.
 const ROOT_MISSES: u32 = 2;
 pub const ROOT_POLL: Duration = Duration::from_secs(5);
 
-// The one place task ids are handed out. Handlers release the index mutex before their flock write,
-// so two concurrent creates would each compute the same `max + 1` from the matrix; this counter is
-// bumped atomically instead, and re-seeded from the floor on every call so a merge bringing in
-// higher ids — or a restart — advances it. Nothing is persisted: the ids on disk are the floor.
-#[derive(Debug, Default)]
-pub struct IdCounter(Mutex<u64>);
-
-impl IdCounter {
-    // `u64::MAX` is never issued, only used as the exhausted marker: any id already carrying it
-    // (hand-written, or merged in) would otherwise pin the counter there and hand the same number
-    // to every later create. Losing one number of 2^64 keeps "issued at most once" unconditional.
-    pub fn issue_above(&self, floor: u64) -> Option<u64> {
-        let mut next = self.0.lock().expect("id counter mutex poisoned");
-        let issued = (*next).max(floor.saturating_add(1));
-        if issued == u64::MAX {
-            *next = u64::MAX;
-            return None;
-        }
-        *next = issued + 1;
-        Some(issued)
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
-    #[error("no {STORE_DIR} task store found at {0}")]
+    #[error("no tasks at {0}; start them with `openplan init --abbreviation <ABC>`")]
     NoStore(PathBuf),
-    #[error("no git repository at {0}")]
+    #[error(
+        "{0} keeps its tasks in {STORE_DIR}/ beside the code; move them out with `openplan migrate`"
+    )]
+    NeedsMigration(PathBuf),
+    #[error("{0} is not in a git repository, so it cannot keep its tasks on a git branch")]
     NoRepo(PathBuf),
     #[error(transparent)]
-    Store(#[from] StoreError),
+    Tracker(#[from] TrackerError),
+    #[error(transparent)]
+    Backend(#[from] BackendError),
 }
 
-// A path is registered by the checkout that can serve it, not by the directory the caller happened
-// to stand in: the daemon outlives whichever worktree issued the first write, and a root pointing
-// into a removed one can no longer resolve a branch. Fall back to the caller only when the main
-// checkout cannot serve — a bare repository, or a branch that does not carry the task store.
-pub fn serve_root(repo: &Repo, root: &Path) -> PathBuf {
-    repo.main_worktree()
-        .filter(|main| Store::discover(main).is_ok())
-        .unwrap_or_else(|| root.to_path_buf())
+// Where a project's tasks live, found before anything opens them. `root` is the main checkout of a
+// git project, or the directory that holds `.plan` for a local one. Every worktree of a repository
+// resolves to one location, so they all see the same tasks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Location {
+    pub kind: BackendKind,
+    pub root: PathBuf,
+    pub git_common_dir: Option<PathBuf>,
 }
 
-// A registered path whose store or repository cannot be opened is skipped, not fatal: one broken
-// checkout must not take the task UI away from every other project on the machine. A name is the
-// coordinate every route resolves through, so a hand-written duplicate is skipped for the same
-// reason — the second entry would otherwise silently shadow the first.
-pub fn open_projects(entries: &[ProjectEntry]) -> Vec<Project> {
-    let mut names = BTreeSet::new();
-    let mut repos = BTreeSet::new();
-    entries
-        .iter()
-        // The daemon only ever writes a name `slug` produced, so this is about a name written by
-        // hand. `team/alpha` and the empty name are not path segments any request can carry, so the
-        // project would be served but unreachable — a silent one, where this is a loud one.
-        .filter(|entry| {
-            crate::registry::is_usable_name(&entry.name) || {
-                tracing::error!(
-                    project = %entry.name,
-                    path = %entry.path.display(),
-                    "skipping project: the name cannot address a project; use lowercase letters, \
-                     digits, and dashes"
-                );
-                false
-            }
-        })
-        .filter(|entry| {
-            names.insert(entry.name.clone()) || {
-                tracing::error!(project = %entry.name, "skipping project: the name is already taken");
-                false
-            }
-        })
-        .filter_map(
-            |entry| match Project::open(entry.name.clone(), entry.path.clone()) {
-                Ok(project) => Some(project),
-                Err(err) => {
-                    tracing::error!(
-                        project = %entry.name,
-                        path = %entry.path.display(),
-                        error = format!("{err:#}"),
-                        "skipping project"
-                    );
-                    None
+impl Location {
+    // `requested` is what the caller asked for; `None` takes what the path already holds.
+    pub fn find(path: &Path, requested: Option<BackendKind>) -> Result<Self, OpenError> {
+        let path = &canonical(path);
+        let checkout = op_backend_git::inspect(path);
+        let in_git = |checkout: &op_backend_git::Checkout| Location {
+            kind: BackendKind::Git,
+            root: canonical(checkout.root.as_deref().unwrap_or(path)),
+            git_common_dir: Some(canonical(&checkout.common_dir)),
+        };
+        let local = |root: &Path| Location {
+            kind: BackendKind::Local,
+            root: canonical(root),
+            git_common_dir: None,
+        };
+        match requested {
+            Some(BackendKind::Git) => checkout
+                .as_ref()
+                .map(in_git)
+                .ok_or_else(|| OpenError::NoRepo(canonical(path))),
+            Some(BackendKind::Local) => Ok(local(&store_root(path).unwrap_or(path.to_path_buf()))),
+            None => {
+                if let Some(checkout) = checkout.as_ref().filter(|checkout| checkout.has_tasks) {
+                    return Ok(in_git(checkout));
                 }
-            },
-        )
-        // A task number is issued at most once per *repository*, and each project issues it from its
-        // own counter above its own floor. Two worktrees of one repository registered as two
-        // projects would each hand out the same number, into two different `.plan` directories, and
-        // the store's id-taken retry cannot see the clash: each write lands in a file the other
-        // never looks at. `AppState::register` refuses the second one, so a hand-written registry
-        // has to be refused here for the same reason.
-        .filter(|project| {
-            repos.insert(project.git_common_dir().to_owned()) || {
-                tracing::error!(
-                    project = %project.name(),
-                    path = %project.path.display(),
-                    "skipping project: another project already serves this repository"
-                );
-                false
+                if let Some(root) = local_root(path) {
+                    return Ok(local(&root));
+                }
+                let workdir = checkout
+                    .as_ref()
+                    .and_then(|checkout| checkout.workdir.as_deref())
+                    .map(canonical);
+                if let Some(root) = workdir.and_then(|workdir| code_root(path, &workdir)) {
+                    return Err(OpenError::NeedsMigration(root));
+                }
+                match store_root(path) {
+                    Some(root) => Ok(local(&root)),
+                    None => Err(OpenError::NoStore(canonical(path))),
+                }
             }
-        })
-        .collect()
+        }
+    }
+
+    // A clone holds no tasks until it fetches them: git fetches no reference outside `refs/heads/`
+    // and `refs/tags/` by itself. So a checkout with no tasks asks its remote once.
+    pub fn find_or_join(path: &Path) -> Result<Self, OpenError> {
+        match Self::find(path, None) {
+            Err(OpenError::NoStore(_)) if fetched_from_remote(path) => Self::find(path, None),
+            found => found,
+        }
+    }
+
+    pub fn key(&self) -> &Path {
+        self.git_common_dir.as_deref().unwrap_or(&self.root)
+    }
 }
 
-// What a rebuild is measured against. `generation` is what keeps an invalidation that lands *during*
-// a rebuild: the rebuild clears the flag only when the generation it started at still stands, so a
-// change the walk was too early to see leaves the project dirty rather than falsely clean.
-#[derive(Debug)]
-struct Freshness {
-    dirty: bool,
-    generation: u64,
-    rebuilt_at: Option<Instant>,
-}
-
-impl Default for Freshness {
-    fn default() -> Self {
-        Self {
-            dirty: true,
-            generation: 0,
-            rebuilt_at: None,
+fn fetched_from_remote(path: &Path) -> bool {
+    if op_backend_git::inspect(path).is_none() {
+        return false;
+    }
+    match op_backend_git::fetch_tasks(path, op_backend_git::DEFAULT_REMOTE) {
+        Ok(fetched) => fetched,
+        Err(err) => {
+            tracing::warn!(path = %path.display(), error = %err, "cannot fetch the tasks from the remote");
+            false
         }
     }
 }
 
-// The independent ways a project stops being servable. They are tracked apart so the watchdog
-// promoting a returned root cannot also clear a broken `config.toml`, and the other way round.
+// `watch` picks up hand edits of a local directory as they happen; a one-shot caller reads them on
+// open instead.
+pub fn open_backend(
+    location: &Location,
+    machine: &Actor,
+    watch: bool,
+) -> Result<Arc<dyn Backend>, OpenError> {
+    Ok(match location.kind {
+        BackendKind::Git => {
+            let policy = Arc::new(TaskMergePolicy);
+            let mut options = op_backend_git::Options::new(policy);
+            options.machine = machine.clone();
+            Arc::new(GitBackend::open(&location.root, options)?)
+        }
+        BackendKind::Local => Arc::new(LocalBackend::open(
+            location.root.join(STORE_DIR),
+            op_backend_local::Options {
+                watch,
+                external_author: machine.clone(),
+            },
+        )?),
+    })
+}
+
+fn local_root(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|dir| holds_history(dir))
+        .map(Path::to_path_buf)
+}
+
+// A store copied by hand has no history yet, but its config marks it all the same. The daemon's
+// home is also named `.plan` (`~/.plan`), and it holds neither.
+fn store_root(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|dir| holds_history(dir) || holds_config(dir))
+        .map(Path::to_path_buf)
+}
+
+// The directory that keeps its tasks in `.plan/` beside the code, as before the tasks moved out.
+fn code_root(path: &Path, workdir: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .take_while(|dir| dir.starts_with(workdir))
+        .find(|dir| holds_config(dir))
+        .map(canonical)
+}
+
+fn holds_history(dir: &Path) -> bool {
+    dir.join(STORE_DIR)
+        .join(op_backend_local::HISTORY_FILE)
+        .is_file()
+}
+
+fn holds_config(dir: &Path) -> bool {
+    dir.join(STORE_DIR).join(layout::CONFIG).is_file()
+}
+
+pub(crate) fn canonical(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+// The name that signs what the daemon writes on its own: merges, sync notes, and edits from the
+// web UI. The repository's git identity where there is one.
+pub fn machine_actor(root: &Path) -> Actor {
+    op_backend_git::identity(root).unwrap_or_else(|| {
+        Actor::new(
+            std::env::var("USER")
+                .ok()
+                .filter(|user| !user.trim().is_empty())
+                .unwrap_or_else(|| "openplan".to_owned()),
+        )
+    })
+}
+
 #[derive(Debug, Default)]
 struct Health {
     root_gone: bool,
-    config_error: Option<String>,
-    // The last rebuild's failure, if it failed. Without it a repository that cannot be read would
-    // leave the merged board quietly — that board skips what cannot answer — while `/api/projects`
-    // still reported the project healthy with no tasks.
-    index_error: Option<String>,
+    error: Option<String>,
 }
 
-// Everything scoped to one repository. Each project keeps its own index mutex, so a rebuild in one —
-// object-DB reads and flock waits — never blocks a read in another. `IdCounter` is per project too,
-// which is what keeps "a number is issued at most once per repository" true across N of them.
 pub struct Project {
     name: RwLock<String>,
     pub path: PathBuf,
-    // Held beside the index as well as in it. `/api/projects` renders one of these per project, and
-    // it is on the hot path of every write now that the CLI resolves its project there; reading it
-    // through the index would make each listing wait on every project's rebuild in turn.
-    abbreviation: RwLock<Abbreviation>,
-    pub index: Arc<Mutex<Index>>,
-    git_common_dir: String,
-    store: Store,
-    repo: Repo,
-    ids: Arc<IdCounter>,
-    freshness: Mutex<Freshness>,
+    location: Location,
+    machine: Actor,
+    tracker: Tracker,
+    index: Mutex<Index>,
+    loaded: Mutex<Option<RevisionId>>,
+    sync: Mutex<Option<SyncLoop>>,
     health: Mutex<Health>,
-    watcher: Mutex<Option<Watcher>>,
-    rolling_updates: Mutex<Option<crate::rolling_updates::Handle>>,
     root_misses: AtomicU32,
 }
 
 impl Project {
-    pub fn new(
-        name: impl Into<String>,
-        path: PathBuf,
-        repo: Repo,
-        store: Store,
-        config: &Config,
-    ) -> Self {
-        Self {
+    pub fn open(name: impl Into<String>, location: Location) -> Result<Self, OpenError> {
+        let machine = machine_actor(&location.root);
+        let backend = open_backend(&location, &machine, true)?;
+        let project = Self {
             name: RwLock::new(name.into()),
-            path,
-            abbreviation: RwLock::new(config.abbreviation),
-            index: Arc::new(Mutex::new(Index::new(config))),
-            git_common_dir: git_common_dir(&repo),
-            store,
-            repo,
-            ids: Arc::new(IdCounter::default()),
-            freshness: Mutex::new(Freshness::default()),
+            path: location.root.clone(),
+            location,
+            machine,
+            tracker: Tracker::new(backend),
+            index: Mutex::new(Index::new()),
+            loaded: Mutex::new(None),
+            sync: Mutex::new(None),
             health: Mutex::new(Health::default()),
-            watcher: Mutex::new(None),
-            rolling_updates: Mutex::new(None),
             root_misses: AtomicU32::new(0),
-        }
+        };
+        project.reload(None);
+        Ok(project)
     }
 
-    pub fn open(name: impl Into<String>, path: PathBuf) -> Result<Self, OpenError> {
-        let repo = Repo::discover(&path).map_err(|_| OpenError::NoRepo(path.clone()))?;
-        let store = Store::discover(&path).map_err(|err| match err {
-            StoreError::StoreMissing => OpenError::NoStore(path.clone()),
-            other => OpenError::Store(other),
-        })?;
-        let config = Config::read(store.root()).map_err(StoreError::Config)?;
-        Ok(Self::new(name, path, repo, store, &config))
+    // The event pump holds the project weakly, so it ends with the backend's event channel once the
+    // project is dropped.
+    pub(crate) fn start(self: &Arc<Self>, publisher: Publisher) {
+        let events = self.tracker.backend().subscribe();
+        let project = Arc::downgrade(self);
+        std::thread::spawn(move || pump(project, events, publisher));
+        *self.lock_sync() =
+            SyncLoop::start(Arc::clone(self.tracker.backend()), Schedule::default());
+    }
+
+    pub fn stop(&self) {
+        let sync = self.lock_sync().take();
+        drop(sync);
     }
 
     pub fn name(&self) -> String {
@@ -224,188 +258,199 @@ impl Project {
         *self.name.write().expect("name lock poisoned") = name.to_owned();
     }
 
-    pub fn repo(&self) -> &Repo {
-        &self.repo
+    pub fn location(&self) -> &Location {
+        &self.location
     }
 
-    pub fn with_rolling_updates<T>(
-        &self,
-        read: impl FnOnce(&crate::rolling_updates::Handle) -> T,
-    ) -> Option<T> {
-        self.rolling_updates
-            .lock()
-            .expect("rolling-updates mutex poisoned")
-            .as_ref()
-            .map(read)
+    pub fn kind(&self) -> BackendKind {
+        self.location.kind
     }
 
-    pub fn rolling_updates_branch(&self) -> Option<String> {
-        self.with_rolling_updates(|_| op_git::ROLLING_UPDATES_BRANCH.to_owned())
+    pub fn tracker(&self) -> &Tracker {
+        &self.tracker
     }
 
-    pub fn store(&self) -> &Store {
-        &self.store
+    pub fn machine(&self) -> &Actor {
+        &self.machine
     }
 
-    pub fn ids(&self) -> &IdCounter {
-        &self.ids
+    pub fn index(&self) -> MutexGuard<'_, Index> {
+        self.index.lock().expect("index mutex poisoned")
     }
 
-    pub fn git_common_dir(&self) -> &str {
-        &self.git_common_dir
+    pub fn sync_status(&self) -> Option<SyncStatus> {
+        self.tracker
+            .backend()
+            .remote()
+            .map(|remote| remote.status())
+    }
+
+    pub fn sync_soon(&self) {
+        if let Some(sync) = self.lock_sync().as_ref() {
+            sync.sync_soon();
+        }
     }
 
     pub fn view(&self) -> ProjectView {
         ProjectView {
             name: self.name(),
             root: self.path.display().to_string(),
-            git_common_dir: self.git_common_dir.clone(),
-            abbreviation: self.abbreviation().to_string(),
+            git_common_dir: self
+                .location
+                .git_common_dir
+                .as_ref()
+                .map(|dir| dir.display().to_string()),
+            backend: self.location.kind,
+            abbreviation: self
+                .index()
+                .abbreviation()
+                .map(|abbreviation| abbreviation.to_string())
+                .unwrap_or_default(),
             status: self.status(),
-            rolling_updates_branch: self.rolling_updates_branch(),
+            sync: self.sync_status().as_ref().map(sync_view),
         }
     }
 
-    pub fn abbreviation(&self) -> Abbreviation {
-        *self
-            .abbreviation
-            .read()
-            .expect("abbreviation lock poisoned")
-    }
-
-    // Every id the matrix holds was formatted with the abbreviation it was built under, and
-    // `Index::set_config` only drops the parse cache — the matrix keeps the old spellings. A
-    // read that skipped the rebuild would hand one of them to `Index::number_of`, which panics on a
-    // key this abbreviation cannot parse and poisons the index for the project's whole life. So the
-    // index guard is held until the project is marked stale: releasing it between the two leaves a
-    // window where the index carries the new abbreviation, the matrix the old spellings, and nothing
-    // yet says a rebuild is due.
-    pub fn set_config(&self, config: &Config) {
-        let mut index = self.lock_index();
-        *self
-            .abbreviation
-            .write()
-            .expect("abbreviation lock poisoned") = config.abbreviation;
-        index.set_config(config);
-        self.mark_dirty();
-    }
-
-    // A read's index. The rebuild walks every local branch, and the merged board multiplies that by N
-    // projects per request, so it runs only when something says the matrix can have moved.
-    pub fn read_index(&self) -> Result<MutexGuard<'_, Index>, IndexError> {
-        let mut index = self.lock_index();
-        let Some(generation) = self.stale_at() else {
-            return Ok(index);
+    // Reads the head again. `changed` names what moved, so only those tasks are dated anew; `None`
+    // dates every task from the log.
+    pub fn reload(&self, changed: Option<&[Change]>) {
+        let result = self.load(changed);
+        let error = match &result {
+            Ok(plan_error) => plan_error.clone(),
+            Err(err) => Some(err.to_string()),
         };
-        self.record_rebuild(index.rebuild(&self.repo, &self.store))?;
-        self.mark_fresh(generation);
-        Ok(index)
-    }
-
-    // A failed rebuild leaves the project dirty, so the next read tries again and a repository that
-    // becomes readable clears this by itself.
-    fn record_rebuild(&self, result: Result<(), IndexError>) -> Result<(), IndexError> {
-        let reason = result.as_ref().err().map(|err| err.to_string());
-        if let Some(reason) = &reason {
-            tracing::error!(project = %self.name(), %reason, "the project index could not be rebuilt");
+        if let Some(reason) = &error {
+            tracing::warn!(project = %self.name(), %reason, "the project cannot serve its tasks");
         }
-        self.lock_health().index_error = reason;
-        result
+        self.lock_health().error = error;
     }
 
-    // An index that has just walked the repository, in all conditions. A write needs it because the
-    // gate answers "has anything changed since the last walk" where a write asks "is this branch
-    // writable right now". A one-shot caller needs it because the gate is cleared by the watcher,
-    // and a caller with no change stream to re-read on cannot wait out a watch that is late or
-    // ([[OPP-52]]) missed the edit outright.
-    pub fn rebuilt_index(&self) -> Result<MutexGuard<'_, Index>, IndexError> {
-        let generation = self.generation();
-        let mut index = self.lock_index();
-        self.record_rebuild(index.rebuild(&self.repo, &self.store))?;
-        self.mark_fresh(generation);
-        Ok(index)
+    // The head is read under the index lock: two writes that reload at once could otherwise finish
+    // in the other order and leave the index on the older head.
+    fn load(&self, changed: Option<&[Change]>) -> Result<Option<String>, TrackerError> {
+        let mut index = self.index();
+        let plan = self.tracker.plan()?;
+        let dates = match changed {
+            None => Dates::All(self.tracker.backend().log(&LogQuery {
+                prefix: format!("{}/", layout::TASKS),
+                before: None,
+                limit: Some(DATING_BUDGET),
+            })?),
+            Some(changes) => {
+                let mut dated = Vec::new();
+                for number in task_numbers(changes) {
+                    let last = self.tracker.task_history(
+                        number,
+                        &HistoryQuery {
+                            before: None,
+                            limit: Some(1),
+                        },
+                    )?;
+                    if let Some(entry) = last.first() {
+                        dated.push((number, entry.revision.at));
+                    }
+                }
+                Dates::Some(dated)
+            }
+        };
+        index.load(&plan)?;
+        *self.loaded.lock().expect("loaded mutex poisoned") = plan.revision().cloned();
+        match dates {
+            Dates::All(log) => index.date(&log),
+            Dates::Some(dated) => {
+                for (number, at) in dated {
+                    index.touch(number, at);
+                }
+            }
+        }
+        Ok(plan.config().err().map(|err| err.to_string()))
     }
 
-    pub fn mark_dirty(&self) {
-        let mut freshness = self.lock_freshness();
-        freshness.dirty = true;
-        freshness.generation = freshness.generation.wrapping_add(1);
+    // Reads what moved between the revision the index holds and the head.
+    pub(crate) fn catch_up(&self) {
+        let backend = self.tracker.backend();
+        let head = match backend.head() {
+            Ok(head) => head.revision().cloned(),
+            Err(err) => {
+                tracing::warn!(project = %self.name(), error = %err, "the head could not be read");
+                return;
+            }
+        };
+        let loaded = self.loaded.lock().expect("loaded mutex poisoned").clone();
+        let Some(head) = head.filter(|head| Some(head) != loaded.as_ref()) else {
+            return;
+        };
+        match backend.changes(loaded.as_ref(), &head) {
+            Ok(changes) => self.reload(Some(&changes)),
+            Err(_) => self.reload(None),
+        }
     }
 
-    // What stops this project from answering at all. A rebuild that failed is deliberately not among
-    // them: trying again is the only thing that can find the repository readable, so every route
-    // keeps trying and reports the failure it gets, rather than refusing forever from a latched flag.
+    fn moved(&self, moved: &HeadMoved, publisher: &Publisher) {
+        self.reload(Some(&moved.changes));
+        let project = self.name();
+        let via = moved.to.author.via.clone();
+        let (mut tags, mut config) = (false, false);
+        let keys: Vec<String> = {
+            let index = self.index();
+            task_numbers(&moved.changes)
+                .into_iter()
+                .map(|number| index.key(number))
+                .collect()
+        };
+        for id in keys {
+            publisher.publish(
+                ChangeEvent::TaskChanged {
+                    project: project.clone(),
+                    id,
+                },
+                via.clone(),
+            );
+        }
+        for change in &moved.changes {
+            match Document::of(&change.path) {
+                Document::Tag(_) => tags = true,
+                Document::Config => config = true,
+                _ => {}
+            }
+        }
+        if tags {
+            publisher.publish(
+                ChangeEvent::TagsChanged {
+                    project: project.clone(),
+                },
+                None,
+            );
+        }
+        if config {
+            publisher.publish(ChangeEvent::ProjectsChanged, None);
+        }
+        if moved.origin == Origin::Local {
+            self.sync_soon();
+        }
+    }
+
+    // What stops this project from answering at all. A project with no tasks yet still answers, so
+    // `init` can start them.
     pub fn blocked(&self) -> Option<String> {
-        let health = self.lock_health();
-        if health.root_gone {
-            return Some(format!(
-                "the project root {} no longer exists, so no branch resolves",
-                self.path.display()
-            ));
-        }
-        health.config_error.clone()
+        self.lock_health()
+            .root_gone
+            .then(|| format!("the project root {} no longer exists", self.path.display()))
     }
 
     pub fn status(&self) -> ProjectStatus {
-        let reason = self
-            .blocked()
-            .or_else(|| self.lock_health().index_error.clone());
-        match reason {
+        match self.blocked().or_else(|| self.lock_health().error.clone()) {
             Some(reason) => ProjectStatus::Error { reason },
             None => ProjectStatus::Ok,
         }
     }
 
-    // A valid change applies live and every key re-renders. One that leaves the file missing or
-    // invalid demotes this project alone: the daemon keeps serving every other one, and the next
-    // valid config promotes this one again.
-    pub fn reload_config(&self) {
-        match Config::read(self.store.root()) {
-            Ok(config) => {
-                // Applied before the project is unblocked. The other order leaves a window where a
-                // read passes the gate, finds the index fresh, and serves the old abbreviation's
-                // keys.
-                self.set_config(&config);
-                self.lock_health().config_error = None;
-                self.report_config(&config);
-            }
-            Err(err) => {
-                let reason = err.to_string();
-                tracing::error!(project = %self.name(), %reason, "the store config can no longer be read");
-                self.lock_health().config_error = Some(reason);
-            }
+    // One watchdog tick: whether the root still exists, and any write made outside this daemon.
+    // Answers whether the project's status moved.
+    pub fn poll(&self) -> bool {
+        if let Err(err) = self.tracker.backend().refresh() {
+            tracing::warn!(project = %self.name(), error = %err, "outside changes not read");
         }
-    }
-
-    // What the rebuild will make of the config, rather than what the file asks for. A
-    // `default_branch` no local branch carries is not an error — the task view falls back and keeps
-    // serving — so this log line is the only place it is ever mentioned.
-    fn report_config(&self, config: &Config) {
-        let resolved = self
-            .repo
-            .default_branch(config.default_branch.as_deref())
-            .ok()
-            .flatten();
-        tracing::info!(
-            project = %self.name(),
-            abbreviation = %config.abbreviation,
-            default_branch = %resolved.as_deref().unwrap_or("(none)"),
-            "store config reloaded"
-        );
-        if let Some(configured) = config.default_branch.as_deref() {
-            if resolved.as_deref() != Some(configured) {
-                tracing::warn!(
-                    project = %self.name(),
-                    %configured,
-                    "default_branch names no local branch; the task view falls back"
-                );
-            }
-        }
-    }
-
-    // One watchdog tick. Answers whether the project's status moved, which is what the caller turns
-    // into a `ProjectsChanged`.
-    pub fn poll_root(&self) -> bool {
         let misses = match self.path.is_dir() {
             true => {
                 self.root_misses.store(0, Ordering::Relaxed);
@@ -430,54 +475,12 @@ impl Project {
         moved
     }
 
-    pub fn is_watched(&self) -> bool {
-        self.watcher
-            .lock()
-            .expect("watcher mutex poisoned")
-            .is_some()
-    }
-
-    pub fn stop_watch(&self) {
-        let watcher = self.watcher.lock().expect("watcher mutex poisoned").take();
-        drop(watcher);
-    }
-
-    fn lock_index(&self) -> MutexGuard<'_, Index> {
-        self.index.lock().expect("index mutex poisoned")
-    }
-
-    fn lock_freshness(&self) -> MutexGuard<'_, Freshness> {
-        self.freshness.lock().expect("freshness mutex poisoned")
-    }
-
     fn lock_health(&self) -> MutexGuard<'_, Health> {
         self.health.lock().expect("health mutex poisoned")
     }
 
-    fn generation(&self) -> u64 {
-        self.lock_freshness().generation
-    }
-
-    // The generation to clear on success, or `None` when the last rebuild still stands. A project
-    // with no live watcher has nothing to invalidate it, so it is never counted as fresh.
-    fn stale_at(&self) -> Option<u64> {
-        let watched = self.is_watched();
-        let freshness = self.lock_freshness();
-        let fresh = watched
-            && !freshness.dirty
-            && freshness
-                .rebuilt_at
-                .is_some_and(|at| at.elapsed() < TRUSTED);
-        (!fresh).then_some(freshness.generation)
-    }
-
-    fn mark_fresh(&self, generation: u64) {
-        let mut freshness = self.lock_freshness();
-        if freshness.generation != generation {
-            return;
-        }
-        freshness.dirty = false;
-        freshness.rebuilt_at = Some(Instant::now());
+    fn lock_sync(&self) -> MutexGuard<'_, Option<SyncLoop>> {
+        self.sync.lock().expect("sync mutex poisoned")
     }
 }
 
@@ -490,69 +493,58 @@ impl std::fmt::Debug for Project {
     }
 }
 
-// Blocking: it shells out to git to make the branch, its worktree, and the attributes commit.
-pub fn start_rolling_updates(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
-    let mut held = project
-        .rolling_updates
-        .lock()
-        .expect("rolling-updates mutex poisoned");
-    if held.is_none() {
-        *held = crate::rolling_updates::Handle::start(project, events);
+enum Dates {
+    All(Vec<op_backend::LogEntry>),
+    Some(Vec<(u64, op_backend::Timestamp)>),
+}
+
+fn task_numbers(changes: &[Change]) -> BTreeSet<u64> {
+    changes
+        .iter()
+        .filter_map(|change| layout::task_number(&change.path))
+        .collect()
+}
+
+pub fn sync_view(status: &SyncStatus) -> SyncView {
+    SyncView {
+        remote: status.remote.clone(),
+        last_attempt: status.last_attempt.map(Rfc3339),
+        last_success: status.last_success.map(Rfc3339),
+        ahead: status.ahead,
+        behind: status.behind,
+        error: status.error.clone(),
     }
 }
 
-pub fn start_watch(project: &Arc<Project>, events: broadcast::Sender<ChangeEvent>) {
-    if project.is_watched() {
-        return;
-    }
-    let (tx, rx) = std::sync::mpsc::channel();
-    let watcher = match Watcher::start(project.repo.clone(), project.store.clone(), tx) {
-        Ok(watcher) => watcher,
-        Err(err) => {
-            tracing::warn!(project = %project.name(), "watch disabled: {err}");
-            return;
-        }
-    };
-    *project.watcher.lock().expect("watcher mutex poisoned") = Some(watcher);
-
-    // The bridge holds a strong reference, so the project outlives its map entry until the watcher
-    // is stopped; `stop_watch` is what ends the channel and with it this thread.
-    let watched = Arc::clone(project);
-    std::thread::spawn(move || {
-        for change in rx {
-            tracing::debug!(project = %watched.name(), ?change, "watcher change forwarded");
-            watched.mark_dirty();
-            // The rolling-updates worktree is watched like any other, so an edit the CLI wrote
-            // straight into it reaches the committer here without the write path knowing about it.
-            if change.branch() == Some(op_git::ROLLING_UPDATES_BRANCH) {
-                watched.with_rolling_updates(crate::rolling_updates::Handle::edited);
+fn pump(
+    project: Weak<Project>,
+    mut events: tokio::sync::broadcast::Receiver<BackendEvent>,
+    publisher: Publisher,
+) {
+    loop {
+        let event = match events.blocking_recv() {
+            Ok(event) => event,
+            Err(RecvError::Lagged(_)) => {
+                let Some(project) = project.upgrade() else {
+                    return;
+                };
+                project.reload(None);
+                publisher.publish(ChangeEvent::Resync, None);
+                continue;
             }
-            // The watcher reports a task by number, the file layer's spelling; the key it renders as
-            // is the daemon's to decide.
-            let event = match change {
-                Change::Task { number, branch } => ChangeEvent::TaskChanged {
-                    project: watched.name(),
-                    id: watched.abbreviation().format_key(number),
-                    branch,
+            Err(RecvError::Closed) => return,
+        };
+        let Some(project) = project.upgrade() else {
+            return;
+        };
+        match event {
+            BackendEvent::HeadMoved(moved) => project.moved(&moved, &publisher),
+            BackendEvent::Sync(_) => publisher.publish(
+                ChangeEvent::SyncChanged {
+                    project: project.name(),
                 },
-                Change::Tags { branch } => ChangeEvent::TagsChanged {
-                    project: watched.name(),
-                    branch,
-                },
-                Change::Config => {
-                    watched.reload_config();
-                    ChangeEvent::ProjectsChanged
-                }
-            };
-            let _ = events.send(event);
+                None,
+            ),
         }
-    });
-}
-
-pub(crate) fn git_common_dir(repo: &Repo) -> String {
-    repo.git_common_dir()
-        .canonicalize()
-        .unwrap_or_else(|_| repo.git_common_dir())
-        .display()
-        .to_string()
+    }
 }

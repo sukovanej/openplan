@@ -62,8 +62,8 @@ pub struct TaskPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub dependencies: Option<Vec<String>>,
-    // The whole set replaces the old one, which is what the store validates: a name the branch does
-    // not register fails the write even when the task already carried it.
+    // The whole set replaces the old one, which is what the tracker validates: a name the project
+    // does not register fails the write even when the task already carried it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub tags: Option<Vec<String>>,
@@ -95,4 +95,19 @@ impl TaskPatch {
         }
         Ok(())
     }
+}
+
+// One conflict block of a task's body, exactly as `TaskDetail::body` carries it, and the text to put
+// in its place: one version, both, or new text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ResolveConflict {
+    pub block: String,
+    pub text: String,
+}
+
+// A whole task file, as `openplan get` prints one, to write back over the task. The comment log is
+// append-only, so the text must keep every entry the task already has.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct WriteTaskFile {
+    pub text: String,
 }

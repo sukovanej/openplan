@@ -1,7 +1,8 @@
 # openplan
 
-Local-first, file-based task manager for humans and AI agents, in plain markdown.
-Design and work items in [.plan/tasks/](.plan/tasks/).
+Local-first task manager for humans and AI agents, in plain markdown. A team keeps its tasks in
+the git ref `refs/openplan/tasks`, which every daemon syncs with the remote; one person can keep
+them in a local directory instead.
 
 ## Install
 
@@ -67,20 +68,23 @@ same build.
 Without installing, run it from the checkout as `cargo run -p openplan -- <args>`:
 
 ```sh
-openplan list                       # tasks in ./.plan
+openplan init --abbreviation OPP    # start the tasks: in the ref refs/openplan/tasks in a repository
+openplan migrate                    # move a legacy .plan/ beside the code into that ref
+openplan list                       # the tasks of this project
+openplan history OPP-42             # who changed a task, and when
+openplan sync                       # exchange the tasks with the remote now
 openplan open                       # the web UI in your browser
 openplan server start               # background daemon: realtime API + web UI on 127.0.0.1:7373
-openplan server ping                # report daemon status
 openplan server stop                # stop the background daemon
-openplan project list               # repositories the daemon serves
-openplan merge-driver <O> <A> <B>   # git merge driver for .plan/**.md
+openplan project list               # projects the daemon serves
 ```
 
 Every task command goes through the daemon and starts it if it is down, so a query answers the same
-whether the CLI or the web UI asked it. `lint` is the exception: it checks the files in front of you
-and never starts a daemon. One daemon serves every repository on the machine: the first write from
-a repository registers it, and `openplan project` manages the registry. `OPENPLAN_HOME` picks the
-daemon's state directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
+whether the CLI or the web UI asked it. `lint` is the exception: it reads the tasks itself and never
+starts a daemon. One daemon serves every project on the machine: the first command from a project
+registers it, and `openplan project` manages the registry. The daemon syncs a git project with its
+remote every 30 seconds and soon after each write. `OPENPLAN_HOME` picks the daemon's state
+directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
 
 ### Desktop window
 

@@ -1,6 +1,6 @@
 [package]
 name = "op-task"
-description = "Task file model: frontmatter + body, id/title conventions"
+description = "Task file model: frontmatter + body, id/title conventions, document layout, and the three-way task merge"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,6 +14,7 @@ jiff.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+toml.workspace = true
 utoipa.workspace = true
 
 [lints]

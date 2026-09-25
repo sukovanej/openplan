@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use op_lint::{Code, CreatedSource, Snapshot, Uncommitted, fix, lint};
 use op_task::{Abbreviation, PartialMetadata, Timestamp, parse_partial};
@@ -190,58 +189,28 @@ fn uncommitted_missing_created_left_untouched() {
     );
 }
 
-struct FirstCommitDates {
-    repo: op_git::Repo,
-    root: PathBuf,
-}
+struct FirstRevision(Timestamp);
 
-impl CreatedSource for FirstCommitDates {
-    fn created(&self, path: &Path) -> Option<Timestamp> {
-        let relative = path.strip_prefix(&self.root).ok()?;
-        self.repo.first_commit(relative).ok().flatten()?.at.ok()
+impl CreatedSource for FirstRevision {
+    fn created(&self, _path: &Path) -> Option<Timestamp> {
+        Some(self.0)
     }
-}
-
-fn git(dir: &Path, args: &[&str], envs: &[(&str, &str)]) {
-    let mut command = Command::new("git");
-    command.current_dir(dir).args(args);
-    for (key, value) in envs {
-        command.env(key, value);
-    }
-    let status = command.status().expect("run git");
-    assert!(status.success(), "git {args:?} failed");
 }
 
 #[test]
-fn created_backfill_from_first_commit_round_trips() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = std::fs::canonicalize(dir.path()).unwrap();
-
-    let tasks = root.join(".plan/tasks");
-    std::fs::create_dir_all(&tasks).unwrap();
-    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
-    let file = tasks.join("00042-backfill-me.md");
-    std::fs::write(&file, "---\nstatus: todo\n---\n# Backfill me\n").unwrap();
-
-    // git records the author date only from these env vars, so the first commit's time is what the
-    // backfill must reproduce.
-    let date = "2026-01-15T08:30:00Z";
-    git(&root, &["init", "-q"], &[]);
-    git(&root, &["config", "user.email", "t@example.com"], &[]);
-    git(&root, &["config", "user.name", "Test"], &[]);
-    git(&root, &["add", "."], &[]);
-    git(
-        &root,
-        &["commit", "-q", "-m", "add task"],
-        &[("GIT_AUTHOR_DATE", date), ("GIT_COMMITTER_DATE", date)],
+fn created_backfill_from_the_first_revision_round_trips() {
+    let root = PathBuf::from(ROOT);
+    let file = tpath("00042-backfill-me.md");
+    let snap = Snapshot::from_files(
+        root.clone(),
+        abbr(),
+        vec![(
+            file.clone(),
+            "---\nstatus: todo\n---\n# Backfill me\n".to_owned(),
+        )],
     );
-
-    let store = op_store::Store::open(&root, abbr()).unwrap();
-    let snap = Snapshot::from_store(&store).unwrap();
-    let source = FirstCommitDates {
-        repo: op_git::Repo::discover(&root).unwrap(),
-        root: root.clone(),
-    };
+    let date = "2026-01-15T08:30:00Z";
+    let source = FirstRevision(date.parse().unwrap());
 
     let before = lint(&snap);
     assert!(
@@ -259,7 +228,7 @@ fn created_backfill_from_first_commit_round_trips() {
         PartialMetadata::Fields(fields) => assert_eq!(
             fields.created,
             Ok(expected),
-            "created must be backfilled from the first commit's author time"
+            "created must be backfilled from the first revision's time"
         ),
         other => panic!("expected parsed frontmatter fields, got {other:?}"),
     }
@@ -355,36 +324,57 @@ fn a_tags_entry_that_names_no_tag_leaves_the_whole_field_untouched() {
 }
 
 #[test]
-fn fix_store_reads_and_repairs_the_tag_registry_on_disk() {
+fn fix_plan_repairs_the_documents_in_one_revision() {
     let dir = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(dir.path()).unwrap();
-    std::fs::create_dir_all(root.join(".plan/tasks")).unwrap();
-    std::fs::create_dir_all(root.join(".plan/tags")).unwrap();
-    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").unwrap();
-
-    let tag = root.join(".plan/tags/backend.md");
-    std::fs::write(&tag, "---\n---\n# Backend\n\nWork below the API.\n").unwrap();
-    let task = root.join(".plan/tasks/00042-tagged.md");
+    let plan_dir = root.join(".plan");
+    std::fs::create_dir_all(plan_dir.join("tasks")).unwrap();
+    std::fs::create_dir_all(plan_dir.join("tags")).unwrap();
+    std::fs::write(plan_dir.join("config.toml"), "abbreviation = \"OPP\"\n").unwrap();
     std::fs::write(
-        &task,
+        plan_dir.join("tags/backend.md"),
+        "---\n---\n# Backend\n\nWork below the API.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        plan_dir.join("tags/wip.md"),
+        "---\ncolor: slate\n---\n# Wip\n",
+    )
+    .unwrap();
+    std::fs::write(
+        plan_dir.join("tasks/00042-tagged.md"),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags: [wip, backend]\n---\n# Tagged\n",
     )
     .unwrap();
+    let backend = op_backend_local::LocalBackend::open(&plan_dir, Default::default()).unwrap();
+    let tracker = op_tracker::Tracker::new(std::sync::Arc::new(backend));
+    let actor = op_backend::Actor::new("Ada");
+    let revisions = || tracker.history(&Default::default()).unwrap().len();
+    let before = revisions();
 
-    let store = op_store::Store::open(&root, abbr()).unwrap();
-    let changed = op_lint::fix_store(&store, &Uncommitted).unwrap();
+    let snap = Snapshot::from_plan(&tracker.plan().unwrap(), &plan_dir, &root).unwrap();
+    let changed =
+        op_lint::fix_plan(&tracker, &actor, &snap, &plan_dir, &Uncommitted, &|_| true).unwrap();
     assert_eq!(changed.len(), 2, "both files are repaired: {changed:?}");
+    assert_eq!(revisions(), before + 1);
 
+    let plan = tracker.plan().unwrap();
     assert_eq!(
-        std::fs::read_to_string(&tag).unwrap(),
+        plan.snapshot()
+            .read_text("tags/backend.md")
+            .unwrap()
+            .unwrap(),
         "---\ncolor: amber\n---\n# Backend\n\nWork below the API.\n"
     );
     assert_eq!(
-        std::fs::read_to_string(&task).unwrap(),
+        plan.raw(42).unwrap(),
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\ntags:\n- backend\n- wip\n---\n# Tagged\n"
     );
-
-    let after = Snapshot::from_store(&store).unwrap();
+    let after = Snapshot::from_plan(&plan, &plan_dir, &root).unwrap();
     assert!(lint(&after).is_empty(), "{:?}", lint(&after));
-    assert!(op_lint::fix_store(&store, &Uncommitted).unwrap().is_empty());
+    assert!(
+        op_lint::fix_plan(&tracker, &actor, &after, &plan_dir, &Uncommitted, &|_| true)
+            .unwrap()
+            .is_empty()
+    );
 }

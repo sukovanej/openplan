@@ -35,6 +35,11 @@ export const ApiBaseUrl = Context.Reference<string>("app/ApiBaseUrl", {
   defaultValue: () => "",
 })
 
+export interface HistoryPage {
+  readonly before?: string
+  readonly limit: number
+}
+
 const asBody = (body: unknown, status: number): Api.ApiErrorBody =>
   typeof body === "object" && body !== null && typeof (body as Api.ApiErrorBody).message === "string"
     ? (body as Api.ApiErrorBody)
@@ -78,17 +83,23 @@ const refusal = (error: { readonly response: { readonly status: number }; readon
     }),
   )
 
-// A status no route documents (a proxy's 502, say): the generated client folds it into a
-// transport-shaped error, leaving the status as the only thing worth reporting.
-const unexpected = (error: HttpClientError.HttpClientError) =>
-  Effect.fail(
-    error.reason._tag === "StatusCodeError"
-      ? new TaskRejected({
-          status: error.reason.response.status,
-          message: `request failed with status ${error.reason.response.status}`,
-        })
-      : error,
-  )
+const parsed = (text: string | undefined): unknown => {
+  try {
+    return JSON.parse(text ?? "")
+  } catch {
+    return undefined
+  }
+}
+
+// A status no route documents — the daemon's own 500, or a proxy's 502 — reaches here folded into a
+// transport-shaped error. `asReason` already gave its body the documented shape, and the generated
+// client keeps that body as the description, so the reason survives the fold.
+const unexpected = (error: HttpClientError.HttpClientError) => {
+  if (error.reason._tag !== "StatusCodeError") return Effect.fail(error)
+  const status = error.reason.response.status
+  const body = asBody(parsed(error.reason.description), status)
+  return Effect.fail(new TaskRejected({ status, message: body.message, reason: body.reason }))
+}
 
 export const getFlow = (
   selection: FlowSelection,
@@ -110,7 +121,6 @@ export const getFlow = (
       GetFlow404: refusal,
       GetFlow422: (error) =>
         Effect.fail(new FlowCycles({ message: error.cause.message, cycles: error.cause.cycles ?? [] })),
-      GetFlow500: refusal,
       GetFlow503: refusal,
       HttpClientError: unexpected,
     }),
@@ -129,85 +139,67 @@ export const listTasks = (
 ): Effect.Effect<ReadonlyArray<Api.TaskListItem>, ApiError, HttpClient.HttpClient> =>
   Effect.flatMap(tasks, (client) => client.listTasks(project, undefined)).pipe(
     Effect.catchTags({
-      ListTasks400: refusal,
       ListTasks404: refusal,
-      ListTasks500: refusal,
       ListTasks503: refusal,
       HttpClientError: unexpected,
     }),
   )
 
-// The tag registry a tag name resolves against. `branch` names the worktree that holds it — the same
-// one a tags write is validated against — and omitting it reads the served worktree's.
-export const listTags = (
-  project: string,
-  branch?: string,
-): Effect.Effect<ReadonlyArray<Api.TagView>, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.listTags(project, { params: { branch } })).pipe(
+export const listTags = (project: string): Effect.Effect<ReadonlyArray<Api.TagView>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.listTags(project, undefined)).pipe(
     Effect.catchTags({
-      ListTags400: refusal,
       ListTags404: refusal,
-      ListTags409: refusal,
       ListTags422: refusal,
-      ListTags500: refusal,
       ListTags503: refusal,
       HttpClientError: unexpected,
     }),
   )
 
-// A tag is registered in one worktree's `.plan/tags`, so `branch` names the worktree the write lands
-// in — the same one the tasks that reference it are written to.
 export const createTag = (
   project: string,
   input: Api.CreateTag,
-  branch?: string,
 ): Effect.Effect<Api.TagView, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.createTag(project, { payload: input, params: { branch } })).pipe(
+  Effect.flatMap(tasks, (client) => client.createTag(project, { payload: input })).pipe(
     Effect.catchTags({
       CreateTag400: refusal,
       CreateTag404: refusal,
       CreateTag409: refusal,
       CreateTag422: refusal,
-      CreateTag500: refusal,
       CreateTag503: refusal,
       HttpClientError: unexpected,
     }),
   )
 
-// `name` renames the tag, which rewrites the `tags:` of every task on the branch that holds the old
-// name; `color` and `description` change the tag file alone.
+// `name` renames the tag, which rewrites the `tags:` of every task that holds the old name; `color`
+// and `description` change the tag file alone.
 export const patchTag = (
   project: string,
   name: string,
   patch: Api.TagPatch,
-  branch?: string,
 ): Effect.Effect<Api.TagView, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.patchTag(project, name, { payload: patch, params: { branch } })).pipe(
+  Effect.flatMap(tasks, (client) => client.patchTag(project, name, { payload: patch })).pipe(
     Effect.catchTags({
       PatchTag400: refusal,
       PatchTag404: refusal,
       PatchTag409: refusal,
       PatchTag422: refusal,
-      PatchTag500: refusal,
       PatchTag503: refusal,
       HttpClientError: unexpected,
     }),
   )
 
-// Without `force` the daemon refuses while tasks on this branch reference the tag, and says how many
-// do. With it the tag goes and those references are left dangling, so it is never sent unasked.
+// Without `force` the daemon refuses while tasks reference the tag, and says how many do. With it the
+// tag goes and those references are left dangling, so it is never sent unasked.
 export const deleteTag = (
   project: string,
   name: string,
   force: boolean,
-  branch?: string,
 ): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.deleteTag(project, name, { params: { force, branch } })).pipe(
+  Effect.flatMap(tasks, (client) => client.deleteTag(project, name, { params: { force } })).pipe(
     Effect.catchTags({
       DeleteTag400: refusal,
       DeleteTag404: refusal,
       DeleteTag409: refusal,
-      DeleteTag500: refusal,
       DeleteTag503: refusal,
       HttpClientError: unexpected,
     }),
@@ -217,9 +209,7 @@ export const deleteTag = (
 export const getBoard = (project: string): Effect.Effect<Api.Board, ApiError, HttpClient.HttpClient> =>
   Effect.flatMap(tasks, (client) => client.getBoard(project, undefined)).pipe(
     Effect.catchTags({
-      GetBoard400: refusal,
       GetBoard404: refusal,
-      GetBoard500: refusal,
       GetBoard503: refusal,
       HttpClientError: unexpected,
     }),
@@ -230,12 +220,7 @@ export const getBoard = (project: string): Effect.Effect<Api.Board, ApiError, Ht
 export const getMergedBoard: Effect.Effect<Api.Board, ApiError, HttpClient.HttpClient> = Effect.flatMap(
   tasks,
   (client) => client.getMergedBoard(undefined),
-).pipe(
-  Effect.catchTags({
-    GetMergedBoard500: refusal,
-    HttpClientError: unexpected,
-  }),
-)
+).pipe(Effect.catchTags({ HttpClientError: unexpected }))
 
 // Every servable project at once, matching the merged board the palette opens over. An empty query
 // matches nothing, so the caller may send every keystroke.
@@ -243,24 +228,14 @@ export const searchTasks = (
   query: string,
 ): Effect.Effect<ReadonlyArray<Api.SearchHit>, ApiError, HttpClient.HttpClient> =>
   Effect.flatMap(tasks, (client) => client.searchAll({ params: { q: query } })).pipe(
-    Effect.catchTags({
-      SearchAll500: refusal,
-      HttpClientError: unexpected,
-    }),
+    Effect.catchTags({ HttpClientError: unexpected }),
   )
 
-// Omitting `branch` returns the headline (current-worktree) version; passing one returns that
-// branch's version. Either way the response carries every branch the task lives on.
-export const getTask = (
-  project: string,
-  id: string,
-  branch?: string,
-): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.getTask(project, id, { params: { branch } })).pipe(
+export const getTask = (project: string, id: string): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.getTask(project, id, undefined)).pipe(
     Effect.catchTags({
       GetTask400: refusal,
       GetTask404: () => Effect.fail(new TaskNotFound({ id })),
-      GetTask500: refusal,
       GetTask503: refusal,
       HttpClientError: unexpected,
     }),
@@ -268,110 +243,109 @@ export const getTask = (
 
 // `parent` is three-state to match the server: omit the key to leave it unchanged, JSON `null` to
 // clear it (top level), or an id to set it. `rank`, `status`, and `dependencies` are set-only.
-// `branch` writes that one branch's version. The page passes the branch it is showing, so an edit
-// changes the version on screen; omitting it leaves the daemon to write wherever the task lives.
 export const patchTask = (
   project: string,
   id: string,
   patch: Api.TaskPatch,
-  branch?: string,
 ): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.patchTask(project, id, { payload: patch, params: { branch } })).pipe(
+  Effect.flatMap(tasks, (client) => client.patchTask(project, id, { payload: patch })).pipe(
     Effect.catchTags({
       PatchTask400: refusal,
       PatchTask404: () => Effect.fail(new TaskNotFound({ id })),
       PatchTask409: refusal,
-      PatchTask500: refusal,
       PatchTask503: refusal,
       HttpClientError: unexpected,
     }),
   )
 
-// The edits waiting on the rolling-updates branch, and the conflict holding them.
-export const getRollingUpdates = (
-  project: string,
-): Effect.Effect<Api.RollingUpdates, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.getRollingUpdates(project, undefined)).pipe(
-    Effect.catchTags({
-      GetRollingUpdates404: refusal,
-      GetRollingUpdates500: refusal,
-      GetRollingUpdates503: refusal,
-      HttpClientError: unexpected,
-    }),
-  )
-
-// One pending task's change, as git's own unified diff against the default branch.
-export const getRollingUpdateDiff = (
-  project: string,
-  task: string,
-): Effect.Effect<Api.TaskDiff, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.getRollingUpdateDiff(project, task, undefined)).pipe(
-    Effect.catchTags({
-      GetRollingUpdateDiff400: refusal,
-      GetRollingUpdateDiff404: refusal,
-      GetRollingUpdateDiff500: refusal,
-      GetRollingUpdateDiff503: refusal,
-      HttpClientError: unexpected,
-    }),
-  )
-
-// Pushes the branch and opens a pull request. It never writes the default branch, so a person still
-// merges. The 409 carries the reason a person acts on: a conflict holds the branch, or it holds
-// nothing the default branch lacks.
-export const publishRollingUpdates = (project: string): Effect.Effect<Api.Published, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.publishRollingUpdates(project, undefined)).pipe(
-    Effect.catchTags({
-      PublishRollingUpdates404: refusal,
-      PublishRollingUpdates409: refusal,
-      PublishRollingUpdates503: refusal,
-      HttpClientError: unexpected,
-    }),
-  )
-
-// Puts one pending task back to what the default branch says, or takes it away when the default
-// branch never had it. The branch keeps its earlier commits; nothing rewrites history.
-export const discardRollingUpdate = (
+// `block` is the whole block as the body holds it, markers included: the daemon finds the block by
+// that text, and answers 409 once the block is no longer in the task.
+export const resolveConflict = (
   project: string,
   id: string,
-): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.discardRollingUpdate(project, id, undefined)).pipe(
+  block: string,
+  text: string,
+): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.resolveConflict(project, id, { payload: { block, text } })).pipe(
     Effect.catchTags({
-      DiscardRollingUpdate400: refusal,
-      DiscardRollingUpdate404: refusal,
-      DiscardRollingUpdate409: refusal,
-      DiscardRollingUpdate500: refusal,
-      DiscardRollingUpdate503: refusal,
+      ResolveConflict400: refusal,
+      ResolveConflict404: () => Effect.fail(new TaskNotFound({ id })),
+      ResolveConflict409: refusal,
+      ResolveConflict503: refusal,
       HttpClientError: unexpected,
     }),
   )
 
-// Puts the whole branch back on the default branch. It is also the only way out of a stopped
-// rebase, so it stays reachable while a conflict blocks everything else.
-export const discardRollingUpdates = (project: string): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.discardRollingUpdates(project, undefined)).pipe(
-    Effect.catchTags({
-      DiscardRollingUpdates404: refusal,
-      DiscardRollingUpdates409: refusal,
-      DiscardRollingUpdates503: refusal,
-      HttpClientError: unexpected,
-    }),
-  )
-
-// `branch` puts the new task on one branch's worktree. A subtask names the branch its parent lives
-// on, so the pair stays together instead of parting on whatever the daemon's root has checked out.
 export const createTask = (
   project: string,
   input: Api.CreateTask,
-  branch?: string,
 ): Effect.Effect<string, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.createTask(project, { payload: input, params: { branch } })).pipe(
+  Effect.flatMap(tasks, (client) => client.createTask(project, { payload: input })).pipe(
     Effect.map((created) => created.id),
     Effect.catchTags({
       CreateTask400: refusal,
       CreateTask404: refusal,
       CreateTask409: refusal,
-      CreateTask500: refusal,
       CreateTask503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const getProjectHistory = (
+  project: string,
+  page: HistoryPage,
+): Effect.Effect<ReadonlyArray<Api.HistoryEntry>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.projectHistory(project, { params: page })).pipe(
+    Effect.catchTags({
+      ProjectHistory404: refusal,
+      ProjectHistory503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const getTaskHistory = (
+  project: string,
+  id: string,
+  page: HistoryPage,
+): Effect.Effect<ReadonlyArray<Api.HistoryEntry>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.taskHistory(project, id, { params: page })).pipe(
+    Effect.catchTags({
+      TaskHistory400: refusal,
+      TaskHistory404: refusal,
+      TaskHistory503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const getTaskRevision = (
+  project: string,
+  id: string,
+  revision: string,
+): Effect.Effect<Api.TaskAtRevision, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.taskRevision(project, id, revision, undefined)).pipe(
+    Effect.catchTags({
+      TaskRevision400: refusal,
+      TaskRevision404: refusal,
+      TaskRevision503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const getSync = (project: string): Effect.Effect<Api.SyncView, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.getSync(project, undefined)).pipe(
+    Effect.catchTags({
+      GetSync404: refusal,
+      GetSync503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const runSync = (project: string): Effect.Effect<Api.SyncResult, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.runSync(project, undefined)).pipe(
+    Effect.catchTags({
+      RunSync404: refusal,
+      RunSync502: refusal,
+      RunSync503: refusal,
       HttpClientError: unexpected,
     }),
   )

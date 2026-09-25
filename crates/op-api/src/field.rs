@@ -23,14 +23,37 @@ impl std::fmt::Display for Rfc3339 {
     }
 }
 
-// A frontmatter field on the read path: its parsed value, or a per-field error, so a client can
-// render every field that parsed and flag only the ones that did not. Serialized untagged — a value
-// is its bare JSON (`"todo"`, `null`, `["a"]`), an error is a `{ "kind": … }` object.
+// A frontmatter field on the read path: its parsed value, a per-field error, or a conflict that
+// sync left for a person to settle. A client renders every field that parsed and flags the rest.
+// Serialized untagged: a value is its bare JSON (`"todo"`, `null`, `["a"]`); an error and a
+// conflict are objects with a `kind`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(untagged)]
 pub enum Field<T> {
     Value(T),
     Error(FieldError),
+    Conflict(Box<FieldConflict<T>>),
+}
+
+// Two sides of a sync changed the field differently. `value` is the published version, in force
+// until someone sets the field; `sides` holds both versions, the published one last.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FieldConflict<T> {
+    pub kind: ConflictTag,
+    pub value: T,
+    pub sides: Vec<ConflictSide<T>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictTag {
+    Conflict,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ConflictSide<T> {
+    pub label: String,
+    pub value: T,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -52,26 +75,40 @@ impl<T> From<op_task::FieldResult<T>> for Field<T> {
     }
 }
 
+// A conflict reads as its published value, so the board, the tree, and the sort treat the task as
+// the team last saw it.
 impl<T> Field<T> {
     pub fn value(self) -> Option<T> {
         match self {
             Field::Value(value) => Some(value),
+            Field::Conflict(conflict) => Some(conflict.value),
             Field::Error(_) => None,
         }
     }
-}
 
-impl<T> Field<T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Field<U> {
+    pub fn map<U>(self, f: impl Fn(T) -> U) -> Field<U> {
         match self {
             Field::Value(value) => Field::Value(f(value)),
             Field::Error(err) => Field::Error(err),
+            Field::Conflict(conflict) => Field::Conflict(Box::new(FieldConflict {
+                kind: conflict.kind,
+                value: f(conflict.value),
+                sides: conflict
+                    .sides
+                    .into_iter()
+                    .map(|side| ConflictSide {
+                        label: side.label,
+                        value: f(side.value),
+                    })
+                    .collect(),
+            })),
         }
     }
 
     pub fn into_result(self) -> op_task::FieldResult<T> {
         match self {
             Field::Value(value) => Ok(value),
+            Field::Conflict(conflict) => Ok(conflict.value),
             Field::Error(FieldError::Missing) => Err(op_task::FieldError::Missing),
             Field::Error(FieldError::Invalid { message }) => {
                 Err(op_task::FieldError::Invalid(message))
@@ -81,15 +118,46 @@ impl<T> Field<T> {
 
     pub fn as_error(&self) -> Option<&FieldError> {
         match self {
-            Field::Value(_) => None,
             Field::Error(err) => Some(err),
+            Field::Value(_) | Field::Conflict(_) => None,
         }
     }
 
     pub fn as_value(&self) -> Option<&T> {
         match self {
             Field::Value(value) => Some(value),
+            Field::Conflict(conflict) => Some(&conflict.value),
             Field::Error(_) => None,
+        }
+    }
+
+    pub fn is_conflict(&self) -> bool {
+        matches!(self, Field::Conflict(_))
+    }
+}
+
+impl<T: PartialEq + Clone> Field<T> {
+    // The published version and the other one `conflict` keeps. An other version that does not
+    // parse leaves the published one alone; the task still counts the conflict.
+    pub fn in_conflict(self, other: Field<T>, conflict: &op_task::FieldConflict) -> Field<T> {
+        match (self, other) {
+            (Field::Value(value), Field::Value(other)) if value != other => {
+                Field::Conflict(Box::new(FieldConflict {
+                    kind: ConflictTag::Conflict,
+                    sides: vec![
+                        ConflictSide {
+                            label: conflict.other_label.clone(),
+                            value: other,
+                        },
+                        ConflictSide {
+                            label: conflict.label.clone(),
+                            value: value.clone(),
+                        },
+                    ],
+                    value,
+                }))
+            }
+            (published, _) => published,
         }
     }
 }

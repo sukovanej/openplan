@@ -1,13 +1,14 @@
 # openplan
 
-Local-first task manager (Rust workspace). Design and work live in `.plan/tasks/`.
+Local-first task manager (Rust workspace). Design and work live in openplan tasks in the git ref
+`refs/openplan/tasks`; read and write them only with the `openplan` CLI.
 
 ## Worktrees
 
 Never write to the main checkout. Every change to a tracked file goes in a
-separate git worktree — source, docs, config, and `.plan/tasks/` task files
-alike, including writes made through the `openplan` CLI. "It's one line", "it's
-just a task", and "it's only the tracker, not code" are not exceptions.
+separate git worktree — source, docs, and config alike. "It's one line" is not
+an exception. A task write through the `openplan` CLI changes no tracked file,
+so it needs no worktree.
 
 Before the first write of any unit of work, confirm you are not in the primary
 worktree (in it, `git rev-parse --git-dir` equals `--git-common-dir`); if you

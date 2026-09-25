@@ -1,68 +1,12 @@
-use axum::body::Body;
-use axum::http::{Request, StatusCode, header};
-use axum::response::Response;
-use http_body_util::BodyExt;
-use op_server::{AppState, Project, app};
+mod common;
+
+use axum::http::StatusCode;
+use common::*;
+use op_server::AppState;
 use serde_json::{Value, json};
-use tower::ServiceExt;
-
-fn repository(dir: &std::path::Path, abbreviation: &str) {
-    git(dir, &["init", "-q", "-b", "main"]);
-    git(dir, &["config", "user.email", "t@example.com"]);
-    git(dir, &["config", "user.name", "Test"]);
-    std::fs::create_dir_all(dir.join(".plan/tasks")).unwrap();
-    std::fs::write(
-        dir.join(".plan/config.toml"),
-        format!("abbreviation = \"{abbreviation}\"\n"),
-    )
-    .unwrap();
-    git(dir, &["commit", "-q", "--allow-empty", "-m", "init"]);
-}
-
-fn git(root: &std::path::Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?}");
-}
-
-fn open(name: &str, path: &std::path::Path) -> Project {
-    Project::open(name, path.to_path_buf()).unwrap()
-}
-
-async fn send(state: &AppState, method: &str, uri: &str, body: Option<Value>) -> Response {
-    let builder = Request::builder().method(method).uri(uri);
-    let request = match body {
-        Some(value) => builder
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&value).unwrap()))
-            .unwrap(),
-        None => builder.body(Body::empty()).unwrap(),
-    };
-    app(state.clone()).oneshot(request).await.unwrap()
-}
-
-async fn body_json(response: Response) -> Value {
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    serde_json::from_slice(&bytes).unwrap()
-}
-
-async fn create(state: &AppState, project: &str, body: Value) -> String {
-    let response = send(
-        state,
-        "POST",
-        &format!("/api/projects/{project}/tasks"),
-        Some(body),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-    body_json(response).await["id"].as_str().unwrap().to_owned()
-}
 
 async fn todo(state: &AppState, project: &str, title: &str, dependencies: &[&str]) -> String {
-    create(
+    create_in(
         state,
         project,
         json!({ "title": title, "status": "todo", "dependencies": dependencies }),
@@ -71,9 +15,7 @@ async fn todo(state: &AppState, project: &str, title: &str, dependencies: &[&str
 }
 
 async fn flow(state: &AppState, query: &str) -> Value {
-    let response = send(state, "GET", &format!("/api/flow{query}"), None).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    body_json(response).await
+    json_of(state, &format!("/api/flow{query}")).await
 }
 
 fn waves(flow: &Value) -> Vec<(String, String, u64)> {
@@ -95,9 +37,10 @@ fn waves(flow: &Value) -> Vec<(String, String, u64)> {
 fn two_projects() -> (tempfile::TempDir, tempfile::TempDir, AppState) {
     let alpha = tempfile::tempdir().unwrap();
     let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "AAA");
-    repository(beta.path(), "BBB");
-    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+    let state = AppState::new([
+        local_project("alpha", alpha.path(), "AAA"),
+        local_project("beta", beta.path(), "BBB"),
+    ]);
     (alpha, beta, state)
 }
 
@@ -134,8 +77,8 @@ async fn a_project_parameter_leaves_the_other_project_out() {
 async fn the_seeds_are_every_unfinished_task_until_a_status_narrows_them() {
     let (_alpha, _beta, state) = two_projects();
     todo(&state, "alpha", "alpha one", &[]).await;
-    create(&state, "alpha", json!({ "title": "alpha two" })).await;
-    let done = create(&state, "alpha", json!({ "title": "alpha three" })).await;
+    create_in(&state, "alpha", json!({ "title": "alpha two" })).await;
+    let done = create_in(&state, "alpha", json!({ "title": "alpha three" })).await;
     let closed = send(
         &state,
         "PATCH",

@@ -30,9 +30,10 @@ Keep an entry to one or two lines. Write it when the fact appears, on the task
 the fact belongs to.
 
 ```sh
-openplan comments OPP-42                    # read; --json, --all-branches
+openplan comments OPP-42                    # read; --json
 openplan comment  OPP-42 "One short line."  # append; --body-file - for markdown
 ```
 
-Run it in the task's worktree. The heading carries the time, the author, and the
-agent, so do not sign or date the text. Commit the task file with the work.
+The heading carries the time, the author, and the agent, so do not sign or date
+the text. There is nothing to commit: the entry is a revision in the task
+history, and the daemon syncs it.

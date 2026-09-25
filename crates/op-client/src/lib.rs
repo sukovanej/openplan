@@ -2,9 +2,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use op_api::{
-    ApiErrorBody, BranchComments, Comment, CreateComment, CreateTag, CreateTask, DaemonInfo,
-    Matrix, ProjectView, Published, Refusal, RegisterProject, RenameProject, RollingUpdates,
-    SearchHit, TagPatch, TagView, TaskBranches, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    ApiErrorBody, BackendKind, Comment, CreateComment, CreateTag, CreateTask, DaemonInfo,
+    HistoryEntry, ProjectView, Refusal, RegisterProject, RenameProject, SearchHit, SyncResult,
+    SyncView, TagPatch, TagView, TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    WriteTaskFile,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -33,25 +34,24 @@ pub fn base_url(port: u16) -> String {
 
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
-// A read has no local answer to fall back on, and it asks the daemon to walk every branch before
-// answering, so it waits as long as a write does.
+// A read has no local answer to fall back on, so it waits as long as a write does.
 pub const READ_TIMEOUT: Duration = Duration::from_secs(30);
-// A write waits for the target file's advisory lock, which another writer may hold for a while.
+// A write can wait on another writer, or on a sync the daemon runs.
 pub const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
     #[error("cannot reach the openplan daemon: {0}")]
     Unreachable(String),
-    // Giving up on the response says nothing about the write: the daemon is still waiting on the
-    // file's lock and will finish. Retrying is what duplicates a task, so say so.
+    // Giving up on the response says nothing about the write: the daemon may still finish it.
+    // Retrying is what duplicates a task, so say so.
     #[error(
-        "the openplan daemon did not answer within {}s (another writer may be holding the file); the write may still have completed — check before retrying",
+        "the openplan daemon did not answer within {}s; the write may still have completed — check before retrying",
         WRITE_TIMEOUT.as_secs()
     )]
     TimedOut,
     #[error(
-        "the openplan daemon did not answer a read within {}s; it may still be walking the repository",
+        "the openplan daemon did not answer a read within {}s",
         READ_TIMEOUT.as_secs()
     )]
     ReadTimedOut,
@@ -75,14 +75,24 @@ pub enum ClientError {
     NotJson { route: String, content_type: String },
 }
 
+// Who the writes of this client are for. The daemon signs each revision with it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Identity {
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub agent: Option<String>,
+}
+
 pub struct Client {
     http: reqwest::blocking::Client,
+    identity: Identity,
 }
 
 impl Default for Client {
     fn default() -> Self {
         Self {
             http: reqwest::blocking::Client::new(),
+            identity: Identity::default(),
         }
     }
 }
@@ -93,6 +103,11 @@ struct CreatedTask {
 }
 
 impl Client {
+    pub fn with_identity(mut self, identity: Identity) -> Self {
+        self.identity = identity;
+        self
+    }
+
     pub fn health(&self, base_url: &str) -> Option<DaemonInfo> {
         self.http
             .get(format!("{base_url}/health"))
@@ -104,22 +119,9 @@ impl Client {
     }
 
     // Every read below is a one-shot question from a caller with no change stream, so each asks the
-    // daemon for a freshly walked index rather than one the watcher may not have invalidated yet.
-    pub fn tasks(
-        &self,
-        base_url: &str,
-        project: &str,
-        branch: Option<&str>,
-    ) -> Result<Vec<TaskListItem>, ClientError> {
-        self.read(read_url(base_url, project, None, branch)?)
-    }
-
-    pub fn matrix(&self, base_url: &str, project: &str) -> Result<Matrix, ClientError> {
-        let mut url = projects_url(base_url, project)?;
-        url.path_segments_mut()
-            .map_err(|_| unusable(base_url))?
-            .push("matrix");
-        self.read(fresh(url))
+    // daemon to read the writes of other processes first.
+    pub fn tasks(&self, base_url: &str, project: &str) -> Result<Vec<TaskListItem>, ClientError> {
+        self.read(fresh(tasks_url(base_url, project, None)?))
     }
 
     pub fn search(
@@ -128,22 +130,13 @@ impl Client {
         project: &str,
         query: &str,
     ) -> Result<Vec<SearchHit>, ClientError> {
-        let mut url = projects_url(base_url, project)?;
-        url.path_segments_mut()
-            .map_err(|_| unusable(base_url))?
-            .push("search");
+        let mut url = sub_url(projects_url(base_url, project)?, base_url, &["search"])?;
         url.query_pairs_mut().append_pair("q", query);
         self.read(fresh(url))
     }
 
-    pub fn task(
-        &self,
-        base_url: &str,
-        project: &str,
-        id: &str,
-        branch: Option<&str>,
-    ) -> Result<TaskDetail, ClientError> {
-        self.read(read_url(base_url, project, Some(id), branch)?)
+    pub fn task(&self, base_url: &str, project: &str, id: &str) -> Result<TaskDetail, ClientError> {
+        self.read(fresh(tasks_url(base_url, project, Some(id))?))
     }
 
     pub fn task_tree(
@@ -151,18 +144,14 @@ impl Client {
         base_url: &str,
         project: &str,
         id: &str,
-        branch: Option<&str>,
         depth: Option<usize>,
     ) -> Result<TaskTreeView, ClientError> {
-        let mut url = read_url(base_url, project, Some(id), branch)?;
-        url.path_segments_mut()
-            .map_err(|_| unusable(base_url))?
-            .push("tree");
+        let mut url = sub_url(tasks_url(base_url, project, Some(id))?, base_url, &["tree"])?;
         if let Some(depth) = depth {
             url.query_pairs_mut()
                 .append_pair("depth", &depth.to_string());
         }
-        self.read(url)
+        self.read(fresh(url))
     }
 
     pub fn comments(
@@ -170,74 +159,91 @@ impl Client {
         base_url: &str,
         project: &str,
         id: &str,
-        branch: Option<&str>,
     ) -> Result<Vec<Comment>, ClientError> {
-        self.read(sub_url(
-            read_url(base_url, project, Some(id), branch)?,
+        let url = sub_url(
+            tasks_url(base_url, project, Some(id))?,
             base_url,
             &["comments"],
-        )?)
-    }
-
-    pub fn branch_comments(
-        &self,
-        base_url: &str,
-        project: &str,
-        id: &str,
-    ) -> Result<Vec<BranchComments>, ClientError> {
-        self.read(sub_url(
-            read_url(base_url, project, Some(id), None)?,
-            base_url,
-            &["comments", "branches"],
-        )?)
+        )?;
+        self.read(fresh(url))
     }
 
     pub fn add_comment(
         &self,
         base_url: &str,
         project: &str,
-        branch: &str,
         id: &str,
         comment: &CreateComment,
     ) -> Result<Comment, ClientError> {
         let url = sub_url(
-            write_url(base_url, project, branch, Some(id))?,
+            tasks_url(base_url, project, Some(id))?,
             base_url,
             &["comments"],
         )?;
-        self.json(self.http.post(url).json(comment))
+        self.json(self.write(self.http.post(url)).json(comment))
     }
 
-    pub fn task_branches(
+    pub fn history(
+        &self,
+        base_url: &str,
+        project: &str,
+        before: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<HistoryEntry>, ClientError> {
+        let url = sub_url(projects_url(base_url, project)?, base_url, &["history"])?;
+        self.read(page(url, before, limit))
+    }
+
+    pub fn task_history(
         &self,
         base_url: &str,
         project: &str,
         id: &str,
-    ) -> Result<TaskBranches, ClientError> {
-        let mut url = read_url(base_url, project, Some(id), None)?;
-        url.path_segments_mut()
-            .map_err(|_| unusable(base_url))?
-            .push("branches");
+        before: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<HistoryEntry>, ClientError> {
+        let url = sub_url(
+            tasks_url(base_url, project, Some(id))?,
+            base_url,
+            &["history"],
+        )?;
+        self.read(page(url, before, limit))
+    }
+
+    pub fn task_revision(
+        &self,
+        base_url: &str,
+        project: &str,
+        id: &str,
+        revision: &str,
+    ) -> Result<TaskAtRevision, ClientError> {
+        let url = sub_url(
+            tasks_url(base_url, project, Some(id))?,
+            base_url,
+            &["revisions", revision],
+        )?;
         self.read(url)
     }
 
-    pub fn tags(
-        &self,
-        base_url: &str,
-        project: &str,
-        branch: Option<&str>,
-    ) -> Result<Vec<TagView>, ClientError> {
-        self.read(tag_read_url(base_url, project, None, branch)?)
+    pub fn sync_status(&self, base_url: &str, project: &str) -> Result<SyncView, ClientError> {
+        self.read(sub_url(
+            projects_url(base_url, project)?,
+            base_url,
+            &["sync"],
+        )?)
     }
 
-    pub fn tag(
-        &self,
-        base_url: &str,
-        project: &str,
-        name: &str,
-        branch: Option<&str>,
-    ) -> Result<TagView, ClientError> {
-        self.read(tag_read_url(base_url, project, Some(name), branch)?)
+    pub fn sync(&self, base_url: &str, project: &str) -> Result<SyncResult, ClientError> {
+        let url = sub_url(projects_url(base_url, project)?, base_url, &["sync"])?;
+        self.json(self.write(self.http.post(url)))
+    }
+
+    pub fn tags(&self, base_url: &str, project: &str) -> Result<Vec<TagView>, ClientError> {
+        self.read(tags_url(base_url, project, None)?)
+    }
+
+    pub fn tag(&self, base_url: &str, project: &str, name: &str) -> Result<TagView, ClientError> {
+        self.read(tags_url(base_url, project, Some(name))?)
     }
 
     fn read<T: DeserializeOwned>(&self, url: Url) -> Result<T, ClientError> {
@@ -264,8 +270,7 @@ impl Client {
         })
     }
 
-    // The caller names the wait it can afford: a write must know its project before it can start, a
-    // read falls back to its own index rather than hold the terminal.
+    // The caller names the wait it can afford.
     pub fn projects(
         &self,
         base_url: &str,
@@ -280,20 +285,22 @@ impl Client {
             })
     }
 
-    // The bool says whether this call is what registered the repository; the daemon answers 200 for
-    // one it already serves, so two concurrent first writes both get the project and only one of
-    // them reports it.
+    // The bool says whether this call is what registered the project; the daemon answers 200 for one
+    // it already serves. An abbreviation starts the project's tasks.
     pub fn register_project(
         &self,
         base_url: &str,
         path: &Path,
+        backend: Option<BackendKind>,
+        abbreviation: Option<&str>,
     ) -> Result<(ProjectView, bool), ClientError> {
         let body = RegisterProject {
             path: path.display().to_string(),
+            backend,
+            abbreviation: abbreviation.map(str::to_owned),
         };
         let response = accepted(send(
-            self.http
-                .post(format!("{base_url}/api/projects"))
+            self.write(self.http.post(format!("{base_url}/api/projects")))
                 .json(&body),
         )?)?;
         let created = response.status() == reqwest::StatusCode::CREATED;
@@ -329,100 +336,94 @@ impl Client {
             .unwrap_or(false)
     }
 
-    // Every write names the branch it targets, so the daemon resolves the worktree at write time and
-    // a branch switch underneath yields a refusal instead of a write to the wrong branch.
     pub fn create_task(
         &self,
         base_url: &str,
         project: &str,
-        branch: &str,
         task: &CreateTask,
     ) -> Result<String, ClientError> {
-        let url = write_url(base_url, project, branch, None)?;
-        let created: CreatedTask = self.json(self.http.post(url).json(task))?;
+        let url = tasks_url(base_url, project, None)?;
+        let created: CreatedTask = self.json(self.write(self.http.post(url)).json(task))?;
         Ok(created.id)
-    }
-
-    pub fn rolling_updates(
-        &self,
-        base_url: &str,
-        project: &str,
-    ) -> Result<RollingUpdates, ClientError> {
-        self.read(fresh(sub_url(
-            projects_url(base_url, project)?,
-            base_url,
-            &["rolling-updates"],
-        )?))
-    }
-
-    pub fn publish(&self, base_url: &str, project: &str) -> Result<Published, ClientError> {
-        let url = sub_url(
-            projects_url(base_url, project)?,
-            base_url,
-            &["rolling-updates", "publish"],
-        )?;
-        self.json(self.http.post(url))
     }
 
     pub fn patch_task(
         &self,
         base_url: &str,
         project: &str,
-        branch: &str,
         id: &str,
         patch: &TaskPatch,
     ) -> Result<TaskDetail, ClientError> {
-        let url = write_url(base_url, project, branch, Some(id))?;
-        self.json(self.http.patch(url).json(patch))
+        let url = tasks_url(base_url, project, Some(id))?;
+        self.json(self.write(self.http.patch(url)).json(patch))
     }
 
-    pub fn delete_task(
+    pub fn write_task_file(
         &self,
         base_url: &str,
         project: &str,
-        branch: &str,
         id: &str,
-    ) -> Result<(), ClientError> {
-        let url = write_url(base_url, project, branch, Some(id))?;
-        accepted(send(self.http.delete(url))?).map(drop)
+        text: &str,
+    ) -> Result<TaskDetail, ClientError> {
+        let url = sub_url(tasks_url(base_url, project, Some(id))?, base_url, &["file"])?;
+        let body = WriteTaskFile {
+            text: text.to_owned(),
+        };
+        self.json(self.write(self.http.put(url)).json(&body))
+    }
+
+    pub fn delete_task(&self, base_url: &str, project: &str, id: &str) -> Result<(), ClientError> {
+        let url = tasks_url(base_url, project, Some(id))?;
+        accepted(send(self.write(self.http.delete(url)))?).map(drop)
     }
 
     pub fn create_tag(
         &self,
         base_url: &str,
         project: &str,
-        branch: &str,
         tag: &CreateTag,
     ) -> Result<TagView, ClientError> {
-        let url = tag_write_url(base_url, project, branch, None)?;
-        self.json(self.http.post(url).json(tag))
+        let url = tags_url(base_url, project, None)?;
+        self.json(self.write(self.http.post(url)).json(tag))
     }
 
     pub fn patch_tag(
         &self,
         base_url: &str,
         project: &str,
-        branch: &str,
         name: &str,
         patch: &TagPatch,
     ) -> Result<TagView, ClientError> {
-        let url = tag_write_url(base_url, project, branch, Some(name))?;
-        self.json(self.http.patch(url).json(patch))
+        let url = tags_url(base_url, project, Some(name))?;
+        self.json(self.write(self.http.patch(url)).json(patch))
     }
 
     pub fn delete_tag(
         &self,
         base_url: &str,
         project: &str,
-        branch: &str,
         name: &str,
         force: bool,
     ) -> Result<(), ClientError> {
-        let mut url = tag_write_url(base_url, project, branch, Some(name))?;
+        let mut url = tags_url(base_url, project, Some(name))?;
         if force {
             url.query_pairs_mut().append_pair("force", "true");
         }
-        accepted(send(self.http.delete(url))?).map(drop)
+        accepted(send(self.write(self.http.delete(url)))?).map(drop)
+    }
+
+    fn write(&self, mut request: RequestBuilder) -> RequestBuilder {
+        let headers = [
+            (op_api::AUTHOR_HEADER, &self.identity.name),
+            (op_api::EMAIL_HEADER, &self.identity.email),
+            (op_api::AGENT_HEADER, &self.identity.agent),
+        ];
+        for (name, value) in headers {
+            if let Some(value) = value {
+                request = request.header(name, op_api::encode_header(value));
+            }
+        }
+        request
     }
 
     fn json<T: DeserializeOwned>(&self, request: RequestBuilder) -> Result<T, ClientError> {
@@ -510,56 +511,6 @@ fn tags_url(base_url: &str, project: &str, name: Option<&str>) -> Result<Url, Cl
     Ok(url)
 }
 
-fn tag_write_url(
-    base_url: &str,
-    project: &str,
-    branch: &str,
-    name: Option<&str>,
-) -> Result<Url, ClientError> {
-    let mut url = tags_url(base_url, project, name)?;
-    url.query_pairs_mut().append_pair("branch", branch);
-    Ok(url)
-}
-
-// A tag read names its branch the way a write does; the daemon walks the worktree either way, so
-// there is no stale index for `fresh` to bypass.
-fn tag_read_url(
-    base_url: &str,
-    project: &str,
-    name: Option<&str>,
-    branch: Option<&str>,
-) -> Result<Url, ClientError> {
-    let mut url = tags_url(base_url, project, name)?;
-    if let Some(branch) = branch {
-        url.query_pairs_mut().append_pair("branch", branch);
-    }
-    Ok(url)
-}
-
-fn write_url(
-    base_url: &str,
-    project: &str,
-    branch: &str,
-    id: Option<&str>,
-) -> Result<Url, ClientError> {
-    let mut url = tasks_url(base_url, project, id)?;
-    url.query_pairs_mut().append_pair("branch", branch);
-    Ok(url)
-}
-
-fn read_url(
-    base_url: &str,
-    project: &str,
-    id: Option<&str>,
-    branch: Option<&str>,
-) -> Result<Url, ClientError> {
-    let mut url = tasks_url(base_url, project, id)?;
-    if let Some(branch) = branch {
-        url.query_pairs_mut().append_pair("branch", branch);
-    }
-    Ok(fresh(url))
-}
-
 fn sub_url(mut url: Url, base_url: &str, segments: &[&str]) -> Result<Url, ClientError> {
     {
         let mut path = url.path_segments_mut().map_err(|_| unusable(base_url))?;
@@ -572,5 +523,16 @@ fn sub_url(mut url: Url, base_url: &str, segments: &[&str]) -> Result<Url, Clien
 
 fn fresh(mut url: Url) -> Url {
     url.query_pairs_mut().append_pair("fresh", "true");
+    url
+}
+
+fn page(mut url: Url, before: Option<&str>, limit: Option<usize>) -> Url {
+    if let Some(before) = before {
+        url.query_pairs_mut().append_pair("before", before);
+    }
+    if let Some(limit) = limit {
+        url.query_pairs_mut()
+            .append_pair("limit", &limit.to_string());
+    }
     url
 }

@@ -1,9 +1,11 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use op_skills::SkillFile;
-use op_store::{Store, StoreError};
+use op_task::layout::Document;
 use op_task::tag::{PartialTag, parse_partial as parse_partial_tag};
 use op_task::{Abbreviation, PartialTask, file_id, parse_partial};
+use op_tracker::{Plan, TrackerError};
 
 #[derive(Debug, Clone)]
 pub struct TaskFile {
@@ -30,24 +32,37 @@ pub struct Snapshot {
     files: Vec<TaskFile>,
     tags: Vec<TagFile>,
     skills: Vec<SkillFile>,
+    // Every document the store holds, assets included. Git keeps them off the disk.
+    documents: HashSet<PathBuf>,
 }
 
 impl Snapshot {
-    pub fn from_store(store: &Store) -> Result<Self, StoreError> {
-        let sources: Vec<(PathBuf, String)> = read_markdown(&store.tasks_dir())?
-            .into_iter()
-            .filter(|(path, _)| {
-                path.file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .and_then(file_id)
-                    .is_some()
-            })
-            .collect();
-        Ok(
-            Self::from_files(store.root(), store.abbreviation(), sources)
-                .with_tags(read_markdown(&store.tags_dir())?)
-                .with_skills(op_skills::installed(store.root())?),
-        )
+    // `dir` is where the documents read as living, so a diagnostic names a path a person can open;
+    // `root` is the checkout that holds the agent skills.
+    pub fn from_plan(plan: &Plan, dir: &Path, root: &Path) -> Result<Self, TrackerError> {
+        let mut tasks = Vec::new();
+        let mut tags = Vec::new();
+        let paths = plan.snapshot().files()?;
+        let documents = paths.iter().map(|path| dir.join(path)).collect();
+        for path in paths {
+            let Some(text) = plan.snapshot().read_text(&path)? else {
+                continue;
+            };
+            match Document::of(&path) {
+                Document::Task(_) => tasks.push((dir.join(&path), text)),
+                Document::Tag(_) => tags.push((dir.join(&path), text)),
+                _ => {}
+            }
+        }
+        Ok(Self::from_files(root, plan.abbreviation()?, tasks)
+            .with_documents(documents)
+            .with_tags(tags)
+            .with_skills(
+                op_skills::installed(root).map_err(|err| TrackerError::Unreadable {
+                    path: root.display().to_string(),
+                    reason: err.to_string(),
+                })?,
+            ))
     }
 
     pub fn from_files(
@@ -79,7 +94,18 @@ impl Snapshot {
             files,
             tags: Vec::new(),
             skills: Vec::new(),
+            documents: HashSet::new(),
         }
+    }
+
+    pub fn with_documents(mut self, documents: HashSet<PathBuf>) -> Self {
+        self.documents = documents;
+        self
+    }
+
+    // A link into the code (`../../crates/…`) names a file on the disk, not a document.
+    pub fn holds(&self, path: &Path) -> bool {
+        self.documents.contains(path) || path.exists()
     }
 
     pub fn with_tags(mut self, files: impl IntoIterator<Item = (PathBuf, String)>) -> Self {
@@ -136,22 +162,6 @@ impl Snapshot {
             .filter(|file| file.number == number)
             .min_by(|a, b| a.path.cmp(&b.path))
     }
-}
-
-fn read_markdown(dir: &Path) -> Result<Vec<(PathBuf, String)>, StoreError> {
-    if !dir.exists() {
-        return Ok(Vec::new());
-    }
-    let mut sources = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("md") || !path.is_file() {
-            continue;
-        }
-        let source = std::fs::read_to_string(&path)?;
-        sources.push((path, source));
-    }
-    Ok(sources)
 }
 
 // The anchor scheme GitHub, GitLab, and VS Code all resolve: lowercase, spaces to `-`, punctuation

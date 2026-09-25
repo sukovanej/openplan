@@ -6,11 +6,13 @@ import {
   ApiBaseUrl,
   createTask,
   deleteTag,
-  getRollingUpdates,
+  getProjectHistory,
   getTask,
+  getTaskRevision,
   listTasks,
   patchTask,
-  publishRollingUpdates,
+  resolveConflict,
+  runSync,
   TaskRejected,
   TaskNotFound,
 } from "../src/lib/api"
@@ -48,7 +50,7 @@ function requestBody(request: HttpClientRequest.HttpClientRequest): unknown {
   return undefined
 }
 
-it.effect("decodes the branch-aware task list from GET /api/projects/:project/tasks", () =>
+it.effect("decodes the task list from GET /api/projects/:project/tasks", () =>
   withResponse(() =>
     json([
       {
@@ -65,8 +67,7 @@ it.effect("decodes the branch-aware task list from GET /api/projects/:project/ta
         },
         updated: "2026-01-02T00:00:00Z",
         comment_count: 0,
-        headline: "main",
-        branches: [{ branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" }],
+        conflicts: 0,
       },
       {
         project: "openplan",
@@ -75,55 +76,43 @@ it.effect("decodes the branch-aware task list from GET /api/projects/:project/ta
         metadata: {
           status: "in_progress",
           created: "2026-01-01T00:00:00Z",
-          parent: null,
+          parent: "a-1",
           rank: null,
           dependencies: [],
           tags: [],
         },
-        parent: "a-1",
         updated: "2026-01-02T00:00:00Z",
-        comment_count: 0,
-        headline: "feature",
-        branches: [
-          { branch: "main", status: "todo", blob_oid: "bbb", dirty: false, kind: "base" },
-          { branch: "feature", status: "in_progress", blob_oid: "ccc", dirty: true, kind: "modified" },
-        ],
+        comment_count: 3,
+        conflicts: 0,
       },
     ]),
   )(
     Effect.gen(function* () {
       const tasks = yield* listTasks(PROJECT)
       expect(tasks.map((t) => t.id)).toEqual(["a-1", "b-2"])
-      expect(tasks[0].branches.map((b) => b.branch)).toEqual(["main"])
-      expect(tasks[1].headline).toBe("feature")
-      expect(tasks[1].branches.length).toBe(2)
-      expect(tasks[1].branches[1].dirty).toBe(true)
+      expect(tasks[1].metadata).toMatchObject({ parent: "a-1" })
+      expect(tasks[1].comment_count).toBe(3)
     }),
   ),
 )
 
-it.effect("decodes a task detail with its branch set and hierarchy from GET /api/projects/:project/tasks/:id", () =>
+it.effect("decodes a task detail with its hierarchy from GET /api/projects/:project/tasks/:id", () =>
   withResponse(() =>
     json({
       project: "openplan",
       id: "a-1",
       title: "First",
-      parent: "epic-1",
       body: "# First\n",
+      conflicts: 0,
       metadata: {
         status: "todo",
         created: "2026-01-01T00:00:00Z",
-        parent: null,
+        parent: "epic-1",
         rank: null,
         dependencies: [],
         tags: [],
       },
       updated: "2026-01-02T00:00:00Z",
-      headline: "feature",
-      branches: [
-        { branch: "feature", status: "done", blob_oid: "ccc", dirty: false, kind: "modified" },
-        { branch: "main", status: "todo", blob_oid: "aaa", dirty: false, kind: "base" },
-      ],
       parent_title: "Epic",
       children: [{ id: "kid-1", title: "Kid", status: "in_progress", rank: "m" }],
       refs: [{ id: "epic-1", title: "Epic", status: "todo" }],
@@ -134,8 +123,6 @@ it.effect("decodes a task detail with its branch set and hierarchy from GET /api
       expect(task.title).toBe("First")
       expect(task.metadata).toMatchObject({ status: "todo" })
       expect(task.body).toBe("# First\n")
-      expect(task.headline).toBe("feature")
-      expect(task.branches.map((b) => b.branch)).toEqual(["feature", "main"])
       expect(task.parent_title).toBe("Epic")
       expect(task.children?.map((c) => c.id)).toEqual(["kid-1"])
       expect(task.refs?.[0].title).toBe("Epic")
@@ -158,9 +145,8 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
         tags: [],
       },
       body: "# Solo\n",
+      conflicts: 0,
       updated: "2026-01-02T00:00:00Z",
-      headline: "main",
-      branches: [],
     }),
   )(
     Effect.gen(function* () {
@@ -172,32 +158,28 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
   ),
 )
 
-const detailResponse = () =>
-  json({
-    project: "openplan",
-    id: "a-1",
-    title: "First",
-    metadata: { status: "done", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [], tags: [] },
-    body: "# First\n",
-    updated: "2026-01-02T00:00:00Z",
-    headline: "feature",
-    branches: [],
-  })
-
-it.effect("requests a specific branch's version with ?branch=", () =>
+it.effect("sends no query for a task read", () =>
   Effect.gen(function* () {
-    const { captured, provide } = captureRequest(detailResponse)
-    const task = yield* provide(getTask(PROJECT, "a-1", "feature"))
-    expect(task.metadata).toMatchObject({ status: "done" })
-    expect(captured.request?.url).toContain("/api/projects/openplan/tasks/a-1")
-    expect(UrlParams.toString(captured.request!.urlParams)).toBe("branch=feature")
-  }),
-)
-
-it.effect("omits the query entirely for a headline read", () =>
-  Effect.gen(function* () {
-    const { captured, provide } = captureRequest(detailResponse)
+    const { captured, provide } = captureRequest(() =>
+      json({
+        project: "openplan",
+        id: "a-1",
+        title: "First",
+        metadata: {
+          status: "done",
+          created: "2026-01-01T00:00:00Z",
+          parent: null,
+          rank: null,
+          dependencies: [],
+          tags: [],
+        },
+        body: "# First\n",
+        conflicts: 0,
+        updated: "2026-01-02T00:00:00Z",
+      }),
+    )
     yield* provide(getTask(PROJECT, "a-1"))
+    expect(captured.request?.url).toContain("/api/projects/openplan/tasks/a-1")
     expect(UrlParams.toString(captured.request!.urlParams)).toBe("")
   }),
 )
@@ -260,8 +242,8 @@ it.effect("rejects a malformed status with a decode failure", () =>
           tags: [],
         },
         updated: "2026-01-02T00:00:00Z",
-        headline: "main",
-        branches: [],
+        comment_count: 0,
+        conflicts: 0,
       },
     ]),
   )(
@@ -288,9 +270,8 @@ it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
           tags: [],
         },
         body: "# Child\n",
+        conflicts: 0,
         updated: "2026-01-02T00:00:00Z",
-        headline: "main",
-        branches: [],
       }),
     )
     const detail = yield* provide(patchTask(PROJECT, "child", { parent: null }))
@@ -317,9 +298,8 @@ it.effect("PATCH sends a parent id to reparent", () =>
           tags: [],
         },
         body: "# Child\n",
+        conflicts: 0,
         updated: "2026-01-02T00:00:00Z",
-        headline: "main",
-        branches: [],
       }),
     )
     yield* provide(patchTask(PROJECT, "child", { parent: "epic-1" }))
@@ -352,25 +332,23 @@ it.effect("a refused PATCH carries the server's reason, not just a status code",
   }),
 )
 
-it.effect("a PATCH aimed at a branch no worktree holds carries the 409 reason", () =>
+it.effect("a PATCH that other writers keep racing carries the 409 reason", () =>
   Effect.gen(function* () {
-    const { provide } = captureRequest(() =>
-      json({ message: "branch feature is not checked out in a writable worktree" }, 409),
-    )
+    const { provide } = captureRequest(() => json({ message: "another writer kept moving the tasks" }, 409))
     const result = yield* Effect.result(provide(patchTask(PROJECT, "a-1", { status: "done" })))
     const error = Result.isFailure(result) ? result.failure : undefined
     expect(error).toBeInstanceOf(TaskRejected)
     expect((error as TaskRejected).status).toBe(409)
-    expect((error as TaskRejected).message).toContain("writable worktree")
+    expect((error as TaskRejected).message).toContain("another writer")
   }),
 )
 
-// One status covers three tag-delete refusals, and `force` answers only one of them. The field is
+// One status covers several tag-delete refusals, and `force` answers only one of them. The field is
 // what tells the caller which one it received.
 it.effect("a tag delete a reference count refuses names the refusal force answers", () =>
   Effect.gen(function* () {
     const { provide } = captureRequest(() =>
-      json({ message: "tag backend is used by 2 task(s) on this branch", reason: "tag_referenced" }, 409),
+      json({ message: "tag backend is used by 2 task(s)", reason: "tag_referenced" }, 409),
     )
     const result = yield* Effect.result(provide(deleteTag(PROJECT, "backend", false)))
     const error = Result.isFailure(result) ? result.failure : undefined
@@ -387,11 +365,9 @@ it.effect("encodes a path segment exactly once", () =>
   }),
 )
 
-it.effect("a tag delete the branch refuses names no refusal force answers", () =>
+it.effect("a tag delete that other writers race names no refusal force answers", () =>
   Effect.gen(function* () {
-    const { provide } = captureRequest(() =>
-      json({ message: "branch feature is not checked out in a writable worktree" }, 409),
-    )
+    const { provide } = captureRequest(() => json({ message: "another writer kept moving the tasks" }, 409))
     const result = yield* Effect.result(provide(deleteTag(PROJECT, "backend", false)))
     const error = Result.isFailure(result) ? result.failure : undefined
     expect((error as TaskRejected).status).toBe(409)
@@ -442,93 +418,136 @@ it.effect("a refused POST carries the server's reason", () =>
   }),
 )
 
-it.effect("decodes what is waiting on the rolling-updates branch", () =>
+const entry = (id: string, parents: ReadonlyArray<string>) => ({
+  revision: { id, parents, author: "Milan", at: "2026-01-02T00:00:00Z", message: `Revision ${id}` },
+  changes: [{ path: "tasks/00001-first.md", kind: "modified", task: "OPP-1" }],
+})
+
+it.effect("reads a page of the project's history older than a revision", () =>
   Effect.gen(function* () {
-    const { captured, provide } = captureRequest(() =>
-      json({
-        pending: [
-          {
-            branch: "openplan/rolling-updates",
-            task: {
-              id: "OPP-1",
-              title: "First",
-              metadata: {
-                status: "todo",
-                created: "2026-01-01T00:00:00Z",
-                parent: null,
-                rank: null,
-                dependencies: [],
-                tags: [],
-              },
-            },
-            blob_oid: "abc",
-            dirty: false,
-            kind: "modified",
-          },
-        ],
-        conflict: null,
-      }),
-    )
-    const waiting = yield* provide(getRollingUpdates(PROJECT))
-    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/rolling-updates`)
-    expect(waiting.pending).toHaveLength(1)
-    expect(waiting.conflict).toBeNull()
+    const { captured, provide } = captureRequest(() => json([entry("b", ["a"]), entry("a", [])]))
+    const history = yield* provide(getProjectHistory(PROJECT, { before: "c", limit: 2 }))
+    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/history`)
+    expect(UrlParams.toString(captured.request!.urlParams)).toBe("before=c&limit=2")
+    expect(history.map((one) => one.revision.id)).toEqual(["b", "a"])
   }),
 )
 
-it.effect("decodes the conflict that holds the rolling-updates branch", () =>
+it.effect("leaves `before` off for the newest page", () =>
   Effect.gen(function* () {
-    const { provide } = captureRequest(() =>
-      json({
-        pending: [],
-        conflict: { files: [".plan/tasks/00001-t.md"], worktree: "/repo/.git/openplan-rolling-updates" },
-      }),
-    )
-    const waiting = yield* provide(getRollingUpdates(PROJECT))
-    expect(waiting.conflict?.files).toEqual([".plan/tasks/00001-t.md"])
-    expect(waiting.conflict?.worktree).toContain("openplan-rolling-updates")
+    const { captured, provide } = captureRequest(() => json([]))
+    yield* provide(getProjectHistory(PROJECT, { limit: 50 }))
+    expect(UrlParams.toString(captured.request!.urlParams)).toBe("limit=50")
   }),
 )
 
-// A repository the daemon cannot give the branch answers 503, and the caller must read that as a
-// refusal rather than as an empty branch.
-it.effect("a project with no rolling-updates branch refuses the read", () =>
+it.effect("a page from a revision the daemon does not know carries the 404 reason", () =>
   Effect.gen(function* () {
-    const { provide } = captureRequest(() => json({ message: "this repository has no rolling-updates branch" }, 503))
-    const result = yield* Effect.result(provide(getRollingUpdates(PROJECT)))
+    const { provide } = captureRequest(() => json({ message: "no such revision: c" }, 404))
+    const result = yield* Effect.result(provide(getProjectHistory(PROJECT, { before: "c", limit: 2 })))
     const error = Result.isFailure(result) ? result.failure : undefined
     expect(error).toBeInstanceOf(TaskRejected)
-    expect((error as TaskRejected).status).toBe(503)
+    expect((error as TaskRejected).message).toContain("no such revision")
   }),
 )
 
-it.effect("publish posts to the branch's route and decodes the pull request", () =>
+it.effect("reads a task as a revision left it", () =>
   Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
       json({
-        remote: "origin",
-        branch: "openplan/rolling-updates-milan",
-        commit: "0123456789abcdef",
-        pull_request: "https://github.com/o/p/pull/7",
+        id: "OPP-1",
+        revision: "abc",
+        task: {
+          title: "First",
+          metadata: {
+            status: "todo",
+            created: "2026-01-01T00:00:00Z",
+            parent: null,
+            rank: null,
+            dependencies: [],
+            tags: [],
+          },
+          body: "The old body",
+          raw: "---\nstatus: todo\n---\n# First\n\nThe old body\n",
+        },
       }),
     )
-    const published = yield* provide(publishRollingUpdates(PROJECT))
-    expect(captured.request?.method).toBe("POST")
-    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/rolling-updates/publish`)
-    expect(published.pull_request).toBe("https://github.com/o/p/pull/7")
+    const at = yield* provide(getTaskRevision(PROJECT, "OPP-1", "abc"))
+    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/tasks/OPP-1/revisions/abc`)
+    expect(at.task?.body).toBe("The old body")
+    expect(at.task?.comments).toBeUndefined()
   }),
 )
 
-// Nothing to publish and a conflict that holds the branch share one status, so the message is what
-// tells the person which they got.
-it.effect("a publish the daemon refuses carries its reason", () =>
+it.effect("a sync posts to the project's route and decodes what moved", () =>
+  Effect.gen(function* () {
+    const { captured, provide } = captureRequest(() =>
+      json({
+        received: 2,
+        sent: 1,
+        merged: true,
+        status: { remote: "origin", last_success: "2026-01-02T00:00:00Z", ahead: 0, behind: 0 },
+      }),
+    )
+    const result = yield* provide(runSync(PROJECT))
+    expect(captured.request?.method).toBe("POST")
+    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/sync`)
+    expect(result.received).toBe(2)
+    expect(result.status.ahead).toBe(0)
+  }),
+)
+
+// A remote that cannot be reached is a 502 the route documents, and its reason is what a person acts
+// on.
+it.effect("a sync the remote refuses carries its reason", () =>
+  Effect.gen(function* () {
+    const { provide } = captureRequest(() => json({ message: "could not reach origin" }, 502))
+    const result = yield* Effect.result(provide(runSync(PROJECT)))
+    const error = Result.isFailure(result) ? result.failure : undefined
+    expect((error as TaskRejected).status).toBe(502)
+    expect((error as TaskRejected).message).toContain("could not reach origin")
+  }),
+)
+
+const BLOCK = "<<<<<<< Ann (a1b2c3d)\nUse OAuth only.\n=======\nUse OAuth and email login.\n>>>>>>> Ben (e4f5a6b)\n"
+
+it.effect("a resolve posts the exact block and its replacement, and decodes the task", () =>
+  Effect.gen(function* () {
+    const { captured, provide } = captureRequest(() =>
+      json({
+        project: "openplan",
+        id: "OPP-1",
+        title: "First",
+        metadata: {
+          status: "todo",
+          created: "2026-01-01T00:00:00Z",
+          parent: null,
+          rank: null,
+          dependencies: [],
+          tags: [],
+        },
+        body: "# First\n\nUse OAuth only.\n",
+        conflicts: 0,
+        updated: "2026-01-02T00:00:00Z",
+      }),
+    )
+    const detail = yield* provide(resolveConflict(PROJECT, "OPP-1", BLOCK, "Use OAuth only.\n"))
+    expect(captured.request?.method).toBe("POST")
+    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/tasks/OPP-1/resolve`)
+    expect(requestBody(captured.request!)).toEqual({ block: BLOCK, text: "Use OAuth only.\n" })
+    expect(detail.conflicts).toBe(0)
+  }),
+)
+
+it.effect("a resolve of a block that is gone carries the 409 reason", () =>
   Effect.gen(function* () {
     const { provide } = captureRequest(() =>
-      json({ message: "a conflict holds the rolling updates; resolve it first" }, 409),
+      json({ message: "that conflict is no longer in the task; read the task again" }, 409),
     )
-    const result = yield* Effect.result(provide(publishRollingUpdates(PROJECT)))
+    const result = yield* Effect.result(provide(resolveConflict(PROJECT, "OPP-1", BLOCK, "")))
     const error = Result.isFailure(result) ? result.failure : undefined
+    expect(error).toBeInstanceOf(TaskRejected)
     expect((error as TaskRejected).status).toBe(409)
-    expect((error as TaskRejected).message).toContain("resolve it first")
+    expect((error as TaskRejected).message).toContain("no longer in the task")
   }),
 )

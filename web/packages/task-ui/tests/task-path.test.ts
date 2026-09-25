@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { boardPath, taskPath, taskRouteOf } from "../src/task-path"
+import { activityPath, boardPath, revisionPath, taskPath, taskRouteOf } from "../src/task-path"
 
 describe("boardPath", () => {
   it("spells the route for a project's board", () => {
@@ -12,6 +12,19 @@ describe("taskPath", () => {
   it("spells the route for a task, with an optional encoded section", () => {
     expect(taskPath("openplan", "OPP-42")).toBe("/openplan/task/OPP-42")
     expect(taskPath("openplan", "OPP-3", "Store DTOs")).toBe("/openplan/task/OPP-3#Store%20DTOs")
+  })
+})
+
+describe("activityPath", () => {
+  it("spells the route for a project's activity", () => {
+    expect(activityPath("openplan")).toBe("/openplan/activity")
+  })
+})
+
+describe("revisionPath", () => {
+  it("spells the route for a task as a revision left it, which is still that task's route", () => {
+    expect(revisionPath("openplan", "OPP-42", "abc/1")).toBe("/openplan/task/OPP-42?revision=abc%2F1")
+    expect(taskRouteOf(revisionPath("openplan", "OPP-42", "abc"))).toEqual({ project: "openplan", id: "OPP-42" })
   })
 })
 

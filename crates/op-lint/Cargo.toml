@@ -1,6 +1,6 @@
 [package]
 name = "op-lint"
-description = "Task-file linter for the store graph: snapshot, rules, diagnostics, and derivable fixes"
+description = "Task linter over a project's documents: snapshot, rules, diagnostics, and derivable fixes"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,13 +11,15 @@ publish.workspace = true
 [dependencies]
 op-task.workspace = true
 op-md.workspace = true
-op-store.workspace = true
+op-backend.workspace = true
+op-tracker.workspace = true
 op-skills.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-op-git.workspace = true
+op-backend-local.workspace = true
 tempfile.workspace = true
 
 [lints]

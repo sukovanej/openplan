@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 use op_api::ProjectView;
 use op_daemon::{Control, Started, StopOutcome, base_url, default_port, now_unix};
-use op_server::same_path;
+use op_server::{Location, same_path};
 
 pub fn start(port: u16) -> Result<()> {
     let control = Control::resolve()?;
@@ -111,13 +111,20 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
     }
 }
 
-// Which project the daemon serves a repository as. Matched on the git common directory, so every
-// worktree of that repository resolves to the same project.
-pub fn project_named(views: Vec<ProjectView>, repo_dir: &Path) -> Option<String> {
+// Which project the daemon serves these tasks as. A git project matches on the git common
+// directory, so every worktree of a repository resolves to the same project; a local one on its
+// root.
+pub fn project_named(views: &[ProjectView], location: &Location) -> Option<String> {
     views
-        .into_iter()
-        .find(|view| same_path(Path::new(&view.git_common_dir), repo_dir))
-        .map(|view| view.name)
+        .iter()
+        .find(
+            |view| match (&view.git_common_dir, &location.git_common_dir) {
+                (Some(theirs), Some(ours)) => same_path(Path::new(theirs), ours),
+                (None, None) => same_path(Path::new(&view.root), &location.root),
+                _ => false,
+            },
+        )
+        .map(|view| view.name.clone())
 }
 
 fn fmt_uptime(secs: u64) -> String {

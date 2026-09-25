@@ -1111,6 +1111,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
+
+[[package]]
 name = "faster-hex"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2619,6 +2631,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashlink"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
+dependencies = [
+ "hashbrown 0.17.1",
+]
+
+[[package]]
 name = "heapless"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3287,6 +3308,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsqlite3-sys"
+version = "0.38.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3813,6 +3845,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "op-backend"
+version = "0.0.2"
+dependencies = [
+ "jiff",
+ "serde",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "op-backend-conformance"
+version = "0.0.2"
+dependencies = [
+ "op-backend",
+]
+
+[[package]]
+name = "op-backend-git"
+version = "0.0.2"
+dependencies = [
+ "gix",
+ "op-backend",
+ "op-backend-conformance",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "op-backend-local"
+version = "0.0.2"
+dependencies = [
+ "getrandom 0.4.3",
+ "notify",
+ "op-backend",
+ "op-backend-conformance",
+ "rusqlite",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "op-browser"
 version = "0.0.2"
 dependencies = [
@@ -3833,9 +3910,7 @@ name = "op-client"
 version = "0.0.2"
 dependencies = [
  "op-api",
- "op-git",
  "op-server",
- "op-store",
  "reqwest",
  "serde",
  "tempfile",
@@ -3862,40 +3937,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "op-git"
-version = "0.0.2"
-dependencies = [
- "gix",
- "jiff",
- "op-task",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "op-index"
 version = "0.0.2"
 dependencies = [
  "op-api",
- "op-git",
- "op-store",
+ "op-backend",
+ "op-backend-local",
  "op-task",
+ "op-tracker",
  "tempfile",
- "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "op-lint"
 version = "0.0.2"
 dependencies = [
- "op-git",
+ "op-backend",
+ "op-backend-local",
  "op-md",
  "op-skills",
- "op-store",
  "op-task",
+ "op-tracker",
  "serde",
  "serde_yaml",
  "tempfile",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -3903,15 +3969,6 @@ name = "op-md"
 version = "0.0.2"
 dependencies = [
  "pulldown-cmark",
-]
-
-[[package]]
-name = "op-presence"
-version = "0.0.2"
-dependencies = [
- "fs2",
- "op-api",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -3925,11 +3982,12 @@ dependencies = [
  "op-agent-claude",
  "op-agent-codex",
  "op-api",
- "op-git",
+ "op-backend",
+ "op-backend-git",
+ "op-backend-local",
  "op-index",
- "op-store",
  "op-task",
- "op-watch",
+ "op-tracker",
  "rust-embed",
  "serde",
  "serde_json",
@@ -3956,20 +4014,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "op-store"
-version = "0.0.2"
-dependencies = [
- "fs2",
- "getrandom 0.4.3",
- "op-md",
- "op-task",
- "serde",
- "tempfile",
- "thiserror 2.0.20",
- "toml 1.1.6+spec-1.1.0",
-]
-
-[[package]]
 name = "op-task"
 version = "0.0.2"
 dependencies = [
@@ -3978,7 +4022,22 @@ dependencies = [
  "serde",
  "serde_yaml",
  "thiserror 2.0.20",
+ "toml 1.1.6+spec-1.1.0",
  "utoipa",
+]
+
+[[package]]
+name = "op-tracker"
+version = "0.0.2"
+dependencies = [
+ "op-backend",
+ "op-backend-git",
+ "op-backend-local",
+ "op-md",
+ "op-task",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -3999,20 +4058,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "op-watch"
-version = "0.0.2"
-dependencies = [
- "notify",
- "op-git",
- "op-store",
- "op-task",
- "tempfile",
- "thiserror 2.0.20",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "openplan"
 version = "0.0.2"
 dependencies = [
@@ -4021,18 +4066,17 @@ dependencies = [
  "fs2",
  "nix",
  "op-api",
+ "op-backend",
+ "op-backend-git",
  "op-browser",
  "op-client",
  "op-daemon",
- "op-git",
  "op-lint",
- "op-md",
  "op-server",
  "op-skills",
- "op-store",
  "op-task",
+ "op-tracker",
  "op-update",
- "op-watch",
  "semver",
  "serde_json",
  "tempfile",
@@ -4613,6 +4657,31 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rsqlite-vfs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c51c9ae4df8a7fba42103df5c621fa3c37eccf3a3c650879e90fc48b11cc192c"
+dependencies = [
+ "hashbrown 0.16.1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "rusqlite"
+version = "0.40.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3"
+dependencies = [
+ "bitflags 2.13.2",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink",
+ "libsqlite3-sys",
+ "smallvec",
+ "sqlite-wasm-rs",
 ]
 
 [[package]]
@@ -5259,6 +5328,18 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "sqlite-wasm-rs"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc3efc0da82635d7e1ced0053bbbfa8c7ab9645d0bf36ceb4f7127bb85315d75"
+dependencies = [
+ "cc",
+ "js-sys",
+ "rsqlite-vfs",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -6394,6 +6475,12 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vcpkg"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "version-compare"

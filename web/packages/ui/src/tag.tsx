@@ -7,31 +7,21 @@ import { cn } from "./cn"
 export function Tag({
   className,
   dashed = false,
-  selected = false,
-  onSelect,
   children,
 }: {
   className?: string
   dashed?: boolean
-  selected?: boolean
-  onSelect?: () => void
   children: ReactNode
 }) {
-  const interactive = onSelect !== undefined
-  const classes = cn(
-    "inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] leading-tight",
-    "whitespace-nowrap transition-opacity",
-    className,
-    dashed && "border-dashed",
-    interactive && "cursor-pointer",
-    interactive && !selected && "opacity-55 hover:opacity-100",
-    interactive && selected && "font-semibold",
-  )
-  return onSelect === undefined ? (
-    <span className={classes}>{children}</span>
-  ) : (
-    <button type="button" onClick={onSelect} aria-pressed={selected} className={classes}>
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] leading-tight whitespace-nowrap",
+        className,
+        dashed && "border-dashed",
+      )}
+    >
       {children}
-    </button>
+    </span>
   )
 }

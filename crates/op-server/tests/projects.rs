@@ -1,77 +1,15 @@
-use axum::body::Body;
-use axum::http::{Request, StatusCode, header};
-use axum::response::Response;
-use http_body_util::BodyExt;
-use op_server::{AppState, Project, app};
+mod common;
+
+use std::path::Path;
+
+use axum::http::StatusCode;
+use common::*;
+use op_api::BackendKind;
+use op_server::{AppState, Project, ProjectEntry, ProjectRegistry, REGISTRY_FILE};
 use serde_json::{Value, json};
-use tower::ServiceExt;
-
-// A git-backed store checked out on `main`, the shape the daemon always serves.
-fn repository(dir: &std::path::Path, abbreviation: &str) {
-    git(dir, &["init", "-q", "-b", "main"]);
-    git(dir, &["config", "user.email", "t@example.com"]);
-    git(dir, &["config", "user.name", "Test"]);
-    std::fs::create_dir_all(dir.join(".plan/tasks")).unwrap();
-    std::fs::write(
-        dir.join(".plan/config.toml"),
-        format!("abbreviation = \"{abbreviation}\"\n"),
-    )
-    .unwrap();
-    git(dir, &["commit", "-q", "--allow-empty", "-m", "init"]);
-}
-
-fn git(root: &std::path::Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?}");
-}
-
-fn open(name: &str, path: &std::path::Path) -> Project {
-    Project::open(name, path.to_path_buf()).unwrap()
-}
-
-async fn send(state: &AppState, method: &str, uri: &str, body: Option<Value>) -> Response {
-    let builder = Request::builder().method(method).uri(uri);
-    let request = match body {
-        Some(value) => builder
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(serde_json::to_vec(&value).unwrap()))
-            .unwrap(),
-        None => builder.body(Body::empty()).unwrap(),
-    };
-    app(state.clone()).oneshot(request).await.unwrap()
-}
-
-async fn body_json(response: Response) -> Value {
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    serde_json::from_slice(&bytes).unwrap()
-}
-
-async fn create(state: &AppState, project: &str, title: &str) -> String {
-    create_task(state, project, json!({ "title": title })).await
-}
-
-async fn create_task(state: &AppState, project: &str, body: Value) -> String {
-    let response = send(
-        state,
-        "POST",
-        &format!("/api/projects/{project}/tasks"),
-        Some(body),
-    )
-    .await;
-    let status = response.status();
-    let body = body_json(response).await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    body["id"].as_str().unwrap().to_owned()
-}
 
 async fn board_rows(state: &AppState, uri: &str) -> Vec<(String, String, u64)> {
-    let response = send(state, "GET", uri, None).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    body_json(response).await["groups"]
+    json_of(state, uri).await["groups"]
         .as_array()
         .unwrap()
         .iter()
@@ -86,23 +24,79 @@ async fn board_rows(state: &AppState, uri: &str) -> Vec<(String, String, u64)> {
         .collect()
 }
 
-// Two repositories, one daemon. They share nothing: not the id space, not the abbreviation, and not
+fn two_local(alpha: &str, beta: &str) -> (tempfile::TempDir, tempfile::TempDir, AppState) {
+    let alpha_dir = tempfile::tempdir().unwrap();
+    let beta_dir = tempfile::tempdir().unwrap();
+    let state = AppState::new([
+        local_project("alpha", alpha_dir.path(), alpha),
+        local_project("beta", beta_dir.path(), beta),
+    ]);
+    (alpha_dir, beta_dir, state)
+}
+
+fn with_registry(home: &Path, projects: impl IntoIterator<Item = Project>) -> AppState {
+    AppState::new(projects).with_registry(home.join(REGISTRY_FILE))
+}
+
+async fn register(state: &AppState, body: Value) -> (StatusCode, Value) {
+    let response = send(state, "POST", "/api/projects", Some(body)).await;
+    let status = response.status();
+    (status, body_json(response).await)
+}
+
+fn project_view<'a>(listed: &'a Value, name: &str) -> &'a Value {
+    listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|view| view["name"] == name)
+        .unwrap_or_else(|| panic!("{name} is listed: {listed}"))
+}
+
+fn break_config(state: &AppState, name: &str) {
+    let project = state.project(name).unwrap();
+    project
+        .tracker()
+        .backend()
+        .commit(project.machine(), &mut |_| {
+            Ok(op_backend::Edit::new(
+                "Break the config",
+                vec![op_backend::Op::put("config.toml", "abbreviation = 7\n")],
+            ))
+        })
+        .unwrap();
+    project.reload(None);
+}
+
+fn write_config(state: &AppState, name: &str, abbreviation: &str) {
+    let project = state.project(name).unwrap();
+    let text = format!("abbreviation = \"{abbreviation}\"\n");
+    project
+        .tracker()
+        .backend()
+        .commit(project.machine(), &mut |_| {
+            Ok(op_backend::Edit::new(
+                "Write the config",
+                vec![op_backend::Op::put("config.toml", text.as_str())],
+            ))
+        })
+        .unwrap();
+    project.reload(None);
+}
+
+// Two directories, one daemon. They share nothing: not the id space, not the abbreviation, and not
 // the index.
 #[tokio::test]
 async fn two_projects_interleave_and_allocate_ids_independently() {
-    let alpha = tempfile::tempdir().unwrap();
-    let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "AAA");
-    repository(beta.path(), "BBB");
-    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+    let (_alpha, _beta, state) = two_local("AAA", "BBB");
 
-    let first = create(&state, "alpha", "alpha one").await;
-    let second = create(&state, "beta", "beta one").await;
-    let third = create(&state, "alpha", "alpha two").await;
+    let first = create_in(&state, "alpha", json!({ "title": "alpha one" })).await;
+    let second = create_in(&state, "beta", json!({ "title": "beta one" })).await;
+    let third = create_in(&state, "alpha", json!({ "title": "alpha two" })).await;
     assert_eq!((first.as_str(), second.as_str()), ("AAA-1", "BBB-1"));
     assert_eq!(third, "AAA-2");
 
-    let listed = body_json(send(&state, "GET", "/api/projects/alpha/tasks", None).await).await;
+    let listed = json_of(&state, "/api/projects/alpha/tasks").await;
     let titles: Vec<&str> = listed
         .as_array()
         .unwrap()
@@ -111,7 +105,6 @@ async fn two_projects_interleave_and_allocate_ids_independently() {
         .collect();
     assert_eq!(titles, vec!["alpha one", "alpha two"]);
 
-    // The same number lives in both, and each project resolves only its own.
     assert_eq!(
         send(&state, "GET", "/api/projects/beta/tasks/BBB-1", None)
             .await
@@ -123,23 +116,25 @@ async fn two_projects_interleave_and_allocate_ids_independently() {
             .await
             .status(),
         StatusCode::BAD_REQUEST,
-        "AAA is not a key beta's store issues"
+        "AAA is not a key beta issues"
     );
 }
 
-// Two stores can commit the same abbreviation, so a merged board keyed on the id alone would fold
+// Two projects can use the same abbreviation, so a merged board keyed on the id alone would fold
 // their tasks into one row, and nest a child under a parent from the other project.
 #[tokio::test]
-async fn the_merged_board_keeps_two_stores_that_share_an_abbreviation_apart() {
-    let alpha = tempfile::tempdir().unwrap();
-    let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "APP");
-    repository(beta.path(), "APP");
-    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
+async fn the_merged_board_keeps_two_projects_that_share_an_abbreviation_apart() {
+    let (_alpha, _beta, state) = two_local("APP", "APP");
 
-    assert_eq!(create(&state, "alpha", "alpha one").await, "APP-1");
-    assert_eq!(create(&state, "beta", "beta one").await, "APP-1");
-    let child = create_task(
+    assert_eq!(
+        create_in(&state, "alpha", json!({ "title": "alpha one" })).await,
+        "APP-1"
+    );
+    assert_eq!(
+        create_in(&state, "beta", json!({ "title": "beta one" })).await,
+        "APP-1"
+    );
+    let child = create_in(
         &state,
         "beta",
         json!({ "title": "beta two", "parent": "APP-1" }),
@@ -147,7 +142,7 @@ async fn the_merged_board_keeps_two_stores_that_share_an_abbreviation_apart() {
     .await;
     assert_eq!(child, "APP-2");
 
-    let board = body_json(send(&state, "GET", "/api/board", None).await).await;
+    let board = json_of(&state, "/api/board").await;
     let groups = board["groups"].as_array().unwrap();
     assert_eq!(groups.len(), 1, "every task here is backlog");
     let rows = groups[0]["rows"].as_array().unwrap();
@@ -182,29 +177,107 @@ async fn the_merged_board_keeps_two_stores_that_share_an_abbreviation_apart() {
 }
 
 #[tokio::test]
-async fn a_demoted_project_drops_out_of_the_merged_board() {
-    let alpha = tempfile::tempdir().unwrap();
-    let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "AAA");
-    repository(beta.path(), "BBB");
-    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
-    create(&state, "alpha", "alpha one").await;
-    create(&state, "beta", "beta one").await;
+async fn a_merged_board_and_a_merged_search_span_a_local_and_a_git_project() {
+    let local = tempfile::tempdir().unwrap();
+    let git = tempfile::tempdir().unwrap();
+    repository(git.path());
+    let state = AppState::new([
+        local_project("alpha", local.path(), "AAA"),
+        git_project("beta", git.path(), "BBB"),
+    ]);
+    create_in(&state, "alpha", json!({ "title": "Shared word" })).await;
+    create_in(&state, "beta", json!({ "title": "Shared word" })).await;
+
+    let mut rows = board_rows(&state, "/api/board").await;
+    rows.sort();
+    assert_eq!(
+        rows,
+        vec![
+            ("alpha".to_owned(), "AAA-1".to_owned(), 0),
+            ("beta".to_owned(), "BBB-1".to_owned(), 0)
+        ]
+    );
+    let hits = json_of(&state, "/api/search?q=shared").await;
+    assert_eq!(hits.as_array().unwrap().len(), 2, "{hits}");
+
+    let listed = json_of(&state, "/api/projects").await;
+    let alpha = project_view(&listed, "alpha");
+    assert_eq!(alpha["backend"], "local");
+    assert_eq!(alpha["abbreviation"], "AAA");
+    assert!(alpha.get("git_common_dir").is_none());
+    let beta = project_view(&listed, "beta");
+    assert_eq!(beta["backend"], "git");
+    assert_eq!(beta["abbreviation"], "BBB");
+    assert_eq!(
+        beta["git_common_dir"],
+        git.path()
+            .join(".git")
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+    );
+    assert!(
+        beta.get("sync").is_none(),
+        "a repository with no remote has nothing to sync"
+    );
+}
+
+// A project that cannot read its config is not a project with no tasks. It says why on
+// `/api/projects`, and it leaves the merged board without taking the other project's rows down.
+#[tokio::test]
+async fn a_broken_config_demotes_one_project_and_leaves_the_other_serving() {
+    let (_alpha, _beta, state) = two_local("AAA", "BBB");
+    create_in(&state, "alpha", json!({ "title": "alpha one" })).await;
+    create_in(&state, "beta", json!({ "title": "beta one" })).await;
     assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
 
-    std::fs::write(alpha.path().join(".plan/config.toml"), "abbreviation = 7\n").unwrap();
-    state.project("alpha").unwrap().reload_config();
+    break_config(&state, "alpha");
 
+    let listed = json_of(&state, "/api/projects").await;
+    let alpha = project_view(&listed, "alpha");
+    assert_eq!(alpha["status"]["state"], "error");
+    let reason = alpha["status"]["reason"].as_str().unwrap();
+    assert!(reason.contains("abbreviation"), "{reason}");
+    assert_eq!(project_view(&listed, "beta")["status"]["state"], "ok");
     assert_eq!(
         board_rows(&state, "/api/board").await,
-        vec![("beta".to_owned(), "BBB-1".to_owned(), 0)],
-        "a project that cannot answer for its store leaves the board without failing it"
+        vec![("beta".to_owned(), "BBB-1".to_owned(), 0)]
+    );
+
+    write_config(&state, "alpha", "AAA");
+    let listed = json_of(&state, "/api/projects").await;
+    assert_eq!(project_view(&listed, "alpha")["status"]["state"], "ok");
+    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
+}
+
+// A project whose storage cannot be read says so on `/api/projects` instead of reading as healthy,
+// and the next good read clears it.
+#[tokio::test]
+async fn a_project_whose_tasks_cannot_be_read_says_so() {
+    let (dir, state) = git_state();
+    create(&state, "one").await;
+    let reference = dir.path().join(".git/refs/openplan/tasks");
+    let tip = std::fs::read_to_string(&reference).unwrap();
+
+    std::fs::write(&reference, "0123456789012345678901234567890123456789\n").unwrap();
+    project(&state).reload(None);
+    let listed = json_of(&state, "/api/projects").await;
+    assert_eq!(listed[0]["status"]["state"], "error", "{listed}");
+
+    std::fs::write(&reference, tip).unwrap();
+    project(&state).reload(None);
+    let listed = json_of(&state, "/api/projects").await;
+    assert_eq!(listed[0]["status"]["state"], "ok", "{listed}");
+    assert_eq!(
+        ids(&json_of(&state, "/api/projects/test/tasks").await),
+        vec!["OPP-1"]
     );
 }
 
 // The merged board answers over every project, so "no project has rows" is an empty board rather
-// than a refusal. The per-project board still 404s and 503s: it was asked about one project, and
-// that project is the answer it cannot give.
+// than a refusal. The per-project board still refuses: it was asked about one project, and that
+// project is the answer it cannot give.
 #[tokio::test]
 async fn the_merged_board_is_empty_rather_than_a_refusal_when_no_project_answers() {
     let empty = AppState::new([]);
@@ -212,21 +285,22 @@ async fn the_merged_board_is_empty_rather_than_a_refusal_when_no_project_answers
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body_json(response).await, json!({ "groups": [] }));
 
-    let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
-    let state = AppState::new([open("alpha", dir.path())]);
-    create(&state, "alpha", "alpha one").await;
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("checkout");
+    std::fs::create_dir(&root).unwrap();
+    let state = AppState::new([local_project("alpha", &root, "AAA")]);
+    create_in(&state, "alpha", json!({ "title": "alpha one" })).await;
     assert_eq!(board_rows(&state, "/api/board").await.len(), 1);
 
-    std::fs::write(dir.path().join(".plan/config.toml"), "abbreviation = 7\n").unwrap();
-    state.project("alpha").unwrap().reload_config();
-    let response = send(&state, "GET", "/api/board", None).await;
+    std::fs::remove_dir_all(&root).unwrap();
+    let project = state.project("alpha").unwrap();
+    project.poll();
+    project.poll();
     assert_eq!(
-        response.status(),
-        StatusCode::OK,
+        json_of(&state, "/api/board").await,
+        json!({ "groups": [] }),
         "the only project is demoted, and the merged board still answers"
     );
-    assert_eq!(body_json(response).await, json!({ "groups": [] }));
     assert_eq!(
         send(&state, "GET", "/api/projects/alpha/board", None)
             .await
@@ -236,115 +310,25 @@ async fn the_merged_board_is_empty_rather_than_a_refusal_when_no_project_answers
     );
 }
 
-// A repository that cannot be read is not a project with no tasks. It leaves the merged board, and
-// it says why on `/api/projects` — otherwise the UI would show it as healthy and empty, which is
-// the one thing the board must never claim about work somebody has.
-#[tokio::test]
-async fn a_project_whose_index_cannot_be_rebuilt_says_so_instead_of_reading_as_empty() {
-    let alpha = tempfile::tempdir().unwrap();
-    let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "AAA");
-    repository(beta.path(), "BBB");
-    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
-    create(&state, "alpha", "alpha one").await;
-    create(&state, "beta", "beta one").await;
-    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
-
-    let git = alpha.path().join(".git/objects");
-    let moved = alpha.path().join(".git/objects-moved-away");
-    std::fs::rename(&git, &moved).unwrap();
-
-    assert_eq!(
-        board_rows(&state, "/api/board").await,
-        vec![("beta".to_owned(), "BBB-1".to_owned(), 0)],
-        "one unreadable repository must not take the other project's rows down"
-    );
-    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
-    let entry = &listed.as_array().unwrap()[0];
-    assert_eq!(entry["name"], "alpha");
-    assert_eq!(
-        entry["status"]["state"], "error",
-        "a project that could not be read must not report as healthy"
-    );
-
-    // Nothing latches: the next read is what finds the repository readable again.
-    std::fs::rename(&moved, &git).unwrap();
-    assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
-    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
-    assert_eq!(listed.as_array().unwrap()[0]["status"]["state"], "ok");
-}
-
-#[tokio::test]
-async fn a_broken_config_demotes_one_project_and_leaves_the_other_serving() {
-    let alpha = tempfile::tempdir().unwrap();
-    let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "AAA");
-    repository(beta.path(), "BBB");
-    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())]);
-    let broken = state.project("alpha").unwrap();
-
-    std::fs::write(alpha.path().join(".plan/config.toml"), "abbreviation = 7\n").unwrap();
-    broken.reload_config();
-
-    let refused = send(&state, "GET", "/api/projects/alpha/tasks", None).await;
-    assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let message = body_json(refused).await["message"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert!(message.contains("abbreviation"), "{message}");
-
-    assert_eq!(
-        send(&state, "GET", "/api/projects/beta/tasks", None)
-            .await
-            .status(),
-        StatusCode::OK,
-        "one broken project must not take the others down"
-    );
-
-    // A demoted project is still registered, and says why it cannot answer.
-    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
-    let alpha_entry = &listed.as_array().unwrap()[0];
-    assert_eq!(alpha_entry["name"], "alpha");
-    assert_eq!(alpha_entry["status"]["state"], "error");
-
-    std::fs::write(
-        alpha.path().join(".plan/config.toml"),
-        "abbreviation = \"AAA\"\n",
-    )
-    .unwrap();
-    broken.reload_config();
-    assert_eq!(
-        send(&state, "GET", "/api/projects/alpha/tasks", None)
-            .await
-            .status(),
-        StatusCode::OK,
-        "a restored config promotes the project again"
-    );
-}
-
 #[tokio::test]
 async fn a_removed_root_demotes_the_project_and_a_restored_one_promotes_it() {
-    let alpha = tempfile::tempdir().unwrap();
+    let parent = tempfile::tempdir().unwrap();
     let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "AAA");
-    repository(beta.path(), "BBB");
-    let root = alpha.path().join("checkout");
+    let root = parent.path().join("checkout");
     std::fs::create_dir(&root).unwrap();
-    repository(&root, "AAA");
-    let state = AppState::new([open("alpha", &root), open("beta", beta.path())]);
+    let state = AppState::new([
+        local_project("alpha", &root, "AAA"),
+        local_project("beta", beta.path(), "BBB"),
+    ]);
     let vanishing = state.project("alpha").unwrap();
 
     std::fs::remove_dir_all(&root).unwrap();
-    assert!(!vanishing.poll_root(), "one miss is not yet a demotion");
-    assert!(vanishing.poll_root(), "two misses in sequence demote");
+    assert!(!vanishing.poll(), "one miss is not yet a demotion");
+    assert!(vanishing.poll(), "two misses in sequence demote");
 
-    assert_eq!(
-        send(&state, "GET", "/api/projects/alpha/tasks", None)
-            .await
-            .status(),
-        StatusCode::SERVICE_UNAVAILABLE
-    );
+    let refused = send(&state, "GET", "/api/projects/alpha/tasks", None).await;
+    assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(message_of(&body_json(refused).await).contains("no longer exists"));
     assert_eq!(
         send(&state, "GET", "/api/projects/beta/tasks", None)
             .await
@@ -352,9 +336,11 @@ async fn a_removed_root_demotes_the_project_and_a_restored_one_promotes_it() {
         StatusCode::OK,
         "the daemon keeps serving; only the project with the missing root is demoted"
     );
+    let listed = json_of(&state, "/api/projects").await;
+    assert_eq!(project_view(&listed, "alpha")["status"]["state"], "error");
 
     std::fs::create_dir(&root).unwrap();
-    assert!(vanishing.poll_root(), "the root is back");
+    assert!(vanishing.poll(), "the root is back");
     assert_eq!(
         send(&state, "GET", "/api/projects/alpha/tasks", None)
             .await
@@ -363,128 +349,266 @@ async fn a_removed_root_demotes_the_project_and_a_restored_one_promotes_it() {
     );
 }
 
-// Every read used to walk each local branch. With N projects and a merged board that cost is paid N
-// times per request, so a project nothing has changed must not be walked again.
+// The abbreviation spells every key, so a new one re-keys every task at once.
 #[tokio::test]
-async fn a_read_on_a_clean_project_skips_the_rebuild() {
+async fn a_new_abbreviation_re_keys_every_task() {
     let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
-    let state = AppState::new([open("alpha", dir.path())]);
-    let project = state.project("alpha").unwrap();
-    // Without a live watcher nothing can invalidate the matrix, so the gate stays open.
-    state.start_watchers();
+    let state = AppState::new([local_project("alpha", dir.path(), "AAA")]);
+    create_in(&state, "alpha", json!({ "title": "one" })).await;
+    assert_eq!(
+        ids(&json_of(&state, "/api/projects/alpha/tasks").await),
+        vec!["AAA-1"]
+    );
 
-    assert_eq!(rebuilds(&project), 0);
-    send(&state, "GET", "/api/projects/alpha/tasks", None).await;
-    let first = rebuilds(&project);
-    assert_eq!(first, 1, "the first read has nothing to trust");
+    write_config(&state, "alpha", "ZZZ");
 
-    send(&state, "GET", "/api/projects/alpha/board", None).await;
-    send(&state, "GET", "/api/projects/alpha/tasks", None).await;
-    assert_eq!(rebuilds(&project), first, "a clean project is not rebuilt");
-
-    // A write rebuilds in all conditions, and leaves the project readable again without a walk.
-    create(&state, "alpha", "one").await;
-    let after_write = rebuilds(&project);
-    assert!(after_write > first, "a write always rebuilds");
-
-    project.mark_dirty();
-    send(&state, "GET", "/api/projects/alpha/tasks", None).await;
-    assert!(
-        rebuilds(&project) > after_write,
-        "a change reported by the watcher reopens the gate"
+    assert_eq!(
+        ids(&json_of(&state, "/api/projects/alpha/tasks").await),
+        vec!["ZZZ-1"]
+    );
+    let board = json_of(&state, "/api/projects/alpha/board").await;
+    assert!(board.to_string().contains("ZZZ-1"), "{board}");
+    assert_eq!(
+        send(&state, "GET", "/api/projects/alpha/tasks/AAA-1", None)
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        json_of(&state, "/api/projects").await[0]["abbreviation"],
+        "ZZZ"
     );
 }
 
-fn rebuilds(project: &Project) -> u64 {
-    project.index.lock().unwrap().rebuilds()
-}
-
 #[tokio::test]
-async fn registering_a_repository_twice_answers_the_entry_it_already_has() {
+async fn registering_a_directory_with_an_abbreviation_starts_its_tasks() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
-    let state = AppState::new([]).with_registry(home.path().join("registry.toml"));
+    let state = with_registry(home.path(), []);
 
-    let created = send(
+    let (status, view) =
+        register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+    assert_eq!(status, StatusCode::CREATED, "{view}");
+    assert_eq!(
+        view["backend"], "local",
+        "a directory outside git keeps its tasks in files"
+    );
+    assert_eq!(view["abbreviation"], "OPP");
+    assert_eq!(view["status"]["state"], "ok");
+    assert!(dir.path().join(".plan/config.toml").exists());
+
+    let name = view["name"].as_str().unwrap().to_owned();
+    let id = create_in(&state, &name, json!({ "title": "First" })).await;
+    assert_eq!(id, "OPP-1");
+
+    let registry = ProjectRegistry::read(&home.path().join(REGISTRY_FILE))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        registry.entries(),
+        [ProjectEntry {
+            name,
+            path: dir.path().canonicalize().unwrap(),
+            backend: Some(BackendKind::Local),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn registering_a_repository_with_an_abbreviation_keeps_its_tasks_on_a_branch() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path());
+    let state = with_registry(home.path(), []);
+
+    let (status, view) =
+        register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+    assert_eq!(status, StatusCode::CREATED, "{view}");
+    assert_eq!(view["backend"], "git");
+    assert_eq!(view["abbreviation"], "OPP");
+    assert!(!dir.path().join(".plan").exists());
+    assert!(!git_output(dir.path(), &["rev-parse", op_backend_git::TASKS_NAME]).is_empty());
+
+    let name = view["name"].as_str().unwrap().to_owned();
+    assert_eq!(
+        create_in(&state, &name, json!({ "title": "First" })).await,
+        "OPP-1"
+    );
+}
+
+#[tokio::test]
+async fn a_repository_can_keep_its_tasks_in_local_files_when_asked() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path());
+    let state = with_registry(home.path(), []);
+
+    let (status, view) = register(
         &state,
-        "POST",
-        "/api/projects",
-        Some(json!({ "path": dir.path() })),
+        json!({ "path": dir.path(), "backend": "local", "abbreviation": "OPP" }),
     )
     .await;
-    assert_eq!(created.status(), StatusCode::CREATED);
-    let entry = body_json(created).await;
+    assert_eq!(status, StatusCode::CREATED, "{view}");
+    assert_eq!(view["backend"], "local");
+    assert!(dir.path().join(".plan/.history.sqlite").exists());
+}
+
+#[tokio::test]
+async fn starting_a_project_again_under_another_abbreviation_is_a_conflict() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let state = with_registry(home.path(), []);
+    let (status, first) =
+        register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, again) =
+        register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the same abbreviation starts nothing new"
+    );
+    assert_eq!(again["name"], first["name"]);
+
+    let (status, refused) =
+        register(&state, json!({ "path": dir.path(), "abbreviation": "ZZZ" })).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{refused}");
+    assert!(message_of(&refused).contains("OPP"), "{refused}");
+    assert_eq!(
+        json_of(&state, "/api/projects").await[0]["abbreviation"],
+        "OPP"
+    );
+}
+
+#[tokio::test]
+async fn registering_a_project_twice_answers_the_entry_it_already_has() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let state = with_registry(home.path(), []);
+
+    let (status, entry) =
+        register(&state, json!({ "path": dir.path(), "abbreviation": "AAA" })).await;
+    assert_eq!(status, StatusCode::CREATED);
     assert_eq!(entry["status"]["state"], "ok");
 
-    let again = send(
-        &state,
-        "POST",
-        "/api/projects",
-        Some(json!({ "path": dir.path() })),
-    )
-    .await;
+    let (status, again) = register(&state, json!({ "path": dir.path() })).await;
     assert_eq!(
-        again.status(),
+        status,
         StatusCode::OK,
-        "the CLI auto-registers on its first write, and two of those can race"
+        "the CLI registers on its first write, and two of those can race"
     );
-    assert_eq!(body_json(again).await["name"], entry["name"]);
+    assert_eq!(again["name"], entry["name"]);
+    assert_eq!(
+        json_of(&state, "/api/projects")
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
 
-    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
-    assert_eq!(listed.as_array().unwrap().len(), 1);
+#[tokio::test]
+async fn a_restarted_daemon_serves_what_it_registered() {
+    let home = tempfile::tempdir().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    let git = tempfile::tempdir().unwrap();
+    repository(git.path());
+    let state = with_registry(home.path(), []);
+    for dir in [&local, &git] {
+        let (status, view) =
+            register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+        assert_eq!(status, StatusCode::CREATED);
+        create_in(
+            &state,
+            view["name"].as_str().unwrap(),
+            json!({ "title": "Kept" }),
+        )
+        .await;
+    }
+    drop(state);
+
+    let registry = ProjectRegistry::read(&home.path().join(REGISTRY_FILE))
+        .unwrap()
+        .unwrap();
+    let projects = op_server::open_projects(registry.entries());
+    assert_eq!(projects.len(), 2);
+    let restarted = AppState::new(projects);
+    for view in json_of(&restarted, "/api/projects")
+        .await
+        .as_array()
+        .unwrap()
+    {
+        let name = view["name"].as_str().unwrap();
+        let tasks = json_of(&restarted, &format!("/api/projects/{name}/tasks")).await;
+        assert_eq!(ids(&tasks), vec!["OPP-1"], "{name}");
+    }
 }
 
 #[tokio::test]
 async fn registering_a_path_that_cannot_be_served_names_the_missing_part() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let state = AppState::new([]).with_registry(home.path().join("registry.toml"));
+    let state = with_registry(home.path(), []);
 
-    let no_repo = send(
+    let (status, body) = register(&state, json!({ "path": dir.path() })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(message_of(&body).contains("openplan init"), "{body}");
+
+    let (status, body) = register(
         &state,
-        "POST",
-        "/api/projects",
-        Some(json!({ "path": dir.path() })),
+        json!({ "path": dir.path(), "backend": "git", "abbreviation": "OPP" }),
     )
     .await;
-    assert_eq!(no_repo.status(), StatusCode::BAD_REQUEST);
-    let message = body_json(no_repo).await["message"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert!(message.contains("git repository"), "{message}");
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(message_of(&body).contains("git repository"), "{body}");
 
-    git(dir.path(), &["init", "-q", "-b", "main"]);
-    let no_store = send(
-        &state,
-        "POST",
-        "/api/projects",
-        Some(json!({ "path": dir.path() })),
-    )
-    .await;
-    assert_eq!(no_store.status(), StatusCode::BAD_REQUEST);
-    let message = body_json(no_store).await["message"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert!(message.contains(".plan"), "{message}");
+    let (status, body) =
+        register(&state, json!({ "path": dir.path(), "abbreviation": "opp" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        message_of(&body).contains("three uppercase letters"),
+        "{body}"
+    );
+
+    let (status, body) = register(&state, json!({ "path": "relative/path" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(message_of(&body).contains("absolute"), "{body}");
 
     assert!(
-        !home.path().join("registry.toml").exists(),
+        !home.path().join(REGISTRY_FILE).exists(),
         "a refused path leaves no entry behind"
     );
+    assert!(!dir.path().join(".plan").exists());
+}
+
+// Tasks in `.plan/` beside the code of a repository predate the tasks branch. The daemon names the
+// command that moves them, rather than serve them as if nothing had changed.
+#[tokio::test]
+async fn a_repository_with_tasks_beside_the_code_needs_a_migration() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    repository(dir.path());
+    std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
+    std::fs::write(
+        dir.path().join(".plan/config.toml"),
+        "abbreviation = \"OPP\"\n",
+    )
+    .unwrap();
+    let state = with_registry(home.path(), []);
+
+    let (status, body) = register(&state, json!({ "path": dir.path() })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(message_of(&body).contains("openplan migrate"), "{body}");
 }
 
 #[tokio::test]
 async fn removing_a_project_stops_serving_it_and_leaves_its_files() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
-    let registry = home.path().join("registry.toml");
-    let state = AppState::new([open("alpha", dir.path())]).with_registry(registry.clone());
-    create(&state, "alpha", "one").await;
+    let state = with_registry(home.path(), [local_project("alpha", dir.path(), "AAA")]);
+    create_in(&state, "alpha", json!({ "title": "one" })).await;
 
     assert_eq!(
         send(&state, "DELETE", "/api/projects/alpha", None)
@@ -506,7 +630,39 @@ async fn removing_a_project_stops_serving_it_and_leaves_its_files() {
     );
     assert!(
         dir.path().join(".plan/tasks/00001-one.md").exists(),
-        "the daemon serves a repository; it does not own one"
+        "the daemon serves the tasks; it does not own them"
+    );
+}
+
+// An entry the daemon could not open has no live project, and removing it spares the user an edit
+// of the file the daemon owns.
+#[tokio::test]
+async fn removing_an_entry_the_daemon_could_not_open_clears_it_from_the_registry() {
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join(REGISTRY_FILE);
+    let mut registry = ProjectRegistry::default();
+    registry.insert(ProjectEntry {
+        name: "gone".to_owned(),
+        path: home.path().join("nowhere"),
+        backend: None,
+    });
+    registry.write(&path).unwrap();
+    let projects = op_server::open_projects(registry.entries());
+    assert!(projects.is_empty());
+    let state = AppState::new(projects).with_registry(path.clone());
+
+    assert_eq!(
+        send(&state, "DELETE", "/api/projects/gone", None)
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert!(
+        ProjectRegistry::read(&path)
+            .unwrap()
+            .unwrap()
+            .entries()
+            .is_empty()
     );
 }
 
@@ -515,10 +671,13 @@ async fn renaming_a_project_moves_its_routes() {
     let home = tempfile::tempdir().unwrap();
     let alpha = tempfile::tempdir().unwrap();
     let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "AAA");
-    repository(beta.path(), "BBB");
-    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())])
-        .with_registry(home.path().join("registry.toml"));
+    let state = with_registry(
+        home.path(),
+        [
+            local_project("alpha", alpha.path(), "AAA"),
+            local_project("beta", beta.path(), "BBB"),
+        ],
+    );
 
     let renamed = send(
         &state,
@@ -542,6 +701,11 @@ async fn renaming_a_project_moves_its_routes() {
             .status(),
         StatusCode::NOT_FOUND
     );
+    let registry = ProjectRegistry::read(&home.path().join(REGISTRY_FILE))
+        .unwrap()
+        .unwrap();
+    assert!(registry.holds_name("work"));
+    assert_eq!(registry.entries()[0].backend, Some(BackendKind::Local));
 
     let taken = send(
         &state,
@@ -560,16 +724,25 @@ async fn renaming_a_project_moves_its_routes() {
     )
     .await;
     assert_eq!(unusable.status(), StatusCode::BAD_REQUEST);
+
+    let missing = send(
+        &state,
+        "PATCH",
+        "/api/projects/ghost",
+        Some(json!({ "name": "spirit" })),
+    )
+    .await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
 }
 
-// A number is issued at most once per repository, and each project issues from its own counter.
-// Two worktrees of one repository served as two projects would each mint the same number into a
-// different `.plan` directory, and neither store could see the other's file.
+// Every worktree of a repository reads the one tasks branch, so two worktrees are one project.
 #[tokio::test]
 async fn two_worktrees_of_one_repository_are_one_project() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
+    repository(dir.path());
+    drop(git_project("main", dir.path(), "AAA"));
+    git(dir.path(), &["commit", "-q", "--allow-empty", "-m", "init"]);
     let linked = dir.path().join("wt");
     git(
         dir.path(),
@@ -577,13 +750,15 @@ async fn two_worktrees_of_one_repository_are_one_project() {
     );
 
     let entries = [
-        op_server::ProjectEntry {
+        ProjectEntry {
             name: "main".to_owned(),
             path: dir.path().to_path_buf(),
+            backend: None,
         },
-        op_server::ProjectEntry {
+        ProjectEntry {
             name: "feature".to_owned(),
             path: linked.clone(),
+            backend: None,
         },
     ];
     let opened = op_server::open_projects(&entries);
@@ -592,105 +767,47 @@ async fn two_worktrees_of_one_repository_are_one_project() {
         vec!["main"],
         "a hand-written registry naming two worktrees of one repository serves the first"
     );
+    assert_eq!(opened[0].path, dir.path().canonicalize().unwrap());
 
-    // The route that adds one answers with the project the repository already has.
-    let state = AppState::new(opened).with_registry(home.path().join("registry.toml"));
-    let response = send(
-        &state,
-        "POST",
-        "/api/projects",
-        Some(json!({ "path": linked })),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(body_json(response).await["name"], "main");
+    let state = AppState::new(opened).with_registry(home.path().join(REGISTRY_FILE));
+    let (status, view) = register(&state, json!({ "path": linked })).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["name"], "main");
+    assert_eq!(view["abbreviation"], "AAA");
 }
 
-// The daemon only ever writes a name `slug` produced. A name written by hand can be one no request
-// can carry, and serving it would be serving a project nothing can reach.
+// A name reaches the URL as one path segment. A name written by hand can be one no request can
+// carry, and serving it would be serving a project nothing can reach.
 #[tokio::test]
 async fn a_hand_written_name_no_url_can_carry_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
+    drop(local_project("alpha", dir.path(), "AAA"));
     let entries = [
-        op_server::ProjectEntry {
+        ProjectEntry {
             name: "team/alpha".to_owned(),
             path: dir.path().to_path_buf(),
+            backend: None,
         },
-        op_server::ProjectEntry {
+        ProjectEntry {
             name: String::new(),
             path: dir.path().to_path_buf(),
+            backend: None,
         },
     ];
     assert!(op_server::open_projects(&entries).is_empty());
 }
 
-// The matrix holds ids formatted with the abbreviation it was built under, and `Index::number_of`
-// panics on a key the current abbreviation cannot parse. The dirty gate is what makes a matrix
-// outlive its abbreviation, so changing one has to reopen the gate.
-#[tokio::test]
-async fn a_new_abbreviation_reopens_the_gate_rather_than_serving_the_old_keys() {
-    let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
-    let state = AppState::new([open("alpha", dir.path())]);
-    let project = state.project("alpha").unwrap();
-    state.start_watchers();
-    create(&state, "alpha", "one").await;
-
-    let listed = body_json(send(&state, "GET", "/api/projects/alpha/tasks", None).await).await;
-    assert_eq!(listed.as_array().unwrap()[0]["id"], "AAA-1");
-    let before = rebuilds(&project);
-
-    std::fs::write(
-        dir.path().join(".plan/config.toml"),
-        "abbreviation = \"ZZZ\"\n",
-    )
-    .unwrap();
-    project.reload_config();
-    assert!(
-        rebuilds(&project) == before,
-        "the reload itself does not walk the branches"
-    );
-
-    // Reading under the new abbreviation must rebuild, not render the matrix built under the old.
-    let listed = body_json(send(&state, "GET", "/api/projects/alpha/tasks", None).await).await;
-    assert!(
-        rebuilds(&project) > before,
-        "a new abbreviation is a change"
-    );
-    assert_eq!(listed.as_array().unwrap()[0]["id"], "ZZZ-1");
-    // The board reaches `Index::number_of`, which panics on a key the abbreviation cannot parse.
-    let board = send(&state, "GET", "/api/projects/alpha/board", None).await;
-    assert_eq!(
-        board.status(),
-        StatusCode::OK,
-        "the board renders rather than panicking on a key built under the old abbreviation"
-    );
-    assert!(
-        body_json(board).await.to_string().contains("ZZZ-1"),
-        "the board renders the new spelling"
-    );
-}
-
-// A project registered over HTTP starts answering its own routes at once, without a restart.
 #[tokio::test]
 async fn a_project_registered_over_http_answers_its_own_routes() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
-    let state = AppState::new([]).with_registry(home.path().join("registry.toml"));
+    drop(local_project("alpha", dir.path(), "AAA"));
+    let state = with_registry(home.path(), []);
 
-    let registered = body_json(
-        send(
-            &state,
-            "POST",
-            "/api/projects",
-            Some(json!({ "path": dir.path() })),
-        )
-        .await,
-    )
-    .await;
-    let name = registered["name"].as_str().unwrap().to_owned();
+    let (status, registered) = register(&state, json!({ "path": dir.path() })).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(registered["abbreviation"], "AAA");
+    let name = registered["name"].as_str().unwrap();
     assert_eq!(
         send(&state, "GET", &format!("/api/projects/{name}/tasks"), None)
             .await
@@ -699,16 +816,18 @@ async fn a_project_registered_over_http_answers_its_own_routes() {
     );
 }
 
-// Removing one project must not take the others down with it.
 #[tokio::test]
 async fn removing_a_project_leaves_the_others_serving() {
     let home = tempfile::tempdir().unwrap();
     let alpha = tempfile::tempdir().unwrap();
     let beta = tempfile::tempdir().unwrap();
-    repository(alpha.path(), "AAA");
-    repository(beta.path(), "BBB");
-    let state = AppState::new([open("alpha", alpha.path()), open("beta", beta.path())])
-        .with_registry(home.path().join("registry.toml"));
+    let state = with_registry(
+        home.path(),
+        [
+            local_project("alpha", alpha.path(), "AAA"),
+            local_project("beta", beta.path(), "BBB"),
+        ],
+    );
 
     send(&state, "DELETE", "/api/projects/alpha", None).await;
     assert_eq!(
@@ -717,7 +836,7 @@ async fn removing_a_project_leaves_the_others_serving() {
             .status(),
         StatusCode::NOT_FOUND
     );
-    let views = body_json(send(&state, "GET", "/api/projects", None).await).await;
+    let views = json_of(&state, "/api/projects").await;
     assert_eq!(views.as_array().unwrap().len(), 1, "{views}");
     assert_eq!(views[0]["name"], "beta");
     assert_eq!(views[0]["abbreviation"], "BBB");
@@ -729,7 +848,6 @@ async fn removing_a_project_leaves_the_others_serving() {
     );
 }
 
-// Zero projects is a served state: the daemon answers, and says so, rather than refusing to run.
 #[tokio::test]
 async fn a_daemon_with_no_projects_still_serves() {
     let state = AppState::new([]);
@@ -737,140 +855,27 @@ async fn a_daemon_with_no_projects_still_serves() {
         send(&state, "GET", "/health", None).await.status(),
         StatusCode::OK
     );
-    let listed = body_json(send(&state, "GET", "/api/projects", None).await).await;
-    assert_eq!(listed, json!([]));
-    let merged = body_json(send(&state, "GET", "/api/board", None).await).await;
-    assert_eq!(merged, json!({ "groups": [] }));
+    assert_eq!(json_of(&state, "/api/projects").await, json!([]));
+    assert_eq!(json_of(&state, "/api/board").await, json!({ "groups": [] }));
+    assert_eq!(json_of(&state, "/api/flow").await["nodes"], json!([]));
 }
 
 // Membership changes are the daemon's own writes, so a state built from a fixed list has no file to
-// keep in step and says so rather than diverging from one silently.
+// keep in step and says so rather than drift from one.
 #[tokio::test]
 async fn a_state_with_no_registry_refuses_to_change_membership() {
     let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
-    let state = AppState::new([open("alpha", dir.path())]);
+    let state = AppState::new([local_project("alpha", dir.path(), "AAA")]);
 
-    let response = send(
-        &state,
-        "POST",
-        "/api/projects",
-        Some(json!({ "path": dir.path() })),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-}
-
-// The store's own config decides the merge target, so a change to it must move the baseline the
-// whole matrix is measured from — without a restart, and for a branch nobody has checked out.
-#[tokio::test]
-async fn a_new_default_branch_in_the_config_moves_the_baseline() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    repository(root, "AAA");
-    let task = root.join(".plan/tasks/00001-alpha.md");
-    std::fs::write(
-        &task,
-        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
-    )
-    .unwrap();
-    git(root, &["add", "-A"]);
-    git(root, &["commit", "-qm", "add a"]);
-    git(root, &["checkout", "-q", "-b", "dev"]);
-    std::fs::write(
-        &task,
-        "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# A\n",
-    )
-    .unwrap();
-    git(root, &["add", "-A"]);
-    git(root, &["commit", "-qm", "edit a on dev"]);
-    git(root, &["checkout", "-q", "main"]);
-
-    let state = AppState::new([open("alpha", root)]);
-    assert_eq!(
-        branch_names(&state).await,
-        vec!["dev", "main"],
-        "main is the autodetected baseline, and dev differs from it"
-    );
-
-    std::fs::write(
-        root.join(".plan/config.toml"),
-        "abbreviation = \"AAA\"\ndefault_branch = \"dev\"\n",
-    )
-    .unwrap();
-    state.project("alpha").unwrap().reload_config();
-
-    assert_eq!(
-        branch_names(&state).await,
-        vec!["dev"],
-        "dev is the baseline now, so main carries nothing of its own"
-    );
-}
-
-async fn branch_names(state: &AppState) -> Vec<String> {
-    let response = send(state, "GET", "/api/projects/alpha/tasks", None).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let items = body_json(response).await;
-    let items = items.as_array().unwrap();
-    assert_eq!(items.len(), 1, "one row per logical task: {items:?}");
-    items[0]["branches"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|b| b["branch"].as_str().unwrap().to_owned())
-        .collect()
-}
-
-// A tag registered outside the daemon — by the CLI, or by hand — is only visible to a UI if the
-// watcher sees the registry.
-#[tokio::test]
-async fn a_tag_written_outside_the_daemon_reaches_the_event_stream() {
-    let dir = tempfile::tempdir().unwrap();
-    repository(dir.path(), "AAA");
-    let state = AppState::new([open("alpha", dir.path())]);
-    state.start_watchers();
-
-    let events = send(&state, "GET", "/api/events", None).await;
-    assert_eq!(events.status(), StatusCode::OK);
-
-    // The repository has no `.plan/tags` yet, so this covers the directory's creation too.
-    std::fs::create_dir_all(dir.path().join(".plan/tags")).unwrap();
-    std::fs::write(
-        dir.path().join(".plan/tags/backend.md"),
-        "---\ncolor: blue\n---\n\n# Backend\n",
-    )
-    .unwrap();
-
-    // Starting the rolling-updates branch adds a worktree, and a new worktree reports a tags change
-    // of its own, so this waits for the branch the tag was written on.
-    let event = sse_event(events, "tags_changed", Some("main")).await;
-    assert_eq!(event["project"], "alpha");
-}
-
-async fn sse_event(response: Response, kind: &str, branch: Option<&str>) -> Value {
-    let read = async {
-        let mut body = response.into_body();
-        let mut buffer = String::new();
-        while let Some(frame) = body.frame().await {
-            if let Some(data) = frame.unwrap().data_ref() {
-                buffer.push_str(&String::from_utf8_lossy(data));
-            }
-            // An SSE event ends at a blank line; only parse a fully-received event so a payload
-            // split across frames is never read half-formed.
-            while let Some(end) = buffer.find("\n\n") {
-                let event: String = buffer.drain(..end + 2).collect();
-                let Some(line) = event.lines().find_map(|line| line.strip_prefix("data:")) else {
-                    continue;
-                };
-                let value: Value = serde_json::from_str(line.trim()).unwrap();
-                if value["kind"] == kind && branch.is_none_or(|branch| value["branch"] == branch) {
-                    return value;
-                }
-            }
-        }
-        panic!("event stream closed before delivering a {kind} event");
-    };
-    tokio::time::timeout(std::time::Duration::from_secs(10), read)
-        .await
-        .unwrap_or_else(|_| panic!("no {kind} event arrived"))
+    let (status, _) = register(&state, json!({ "path": dir.path() })).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    for (method, body) in [("DELETE", None), ("PATCH", Some(json!({ "name": "work" })))] {
+        assert_eq!(
+            send(&state, method, "/api/projects/alpha", body)
+                .await
+                .status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "{method}"
+        );
+    }
 }

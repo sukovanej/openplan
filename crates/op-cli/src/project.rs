@@ -28,8 +28,11 @@ fn list(client: &Client, base_url: &str) -> Result<()> {
     let width = views.iter().map(|view| view.name.len()).max().unwrap_or(0);
     for view in &views {
         println!(
-            "{:<width$}  {}  {}",
-            view.name, view.abbreviation, view.root
+            "{:<width$}  {}  {:<5}  {}",
+            view.name,
+            view.abbreviation,
+            view.backend.as_str(),
+            view.root
         );
         // A demoted project is still registered and still listed. Its reason is the answer to "why
         // does the UI not show this project".
@@ -41,12 +44,11 @@ fn list(client: &Client, base_url: &str) -> Result<()> {
 }
 
 fn add(client: &Client, base_url: &str, path: Option<&Path>, root: &Path) -> Result<()> {
-    // The daemon resolves this to the checkout that can serve it, and its own working directory is
-    // not the caller's, so the path it receives has to be absolute.
+    // The daemon's working directory is not the caller's, so the path it receives is absolute.
     let asked = path.unwrap_or(root);
     let path = std::fs::canonicalize(asked)
         .with_context(|| format!("no such directory: {}", asked.display()))?;
-    let (view, created) = client.register_project(base_url, &path)?;
+    let (view, created) = client.register_project(base_url, &path, None, None)?;
     match created {
         true => println!("registered {} at {}", view.name, view.root),
         false => println!("{} already serves {}", view.name, view.root),

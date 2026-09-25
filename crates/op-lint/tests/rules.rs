@@ -330,6 +330,25 @@ fn an_unresolved_markdown_link_into_source_is_reported() {
 }
 
 #[test]
+fn a_link_to_an_asset_the_store_holds_resolves_without_a_file_on_disk() {
+    let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Title\n\nSee [the mockup](../assets/mockup.html).\n";
+    let files = vec![file("00001-mockup.md", source)];
+    let asset = Path::new(ROOT).join(".plan/assets/mockup.html");
+
+    let held = Snapshot::from_files(PathBuf::from(ROOT), abbr(), files.clone())
+        .with_documents([asset].into_iter().collect());
+    assert!(lint(&held).is_empty());
+
+    let missing = only(lint(&Snapshot::from_files(
+        PathBuf::from(ROOT),
+        abbr(),
+        files,
+    )));
+    assert_eq!(missing.code, Code::Reference);
+    assert_eq!(missing.span, Some(span_of(source, "../assets/mockup.html")));
+}
+
+#[test]
 fn an_anchor_matching_no_heading_is_reported() {
     let source = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# One\n\nSee [[./00002-two.md#Nowhere]].\n";
     let target = file(
@@ -773,4 +792,16 @@ fn a_tags_entry_that_no_registered_tag_matches_lints_clean() {
     )];
     let diags = lint_all(&files, &[tag("backend", BACKEND_TAG)]);
     assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn an_open_conflict_is_reported_once_and_hides_no_title() {
+    let block = "<<<<<<< Ann (1111111)\n# Parser for Ann\n=======\n# Parser for Ben\n>>>>>>> Ben (2222222)\n";
+    let source = format!("---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n{block}\nText.\n");
+
+    let d = only(lint_files(&[file("00001-parser.md", &source)]));
+
+    assert_eq!(d.code, Code::Conflict);
+    assert_eq!(d.span, Some(span_of(&source, block)));
+    assert!(d.message.contains("Ann (1111111)") && d.message.contains("Ben (2222222)"));
 }

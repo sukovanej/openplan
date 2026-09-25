@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use op_lint::{Code, Diagnostic, Snapshot, Uncommitted, lint};
 use op_skills::Agent;
-use op_store::Store;
 use op_task::Abbreviation;
 
 fn abbr() -> Abbreviation {
@@ -126,8 +125,19 @@ fn a_repair_rewrites_only_the_skill_that_drifted() {
     let drifted = skill_path(root, ".claude/skills", "task-management");
     fs::write(&drifted, "hand-written\n").unwrap();
 
-    let store = Store::discover(root).unwrap();
-    let changed = op_lint::fix_store(&store, &Uncommitted).unwrap();
+    let plan_dir = root.join(".plan");
+    let backend = op_backend_local::LocalBackend::open(&plan_dir, Default::default()).unwrap();
+    let tracker = op_tracker::Tracker::new(std::sync::Arc::new(backend));
+    let snap = Snapshot::from_plan(&tracker.plan().unwrap(), &plan_dir, root).unwrap();
+    let changed = op_lint::fix_plan(
+        &tracker,
+        &op_backend::Actor::new("Ada"),
+        &snap,
+        &plan_dir,
+        &Uncommitted,
+        &|_| true,
+    )
+    .unwrap();
 
     assert_eq!(changed.len(), 1, "{changed:?}");
     assert!(

@@ -1,21 +1,37 @@
-import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Waypoints, X } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
+import { Pencil, Plus, Undo2, Waypoints, X } from "lucide-react"
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
-import type { Board, Comment, TaskDetail, TaskListItem } from "@openplan/api-client"
+import type {
+  Board,
+  Comment,
+  HistoryEntry,
+  Metadata,
+  TaskDetail,
+  TaskListItem,
+  TaskSnapshot,
+} from "@openplan/api-client"
 import {
+  type BodySegment,
+  bodySegments,
   boardPath,
-  BranchSwitcher,
   CommentThread,
   createdOf,
+  fieldConflict,
+  frontmatterFields,
   parentOf,
   ParentLink,
   problems,
+  REVISION_PARAM,
+  RevisionMeta,
+  revisionSummary,
+  shortRevision,
   statusField,
-  TaskBody,
+  TaskBodyWithConflicts,
   TaskIdentity,
   taskPath,
+  TaskTags,
   TaskTimes,
   UnresolvedMark,
 } from "@openplan/task-ui"
@@ -33,26 +49,29 @@ import {
   Section,
 } from "@openplan/ui"
 
-import { Blocked } from "../components/blocked"
+import { ConflictBanner, FieldConflictControl } from "../components/field-conflict"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { TagsField } from "../components/tags-field"
-import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
+import { TaskHistory } from "../components/task-history"
+import { createTask, getTask, listTasks, patchTask, resolveConflict, TaskNotFound } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { taskFlowPath } from "../lib/flow-selection"
 import { errorText } from "../lib/format"
-import { useAbbreviation, useProject } from "../lib/projects"
+import { useTaskHistory, useTaskRevision } from "../lib/history"
+import { useAbbreviation } from "../lib/projects"
 import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
 import { runtime } from "../lib/runtime"
 import { NO_ROW } from "../lib/status-requests"
+import { useTags } from "../lib/tags"
 import { taskMatches } from "../lib/task-search"
-import { type WriteHere, writeHere } from "../lib/write-target"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
 const NO_COMMENTS: ReadonlyArray<Comment> = []
+const NO_ROWS: ReadonlyArray<string> = []
 
 function boardTasks(board: Board): ReadonlyArray<TaskListItem> {
   return board.groups.flatMap((group) => group.rows.map((row) => row.task))
@@ -73,20 +92,22 @@ export function DetailRoute() {
   return <TaskRoute key={`${project}:${id}`} project={project} id={id} />
 }
 
+// The revision lives in the URL, so the browser's Back returns to the version the reader saw before.
 function TaskRoute({ project, id }: { project: string; id: string }) {
-  const client = useQueryClient()
-  // The selected branch lives in the URL (`?branch=`), so it is shareable and resets to the
-  // headline on navigation without a render lag; absent means the headline (current-worktree)
-  // version.
-  const [params, setParams] = useSearchParams()
-  const branch = params.get("branch") ?? undefined
-  const onSelect = (next: string | undefined) =>
-    setParams(next === undefined ? {} : { branch: next }, { replace: true })
+  const [params] = useSearchParams()
+  const revision = params.get(REVISION_PARAM)
+  return revision === null ? (
+    <LiveTask project={project} id={id} />
+  ) : (
+    <TaskAtRevision project={project} id={id} revision={revision} />
+  )
+}
 
+function LiveTask({ project, id }: { project: string; id: string }) {
+  const client = useQueryClient()
   const task = useQuery({
-    queryKey: taskKey(project, id, branch),
-    queryFn: () => runtime.runPromise(getTask(project, id, branch)),
-    placeholderData: keepPreviousData,
+    queryKey: taskKey(project, id),
+    queryFn: () => runtime.runPromise(getTask(project, id)),
   })
 
   if (task.isError) {
@@ -97,20 +118,11 @@ function TaskRoute({ project, id }: { project: string; id: string }) {
     )
   }
   const shown = task.data ?? null
-  // The list cache already holds the header fields (title, status, branches); seed from it so the
-  // header renders instantly and only the body and hierarchy stream in.
+  // The list cache already holds the header fields (title, status, tags); seed from it so the header
+  // renders instantly and only the body and hierarchy stream in.
   const seed = shown ?? listItem(client, project, id)
   if (seed === undefined) return <DetailSkeleton />
-  return (
-    <TaskDetailView
-      project={project}
-      task={seed}
-      detail={shown}
-      body={shown?.body}
-      selected={branch}
-      onSelect={onSelect}
-    />
-  )
+  return <TaskDetailView project={project} task={seed} detail={shown} body={shown?.body} />
 }
 
 function TaskDetailView({
@@ -118,138 +130,255 @@ function TaskDetailView({
   task,
   detail,
   body,
-  selected,
-  onSelect,
 }: {
   project: string
   task: TaskDetail | TaskListItem
   detail: TaskDetail | null
   body: string | undefined
-  selected: string | undefined
-  onSelect: (branch: string | undefined) => void
 }) {
   const abbreviation = useAbbreviation(project)
-  const rollingUpdates = useProject(project)?.rolling_updates_branch
-  const write = writeHere(detail ?? task)
-  const writeKey = `${write.branch ?? ""}:${write.blocked ?? ""}`
   // One cursor walks the three lists in document order, so `j`, `k` and Enter reach every row on the
   // page. Each section renders a slice of it and offsets its own rows into it.
   const rows = useMemo(() => detailRows(project, detail), [project, detail])
   const { index } = useDetailCursor(taskPath(project, task.id), rows.paths)
   return (
-    // Each column scrolls on its own, so the box keeps its frame and its header stays where it is
-    // while the body runs. Stacked, the two are one page and the page scrolls instead.
-    <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
-      <Panel className="h-auto min-w-0 lg:h-full lg:w-[59rem]">
-        <PanelHeader className="gap-2">
-          <PanelTitle>
-            <TaskIdentity
-              variant="header"
-              status={statusField(task.metadata)}
-              mark={
-                <StatusControl
-                  project={project}
-                  id={task.id}
-                  at={NO_ROW}
-                  status={statusField(task.metadata)}
-                  branch={write.branch}
-                  blocked={write.blocked}
-                  className="size-5"
-                />
-              }
-              id={task.id}
-              title={task.title}
-            />
-          </PanelTitle>
-          <FlowAction project={project} id={task.id} />
-          <div className="min-w-0">
-            <HeaderParent
-              key={writeKey}
-              project={project}
-              id={task.id}
-              parent={detail === null ? undefined : parentOf(detail.metadata)}
-              parentTitle={detail?.parent_title}
-              ready={detail !== null}
-              write={write}
-            />
-          </div>
-        </PanelHeader>
-        <PanelBody className="p-6">
-          {/* The tags sit level with the first line of the title: the row aligns to the top, and the
-              chips centre inside a box as tall as that line. They wrap inside half the row rather
-              than holding their width — a task carrying a handful of them squeezed the title to
-              nothing. */}
-          <div className="mb-1.5 flex items-start justify-between gap-4">
-            <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
-            <TagsField
-              key={writeKey}
+    <DetailColumns
+      main={
+        <>
+          <PanelHeader className="gap-2">
+            <PanelTitle>
+              <TaskIdentity
+                variant="header"
+                status={statusField(task.metadata)}
+                mark={
+                  <StatusControl
+                    project={project}
+                    id={task.id}
+                    at={NO_ROW}
+                    status={statusField(task.metadata)}
+                    className="size-5"
+                  />
+                }
+                id={task.id}
+                title={task.title}
+              />
+            </PanelTitle>
+            <FieldConflictControl
               project={project}
               id={task.id}
               metadata={task.metadata}
-              branch={write.branch}
-              blocked={write.blocked}
-              className="min-h-8 max-w-[50%] justify-end"
+              field="status"
+              trigger="Status conflict"
             />
-          </div>
-          {/* `created` arrives with the full detail while `updated` is already on the seeded list
-              item, so the line renders as soon as the header does and fills in rather than shifting
-              the body twice. */}
-          <MetaLine className="mb-4 h-4">
-            <TaskTimes
-              created={detail === null ? undefined : createdOf(detail.metadata)}
-              updated={task.updated}
-              problems={detail === null ? [] : problems(detail.metadata)}
-            />
-          </MetaLine>
-          <BranchSwitcher
-            branches={task.branches}
-            selected={selected}
-            headline={task.headline}
-            rollingUpdates={rollingUpdates}
-            onSelect={onSelect}
+            <FlowAction project={project} id={task.id} />
+            <div className="flex min-w-0 items-center gap-1.5">
+              <FieldConflictControl
+                project={project}
+                id={task.id}
+                metadata={task.metadata}
+                field="parent"
+                trigger="Parent conflict"
+                align="end"
+              />
+              <HeaderParent
+                project={project}
+                id={task.id}
+                parent={detail === null ? undefined : parentOf(detail.metadata)}
+                parentTitle={detail?.parent_title}
+                ready={detail !== null}
+              />
+            </div>
+          </PanelHeader>
+          <PanelBody className="p-6">
+            <ConflictBanner project={project} id={task.id} metadata={task.metadata} count={task.conflicts} />
+            {/* The tags sit level with the first line of the title: the row aligns to the top, and the
+                chips centre inside a box as tall as that line. They wrap inside half the row rather
+                than holding their width — a task carrying a handful of them squeezed the title to
+                nothing. */}
+            <div className="mb-1.5 flex items-start justify-between gap-4">
+              <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
+              <TagsField
+                project={project}
+                id={task.id}
+                metadata={task.metadata}
+                className="min-h-8 max-w-[50%] justify-end"
+              />
+            </div>
+            {/* `created` arrives with the full detail while `updated` is already on the seeded list
+                item, so the line renders as soon as the header does and fills in rather than shifting
+                the body twice. */}
+            <MetaLine className="mb-4 h-4">
+              <TaskTimes
+                created={detail === null ? undefined : createdOf(detail.metadata)}
+                updated={task.updated}
+                problems={detail === null ? [] : problems(detail.metadata)}
+              />
+              <FieldConflictControl project={project} id={task.id} metadata={task.metadata} field="created" />
+            </MetaLine>
+            {/* The box is as wide as the reading measure, so the text fills it and the rule over an
+                `h2` bleeds back over the padding to divide the whole box. */}
+            {body === undefined ? (
+              <BodySkeleton />
+            ) : (
+              <LiveBody project={project} id={task.id} body={body} refs={detail?.refs} abbreviation={abbreviation} />
+            )}
+          </PanelBody>
+        </>
+      }
+      aside={
+        <>
+          <RefSection
+            project={project}
+            title="Depends on"
+            rows={rows.dependsOn}
+            cursor={index}
+            action={
+              <FieldConflictControl
+                project={project}
+                id={task.id}
+                metadata={task.metadata}
+                field="dependencies"
+                align="end"
+              />
+            }
+            shown={dependenciesConflict(task.metadata)}
           />
-          {/* The box is as wide as the reading measure, so the text fills it and the rule over an
-              `h2` bleeds back over the padding to divide the whole box. */}
-          {body === undefined ? (
-            <BodySkeleton />
-          ) : (
-            <TaskBody
+          <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
+          <SubtasksSection project={project} id={task.id} rows={rows.subtasks} cursor={index} ready={detail !== null} />
+          {detail !== null && (
+            <CommentThread
               project={project}
-              markdown={stripTitle(body)}
-              refs={detail?.refs}
+              comments={detail.comments ?? NO_COMMENTS}
+              refs={detail.refs}
               abbreviation={abbreviation}
-              className="prose-h2:-mx-6 prose-h2:px-6"
-              data-keys-ignore
             />
           )}
-        </PanelBody>
-      </Panel>
-      {/* The relations and the comment log stand beside the task and share the width it leaves.
-          Narrow enough and they drop under it instead. None of them wears a frame: a section leads
-          with the rule that separates it from the one above, and the first has nothing above it to
-          separate from. */}
+          {detail !== null && <TaskHistory project={project} id={task.id} selected={undefined} />}
+        </>
+      }
+    />
+  )
+}
+
+// Each column scrolls on its own, so the box keeps its frame and its header stays where it is while
+// the body runs. Stacked, the two are one page and the page scrolls instead. The aside holds what
+// stands beside the task and shares the width it leaves; narrow enough and it drops under it instead.
+// No section in it wears a frame: a section leads with the rule that separates it from the one above,
+// and the first has nothing above it to separate from.
+function DetailColumns({ main, aside }: { main: ReactNode; aside: ReactNode }) {
+  return (
+    <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
+      <Panel className="h-auto min-w-0 lg:h-full lg:w-[59rem]">{main}</Panel>
       <aside className="min-w-0 lg:min-w-80 lg:flex-1 lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
-        <RefSection project={project} title="Depends on" rows={rows.dependsOn} cursor={index} />
-        <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
-        <SubtasksSection
-          key={writeKey}
-          project={project}
-          id={task.id}
-          rows={rows.subtasks}
-          cursor={index}
-          ready={detail !== null}
-          write={write}
-        />
-        {detail !== null && (
-          <CommentThread
-            project={project}
-            comments={detail.comments ?? NO_COMMENTS}
-            refs={detail.refs}
-            abbreviation={abbreviation}
-          />
-        )}
+        {aside}
       </aside>
     </div>
+  )
+}
+
+// A revision never changes, so nothing here can be edited: the marks carry no menu and the fields no
+// controls.
+function TaskAtRevision({ project, id, revision }: { project: string; id: string; revision: string }) {
+  const snapshot = useTaskRevision(project, id, revision)
+  const entry = useTaskHistory(project, id).data?.find((one) => one.revision.id === revision)
+  const task = snapshot.data?.task
+  // The page lists no rows, and the cursor would otherwise keep the ones the live task listed.
+  useDetailCursor(`${taskPath(project, id)}@${revision}`, NO_ROWS)
+  return (
+    <DetailColumns
+      main={
+        <>
+          <PanelHeader className="gap-2">
+            <PanelTitle>
+              <TaskIdentity
+                variant="header"
+                status={task === undefined ? undefined : statusField(task.metadata)}
+                mark={task === undefined ? <UnresolvedMark /> : undefined}
+                id={id}
+                title={task?.title}
+              />
+            </PanelTitle>
+            <Link
+              to={taskPath(project, id)}
+              className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
+            >
+              <Undo2 className="size-3.5" />
+              Current version
+            </Link>
+          </PanelHeader>
+          <PanelBody className="p-6">
+            <RevisionNotice revision={revision} entry={entry} />
+            {snapshot.isPending ? (
+              <BodySkeleton />
+            ) : snapshot.isError ? (
+              <EmptyState title="Could not load this revision" detail={errorText(snapshot.error)} />
+            ) : task === undefined ? (
+              <EmptyState title="The task did not exist at this revision" detail={id} />
+            ) : (
+              <Snapshot project={project} id={id} task={task} entry={entry} />
+            )}
+          </PanelBody>
+        </>
+      }
+      aside={<TaskHistory project={project} id={id} selected={revision} />}
+    />
+  )
+}
+
+function RevisionNotice({ revision, entry }: { revision: string; entry: HistoryEntry | undefined }) {
+  return (
+    <div role="note" className="border-info/40 bg-info/5 mb-5 flex flex-col gap-1 rounded-md border px-3 py-2 text-xs">
+      <p className="text-info">
+        This is the task as revision <span className="font-mono">{shortRevision(revision)}</span> left it. You cannot
+        change it here.
+      </p>
+      {entry !== undefined && (
+        <>
+          <p className="text-foreground/90 text-sm">{revisionSummary(entry.revision.message)}</p>
+          <RevisionMeta revision={entry.revision} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function Snapshot({
+  project,
+  id,
+  task,
+  entry,
+}: {
+  project: string
+  id: string
+  task: TaskSnapshot
+  entry: HistoryEntry | undefined
+}) {
+  const abbreviation = useAbbreviation(project)
+  const { byName: tags } = useTags(project)
+  // The revision names tasks by key alone. The live task has them resolved to a title and a status,
+  // which is the best a chip can show; a key it no longer holds reads as unresolved.
+  const refs = useQueryClient().getQueryData<TaskDetail>(taskKey(project, id))?.refs
+  return (
+    <>
+      <div className="mb-1.5 flex items-start justify-between gap-4">
+        <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
+        <TaskTags metadata={task.metadata} tags={tags} className="min-h-8 max-w-[50%] justify-end" />
+      </div>
+      <MetaLine className="mb-4 h-4">
+        <TaskTimes created={createdOf(task.metadata)} updated={entry?.revision.at} problems={problems(task.metadata)} />
+      </MetaLine>
+      <TaskBodyWithConflicts
+        segments={untitled(bodySegments(task.body))}
+        project={project}
+        refs={refs}
+        abbreviation={abbreviation}
+        proseClassName={PROSE}
+        data-keys-ignore
+      />
+      {task.comments !== undefined && (
+        <CommentThread project={project} comments={task.comments} refs={refs} abbreviation={abbreviation} />
+      )}
+    </>
   )
 }
 
@@ -321,26 +450,22 @@ function HeaderParent({
   parent,
   parentTitle,
   ready,
-  write,
 }: {
   project: string
   id: string
   parent: string | undefined
   parentTitle: string | undefined
   ready: boolean
-  write: WriteHere
 }) {
   const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
-  useDetailAction("edit-parent", () => {
-    if (write.blocked === undefined) setEditing(true)
-  })
+  useDetailAction("edit-parent", () => setEditing(true))
   useDetailAction("go-parent", () => {
     if (parent !== undefined && parentTitle !== undefined) navigate(taskPath(project, parent))
   })
 
   if (editing) {
-    return <ParentPicker project={project} id={id} branch={write.branch} onClose={() => setEditing(false)} />
+    return <ParentPicker project={project} id={id} onClose={() => setEditing(false)} />
   }
   // The parent is unknown until the detail loads; show nothing rather than a misleading "Set parent".
   if (!ready) return null
@@ -354,41 +479,27 @@ function HeaderParent({
       ) : hasParent ? (
         <span className="text-muted-foreground/70 text-xs italic">parent missing</span>
       ) : null}
-      {write.blocked !== undefined ? (
-        <Blocked reason={write.blocked} />
-      ) : (
-        <Button
-          onClick={() => setEditing(true)}
-          aria-label={hasParent ? "Change parent" : "Set parent"}
-          className="gap-1 px-1.5"
-        >
-          {hasParent ? (
-            <Pencil className="size-3.5" />
-          ) : (
-            <>
-              <Plus className="size-3.5" />
-              Set parent
-            </>
-          )}
-        </Button>
-      )}
+      <Button
+        onClick={() => setEditing(true)}
+        aria-label={hasParent ? "Change parent" : "Set parent"}
+        className="gap-1 px-1.5"
+      >
+        {hasParent ? (
+          <Pencil className="size-3.5" />
+        ) : (
+          <>
+            <Plus className="size-3.5" />
+            Set parent
+          </>
+        )}
+      </Button>
     </div>
   )
 }
 
 // The full task list is needed only to search for a new parent, so it is fetched here — when the
 // picker opens — rather than on every detail view. Excludes self + descendants so a pick can't cycle.
-function ParentPicker({
-  project,
-  id,
-  branch,
-  onClose,
-}: {
-  project: string
-  id: string
-  branch: string | undefined
-  onClose: () => void
-}) {
+function ParentPicker({ project, id, onClose }: { project: string; id: string; onClose: () => void }) {
   const tasks = useQuery({
     queryKey: tasksKey(project),
     queryFn: () => runtime.runPromise(listTasks(project)),
@@ -412,19 +523,19 @@ function ParentPicker({
               Top level (no parent)
             </span>
           ),
-          onSelect: () => mutate(patchTask(project, id, { parent: null }, branch)),
+          onSelect: () => mutate(patchTask(project, id, { parent: null })),
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
         options.push({
           key: task.id,
           content: <ComboTaskRow task={task} indices={indices} />,
-          onSelect: () => mutate(patchTask(project, id, { parent: task.id }, branch)),
+          onSelect: () => mutate(patchTask(project, id, { parent: task.id })),
         })
       }
       return options
     },
-    [all, project, id, branch, mutate],
+    [all, project, id, mutate],
   )
 
   return (
@@ -490,25 +601,38 @@ function RowList({ project, rows, cursor }: { project: string; rows: ReadonlyArr
   )
 }
 
-// The two dependency directions. Neither carries an action, so an empty one has nothing to say and
-// stays hidden.
+// The two dependency directions. An empty one has nothing to say and stays hidden, unless `shown`
+// keeps it for the version of the list that a conflict holds apart.
 function RefSection({
   project,
   title,
   rows,
   cursor,
+  action,
+  shown = false,
 }: {
   project: string
   title: string
   rows: ReadonlyArray<DetailRow>
   cursor: number
+  action?: ReactNode
+  shown?: boolean
 }) {
-  if (rows.length === 0) return null
+  if (rows.length === 0 && !shown) return null
   return (
-    <Section title={title} count={rows.length}>
-      <RowList project={project} rows={rows} cursor={cursor} />
+    <Section title={title} count={rows.length} action={action}>
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No dependencies in the version in force.</p>
+      ) : (
+        <RowList project={project} rows={rows} cursor={cursor} />
+      )}
     </Section>
   )
+}
+
+const dependenciesConflict = (metadata: Metadata): boolean => {
+  const dependencies = frontmatterFields(metadata)?.dependencies
+  return dependencies !== undefined && fieldConflict(dependencies) !== undefined
 }
 
 // The direct children below the task body, plus an inline add box that either pulls an existing task
@@ -519,38 +643,30 @@ function SubtasksSection({
   rows,
   cursor,
   ready,
-  write,
 }: {
   project: string
   id: string
   rows: ReadonlyArray<DetailRow>
   cursor: number
   ready: boolean
-  write: WriteHere
 }) {
   const [adding, setAdding] = useState(false)
-  useDetailAction("add-subtask", () => {
-    if (write.blocked === undefined) setAdding(true)
-  })
+  useDetailAction("add-subtask", () => setAdding(true))
 
   return (
     <Section
       title="Subtasks"
       count={rows.length}
       action={
-        write.blocked !== undefined ? (
-          <Blocked reason={write.blocked} />
-        ) : (
-          <Button variant="accent" onClick={() => setAdding((open) => !open)}>
-            <Plus className="size-3.5" />
-            Add subtask
-          </Button>
-        )
+        <Button variant="accent" onClick={() => setAdding((open) => !open)}>
+          <Plus className="size-3.5" />
+          Add subtask
+        </Button>
       }
     >
       {adding && (
         <div className="mb-3">
-          <SubtaskPicker project={project} id={id} branch={write.branch} onClose={() => setAdding(false)} />
+          <SubtaskPicker project={project} id={id} onClose={() => setAdding(false)} />
         </div>
       )}
       {rows.length === 0 ? (
@@ -567,17 +683,7 @@ function SubtasksSection({
 // Opened on demand, so the full task list it searches is fetched only when adding — not per detail
 // view. Making a task a child of `id` closes a cycle only when that task is an ancestor of `id`, so
 // exclude the ancestor chain (and self); descendants are valid re-parent targets.
-function SubtaskPicker({
-  project,
-  id,
-  branch,
-  onClose,
-}: {
-  project: string
-  id: string
-  branch: string | undefined
-  onClose: () => void
-}) {
+function SubtaskPicker({ project, id, onClose }: { project: string; id: string; onClose: () => void }) {
   const tasks = useQuery({
     queryKey: tasksKey(project),
     queryFn: () => runtime.runPromise(listTasks(project)),
@@ -602,7 +708,7 @@ function SubtaskPicker({
               </span>
             </span>
           ),
-          onSelect: () => mutate(createTask(project, { title: query, parent: id }, branch)),
+          onSelect: () => mutate(createTask(project, { title: query, parent: id })),
         })
       }
       for (const { task, indices } of taskMatches(all, query, excluded)) {
@@ -610,14 +716,12 @@ function SubtaskPicker({
         options.push({
           key: task.id,
           content: <ComboTaskRow task={task} indices={indices} />,
-          // The parent's branch, not the child's: a parent the child's branch does not carry is no
-          // parent at all there, so the pair has to move on the branch that holds the parent.
-          onSelect: () => mutate(patchTask(project, task.id, { parent: id }, branch)),
+          onSelect: () => mutate(patchTask(project, task.id, { parent: id })),
         })
       }
       return options
     },
-    [all, project, id, branch, mutate],
+    [all, project, id, mutate],
   )
 
   return (
@@ -632,15 +736,58 @@ function SubtaskPicker({
   )
 }
 
+// A deleted task keeps its history, and the history is the one way back to what the task said.
 function NotFound({ project, id }: { project: string; id: string }) {
   return (
-    <div className="space-y-4">
+    <div className="h-full space-y-4 overflow-y-auto">
       <Link to={boardPath(project)} className="text-muted-foreground text-sm hover:underline">
         ← {project}
       </Link>
       <EmptyState title="Task not found" detail={id} />
+      <TaskHistory project={project} id={id} selected={undefined} />
     </div>
   )
+}
+
+const PROSE = "prose-h2:-mx-6 prose-h2:px-6"
+
+// `body` goes to the segments exactly as the daemon sent it, because a resolve names a block by its
+// text.
+function LiveBody({
+  project,
+  id,
+  body,
+  refs,
+  abbreviation,
+}: {
+  project: string
+  id: string
+  body: string
+  refs: TaskDetail["refs"]
+  abbreviation: string | undefined
+}) {
+  const segments = useMemo(() => untitled(bodySegments(body)), [body])
+  // A write settles by re-reading the project, which also brings back a block that a 409 found
+  // changed under it.
+  const { mutate, isPending } = useProjectMutation(project)
+  return (
+    <TaskBodyWithConflicts
+      segments={segments}
+      project={project}
+      refs={refs}
+      abbreviation={abbreviation}
+      proseClassName={PROSE}
+      onResolve={(block, text) => mutate(resolveConflict(project, id, block, text))}
+      pending={isPending}
+      data-keys-ignore
+    />
+  )
+}
+
+// The title can sit inside a conflict block, and then each version keeps its own.
+function untitled(segments: ReadonlyArray<BodySegment>): ReadonlyArray<BodySegment> {
+  const [first, ...rest] = segments
+  return first?.kind === "text" ? [{ kind: "text", text: stripTitle(first.text) }, ...rest] : segments
 }
 
 function stripTitle(body: string): string {

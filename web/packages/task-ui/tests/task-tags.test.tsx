@@ -27,14 +27,14 @@ describe("TaskTags", () => {
     expect(names(render(<TaskTags metadata={metadata(["backend", "wip"])} tags={tags} />))).toEqual(["Backend", "WIP"])
   })
 
-  it("falls back to the raw name for a tag this branch's registry does not hold", () => {
+  it("falls back to the raw name for a tag the registry does not hold", () => {
     expect(names(render(<TaskTags metadata={metadata(["backend", "infra"])} tags={registry(backend)} />))).toEqual([
       "Backend",
       "infra",
     ])
   })
 
-  // Before the registry lands, a name the branch holds looks exactly like one it does not.
+  // Before the registry lands, a name it holds looks exactly like one it does not.
   it("shows nothing until the registry has been read", () => {
     expect(names(render(<TaskTags metadata={metadata(["backend"])} tags={undefined} />))).toEqual([])
   })

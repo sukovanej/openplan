@@ -51,14 +51,6 @@ impl From<&Comment> for op_task::comment::Comment {
     }
 }
 
-// One branch's whole log, for the read that spans every branch. Grouped rather than flat so no
-// entry repeats the branch it came from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct BranchComments {
-    pub branch: String,
-    pub comments: Vec<Comment>,
-}
-
 // A comment to append. The daemon stamps the time, because it is the single in-band writer and one
 // clock must order every write; the caller carries the identity, because only the CLI process sees
 // the environment that names it.
