@@ -12,6 +12,9 @@ pub enum ChangeEvent {
     ProjectsChanged,
     // A sync with the remote ran, whether it moved anything or failed.
     SyncChanged { project: String },
+    // An agent session started, ended, changed its status, opened or closed an approval, or wrote a
+    // task. A client answers every one of those by reading the session list again.
+    AgentSessionsChanged { project: String },
     // The stream dropped events and cannot say which, so the client reads everything on screen again.
     Resync,
     DaemonStopping,

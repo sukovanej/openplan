@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query"
-import { Activity, MessageSquare, Tags } from "lucide-react"
+import { Activity, MessageSquare, Sparkles, Tags } from "lucide-react"
 import { memo, useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
@@ -27,6 +27,7 @@ import { StatusControl } from "../components/status-control"
 import { getBoard, getMergedBoard } from "../lib/api"
 import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { promptBar } from "../lib/prompt-bar"
 import { boardKey, mergedBoardKey } from "../lib/query-client"
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
@@ -89,6 +90,14 @@ function ProjectBoard({ project }: { project: string }) {
             <Tags className="size-3.5" />
             Tags
           </Link>
+          <button
+            type="button"
+            onClick={promptBar.startNew}
+            className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs normal-case"
+          >
+            <Sparkles className="size-3.5" />
+            New task
+          </button>
         </div>
       }
     />

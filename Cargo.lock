@@ -3973,6 +3973,7 @@ dependencies = [
  "op-index",
  "op-task",
  "op-tracker",
+ "rusqlite",
  "rust-embed",
  "serde",
  "serde_json",

@@ -1,9 +1,9 @@
-import { Context, Data, Effect } from "effect"
-import type { Schema } from "effect"
+import { Context, Data, Effect, Schema } from "effect"
 import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 
 import * as Api from "@openplan/api-client"
 
+import { Status } from "./agent-events"
 import type { FlowSelection } from "./flow-selection"
 
 export class TaskNotFound extends Data.TaggedError("TaskNotFound")<{
@@ -346,6 +346,126 @@ export const runSync = (project: string): Effect.Effect<Api.SyncResult, ApiError
       RunSync404: refusal,
       RunSync502: refusal,
       RunSync503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export interface AgentSessionSummary {
+  readonly id: string
+  readonly project: string
+  readonly agent: string
+  readonly title: string
+  readonly context: string | undefined
+  readonly tasks: ReadonlyArray<string>
+  readonly status: Status
+  readonly approvals: number
+  readonly started_at: string
+}
+
+const decodeStatus = Schema.decodeUnknownSync(Status)
+
+// Every session the daemon holds, in every project, newest first. The generated client types the
+// status as an opaque object, because the OpenAPI document does; the hand-written schema reads it.
+export const listAgentSessions = (): Effect.Effect<
+  ReadonlyArray<AgentSessionSummary>,
+  ApiError,
+  HttpClient.HttpClient
+> =>
+  Effect.flatMap(tasks, (client) => client.listSessions(undefined)).pipe(
+    Effect.map((sessions) =>
+      sessions.map((session) => ({
+        id: session.id,
+        project: session.project,
+        agent: session.agent,
+        title: session.title,
+        context: session.context ?? undefined,
+        tasks: session.tasks,
+        status: decodeStatus(session.status),
+        approvals: session.approvals,
+        started_at: session.started_at,
+      })),
+    ),
+    Effect.catchTags({
+      HttpClientError: unexpected,
+    }),
+  )
+
+// Starts the agent and sends the first prompt. `context` names the task open in front of the user,
+// which a prompt that names no task is about; it has to exist in the project.
+export const createAgentSession = (
+  project: string,
+  prompt: string,
+  context?: string,
+): Effect.Effect<string, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.createSession(project, { payload: { prompt, context } })).pipe(
+    Effect.map((created) => created.id),
+    Effect.catchTags({
+      CreateSession400: refusal,
+      CreateSession404: refusal,
+      CreateSession503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// The 409 says a turn is running; the page shows Stop rather than Send meanwhile, so it reaches
+// the toast only when the two disagree.
+export const promptAgentSession = (
+  project: string,
+  session: string,
+  text: string,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.promptSession(project, session, { payload: { text } })).pipe(
+    Effect.catchTags({
+      PromptSession404: refusal,
+      PromptSession409: refusal,
+      PromptSession503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const interruptAgentSession = (
+  project: string,
+  session: string,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.interruptSession(project, session, undefined)).pipe(
+    Effect.catchTags({
+      InterruptSession404: refusal,
+      InterruptSession409: refusal,
+      InterruptSession503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// `ApprovalDecision` is an externally tagged enum: a unit variant is its name, and `deny` carries
+// its reason. The OpenAPI document calls it an object, which a bare name is not, so the payload
+// passes the generated type by a cast; the client sends it as JSON unchecked.
+export type ApprovalDecision = "allow" | "allow_for_session" | { readonly deny: { readonly reason: string | null } }
+
+export const approveAgentTool = (
+  project: string,
+  session: string,
+  approval: string,
+  decision: ApprovalDecision,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) =>
+    client.approve(project, session, approval, { payload: decision as unknown as Api.Decision }),
+  ).pipe(
+    Effect.catchTags({
+      Approve404: refusal,
+      Approve503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// The session is marked done: its agent stops, and neither the list nor a restart brings it back.
+export const markAgentSessionDone = (
+  project: string,
+  session: string,
+): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.deleteSession(project, session, undefined)).pipe(
+    Effect.catchTags({
+      DeleteSession404: refusal,
+      DeleteSession503: refusal,
       HttpClientError: unexpected,
     }),
   )

@@ -49,6 +49,7 @@ export {
   BOARD_ROUTE,
   boardPath,
   FLOW_ROUTE,
+  projectRouteOf,
   REVISION_PARAM,
   revisionPath,
   TAGS_ROUTE,

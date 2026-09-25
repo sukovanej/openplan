@@ -41,6 +41,15 @@ export function revisionPath(project: string, id: string, revision: string): str
   return `${taskPath(project, id)}?${REVISION_PARAM}=${encodeURIComponent(revision)}`
 }
 
+// The project a board, tags, activity, or task route names: the first segment. The flow sits above
+// every project, and the merged board names none.
+export function projectRouteOf(path: string): string | undefined {
+  const [pathname] = path.split(/[#?]/, 1)
+  if (pathname === FLOW_ROUTE) return undefined
+  const [, project] = pathname.split("/")
+  return project === undefined || project === "" ? undefined : decodeURIComponent(project)
+}
+
 // A reference may aim at a section (`OPP-42#Design`). The task it names is the part before the `#`.
 export function taskReference(reference: string): { id: string; section: string | undefined } {
   const hash = reference.indexOf("#")

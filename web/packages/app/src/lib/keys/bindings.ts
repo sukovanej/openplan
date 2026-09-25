@@ -118,6 +118,48 @@ export const bindings: ReadonlyArray<Binding> = [
     group: "Task",
     run: (ctx) => ctx.task.copyId(),
   },
+  // The prompt bar lies over the foot of any page, so its keys work everywhere. `e` comes back to
+  // the session it showed last; `n` starts a new prompt.
+  {
+    id: "agent.open",
+    keys: "e",
+    scope: "global",
+    label: "Ask the agent",
+    group: "Agent",
+    run: (ctx) => ctx.overlay("prompt").open(),
+  },
+  {
+    id: "agent.new",
+    keys: "n",
+    scope: "global",
+    label: "Start a new prompt",
+    group: "Agent",
+    run: (ctx) => ctx.agent.newPrompt(),
+  },
+  {
+    id: "prompt.hide",
+    keys: "e",
+    scope: "prompt",
+    label: "Hide the agent",
+    group: "Agent",
+    run: (ctx) => ctx.overlay("prompt").close(),
+  },
+  {
+    id: "prompt.close",
+    keys: "Escape",
+    scope: "prompt",
+    label: "Hide the agent",
+    group: "Agent",
+    run: (ctx) => ctx.overlay("prompt").close(),
+  },
+  {
+    id: "prompt.new",
+    keys: "n",
+    scope: "prompt",
+    label: "Start a new prompt",
+    group: "Agent",
+    run: (ctx) => ctx.agent.newPrompt(),
+  },
   {
     id: "palette.home",
     keys: "mod+k",

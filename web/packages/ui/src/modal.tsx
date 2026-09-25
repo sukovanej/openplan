@@ -27,7 +27,9 @@ export function Modal({
   useEffect(() => {
     if (!open) return
     restore.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dialog.current?.focus()
+    // A child that asked for the focus on mount keeps it: a modal that opens on an input opens
+    // ready to type.
+    if (!dialog.current?.contains(document.activeElement)) dialog.current?.focus()
     return () => restore.current?.focus()
   }, [open])
 

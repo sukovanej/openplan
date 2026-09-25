@@ -27,6 +27,8 @@ export const mergedBoardKey = [...mergedKey, "board"] as const
 // one project.
 export const flowsKey = [...mergedKey, "flow"] as const
 export const flowKey = (query: string) => [...flowsKey, query] as const
+// Every project's sessions in one list, under the merged reads so a reconnect or a resync re-reads it.
+export const agentSessionsKey = [...mergedKey, "agent-sessions"] as const
 export const boardKey = (project: string) => [...projectKey(project), "board"] as const
 export const tasksKey = (project: string) => [...projectKey(project), "tasks"] as const
 export const tagsKey = (project: string) => [...projectKey(project), "tags"] as const
@@ -125,6 +127,7 @@ export const queryInvalidator: Invalidator = {
   refreshTask: (project, id) => refresh({ queryKey: taskKey(project, id) }),
   refreshHistory: (project) => refresh({ queryKey: historyKey(project) }),
   refreshSync: (project) => refresh({ queryKey: syncKey(project) }),
+  refreshAgentSessions: () => refresh({ queryKey: agentSessionsKey }),
   refreshVisible: (project) => {
     void refreshScreen(queryClient, project)
   },
