@@ -1,0 +1,11 @@
+erDiagram
+  sessions {
+    BLOB token_hash PK "32 bytes"
+    INTEGER user_id FK
+    INTEGER created_at "seconds"
+    INTEGER expires_at "seconds"
+  }
+  users {
+    INTEGER id PK
+  }
+  sessions }o--|| users : user_id

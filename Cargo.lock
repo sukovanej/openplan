@@ -3937,6 +3937,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "op-diagram"
+version = "0.0.3"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "op-diagram-mermaid"
+version = "0.0.3"
+dependencies = [
+ "op-diagram",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "op-index"
 version = "0.0.3"
 dependencies = [

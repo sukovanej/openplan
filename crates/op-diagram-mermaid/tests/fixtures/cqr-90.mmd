@@ -1,0 +1,23 @@
+flowchart TD
+  browser -->|HTTPS, WebSocket upgrade| worker
+  subgraph worker [Worker fetch]
+    rest["router(state): the shared REST handlers"]
+    admit["admission for the five socket routes"]
+    assets["apps/web as static assets"]
+  end
+  worker -->|upgrade forwarded by match id| match
+  worker -->|by language| queue
+  worker -->|by run id| ladder
+  subgraph match [MatchObject]
+    driver[MatchDriver]
+    storage["snapshot in object storage"]
+    alarm["alarm = next_wake_at()"]
+  end
+  queue[QueueObject]
+  ladder[LadderObject]
+  queue -->|"Host::start_match"| match
+  worker --> d1
+  match --> d1
+  queue --> d1
+  ladder --> d1
+  d1[(D1)]

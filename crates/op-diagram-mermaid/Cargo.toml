@@ -1,0 +1,19 @@
+[package]
+name = "op-diagram-mermaid"
+description = "A parser for a strict subset of Mermaid (flowchart, sequenceDiagram, erDiagram) into the op-diagram IR"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+op-diagram.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

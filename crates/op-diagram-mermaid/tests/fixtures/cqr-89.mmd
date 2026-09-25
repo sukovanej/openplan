@@ -1,0 +1,17 @@
+flowchart TD
+  subgraph core [conquer-server]
+    rest["router(state): the REST handlers, unchanged"]
+    admission["admit_*_socket: cookie, seat, origin"]
+    drivers["MatchDriver, QueueDriver, LadderDriver"]
+    host["trait Host, Clock, OAuthHttp, ServerSettings"]
+  end
+  subgraph standalone [conquer-server-standalone]
+    loop["one tokio task per driver: recv or sleep_until, then on()"]
+    ws["axum ws routes, OpenSocket writer and pinger"]
+    bind["TcpListener, reqwest, SystemTime, std::env"]
+  end
+  subgraph cli [conquer-cli]
+    serve["conquer serve"]
+  end
+  core --> standalone
+  standalone --> cli

@@ -1,0 +1,18 @@
+flowchart TD
+  root{"--root given?"}
+  store{"openplan.store set?"}
+  ref{"refs/openplan/tasks in this repository?"}
+  local{".plan/ with a history file above?"}
+  use_root["the path of the flag"]
+  use_store["the store"]
+  use_ref["this repository; sync with openplan.remote, else origin"]
+  use_local["the local directory"]
+  none["no tasks"]
+  root -->|yes| use_root
+  root -->|no| store
+  store -->|yes| use_store
+  store -->|no| ref
+  ref -->|yes| use_ref
+  ref -->|no| local
+  local -->|yes| use_local
+  local -->|no| none

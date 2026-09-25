@@ -1,0 +1,10 @@
+flowchart TD
+  subgraph fixture ["bank/#lt;tag#gt;/choice.json"]
+    q["{ id: 5432, text: [...], ... }"]
+  end
+  seed["conquer db init"]
+  db[("questions.id = 5432")]
+  runtime[("commands, daily_questions, question_reports")]
+  fixture -->|reads the id| seed
+  seed -->|writes it unchanged| db
+  runtime -->|"refer to 5432, before and after a rebuild"| db

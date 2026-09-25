@@ -1,0 +1,11 @@
+sequenceDiagram
+  actor player as Player
+  participant web as Browser
+  participant server as Game server
+  participant db as Database
+  player->>web: taps the flag on the question
+  web->>player: popover with the problem kinds
+  player->>web: picks one
+  web->>server: POST /question-reports {match, question, problem_kind}
+  server->>db: stores the report
+  web->>player: flag shows the question as reported
