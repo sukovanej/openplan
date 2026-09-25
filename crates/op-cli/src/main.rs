@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context as _, Result, bail};
+use clap::builder::{PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand, ValueEnum};
 use op_api::{
     BackendKind, Comment, CreateComment, CreateTask, Field, FieldError, FieldUpdate, Metadata,
@@ -67,7 +68,7 @@ enum Command {
         title: String,
         #[arg(long)]
         parent: Option<String>,
-        #[arg(long)]
+        #[arg(long, value_parser = status_parser())]
         status: Option<Status>,
         #[arg(long = "dependency")]
         dependencies: Vec<String>,
@@ -83,7 +84,7 @@ enum Command {
     },
     /// List the tasks of this project
     List {
-        #[arg(long)]
+        #[arg(long, value_parser = status_parser())]
         status: Option<Status>,
         #[arg(long)]
         parent: Option<String>,
@@ -215,6 +216,14 @@ enum Command {
     },
 }
 
+fn status_parser() -> impl TypedValueParser<Value = Status> {
+    PossibleValuesParser::new(Status::ALL.map(|s| s.as_str())).try_map(|s| s.parse::<Status>())
+}
+
+fn color_parser() -> impl TypedValueParser<Value = Color> {
+    PossibleValuesParser::new(Color::ALL.map(|c| c.as_str())).try_map(|c| c.parse::<Color>())
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 enum Backend {
     Git,
@@ -241,7 +250,7 @@ enum TagCommand {
     /// Register a tag and print the name it normalizes to
     Create {
         name: String,
-        #[arg(long)]
+        #[arg(long, value_parser = color_parser())]
         color: Option<Color>,
         #[arg(long = "desc")]
         description: Option<String>,
