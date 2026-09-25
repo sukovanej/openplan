@@ -1,0 +1,9 @@
+---
+source: crates/op-diagram-render/tests/measure.rs
+expression: "format!(\"  regular  semibold  at {SIZE} px\\n{}\", rows.join(\"\\n\"))"
+input_file: crates/op-diagram-render/tests/labels/fallback.txt
+---
+  regular  semibold  at 14 px
+   42.000    42.000  日本語
+   84.000    84.000  Привет
+   62.016    63.109  🚀 launch

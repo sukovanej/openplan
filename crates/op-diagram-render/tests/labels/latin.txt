@@ -1,0 +1,7 @@
+Mermaid source
+op-diagram-render: measure, layout, SVG
+Ship the parser
+The quick brown fox jumps over the lazy dog
+WAVE Tyre AV
+iiiiiiiiii
+MMMMMMMMMM

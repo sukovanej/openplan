@@ -1,0 +1,11 @@
+---
+source: crates/op-diagram-render/tests/measure.rs
+expression: "format!(\"  regular  semibold  at {SIZE} px\\n{}\", rows.join(\"\\n\"))"
+input_file: crates/op-diagram-render/tests/labels/czech.txt
+---
+  regular  semibold  at 14 px
+   36.922    38.016  Dívka
+   43.547    45.000  Mladík
+  159.891   162.859  Sama popíjí drink u baru
+  162.500   167.547  Přibližně 4,5 miliardy let.
+  220.344   225.688  Žluťoučký kůň úpěl ďábelské ódy

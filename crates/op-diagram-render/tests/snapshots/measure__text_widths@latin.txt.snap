@@ -1,0 +1,13 @@
+---
+source: crates/op-diagram-render/tests/measure.rs
+expression: "format!(\"  regular  semibold  at {SIZE} px\\n{}\", rows.join(\"\\n\"))"
+input_file: crates/op-diagram-render/tests/labels/latin.txt
+---
+  regular  semibold  at 14 px
+  107.609   110.109  Mermaid source
+  278.125   285.422  op-diagram-render: measure, layout, SVG
+  100.656   102.797  Ship the parser
+  299.109   304.000  The quick brown fox jumps over the lazy dog
+   99.062   101.875  WAVE Tyre AV
+   33.906    36.641  iiiiiiiiii
+  126.469   129.141  MMMMMMMMMM

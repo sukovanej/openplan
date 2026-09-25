@@ -1,0 +1,8 @@
+---
+source: crates/op-diagram-render/tests/measure.rs
+expression: "rows.join(\"\\n\")"
+---
+  11 px  ascent 10.656  descent 2.653
+  12 px  ascent 11.625  descent 2.895
+  14 px  ascent 13.562  descent 3.377
+  16 px  ascent 15.500  descent 3.859
