@@ -7,6 +7,16 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.3...main)
 
+### Changed
+
+- One `openplan` agent skill replaces the `task-management`, `task-comments`,
+  and `task-management-merge` skills. `openplan setup-skills` removes the three
+  old skills, and `openplan lint --skills` reports an old skill that stays.
+- The agent skill teaches openplan only, and does not set a code workflow. At a
+  merge, it settles the task status and lets the repository's own process do
+  the merge. It does not require a worktree, a squash merge, or `gh`, and it
+  does not delete the branch or sync main.
+
 ## [0.0.3](https://github.com/sukovanej/openplan/compare/v0.0.2...v0.0.3) - 2026-09-25
 
 ### Added
