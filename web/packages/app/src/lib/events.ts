@@ -23,6 +23,10 @@ export const ChangeEvent = Schema.Union([
     project: Schema.String,
   }),
   Schema.Struct({
+    kind: Schema.Literal("agent_sessions_changed"),
+    project: Schema.String,
+  }),
+  Schema.Struct({
     kind: Schema.Literal("resync"),
   }),
   Schema.Struct({
@@ -43,6 +47,7 @@ export interface Invalidator {
   readonly refreshPages: (project: string, refreshed: Refreshed) => void
   readonly refreshHistory: (project: string) => void
   readonly refreshSync: (project: string) => void
+  readonly refreshAgentSessions: () => void
   // Everything on screen that a change in `project` can have changed, or — with no project — every
   // read there is.
   readonly refreshVisible: (project?: string) => void
@@ -94,6 +99,11 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
       inv.refreshSync(event.project)
       return
     }
+    // The list of sessions spans every project, so one read answers a change in any of them.
+    case "agent_sessions_changed": {
+      inv.refreshAgentSessions()
+      return
+    }
     // The stream dropped events and cannot say which, so nothing on screen can be trusted.
     case "resync": {
       inv.refreshProjects()
@@ -117,6 +127,7 @@ interface Held {
   readonly pages: Set<string>
   readonly histories: Set<string>
   readonly syncs: Set<string>
+  agentSessions: boolean
 }
 
 const nothingHeld = (): Held => ({
@@ -129,6 +140,7 @@ const nothingHeld = (): Held => ({
   pages: new Set(),
   histories: new Set(),
   syncs: new Set(),
+  agentSessions: false,
 })
 
 // A refresh of a project's whole screen covers each narrower refresh in that project, and a refresh
@@ -153,6 +165,7 @@ function release(target: Invalidator, held: Held): void {
   }
   for (const project of [...held.histories].filter(uncovered)) target.refreshHistory(project)
   for (const project of [...held.syncs].filter(uncovered)) target.refreshSync(project)
+  if (held.agentSessions) target.refreshAgentSessions()
 }
 
 // A sync that brings in many tasks sends a task_changed for each of them, back to back, and each one
@@ -194,6 +207,10 @@ export function coalesced(target: Invalidator, schedule: (flush: () => void) => 
     refreshPages: (project) => hold((due) => due.pages.add(project)),
     refreshHistory: (project) => hold((due) => due.histories.add(project)),
     refreshSync: (project) => hold((due) => due.syncs.add(project)),
+    refreshAgentSessions: () =>
+      hold((due) => {
+        due.agentSessions = true
+      }),
     refreshVisible: (project) =>
       hold((due) => {
         if (project === undefined) due.everything = true

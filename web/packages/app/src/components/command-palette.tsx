@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { Waypoints, type LucideIcon } from "lucide-react"
+import { Sparkles, Waypoints, type LucideIcon } from "lucide-react"
 import { useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 
@@ -9,24 +9,31 @@ import { FuzzyText, fuzzyMatch, Palette, type PaletteItem, type PaletteProvider 
 
 import { searchTasks } from "../lib/api"
 import type { PaletteTarget } from "../lib/keys"
+import { promptBar } from "../lib/prompt-bar"
 import { runtime } from "../lib/runtime"
 
 interface Command {
   readonly label: string
   readonly icon: LucideIcon
-  readonly to: string
+  readonly run: () => void
 }
 
-const COMMANDS: ReadonlyArray<Command> = [{ label: "Show the implementation flow", icon: Waypoints, to: FLOW_ROUTE }]
+function commands(open: (to: string) => void): ReadonlyArray<Command> {
+  return [
+    { label: "Show the implementation flow", icon: Waypoints, run: () => open(FLOW_ROUTE) },
+    { label: "Ask the agent", icon: Sparkles, run: promptBar.startNew },
+  ]
+}
 
 function commandItems(query: string, open: (to: string) => void): ReadonlyArray<PaletteItem> {
-  return COMMANDS.flatMap((command) => {
-    const match = fuzzyMatch(query, command.label)
-    return match === null ? [] : [{ match, command }]
-  })
+  return commands(open)
+    .flatMap((command) => {
+      const match = fuzzyMatch(query, command.label)
+      return match === null ? [] : [{ match, command }]
+    })
     .sort((a, b) => a.match.score - b.match.score)
     .map(({ match, command }) => ({
-      key: `command ${command.to}`,
+      key: `command ${command.label}`,
       content: (
         <span className="flex min-w-0 items-center gap-2">
           <command.icon className="text-muted-foreground size-4 shrink-0" />
@@ -35,7 +42,7 @@ function commandItems(query: string, open: (to: string) => void): ReadonlyArray<
           </span>
         </span>
       ),
-      onSelect: () => open(command.to),
+      onSelect: command.run,
     }))
 }
 
