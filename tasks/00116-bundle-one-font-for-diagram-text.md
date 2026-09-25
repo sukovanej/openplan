@@ -37,13 +37,17 @@ daemon cannot know it. One bundled font removes the difference.
    `op-diagram-render`. A code point that is not in the table takes a
    fixed fallback width (1 em for a wide character).
 
-The table holds no kerning and no contextual alternates. Inter draws
-`->` as one arrow glyph through its contextual alternates, and the table
-cannot know that. The diagram CSS turns both off (`font-kerning: none`,
-`font-feature-settings: "calt" 0, "liga" 0`), so the browser draws each
-glyph at the advance that the table holds. The width that Rust gives must
-be the same as or a little more than the width in the browser, so a label
-never overflows its shape.
+The font holds no kerning, ligatures, or contextual alternates: the
+generator removes every layout feature. Inter draws `->` as one arrow
+glyph through its contextual alternates, and the table cannot know that.
+So the browser draws each glyph at the advance that the table holds,
+whatever the CSS asks for.
+
+The SVG must set `text-rendering: geometricPrecision`. Without it,
+Chromium on Linux rounds the advance of each glyph to a whole pixel at
+small sizes, and a 14 px label comes out up to 13% wider or narrower than
+the table. `text_width` rounds up to 1/64 px, as Chromium does for SVG
+text, so the width it gives is never less than the width in the browser.
 
 ## Acceptance
 
