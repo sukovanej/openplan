@@ -130,18 +130,15 @@ A headless Chromium benchmark (pixel ratio 2) measured one zoom frame:
 - `cargo build`, `cargo test`, `cargo fmt --check`, `cargo clippy -- -D
   warnings`, and the web tests pass.
 
-## Open questions
+## Decisions
 
-Each question has a recommendation. Decide them before the renderer work
-starts.
+- Look: clean shapes that match the flow cards.
+- Scope of the first version: flowchart, sequence, and ER. State and
+  class diagrams can come later on the same IR.
+- Flow order: the layout can reorder the tasks of one wave to cut
+  crossings. It starts from the order of the server.
 
-- Look: clean shapes that match the flow cards, or a hand-drawn look?
-  Recommendation: clean.
-- Scope of the first version: flowchart, sequence, and ER only?
-  Recommendation: yes. State and class diagrams can come later on the
-  same IR.
+## Open question
+
 - Wheel: zoom (as the flow page does now), or pan with pinch and Ctrl
-  with the wheel to zoom?
-- Flow order: can the layout reorder the tasks of one wave to cut
-  crossings? Recommendation: yes, with the order of the server as the
-  start.
+  with the wheel to zoom? Decide it before the web work starts.
