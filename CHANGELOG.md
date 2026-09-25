@@ -61,8 +61,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   revision names who made it.
 - `openplan lint` reports the problems that the daemon finds, the conflicts,
   and agent skill files that differ from the binary. It takes task keys, not
-  file paths. `openplan lint --skills` checks only the skill files, and the CI
-  job runs it.
+  file paths. `openplan lint --skills` checks only the skill files.
 - A `d2` diagram wider than the task column shrinks to fit it. It no longer
   scrolls sideways.
 
