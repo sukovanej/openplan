@@ -43,8 +43,6 @@ export function StatusControl({
   return (
     <div
       ref={root}
-      // Flex keeps the tooltip's inline box off a line of text. The descent of that line adds space
-      // below the mark and moves the mark above the middle of its row.
       className="relative flex"
       onClick={(event) => {
         event.preventDefault()
