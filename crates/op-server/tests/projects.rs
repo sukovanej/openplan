@@ -65,7 +65,7 @@ fn break_config(state: &AppState, name: &str) {
             ))
         })
         .unwrap();
-    project.reload(None);
+    project.reload();
 }
 
 fn write_config(state: &AppState, name: &str, abbreviation: &str) {
@@ -81,7 +81,7 @@ fn write_config(state: &AppState, name: &str, abbreviation: &str) {
             ))
         })
         .unwrap();
-    project.reload(None);
+    project.reload();
 }
 
 // Two directories, one daemon. They share nothing: not the id space, not the abbreviation, and not
@@ -261,12 +261,12 @@ async fn a_project_whose_tasks_cannot_be_read_says_so() {
     let tip = std::fs::read_to_string(&reference).unwrap();
 
     std::fs::write(&reference, "0123456789012345678901234567890123456789\n").unwrap();
-    project(&state).reload(None);
+    project(&state).reload();
     let listed = json_of(&state, "/api/projects").await;
     assert_eq!(listed[0]["status"]["state"], "error", "{listed}");
 
     std::fs::write(&reference, tip).unwrap();
-    project(&state).reload(None);
+    project(&state).reload();
     let listed = json_of(&state, "/api/projects").await;
     assert_eq!(listed[0]["status"]["state"], "ok", "{listed}");
     assert_eq!(

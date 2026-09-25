@@ -55,20 +55,6 @@ impl MemorySnapshot {
     pub fn new(revision: Option<RevisionId>, files: BTreeMap<String, Vec<u8>>) -> Self {
         Self { revision, files }
     }
-
-    pub fn copy_of(snapshot: &dyn Snapshot) -> Result<Self, BackendError> {
-        let mut files = BTreeMap::new();
-        for path in snapshot.files()? {
-            if let Some(bytes) = snapshot.read(&path)? {
-                files.insert(path, bytes);
-            }
-        }
-        Ok(Self::new(snapshot.revision().cloned(), files))
-    }
-
-    pub fn into_files(self) -> BTreeMap<String, Vec<u8>> {
-        self.files
-    }
 }
 
 impl Snapshot for MemorySnapshot {

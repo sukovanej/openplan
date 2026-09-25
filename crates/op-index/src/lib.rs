@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 mod problems;
 
@@ -77,6 +77,35 @@ impl Index {
                 continue;
             }
             self.tasks.insert(number, Entry::parse(text, abbreviation));
+        }
+        self.problems = self.find_problems(plan.tag_names(), plan.shadowed());
+        Ok(())
+    }
+
+    // Reads again only the tasks `numbers` names. The problems span tasks, so they cover all again.
+    pub fn update(&mut self, plan: &Plan, numbers: &BTreeSet<u64>) -> Result<(), TrackerError> {
+        let held = self
+            .abbreviation
+            .filter(|held| plan.abbreviation().ok() == Some(*held));
+        let Some(abbreviation) = held else {
+            return self.load(plan);
+        };
+        for &number in numbers {
+            let text = match plan.path_of(number) {
+                Some(path) => plan.snapshot().read_text(path)?,
+                None => None,
+            };
+            let Some(text) = text else {
+                self.tasks.remove(&number);
+                continue;
+            };
+            if self
+                .tasks
+                .get(&number)
+                .is_none_or(|entry| entry.raw != text)
+            {
+                self.tasks.insert(number, Entry::parse(text, abbreviation));
+            }
         }
         self.problems = self.find_problems(plan.tag_names(), plan.shadowed());
         Ok(())

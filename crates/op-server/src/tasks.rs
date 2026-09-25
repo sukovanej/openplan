@@ -74,10 +74,9 @@ impl Project {
     }
 
     // A write answers from the index, so the index must hold the write before the answer goes out.
-    // The event pump reads the same move again, which changes nothing.
     pub(crate) fn written(&self, committed: Option<&Committed>) {
-        if let Some(committed) = committed {
-            self.reload(Some(&committed.changes));
+        if committed.is_some() {
+            self.catch_up();
         }
     }
 
@@ -703,9 +702,7 @@ pub(crate) async fn run_sync(
         let backend = project.tracker().backend();
         let remote = backend.remote().ok_or_else(|| no_remote(&project))?;
         let report = remote.sync()?;
-        if !report.changes.is_empty() {
-            project.reload(Some(&report.changes));
-        }
+        project.catch_up();
         Ok(SyncResult {
             received: report.received,
             sent: report.sent,

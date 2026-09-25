@@ -23,6 +23,8 @@ macro_rules! suite {
             log_filters_by_prefix_newest_first,
             log_pages_with_before_and_limit,
             changes_between_revisions,
+            changes_run_both_ways_and_skip_a_reverted_document,
+            large_documents_read_back,
             invalid_paths_are_refused,
             author_and_message_round_trip,
             commit_announces_the_head_move,
@@ -224,6 +226,51 @@ pub fn changes_between_revisions(subject: &impl Subject) {
     assert_eq!(
         from_nothing,
         vec![op_backend::Change::new("a.md", ChangeKind::Added)]
+    );
+}
+
+pub fn changes_run_both_ways_and_skip_a_reverted_document(subject: &impl Subject) {
+    let backend = subject.open();
+    let first = put(&*backend, "tasks/00001-a.md", "one");
+    put(&*backend, "tasks/00001-a.md", "two");
+    put(&*backend, "tags/ui.md", "tag");
+    let last = put(&*backend, "tasks/00001-a.md", "one");
+    let forward = backend
+        .changes(Some(&first.revision.id), &last.revision.id)
+        .expect("changes");
+    assert_eq!(
+        forward,
+        vec![op_backend::Change::new("tags/ui.md", ChangeKind::Added)]
+    );
+    let backward = backend
+        .changes(Some(&last.revision.id), &first.revision.id)
+        .expect("changes");
+    assert_eq!(
+        backward,
+        vec![op_backend::Change::new("tags/ui.md", ChangeKind::Removed)]
+    );
+}
+
+pub fn large_documents_read_back(subject: &impl Subject) {
+    let backend = subject.open();
+    let large = "a line of an embedded asset\n".repeat(20_000);
+    let first = put(&*backend, "assets/large.txt", &large);
+    put(&*backend, "assets/large.txt", "small now");
+    put(&*backend, "assets/other.txt", &large);
+    let old = backend
+        .at(&first.revision.id)
+        .expect("revision")
+        .read_text("assets/large.txt")
+        .expect("read");
+    assert_eq!(old.as_deref(), Some(large.as_str()));
+    let reopened = subject.open();
+    assert_eq!(
+        text(&*reopened, "assets/large.txt").as_deref(),
+        Some("small now")
+    );
+    assert_eq!(
+        text(&*reopened, "assets/other.txt").as_deref(),
+        Some(large.as_str())
     );
 }
 

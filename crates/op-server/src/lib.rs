@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use axum::{
     Json, Router,
-    extract::{MatchedPath, Path, State},
+    extract::{MatchedPath, Path, Query, State},
     http::{HeaderMap, HeaderValue, Request, StatusCode, Uri, header},
     response::{
         IntoResponse, Response,
@@ -117,7 +117,11 @@ impl Publisher {
     }
 
     pub fn publish(&self, event: ChangeEvent, via: Option<String>) {
-        tracing::info!(?event, "change published");
+        // Every sync reports its status, twice a minute for each project, even when nothing moved.
+        match event {
+            ChangeEvent::SyncChanged { .. } => tracing::debug!(?event, "change published"),
+            _ => tracing::info!(?event, "change published"),
+        }
         let mut recent = self.log.recent.lock().expect("event log poisoned");
         recent.0 += 1;
         let published = Published {
@@ -294,38 +298,35 @@ impl AppState {
                 found => found?,
             },
         };
-        let (project, created) = {
-            let mut projects = self.write_projects();
-            match projects
-                .values()
-                .find(|project| project.location().key() == location.key())
-            {
-                Some(existing) => (Arc::clone(existing), false),
-                None => {
-                    let mut registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
-                    let name = match registry.entry_at(&location.root) {
-                        Some(entry) => entry.name.clone(),
-                        None => registry::unique_name(&location.root, |name| {
-                            registry.holds_name(name) || projects.contains_key(name)
-                        }),
-                    };
-                    if !registry::is_usable_name(&name) {
-                        return Err(ProjectsError::BadName(name));
+        let (project, created) = match self.serving(&location) {
+            Some(existing) => (existing, false),
+            // Opening reads every task, so it runs before the lock that every request takes.
+            None => {
+                let registry = ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+                let name = project_name(&registry, &self.read_projects(), &location)?;
+                let opened = Arc::new(Project::open(name, location.clone())?);
+                let mut projects = self.write_projects();
+                match projects
+                    .values()
+                    .find(|project| project.location().key() == location.key())
+                {
+                    Some(existing) => (Arc::clone(existing), false),
+                    None => {
+                        let mut registry =
+                            ProjectRegistry::read(&registry_path)?.unwrap_or_default();
+                        let name = project_name(&registry, &projects, &location)?;
+                        opened.rename(&name);
+                        if !registry.holds_name(&name) {
+                            registry.insert(ProjectEntry {
+                                name: name.clone(),
+                                path: location.root.clone(),
+                                backend: Some(location.kind),
+                            });
+                            registry.write(&registry_path)?;
+                        }
+                        projects.insert(name, Arc::clone(&opened));
+                        (opened, true)
                     }
-                    if projects.contains_key(&name) {
-                        return Err(ProjectsError::NameTaken(name));
-                    }
-                    let project = Arc::new(Project::open(name.clone(), location.clone())?);
-                    if !registry.holds_name(&name) {
-                        registry.insert(ProjectEntry {
-                            name: name.clone(),
-                            path: location.root.clone(),
-                            backend: Some(location.kind),
-                        });
-                        registry.write(&registry_path)?;
-                    }
-                    projects.insert(name, Arc::clone(&project));
-                    (project, true)
                 }
             }
         };
@@ -413,6 +414,13 @@ impl AppState {
         &self.publisher
     }
 
+    fn serving(&self, location: &Location) -> Option<Arc<Project>> {
+        self.read_projects()
+            .values()
+            .find(|project| project.location().key() == location.key())
+            .cloned()
+    }
+
     fn registry_path(&self) -> Result<Arc<PathBuf>, ProjectsError> {
         self.registry.clone().ok_or(ProjectsError::NoRegistry)
     }
@@ -432,6 +440,26 @@ impl std::fmt::Debug for AppState {
     }
 }
 
+fn project_name(
+    registry: &ProjectRegistry,
+    projects: &BTreeMap<String, Arc<Project>>,
+    location: &Location,
+) -> Result<String, ProjectsError> {
+    let name = match registry.entry_at(&location.root) {
+        Some(entry) => entry.name.clone(),
+        None => registry::unique_name(&location.root, |name| {
+            registry.holds_name(name) || projects.contains_key(name)
+        }),
+    };
+    if !registry::is_usable_name(&name) {
+        return Err(ProjectsError::BadName(name));
+    }
+    if projects.contains_key(&name) {
+        return Err(ProjectsError::NameTaken(name));
+    }
+    Ok(name)
+}
+
 // A git project first takes what the remote already holds, so a second person starting the same
 // repository joins its tasks rather than starting a rival set.
 fn start_tasks(
@@ -447,7 +475,7 @@ fn start_tasks(
         tracing::warn!(project = %project.name(), error = %err, "starting the tasks without the remote");
     }
     tracker.init(author, abbreviation)?;
-    project.reload(None);
+    project.reload();
     Ok(())
 }
 
@@ -831,11 +859,19 @@ async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Re
     (StatusCode::OK, "shutting down").into_response()
 }
 
+// A new EventSource cannot set a header, so a page that opens one to reconnect sends its cursor in
+// the query instead.
+#[derive(serde::Deserialize)]
+struct EventsQuery {
+    last_event_id: Option<String>,
+}
+
 // A browser sends the id of the last event it saw when it reconnects, and the stream replays what
 // came after it. A cursor this daemon cannot serve gets `Resync` instead.
 async fn events(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<EventsQuery>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let mut shutdown = state.shutdown.subscribe();
     let publisher = state.publisher.clone();
@@ -843,7 +879,8 @@ async fn events(
     let cursor = headers
         .get(LAST_EVENT_ID)
         .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .or(query.last_event_id);
     let catch_up = cursor.as_deref().map(|cursor| publisher.since(cursor));
     let (tx, rx) = mpsc::channel(EVENT_CHANNEL_CAPACITY);
 

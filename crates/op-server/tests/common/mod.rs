@@ -67,7 +67,7 @@ pub fn started(project: Project, abbreviation: &str) -> Project {
         .tracker()
         .init(project.machine(), abbreviation.parse().unwrap())
         .unwrap();
-    project.reload(None);
+    project.reload();
     project
 }
 
@@ -111,7 +111,7 @@ pub fn seed(state: &AppState, files: &[(&str, &str)]) {
             Ok(Edit::new("Seed the tasks", ops.clone()))
         })
         .unwrap();
-    project.reload(None);
+    project.reload();
 }
 
 pub fn task_file(status: &str, title: &str, extra: &str) -> String {

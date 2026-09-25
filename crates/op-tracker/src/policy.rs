@@ -37,11 +37,15 @@ impl MergePolicy for TaskMergePolicy {
             .iter()
             .filter_map(|change| layout::task_number(&change.path))
             .collect();
+        let base_paths = TaskPaths::of(input.base)?;
+        let ours_paths = TaskPaths::of(input.ours)?;
+        let theirs_paths = TaskPaths::of(input.theirs)?;
+        let mut held = TaskPaths::of(input.merged)?;
         let mut displaced = Vec::new();
         for number in touched {
-            let [base, ours, theirs] =
-                [input.base, input.ours, input.theirs].map(|side| task_file(side, number));
-            let (base, ours, theirs) = (base?, ours?, theirs?);
+            let base = task_file(input.base, &base_paths, number)?;
+            let ours = task_file(input.ours, &ours_paths, number)?;
+            let theirs = task_file(input.theirs, &theirs_paths, number)?;
             let settled = match (base, ours, theirs) {
                 (_, ours, theirs) if ours == theirs => theirs,
                 (None, Some(ours), Some(theirs)) => {
@@ -57,7 +61,7 @@ impl MergePolicy for TaskMergePolicy {
                     Some(merged_file(&base, &ours, &theirs, &labels))
                 }
             };
-            settle(&mut state, number, settled)?;
+            settle(&mut state, &mut held, number, settled);
         }
         let notes = renumber(input, &mut state, displaced)?;
         Ok(Resolution {
@@ -94,29 +98,44 @@ fn merged_file(base: &File, ours: &File, theirs: &File, labels: &Labels) -> File
     (path, text.into_bytes())
 }
 
-fn task_file(snapshot: &dyn Snapshot, number: u64) -> Result<Option<File>, BackendError> {
-    let Some(path) = snapshot
-        .list(layout::TASKS)?
-        .into_iter()
-        .find(|path| layout::task_number(path) == Some(number))
-    else {
+// The files of each task number, listed once for a whole merge rather than once for each task.
+struct TaskPaths(BTreeMap<u64, BTreeSet<String>>);
+
+impl TaskPaths {
+    fn of(snapshot: &dyn Snapshot) -> Result<Self, BackendError> {
+        let mut paths: BTreeMap<u64, BTreeSet<String>> = BTreeMap::new();
+        for path in snapshot.list(layout::TASKS)? {
+            if let Some(number) = layout::task_number(&path) {
+                paths.entry(number).or_default().insert(path);
+            }
+        }
+        Ok(Self(paths))
+    }
+}
+
+// Two files of one number resolve to the lowest path, as a plan reads them.
+fn task_file(
+    snapshot: &dyn Snapshot,
+    paths: &TaskPaths,
+    number: u64,
+) -> Result<Option<File>, BackendError> {
+    let Some(path) = paths.0.get(&number).and_then(BTreeSet::first) else {
         return Ok(None);
     };
-    Ok(snapshot.read(&path)?.map(|content| (path, content)))
+    Ok(snapshot.read(path)?.map(|content| (path.clone(), content)))
 }
 
 // The number keeps exactly the file `settled` names, or none.
-fn settle(state: &mut Overlay<'_>, number: u64, settled: Option<File>) -> Result<(), BackendError> {
-    for path in state.list(layout::TASKS)? {
-        let kept = settled.as_ref().is_some_and(|(kept, _)| *kept == path);
-        if layout::task_number(&path) == Some(number) && !kept {
+fn settle(state: &mut Overlay<'_>, held: &mut TaskPaths, number: u64, settled: Option<File>) {
+    for path in held.0.remove(&number).unwrap_or_default() {
+        if settled.as_ref().is_none_or(|(kept, _)| *kept != path) {
             state.set(path, None);
         }
     }
     if let Some((path, content)) = settled {
+        held.0.entry(number).or_default().insert(path.clone());
         state.set(path, Some(content));
     }
-    Ok(())
 }
 
 fn renumber(

@@ -38,8 +38,7 @@ impl GitBackend {
                 if !moved {
                     return Err(BackendError::Contended);
                 }
-                let changes =
-                    objects::changes(&objects::Entries::new(), &inner.entries(Some(tip))?);
+                let changes = inner.changes_between(None, Some(tip))?;
                 inner.announce(Some(tip), changes, Origin::Local)?;
             }
             tip
