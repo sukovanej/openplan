@@ -13,9 +13,9 @@ tags:
 # Draw Mermaid diagrams and the flow with an own engine in the daemon
 
 Remove `@terrastruct/d2`, `elkjs`, and `@xyflow/react` from the web app.
-The daemon parses Mermaid, lays out the graph, and returns a scene. The
-browser paints the scene as SVG. The flow page uses the same layout and
-the same painter.
+The daemon parses Mermaid into a diagram IR, lays the IR out, and writes
+SVG. The flow page builds the same IR from the tasks and uses the same
+renderer. The browser only shows the SVG, and pans and zooms it.
 
 ## Why
 
@@ -27,51 +27,58 @@ the same painter.
 - A parser in Rust lets `openplan lint` report a broken diagram when an
   agent writes it, not when a person opens the page.
 
-## Pipeline
+## Crates
 
-The daemon owns everything up to the scene. The browser only paints.
+The IR is the contract. Two producers write it, and one renderer reads
+it. No producer knows the renderer, and the renderer knows no producer.
 
 ```mermaid
 flowchart LR
-  subgraph daemon
-    src[Mermaid source] --> ast[AST] --> ir[Graph IR]
-    tasks[Flow tasks] --> ir
-    ir --> layout[measure and layout] --> scene[Scene]
-    lint[openplan lint] --> ast
-  end
-  subgraph browser
-    paint[SVG painter] --> view[viewport]
-  end
-  scene -- JSON --> paint
+  source[Mermaid source] --> parser[op-diagram-mermaid]
+  tasks[Flow tasks] --> flow[op-api flow]
+  lint[openplan lint] --> parser
+  parser --> ir{{op-diagram IR}}
+  flow --> ir
+  ir --> render[op-diagram-render: measure, layout, SVG]
+  render -- SVG --> browser[browser: viewport and theme CSS]
 ```
 
-## Parts
-
-1. **Crate `op-diagram`.** It holds:
-   - the Mermaid parser, with errors that give the line and the column
-   - the graph IR, and a separate IR for sequence diagrams
+1. **`op-diagram`.** The IR types, with serde. `Diagram` is a graph or a
+   sequence. A graph holds nodes, clusters, and edges. A node has a
+   shape, label lines, and the optional fields that the flow sets: a
+   caption, an icon, a link, CSS classes, and a fixed rank. The order of
+   the nodes is the start order of each rank.
+2. **`op-diagram-mermaid`.** Mermaid source to IR. It gives the first
+   error with its line and column. It accepts only what Mermaid accepts,
+   so a diagram that works here also works on GitHub.
+3. **`op-diagram-render`.** IR to SVG. It holds:
    - the text measure from [[./00116-bundle-one-font-for-diagram-text.md]]
    - a layered layout: break cycles, assign ranks (the flow gives its
      waves as fixed ranks), add dummy nodes for long edges, order each
-     rank with barycenter sweeps (the members of a box stay together),
+     rank with barycenter sweeps (the members of a cluster stay together),
      set x with Brandes–Köpf, and route edges at right angles with one
      track for each horizontal segment
-   - a sequence layout and an ER record layout
-   - the scene types. A scene holds geometry and semantic roles, and no
-     colors.
-2. **API.** `POST /api/diagram` takes a source and returns a scene or a
-   parse error. `/api/flow` returns a scene of the flow. The daemon keeps
-   scenes in a cache by source hash.
-3. **CLI.** `openplan lint` reports Mermaid errors in task bodies and in
+   - a sequence layout and a table layout for ER entities
+   - the SVG writer
+
+## Other parts
+
+1. **API.** `POST /api/diagram` takes a source and returns SVG or a parse
+   error. `/api/flow` returns the SVG of the flow. The daemon keeps the
+   SVG in a cache by source hash.
+2. **CLI.** `openplan lint` reports Mermaid errors in task bodies and in
    comments.
-4. **Web.** A new package `@openplan/diagram` holds the scene painter and
-   the viewport. `task-ui` draws a `mermaid` fence with it, and so do the
-   full view and the flow page. Remove the three dependencies, and
-   regenerate the client with `mise run generate-web-client`.
-5. **Migration.** Convert the 7 D2 blocks: OPP-115, and CQR-71, CQR-73,
-   CQR-74, CQR-77, CQR-89, and CQR-90. Change the CQR tasks only with the
-   consent of the user.
-6. **Skill and prompt.** Replace the D2 section with the Mermaid subset in
+3. **Web.** `task-ui` shows a `mermaid` fence inline, and so do the full
+   view and the flow page. One viewport component pans and zooms, and one
+   CSS file gives the classes of the SVG their theme colors. One click
+   handler on the viewport gives internal links to React Router. Remove
+   the three dependencies, and regenerate the client with
+   `mise run generate-web-client`.
+4. **Migration.** Convert the 7 D2 blocks: OPP-115, and CQR-71, CQR-73,
+   CQR-74, CQR-77, CQR-89, and CQR-90. The conversions are the fixtures of
+   `op-diagram-mermaid`. Change the CQR tasks only with the consent of the
+   user.
+5. **Skill and prompt.** Replace the D2 section with the Mermaid subset in
    the three copies of `SKILL.md` (`.agents`, `.claude`, `crates/op-skills`)
    and in the prompt in `crates/op-server/src/agent.rs`.
 
@@ -79,14 +86,23 @@ flowchart LR
 
 | Type | Supported |
 |---|---|
-| `flowchart`, `graph` | `TD` `TB` `BT` `LR` `RL`; shapes `[ ]` `( )` `([ ])` `[( )]` `(( ))` `{ }` `{{ }}` `>]` `[/ /]`; quoted labels; edges `-->` `---` `-.->` `==>` `--o` `--x` `<-->`; labels `-->\|text\|` and `-- text -->`; longer edges `--->`; chains; `&`; nested `subgraph … end`; edges to a subgraph |
-| `sequenceDiagram` | `participant … as …`, `actor`, `->>` `-->>` `->` `-x` `-)`, self-messages, `Note left of / right of / over`, `loop` `alt`/`else` `opt` `par` `critical` `break`, `activate` and `+`/`-`, `autonumber` |
-| `erDiagram` | entity blocks with `type name PK/FK/UK "comment"`, relationships such as `\|\|--o{` with a label |
-| Parsed, then ignored | `classDef`, `class`, `style`, `linkStyle`, `:::` |
+| `flowchart`, `graph` | `TD` `TB` `BT` `LR` `RL`; the classic shapes (`[ ]` `( )` `([ ])` `[[ ]]` `[( )]` `(( ))` `((( )))` `{ }` `{{ }}` `>]` `[/ /]` `[\ \]` `[/ \]` `[\ /]`); quoted labels; `<br>`; `#quot;` style codes; edges `-->` `---` `-.->` `==>` `~~~` `--o` `--x` `<-->`; labels `-->\|text\|` and `-- text -->`; longer edges `--->`; chains; `&`; nested `subgraph … end`; `direction`; edges to a subgraph |
+| `sequenceDiagram` | `participant … as …`, `actor`, `->>` `-->>` `->` `-->` `-x` `--x` `-)` `--)` `<<->>`, self-messages, `Note left of / right of / over`, `loop` `alt`/`else` `opt` `par`/`and` `critical`/`option` `break`, `rect`, `activate` and `+`/`-`, `autonumber` |
+| `erDiagram` | entity blocks with `type name PK/FK/UK "comment"`, relationships such as `\|\|--o{` with a label, `direction` |
+| Parsed, then ignored | `classDef`, `class`, `style`, `linkStyle`, `:::`, the color of `rect` |
 | Always ignored | `click`: a diagram never runs a callback or adds a link |
-| Refused with a message | `%%{init}%%` and every other diagram type |
+| Refused with a message | `%%{init}%%`, front matter, `@{ }` shapes, and every other diagram type |
 
-## Rules for the painter
+## Rules for the SVG
+
+- The SVG carries semantic classes (`node`, `edge`, `status-done`) and no
+  colors. The page puts it inline, not in an `<img>`, so that the theme
+  CSS reaches it. A theme change needs no new request.
+- The writer is the trust boundary. It escapes every text and attribute
+  value. It never writes `<script>`, `<foreignObject>`, an event
+  attribute, or a link from diagram source. Tests give it hostile labels.
+- The status icons of the flow are Lucide paths copied into Rust, so an
+  SVG that the CLI exports does not need the page.
 
 A headless Chromium benchmark (pixel ratio 2) measured one zoom frame:
 
@@ -96,7 +112,7 @@ A headless Chromium benchmark (pixel ratio 2) measured one zoom frame:
 | 300 | 2.1 ms | 0.4 ms | 9.0 ms | 8.1 ms |
 | 2000 | 7.9 ms | 3.3 ms | 52 ms | 44 ms |
 
-- Paint with SVG only, on every surface.
+- Show SVG only, on every surface.
 - Pan and zoom with a CSS transform on the element that holds the
   `<svg>`. Set the transform through a ref. Never set React state for
   each frame, and never set the `transform` attribute of a `<g>`.
@@ -106,23 +122,24 @@ A headless Chromium benchmark (pixel ratio 2) measured one zoom frame:
 ## Acceptance
 
 - Cargo tests check the geometry: no two nodes overlap, no edge crosses a
-  node that it does not join, each child stays in its box, and each wave
-  of the flow is one row.
-- The 7 converted blocks are fixtures, and each one draws without an
-  error.
+  node that it does not join, each child stays in its cluster, and each
+  wave of the flow is one row.
+- The 7 converted blocks and the diagram in this task parse and draw
+  without an error.
 - The SPA bundle holds no D2, ELK, or React Flow code.
 - `cargo build`, `cargo test`, `cargo fmt --check`, `cargo clippy -- -D
   warnings`, and the web tests pass.
 
 ## Open questions
 
-Each question has a recommendation. Decide them before the work starts.
+Each question has a recommendation. Decide them before the renderer work
+starts.
 
 - Look: clean shapes that match the flow cards, or a hand-drawn look?
   Recommendation: clean.
 - Scope of the first version: flowchart, sequence, and ER only?
   Recommendation: yes. State and class diagrams can come later on the
-  same graph IR.
+  same IR.
 - Wheel: zoom (as the flow page does now), or pan with pinch and Ctrl
   with the wheel to zoom?
 - Flow order: can the layout reorder the tasks of one wave to cut
