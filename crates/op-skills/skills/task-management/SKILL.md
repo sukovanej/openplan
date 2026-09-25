@@ -97,6 +97,11 @@ openplan lint <key>
 Keep every comment in the file. The comment log is append-only, and `write`
 refuses a file that drops an entry.
 
+`openplan lint <key>` reports what is wrong with the task: a reference to a
+task that does not exist, a parent or dependency cycle, a tag that is not
+registered, or a conflict. Sync can cause these, so `openplan get` also prints
+them on stderr. Repair each one before you work on the task.
+
 ## Conflict
 
 When two people change the same field or the same lines of a task, sync keeps

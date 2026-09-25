@@ -186,15 +186,15 @@ enum Command {
     },
     /// Open the realtime web UI in the default browser
     Open,
-    /// Check task files (frontmatter, references, cycles, duplicate numbers); never starts a daemon
+    /// Report task problems (fields, references, cycles, tags, conflicts) and stale agent skills; never starts a daemon
     Lint {
-        /// Restrict the report and --fix to these tasks (file paths or keys); the whole store is always scanned
-        targets: Vec<String>,
+        /// Report only these tasks; every task is checked all the same
+        keys: Vec<String>,
         #[arg(long)]
         json: bool,
-        /// Apply the derivable fixes in place, then re-check
-        #[arg(long)]
-        fix: bool,
+        /// Check only the agent skill files of this checkout, not the tasks
+        #[arg(long, conflicts_with = "keys")]
+        skills: bool,
     },
     /// Manage the tags tasks can carry
     Tag {
@@ -439,7 +439,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         .map(|()| ExitCode::SUCCESS),
         Command::Sync { status, json } => history::sync(root, daemon_url, status, json),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
-        Command::Lint { targets, json, fix } => lint::run(root, &targets, json, fix),
+        Command::Lint { keys, json, skills } => lint::run(root, &keys, json, skills),
         Command::Tag { command } => tag::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
@@ -577,8 +577,8 @@ fn get(
     } else {
         // The daemon holds parsed state, so this is a canonical rendering of the task and not a copy
         // of its file. A field it could not parse has no canonical form, so it is reported instead.
-        for problem in detail.metadata.problems() {
-            eprintln!("{id}: {problem}");
+        for problem in &detail.problems {
+            eprintln!("{id}: {}", problem.message);
         }
         if detail.conflicts > 0 {
             eprintln!("{}", conflict_notice(id, detail.conflicts));
@@ -684,8 +684,8 @@ fn show(root: &Path, daemon_url: Option<&str>, id: &str) -> Result<()> {
             tags.join(", ")
         }
     );
-    for problem in metadata.problems() {
-        println!("!       {problem}");
+    for problem in &detail.problems {
+        println!("!       {}", problem.message);
     }
     if detail.conflicts > 0 {
         let fields = metadata.conflicted_fields();
@@ -728,7 +728,15 @@ fn print_tasks(tasks: &[&TaskListItem]) {
             0 => "",
             _ => "  [conflict]",
         };
-        println!("{:<10} {status:<11} {}{conflicted}", task.id, task.title);
+        let problems = match task.problems.len() {
+            0 => String::new(),
+            1 => "  [1 problem]".to_owned(),
+            count => format!("  [{count} problems]"),
+        };
+        println!(
+            "{:<10} {status:<11} {}{conflicted}{problems}",
+            task.id, task.title
+        );
     }
 }
 

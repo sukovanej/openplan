@@ -4,7 +4,7 @@ cargo-dist = "0.32.0"
 "cargo:tauri-cli" = "2"
 
 [tasks.lint]
-description = "Check the tasks of this project with the openplan linter"
+description = "Report the problems in the tasks of this project and stale agent skills"
 run = "cargo run --quiet -p openplan -- lint"
 
 # The daemon respawns itself from its own executable, so whichever binary runs `server restart`

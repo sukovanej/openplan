@@ -64,6 +64,7 @@ const task = (id: string, conflicts: number): TaskListItem => ({
   updated: "2026-01-02T00:00:00Z",
   comment_count: 0,
   conflicts,
+  problems: [],
 })
 
 describe("the tasks a sync left in conflict", () => {

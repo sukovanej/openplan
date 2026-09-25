@@ -3,193 +3,166 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Result, bail};
-use op_backend::Actor;
-use op_lint::{CreatedSource, Diagnostic, Snapshot};
-use op_server::{Location, STORE_DIR};
-use op_task::Timestamp;
-use op_tracker::{HistoryQuery, Tracker};
+use op_api::{ProblemCode, TaskListItem};
+use op_index::Index;
+use op_server::Location;
+use op_tracker::Tracker;
+use serde::Serialize;
 
-// Skills live in the checkout that holds the tasks, so an install run from a subdirectory lands
-// there too. A directory with no tasks yet takes the root it was given.
+// Skills are files of the checkout a person works in, so each worktree has its own, and an install
+// run from a subdirectory lands at the top of the checkout. Outside git they sit beside the local
+// tasks, or in the directory given.
 pub fn skills_root(root: &Path) -> PathBuf {
+    if let Some(workdir) = op_backend_git::inspect(root).and_then(|checkout| checkout.workdir) {
+        return workdir;
+    }
     Location::find(root, None).map_or_else(|_| root.to_path_buf(), |location| location.root)
 }
 
-// Lint reads the tasks where they live, without the daemon, as a pre-commit hook and a fresh clone
-// need it to. A fix goes back through the tracker as one revision, which the daemon then reads like
-// any write from another process.
-pub fn run(root: &Path, targets: &[String], json: bool, fix: bool) -> Result<ExitCode> {
-    let location = Location::find(root, None)?;
-    let machine = op_server::machine_actor(&location.root);
-    let tracker = Tracker::new(op_server::open_backend(&location, &machine, false)?);
-    let dir = documents_dir(&location);
-    let snapshot = Snapshot::from_plan(&tracker.plan()?, &dir, &location.root)?;
-    let selected = target_paths(&snapshot, &location, &dir, targets)?;
+#[derive(Serialize)]
+struct Finding {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<PathBuf>,
+    code: &'static str,
+    message: String,
+    help: &'static str,
+}
 
-    let snapshot = if fix {
-        let actor = actor(&location.root, machine);
-        let wanted = |path: &Path| {
-            selected
-                .as_ref()
-                .is_none_or(|set| set.contains(&lint_path(path)))
-        };
-        op_lint::fix_plan(
-            &tracker,
-            &actor,
-            &snapshot,
-            &dir,
-            &FirstRevision { tracker: &tracker },
-            &wanted,
-        )?;
-        Snapshot::from_plan(&tracker.plan()?, &dir, &location.root)?
-    } else {
-        snapshot
-    };
-
-    let diagnostics = op_lint::lint(&snapshot);
-    let shown: Vec<&Diagnostic> = diagnostics
-        .iter()
-        .filter(|d| {
-            selected
-                .as_ref()
-                .is_none_or(|set| set.contains(&lint_path(&d.path)))
-        })
-        .collect();
-
-    if json {
-        println!("{}", serde_json::to_string_pretty(&shown)?);
-    } else {
-        for diagnostic in &shown {
-            println!("{diagnostic}");
+// The tasks are read where they live, without the daemon, as CI and a fresh clone need them. The
+// daemon finds the same problems after every change; this prints them for one run.
+pub fn run(root: &Path, keys: &[String], json: bool, skills_only: bool) -> Result<ExitCode> {
+    let mut findings = Vec::new();
+    let mut tasks = 0;
+    if !skills_only {
+        let location = Location::find_or_join(root)?;
+        let machine = op_server::machine_actor(&location.root);
+        let tracker = Tracker::new(op_server::open_backend(&location, &machine, false)?);
+        let mut index = Index::new();
+        index.load(&tracker.plan()?)?;
+        let wanted = wanted(&index, keys)?;
+        for row in index
+            .list("")
+            .iter()
+            .filter(|row| wanted.as_ref().is_none_or(|keys| keys.contains(&row.id)))
+        {
+            tasks += 1;
+            findings.extend(task_findings(row));
         }
-        let checked = selected.as_ref().map_or_else(
-            || snapshot.files().len() + snapshot.tags().len() + present_skills(&snapshot),
-            |set| set.len(),
-        );
-        println!(
-            "checked {checked} file{}, found {} problem{}",
-            plural(checked),
-            shown.len(),
-            plural(shown.len())
+    }
+    let skills = op_skills::installed(&skills_root(root))?;
+    if keys.is_empty() {
+        findings.extend(
+            skills
+                .iter()
+                .filter(|skill| !skill.matches())
+                .map(|skill| Finding {
+                    task: None,
+                    path: Some(skill.path.clone()),
+                    code: "skill",
+                    message: match skill.source {
+                        None => format!("skill {} is missing", skill.name),
+                        Some(_) => format!("skill {} differs from the openplan binary", skill.name),
+                    },
+                    help: "run `openplan setup-skills`",
+                }),
         );
     }
-    Ok(if shown.is_empty() {
-        ExitCode::SUCCESS
+    if json {
+        println!("{}", serde_json::to_string_pretty(&findings)?);
     } else {
-        ExitCode::FAILURE
+        for finding in &findings {
+            let place = match (&finding.task, &finding.path) {
+                (Some(task), _) => task.clone(),
+                (None, Some(path)) => path.display().to_string(),
+                (None, None) => String::new(),
+            };
+            println!("{place}: error[{}]: {}", finding.code, finding.message);
+            println!("  help: {}", finding.help);
+        }
+        let skill_files = skills.iter().filter(|skill| skill.source.is_some()).count();
+        println!(
+            "checked {tasks} task{} and {skill_files} skill file{}, found {} problem{}",
+            plural(tasks),
+            plural(skill_files),
+            findings.len(),
+            plural(findings.len())
+        );
+    }
+    Ok(match findings.is_empty() {
+        true => ExitCode::SUCCESS,
+        false => ExitCode::FAILURE,
     })
 }
 
-// Where the documents read as living. A git project's documents are on their own branch, but their
-// links into the code were written from `.plan/tasks/`, so they resolve from there in both kinds.
-fn documents_dir(location: &Location) -> PathBuf {
-    location.root.join(STORE_DIR)
-}
-
-fn actor(root: &Path, machine: Actor) -> Actor {
-    let identity = crate::author::identity(root);
-    let actor = match identity.name {
-        Some(name) => Actor {
-            name,
-            email: identity.email,
-            via: None,
-        },
-        None => machine,
-    };
-    Actor {
-        via: identity.agent,
-        ..actor
+// A key that names no task would filter every finding away and pass, so it stops the run instead.
+fn wanted(index: &Index, keys: &[String]) -> Result<Option<HashSet<String>>> {
+    if keys.is_empty() {
+        return Ok(None);
     }
+    for key in keys {
+        if !index
+            .number(key)
+            .is_some_and(|number| index.contains(number))
+        {
+            bail!("no task matches {key}");
+        }
+    }
+    Ok(Some(keys.iter().cloned().collect()))
 }
 
-fn present_skills(snapshot: &Snapshot) -> usize {
-    snapshot
-        .skills()
+fn task_findings(row: &TaskListItem) -> Vec<Finding> {
+    let mut findings: Vec<Finding> = row
+        .problems
         .iter()
-        .filter(|skill| skill.source.is_some())
-        .count()
+        .map(|problem| Finding {
+            task: Some(row.id.clone()),
+            path: None,
+            code: problem.code.as_str(),
+            message: problem.message.clone(),
+            help: help(problem.code),
+        })
+        .collect();
+    if row.conflicts > 0 {
+        findings.push(Finding {
+            task: Some(row.id.clone()),
+            path: None,
+            code: "conflict",
+            message: format!(
+                "{} unresolved conflict{} from a sync",
+                row.conflicts,
+                plural(row.conflicts)
+            ),
+            help: "keep one version of each block and write the task back with `openplan write`, \
+                   or settle a field with `openplan set`",
+        });
+    }
+    findings
+}
+
+fn help(code: ProblemCode) -> &'static str {
+    match code {
+        ProblemCode::Field => {
+            "set the field with `openplan set`, or write the task back with `openplan write`"
+        }
+        ProblemCode::Title => "write the task back with `openplan write` and one `# ` title",
+        ProblemCode::Comment => {
+            "repair the comment log with `openplan write`; add entries with `openplan comment`"
+        }
+        ProblemCode::Reference => "name a task that exists, or remove the reference",
+        ProblemCode::Tag => {
+            "register the tag with `openplan tag`, or remove it with `openplan set <key> tags`"
+        }
+        ProblemCode::ParentCycle | ProblemCode::DependencyCycle => {
+            "change one parent or dependency in the cycle with `openplan set`"
+        }
+        ProblemCode::DuplicateNumber => {
+            "delete the task file that is not read, or give it a free number"
+        }
+    }
 }
 
 fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
-}
-
-// The whole project is always scanned; targets only pick which files this run reports on and
-// repairs, so an agent lints the one task it wrote. `None` means no filter.
-fn target_paths(
-    snapshot: &Snapshot,
-    location: &Location,
-    dir: &Path,
-    targets: &[String],
-) -> Result<Option<HashSet<PathBuf>>> {
-    if targets.is_empty() {
-        return Ok(None);
-    }
-    let mut set = HashSet::new();
-    for target in targets {
-        // A target that resolves to nothing would filter every diagnostic away and pass, so it stops
-        // the run instead.
-        let Some(path) = target_path(snapshot, location, dir, target) else {
-            bail!("no task, tag, or skill file matches {target}");
-        };
-        set.insert(path);
-    }
-    Ok(Some(set))
-}
-
-fn target_path(
-    snapshot: &Snapshot,
-    location: &Location,
-    dir: &Path,
-    target: &str,
-) -> Option<PathBuf> {
-    if let Some(number) = snapshot.abbreviation().parse_key(target) {
-        return snapshot.file(number).map(|file| lint_path(&file.path));
-    }
-    let spellings = [
-        lint_path(Path::new(target)),
-        lint_path(&location.root.join(target)),
-        lint_path(&dir.join(target)),
-    ];
-    snapshot
-        .files()
-        .iter()
-        .map(|file| &file.path)
-        .chain(snapshot.tags().iter().map(|tag| &tag.path))
-        .chain(snapshot.skills().iter().map(|skill| &skill.path))
-        .map(|path| lint_path(path))
-        .find(|path| spellings.contains(path))
-}
-
-// A symlinked checkout spells one file two ways; both meet at the deepest directory that exists.
-fn lint_path(path: &Path) -> PathBuf {
-    for ancestor in path.ancestors() {
-        let Ok(resolved) = ancestor.canonicalize() else {
-            continue;
-        };
-        let rest = path.strip_prefix(ancestor).unwrap_or(Path::new(""));
-        return if rest.as_os_str().is_empty() {
-            resolved
-        } else {
-            resolved.join(rest)
-        };
-    }
-    path.to_path_buf()
-}
-
-// When a task first appeared: the oldest revision in its history.
-struct FirstRevision<'a> {
-    tracker: &'a Tracker,
-}
-
-impl CreatedSource for FirstRevision<'_> {
-    fn created(&self, path: &Path) -> Option<Timestamp> {
-        let stem = path.file_stem()?.to_str()?;
-        let number = op_task::file_id(stem)?;
-        let history = self
-            .tracker
-            .task_history(number, &HistoryQuery::default())
-            .ok()?;
-        Some(history.last()?.revision.at)
-    }
 }

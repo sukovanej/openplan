@@ -49,6 +49,25 @@ export const ConflictSide_Status = Schema.Struct({
   label: Schema.String,
   value: Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]),
 }).annotate({ identifier: "ConflictSide_Status" })
+export type ProblemCode =
+  | "field"
+  | "title"
+  | "comment"
+  | "reference"
+  | "tag"
+  | "parent_cycle"
+  | "dependency_cycle"
+  | "duplicate_number"
+export const ProblemCode = Schema.Literals([
+  "field",
+  "title",
+  "comment",
+  "reference",
+  "tag",
+  "parent_cycle",
+  "dependency_cycle",
+  "duplicate_number",
+]).annotate({ identifier: "ProblemCode" })
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]).annotate({
   identifier: "Status",
@@ -201,6 +220,8 @@ export const FieldConflict_Status = Schema.Struct({
   sides: Schema.Array(ConflictSide_Status),
   value: Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]),
 }).annotate({ identifier: "FieldConflict_Status" })
+export type Problem = { readonly code: ProblemCode; readonly message: string }
+export const Problem = Schema.Struct({ code: ProblemCode, message: Schema.String }).annotate({ identifier: "Problem" })
 export type CreateTask = {
   readonly body?: string | null
   readonly dependencies?: ReadonlyArray<string>
@@ -522,6 +543,7 @@ export type TaskListItem = {
   readonly conflicts: number
   readonly id: string
   readonly metadata: Metadata
+  readonly problems: ReadonlyArray<Problem>
   readonly project: string
   readonly title: string
   readonly updated: Field_Rfc3339
@@ -535,6 +557,7 @@ export const TaskListItem = Schema.Struct({
   ),
   id: Schema.String,
   metadata: Metadata,
+  problems: Schema.Array(Problem),
   project: Schema.String,
   title: Schema.String,
   updated: Field_Rfc3339,
@@ -549,6 +572,7 @@ export type TaskDetail = {
   readonly id: string
   readonly metadata: Metadata
   readonly parent_title?: string
+  readonly problems: ReadonlyArray<Problem>
   readonly project: string
   readonly refs?: ReadonlyArray<TaskRef>
   readonly title: string
@@ -566,6 +590,7 @@ export const TaskDetail = Schema.Struct({
   id: Schema.String,
   metadata: Metadata,
   parent_title: Schema.optionalKey(Schema.String),
+  problems: Schema.Array(Problem),
   project: Schema.String,
   refs: Schema.optionalKey(Schema.Array(TaskRef)),
   title: Schema.String,

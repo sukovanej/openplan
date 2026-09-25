@@ -106,6 +106,43 @@ pub struct TaskRef {
     pub status: Field<Status>,
 }
 
+// Something wrong with a task that no single write caught. Sync joins two versions that were each
+// fine, and a hand edit in a local store passes no check, so the index looks at every task after
+// each change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Problem {
+    pub code: ProblemCode,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProblemCode {
+    Field,
+    Title,
+    Comment,
+    Reference,
+    Tag,
+    ParentCycle,
+    DependencyCycle,
+    DuplicateNumber,
+}
+
+impl ProblemCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProblemCode::Field => "field",
+            ProblemCode::Title => "title",
+            ProblemCode::Comment => "comment",
+            ProblemCode::Reference => "reference",
+            ProblemCode::Tag => "tag",
+            ProblemCode::ParentCycle => "parent_cycle",
+            ProblemCode::DependencyCycle => "dependency_cycle",
+            ProblemCode::DuplicateNumber => "duplicate_number",
+        }
+    }
+}
+
 // One task read for the detail page: `metadata` parsed field by field, so a file with one bad field
 // still renders everything else and flags only what failed. `updated` is the time of the last
 // revision that changed the task. `parent_title`, `children`, and `refs` carry the immediate
@@ -121,6 +158,7 @@ pub struct TaskDetail {
     // The open conflicts sync left in the task: fields in `metadata`, and blocks of both versions
     // in `body`.
     pub conflicts: usize,
+    pub problems: Vec<Problem>,
     pub updated: Field<Rfc3339>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
@@ -150,6 +188,7 @@ pub struct TaskListItem {
     pub comment_count: usize,
     // Counted like `TaskDetail::conflicts`, so a row can call for attention to a conflict in the body.
     pub conflicts: usize,
+    pub problems: Vec<Problem>,
     pub updated: Field<Rfc3339>,
 }
 

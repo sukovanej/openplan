@@ -98,6 +98,50 @@ pub fn read(body: &str) -> Log {
     log
 }
 
+// What is wrong with the shape of the log, one message each. Only a hand edit breaks it: every
+// write through the tracker appends a well-formed entry.
+pub fn problems(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let sections = sections(body);
+    if let Some((first, extra)) = sections.split_first() {
+        for _ in extra {
+            out.push("a task holds one `## Comments` section".to_owned());
+        }
+        if first.span.end < body.len() {
+            out.push("`## Comments` must be the last section of a task".to_owned());
+        }
+    }
+    for entry in read(body).entries {
+        match (&entry.heading, &entry.quote) {
+            (Some(_), None) => {
+                out.push("a comment entry needs a blockquote below its heading".to_owned());
+            }
+            (None, Some(_)) => out
+                .push("a blockquote in the comment log needs an entry heading above it".to_owned()),
+            (Some(_), Some(_)) => {
+                match &entry.comment.at {
+                    Ok(_) => {}
+                    Err(FieldError::Missing) => out.push(
+                        "a comment heading reads `### <timestamp> by <author>`, and this one \
+                         names no timestamp"
+                            .to_owned(),
+                    ),
+                    Err(FieldError::Invalid(message)) => out.push(message.clone()),
+                }
+                if entry.comment.author.is_err() {
+                    out.push(
+                        "a comment heading reads `### <timestamp> by <author>`, and this one \
+                         names no author"
+                            .to_owned(),
+                    );
+                }
+            }
+            (None, None) => {}
+        }
+    }
+    out
+}
+
 pub fn parse(body: &str) -> Vec<Comment> {
     read(body)
         .entries
