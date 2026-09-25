@@ -7,6 +7,24 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.3...main)
 
+### Added
+
+- `GET /api/events` takes the cursor of the last event a client saw in the
+  query too (`?last_event_id=<id>`), because a new EventSource cannot set the
+  `Last-Event-ID` header. The web UI uses it to resume after a reconnect.
+
+### Changed
+
+- The daemon reads only the tasks that changed. Before, each write read every
+  task file two times. On 1,500 tasks a write takes 5 ms instead of 33 ms, and
+  the history of one task takes 10 ms instead of 231 ms.
+- A local `.plan/` project reads a file only when its size, times, or inode
+  changed, and keeps large documents, such as images, out of memory until a
+  reader asks for them.
+- The web UI refreshes each read once for a burst of changes, such as a sync
+  that brings in many tasks. A key press on a big board renders only the rows
+  that change.
+
 ## [0.0.3](https://github.com/sukovanej/openplan/compare/v0.0.2...v0.0.3) - 2026-09-25
 
 ### Added
