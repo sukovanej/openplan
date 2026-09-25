@@ -62,12 +62,7 @@ export function PromptBar({ open, onClose }: { open: boolean; onClose: () => voi
         className={cn("pointer-events-auto", sized ? "absolute" : "relative w-full max-w-3xl")}
       >
         {RESIZE_HANDLES.map(({ edges, className }) => (
-          <div
-            key={className}
-            aria-hidden
-            onPointerDown={resize(edges)}
-            className={cn("absolute z-10", className)}
-          />
+          <div key={className} aria-hidden onPointerDown={resize(edges)} className={cn("absolute z-10", className)} />
         ))}
         <div
           className={cn(
@@ -75,13 +70,7 @@ export function PromptBar({ open, onClose }: { open: boolean; onClose: () => voi
             sized ? "h-full" : "max-h-[75vh]",
           )}
         >
-          <SessionTabs
-            sessions={sessions}
-            selected={selected?.id}
-            onClose={onClose}
-            onMove={move}
-            onReset={reset}
-          />
+          <SessionTabs sessions={sessions} selected={selected?.id} onClose={onClose} onMove={move} onReset={reset} />
           {selected === undefined ? (
             <NewPrompt sized={sized} />
           ) : (
