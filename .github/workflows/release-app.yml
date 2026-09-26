@@ -1,12 +1,13 @@
 name: Release app
 
-# Not `on: release`. cargo-dist makes the release with GITHUB_TOKEN, and a release that token
-# makes starts no further workflow, so this waits for the Release run instead.
+# TODO(gui-release): the release ships only the CLI and the daemon for now. To bundle the app
+# again after each Release run, put this trigger back under `on:`. Not `on: release`: cargo-dist
+# makes the release with GITHUB_TOKEN, and a release that token makes starts no further workflow.
+#
+#   workflow_run:
+#     workflows: ["Release"]
+#     types: [completed]
 on:
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
-  # For a tag whose Release run passed but whose app bundles did not upload.
   workflow_dispatch:
     inputs:
       tag:

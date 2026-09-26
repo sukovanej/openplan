@@ -126,3 +126,12 @@ fn a_missing_asset_names_the_release() {
         "{err:#}"
     );
 }
+
+#[test]
+fn a_release_publishes_only_the_assets_it_lists() {
+    let (_runtime, base) = serve(release_with(b"bytes", b""));
+    let release = Github::at(&base, "acme/openplan").latest_release().unwrap();
+
+    assert!(release.publishes("openplan-x.tar.gz"));
+    assert!(!release.publishes("OpenPlan-x.app.tar.gz"));
+}

@@ -16,11 +16,8 @@ profile untouched. Releases carry binaries for macOS (Apple silicon and Intel) a
 (x86_64 and arm64). Every archive and its checksum is on the
 [releases page](https://github.com/sukovanej/openplan/releases).
 
-The desktop app is a separate download on the same release: `OpenPlan_<version>_<arch>.dmg` for
-macOS, `.deb` or `.AppImage` for Linux, and `.msi` or `-setup.exe` for Windows x64. The macOS and
-Linux apps carry the daemon, so they need no `openplan` on `PATH`. The Windows GUI connects to a
-daemon you run in WSL through `127.0.0.1:7373`; it does not install, start, or stop that daemon.
-It is signed ad-hoc, not with a Developer ID, so macOS asks you to confirm the first open.
+Releases carry no desktop app for now. To use the web UI, run `openplan open` in a project. It
+opens the UI of the daemon in your browser.
 
 In GitHub Actions:
 
@@ -148,8 +145,8 @@ checksums, and the installer, and publishes a GitHub Release.
 commit the result.
 
 The desktop app ships as a bundle, not as a binary in a tarball, so `crates/op-gui` sets
-`dist = false` and cargo-dist skips it. `.github/workflows/release-app.yml` follows the Release
-workflow, builds the bundle on each platform, and uploads it to the same release. Nothing
+`dist = false` and cargo-dist skips it. `.github/workflows/release-app.yml` builds the bundle on
+each platform and uploads it to a release. For now, it runs only when you start it by hand. Nothing
 generates that file. Edit it by hand.
 
 ## License

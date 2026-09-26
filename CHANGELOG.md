@@ -18,6 +18,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A release carries only the CLI and the daemon for now. It carries no desktop
+  app. The app workflow runs only when you start it by hand.
+- `openplan update` skips `OpenPlan.app` when the release carries no app
+  bundle. The app keeps its version. It failed before.
 - The history reads what each revision changed from the task files, not from
   the commit message. `openplan history` and the web UI show the same result
   for every revision, also for a revision that plain git or an import wrote.
