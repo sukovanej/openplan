@@ -48,12 +48,14 @@
   padding-top: 20px;
 }
 
+/* CodeMirror finds the line under the pointer from the border box of each line and block widget.
+   A margin falls outside that box and moves every line below it away from where a click lands, so
+   the rule above a heading is a background inside the padding. */
 .op-editor .cm-h2 {
   font-size: var(--prose-h2-size);
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  padding-top: 34px;
   padding-bottom: 4px;
+  background: linear-gradient(var(--border), var(--border)) 0 18px / 100% 1px no-repeat;
 }
 
 .op-editor .cm-h3 {
@@ -195,8 +197,10 @@
   color: var(--shiki-dark);
 }
 
+/* A flow root keeps the margins of the rendered content inside the box CodeMirror measures. */
 .op-editor .cm-rendered-block {
-  margin: 0.25rem 0;
+  display: flow-root;
+  padding: 0.25rem 0;
 }
 
 .op-editor .cm-tooltip.cm-tooltip-autocomplete {
