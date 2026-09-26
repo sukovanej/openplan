@@ -63,3 +63,9 @@ cli -> release: releases/tags/canary
 - `op-update` tests use `Github::at` with a local server. They cover the canary
   release, a title that is not a version, and a canary build that goes back to
   stable.
+
+## Comments
+
+### 2026-09-26T02:31:45Z by Milan Suk via claude-code
+
+> canary.yml has not run on GitHub yet. A local dist build with a canary version made a correct archive. Watch the first run on main after the merge.
