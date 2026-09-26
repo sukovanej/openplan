@@ -189,19 +189,12 @@ describe("the diff of a change", () => {
     tags: [],
   })
 
-  const wait = (ms: number) =>
-    act(async () => {
-      await new Promise((resume) => setTimeout(resume, ms))
-    })
-
-  it("reads the diff of a line only once the pointer rests on it", async () => {
+  it("reads the diff of a line the moment the pointer enters it", async () => {
     served.entries = [config(1)]
     const root = await show()
     const line = revisions(root)[0].querySelector("[aria-haspopup=dialog]")!
 
     await act(async () => void line.dispatchEvent(new Event("pointerover", { bubbles: true })))
-    expect(served.diffs).not.toHaveBeenCalled()
-    await wait(350)
     for (let attempt = 0; attempt < 20 && !root.querySelector("[role=dialog] mark, [role=dialog] .grid"); attempt++) {
       await tick()
     }

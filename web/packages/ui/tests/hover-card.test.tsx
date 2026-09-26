@@ -28,25 +28,12 @@ const card = (name = "one") => (
 describe("HoverCard", () => {
   beforeEach(() => mounted.mockClear())
 
-  it("mounts the content only when the hover delay ends", () => {
+  it("mounts the content the moment the pointer enters", () => {
     const container = render(card())
-    const anchor = container.firstElementChild!
-    enter(anchor)
-    wait(99)
     expect(mounted).not.toHaveBeenCalled()
-    wait(1)
+    enter(container.firstElementChild!)
     expect(cards(container).map((open) => open.getAttribute("aria-label"))).toEqual(["Diff of one"])
     expect(mounted).toHaveBeenCalledOnce()
-  })
-
-  it("mounts nothing for a pointer that sweeps across", () => {
-    const container = render(card())
-    const anchor = container.firstElementChild!
-    enter(anchor)
-    wait(50)
-    leave(anchor)
-    wait(1000)
-    expect(mounted).not.toHaveBeenCalled()
   })
 
   it("stays open while the pointer crosses to the card", () => {

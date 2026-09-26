@@ -11,7 +11,6 @@ import {
 
 import { cn } from "./cn"
 const GAP = 6
-const HOVER_DELAY = 100
 // The pointer crosses the gap between the anchor and the card on its way to scroll the card.
 const LEAVE_DELAY = 150
 
@@ -119,16 +118,15 @@ export function HoverCard({
       aria-expanded={open}
       aria-controls={open ? id : undefined}
       className={cn("focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none", className)}
-      onPointerEnter={() => (open ? window.clearTimeout(timer.current) : after(HOVER_DELAY, show))}
+      onPointerEnter={() => (open ? window.clearTimeout(timer.current) : show())}
       onPointerLeave={() => {
-        if (!open) window.clearTimeout(timer.current)
-        else if (!focused.current) after(LEAVE_DELAY, hide)
+        if (open && !focused.current) after(LEAVE_DELAY, hide)
       }}
       onPointerDown={() => {
         pointed.current = true
       }}
-      // A pointer sweeping a list crosses anchors it is not asking about; a keyboard landing on one
-      // is asking.
+      // A click focuses the anchor too, and a card that the click kept open would stay after the
+      // pointer leaves.
       onFocus={() => {
         if (pointed.current || open) return
         focused.current = true
