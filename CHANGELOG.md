@@ -30,9 +30,28 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `openplan lint` reports a `mermaid` block that does not parse, in a task body
   or in a comment, with its line and column in the task file. The daemon and
   the web UI show it as a task problem (`diagram`).
+- The daemon updates itself. It checks for a new release 5 minutes after it
+  starts and then every hour. A canary build follows the canary release, and
+  any other build follows the newest stable release. The daemon downloads and
+  verifies the release, waits until no agent session runs, replaces its
+  executable, and starts again on it in the same process, with the same pid and
+  port. A request to start an agent session after that stop gets 503. The
+  daemon does not update a binary that a package manager owns, a build in a
+  directory with a `CACHEDIR.TAG` (cargo's `target/`), or a daemon that the
+  desktop app runs.
+- `openplan update --auto on|off` turns the updates of the daemon on or off.
+  The default is on. The setting and the result of the last check are in
+  `OPENPLAN_HOME/update.json`, and `openplan server ping` prints them.
+- The web UI reloads the page when the daemon runs a new version after a
+  reconnect, so the tab gets the new web app. When the page holds an open
+  dialog or typed text, it shows "New version" with a Reload button instead.
 
 ### Changed
 
+- The `daemon_stopping` event has a `reason`: `stop` or `update`. On `update`,
+  the web UI shows "Updating" and connects again at once.
+- `openplan update` refuses a binary in a directory with a `CACHEDIR.TAG`, such
+  as a `cargo build` or `cargo run` build in `target/`.
 - A release carries only the CLI and the daemon for now. It carries no desktop
   app. The app workflow runs only when you start it by hand.
 - `openplan update` skips `OpenPlan.app` when the release carries no app
