@@ -149,16 +149,21 @@ impl Levels<'_> {
         matches!(entry, Entry::Vertex(vertex) if self.sizes.vertex_thin[vertex])
     }
 
-    fn gap(&self, before: Entry, after: Entry) -> f32 {
-        let room = match before {
+    // What a vertex draws beside itself, such as a loop and its labels.
+    fn room_after(&self, entry: Entry) -> f32 {
+        match entry {
             Entry::Vertex(vertex) => self.sizes.vertex_room_after[vertex],
             Entry::Group(_) => 0.0,
-        };
-        room + if self.thin(before) || self.thin(after) {
-            THIN_GAP
-        } else {
-            NODE_GAP
         }
+    }
+
+    fn gap(&self, before: Entry, after: Entry) -> f32 {
+        self.room_after(before)
+            + if self.thin(before) || self.thin(after) {
+                THIN_GAP
+            } else {
+                NODE_GAP
+            }
     }
 
     // Where the center of a vertex sits in the frame of `level`, or nothing when the vertex lies
@@ -250,7 +255,7 @@ impl Levels<'_> {
         for &entry in &entries {
             let left = self.left[&(level, entry)] - lowest;
             self.left.insert((level, entry), left);
-            breadth = breadth.max(left + self.width(entry));
+            breadth = breadth.max(left + self.width(entry) + self.room_after(entry));
         }
         breadth
     }

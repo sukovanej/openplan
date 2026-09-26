@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/link-to-outer-subgraph.mmd
+---
+line 7, column 9: `inner` is inside the subgraph `outer`, so no link can join them

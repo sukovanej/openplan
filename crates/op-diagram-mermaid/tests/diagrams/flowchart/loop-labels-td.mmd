@@ -1,0 +1,6 @@
+flowchart TD
+  timer[Timer] -->|check| daemon[Daemon]
+  daemon -->|wait until idle, replace the binary, restart| daemon
+  daemon -->|retry| daemon
+  daemon --> store[(Store)]
+  daemon --> log[Log]
