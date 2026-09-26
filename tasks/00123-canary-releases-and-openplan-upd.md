@@ -12,14 +12,11 @@ Publish a canary build of the CLI and the daemon from each push to `main`.
 
 Each push to `main` replaces one prerelease. `openplan update --canary` reads it.
 
-```d2
-main: push to main
-workflow: canary.yml
-release: "GitHub prerelease, tag `canary`"
-cli: openplan update --canary
-main -> workflow
-workflow -> release: replaces the assets
-cli -> release: releases/tags/canary
+```mermaid
+flowchart TD
+  main[push to main] --> workflow[canary.yml]
+  workflow -->|replaces the assets| release["GitHub prerelease, tag canary"]
+  cli["openplan update --canary"] -->|releases/tags/canary| release
 ```
 
 ## Design
