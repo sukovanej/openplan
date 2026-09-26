@@ -2,9 +2,9 @@ import { Check } from "lucide-react"
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react"
 
 import type { Status } from "@openplan/api-client"
-import { cn, Row } from "@openplan/ui"
+import { cn, Kbd, Row } from "@openplan/ui"
 
-import { STATUSES, statusIcon, statusLabel, statusMark } from "./status"
+import { STATUSES, statusIcon, statusLabel, statusMark, statusOfShortcut, statusShortcut } from "./status"
 
 // The list holds the focus, so the keys it answers reach it rather than the page behind it, and
 // `data-keys-ignore` keeps the app's own single-key bindings off them while it is open.
@@ -48,6 +48,12 @@ export function StatusMenu({
         event.preventDefault()
         onClose()
         break
+      default: {
+        const status = statusOfShortcut(event.key)
+        if (status === undefined || event.ctrlKey || event.metaKey || event.altKey) break
+        event.preventDefault()
+        onPick(status)
+      }
     }
   }
 
@@ -63,7 +69,7 @@ export function StatusMenu({
       // The header it opens under sets its own case, weight and tracking, and the menu is not a
       // header, so it states the whole of its own type rather than inheriting any of that.
       className={cn(
-        "bg-popover text-foreground w-44 rounded-md border p-1 text-sm font-normal tracking-normal normal-case shadow-md outline-none",
+        "bg-popover text-foreground w-48 rounded-md border p-1 text-sm font-normal tracking-normal normal-case shadow-md outline-none",
         className,
       )}
     >
@@ -77,6 +83,7 @@ export function StatusMenu({
             variant="option"
             role="option"
             aria-selected={index === active}
+            aria-keyshortcuts={statusShortcut(status)}
             active={index === active}
             onMouseMove={() => setActive(index)}
             onMouseDown={(event) => {
@@ -88,6 +95,7 @@ export function StatusMenu({
             <Icon className={cn("size-4 shrink-0", statusMark(status))} aria-hidden />
             <span className="grow">{statusLabel(status)}</span>
             {status === current && <Check className="text-muted-foreground size-3.5 shrink-0" aria-label="Current" />}
+            <Kbd token={statusShortcut(status)} className="h-5 min-w-5 px-1" />
           </Row>
         )
       })}

@@ -12,6 +12,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `GET /api/events` takes the cursor of the last event a client saw in the
   query too (`?last_event_id=<id>`), because a new EventSource cannot set the
   `Last-Event-ID` header. The web UI uses it to resume after a reconnect.
+- In the status menu of the web UI, one letter key sets a status and closes the
+  menu: `b` backlog, `t` todo, `p` in progress, `r` in review, `d` done, and
+  `c` cancelled. The menu shows the letter next to each status.
 
 ### Changed
 
