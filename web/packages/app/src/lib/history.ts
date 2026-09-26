@@ -2,7 +2,7 @@ import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-q
 import type { Effect } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 
-import type { DocumentChange, HistoryEntry, TaskChange } from "@openplan/api-client"
+import type { DocumentChange, HistoryEntry, TagChange, TaskChange } from "@openplan/api-client"
 import { revisionPath, taskPath } from "@openplan/task-ui"
 
 import { type ApiError, getProjectHistory, getTaskHistory, getTaskRevision, type HistoryPage } from "./api"
@@ -54,6 +54,26 @@ export const otherChanges = (entry: HistoryEntry): ReadonlyArray<DocumentChange>
 
 export const taskChangeOf = (entry: HistoryEntry, id: string): TaskChange | undefined =>
   entry.tasks.find((change) => change.task === id)
+
+export type ActivityRow =
+  | { readonly kind: "task"; readonly change: TaskChange }
+  | { readonly kind: "tag"; readonly change: TagChange }
+  | { readonly kind: "document"; readonly change: DocumentChange }
+  | { readonly kind: "more"; readonly count: number }
+
+// One revision can write a hundred tasks at once, and the table is for reading what happened.
+export const SHOWN_CHANGES = 12
+
+export function activityRows(entry: HistoryEntry): ReadonlyArray<ActivityRow> {
+  const rows: ReadonlyArray<ActivityRow> = [
+    ...entry.tasks.map((change) => ({ kind: "task", change }) as const),
+    ...entry.tags.map((change) => ({ kind: "tag", change }) as const),
+    ...otherChanges(entry).map((change) => ({ kind: "document", change }) as const),
+  ]
+  return rows.length <= SHOWN_CHANGES
+    ? rows
+    : [...rows.slice(0, SHOWN_CHANGES), { kind: "more", count: rows.length - SHOWN_CHANGES }]
+}
 
 // A task that is gone has no page of its own, so its link opens the task as the revision left it — or,
 // where the revision removed it, as it was just before.

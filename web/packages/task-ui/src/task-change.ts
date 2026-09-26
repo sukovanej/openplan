@@ -1,4 +1,4 @@
-import type { FieldChange, TagChange, TaskChange } from "@openplan/api-client"
+import type { DocumentChangeKind, FieldChange, TagChange } from "@openplan/api-client"
 
 import { statusLabel } from "./status"
 
@@ -52,21 +52,10 @@ export function fieldChangeText(change: FieldChange): string {
   }
 }
 
-export function taskChangeText(change: TaskChange): string {
-  switch (change.kind) {
-    case "added":
-      return "Created"
-    case "removed":
-      return change.title === undefined ? "Deleted" : `Deleted ${quoted(change.title)}`
-    case "modified":
-      return change.fields === undefined || change.fields.length === 0
-        ? "Edited"
-        : change.fields.map(fieldChangeText).join(" · ")
-  }
-}
+const kindText: Record<DocumentChangeKind, string> = { added: "Created", modified: "Edited", removed: "Deleted" }
+
+export const documentChangeText = (kind: DocumentChangeKind): string => kindText[kind]
 
 export function tagChangeText(change: TagChange): string {
-  if (change.renamed_from !== undefined) return `Tag ${change.renamed_from} renamed to ${change.tag}`
-  const verb = { added: "created", modified: "edited", removed: "deleted" }[change.kind]
-  return `Tag ${change.tag} ${verb}`
+  return change.renamed_from === undefined ? documentChangeText(change.kind) : `Renamed from ${change.renamed_from}`
 }

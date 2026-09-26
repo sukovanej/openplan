@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { DocumentChange, HistoryEntry, TaskChange } from "@openplan/api-client"
 
-import { changePath, olderThan, otherChanges, taskChangeOf } from "../src/lib/history"
+import { activityRows, changePath, olderThan, otherChanges, SHOWN_CHANGES, taskChangeOf } from "../src/lib/history"
 
 const entry = (
   id: string,
@@ -49,6 +49,30 @@ describe("what a revision changed", () => {
     const found = entry("r", [], ["parent"], [{ task: "OPP-1", kind: "added" }, status])
     expect(taskChangeOf(found, "OPP-2")).toBe(status)
     expect(taskChangeOf(found, "OPP-3")).toBeUndefined()
+  })
+})
+
+describe("the rows of a revision in the activity", () => {
+  it("lists the tasks, then the tags, then the other documents", () => {
+    const rows = activityRows({
+      ...entry("r", [
+        { path: "tags/bug.md", kind: "added", tag: "bug" },
+        { path: "config.toml", kind: "added" },
+      ]),
+      tasks: [{ task: "OPP-1", kind: "added", title: "First" }],
+      tags: [{ tag: "bug", kind: "added" }],
+    })
+    expect(rows.map((row) => row.kind)).toEqual(["task", "tag", "document"])
+  })
+
+  it("stops at a limit, and counts the rest", () => {
+    const tasks: ReadonlyArray<TaskChange> = Array.from({ length: SHOWN_CHANGES + 3 }, (_, at) => ({
+      task: `OPP-${at + 1}`,
+      kind: "added",
+    }))
+    const rows = activityRows({ ...entry("r"), tasks })
+    expect(rows).toHaveLength(SHOWN_CHANGES + 1)
+    expect(rows.at(-1)).toEqual({ kind: "more", count: 3 })
   })
 })
 

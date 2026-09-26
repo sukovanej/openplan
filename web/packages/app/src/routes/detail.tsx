@@ -29,7 +29,7 @@ import {
   shortRevision,
   statusField,
   TaskBodyWithConflicts,
-  taskChangeText,
+  TaskChangeView,
   TaskIdentity,
   taskPath,
   TaskTags,
@@ -337,7 +337,7 @@ function RevisionNotice({ id, revision, entry }: { id: string; revision: string;
       </p>
       {entry !== undefined && (
         <>
-          {change !== undefined && <p className="text-foreground/90 text-sm">{taskChangeText(change)}</p>}
+          {change !== undefined && <TaskChangeView change={change} className="text-foreground/90 text-sm" />}
           <RevisionMeta revision={entry.revision} />
         </>
       )}

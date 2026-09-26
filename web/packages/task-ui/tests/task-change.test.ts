@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { FieldChange } from "@openplan/api-client"
 
-import { fieldChangeText, tagChangeText, taskChangeText } from "../src/task-change"
+import { documentChangeText, fieldChangeText, tagChangeText } from "../src/task-change"
 
 describe("fieldChangeText", () => {
   it("says what a field was and what it is now", () => {
@@ -42,30 +42,17 @@ describe("fieldChangeText", () => {
   })
 })
 
-describe("taskChangeText", () => {
-  it("joins the fields of an edit", () => {
-    expect(
-      taskChangeText({
-        task: "OPP-1",
-        kind: "modified",
-        title: "Ship it",
-        fields: [{ field: "status", from: "todo", to: "done" }, { field: "description" }],
-      }),
-    ).toBe("Status: Todo → Done · Description")
-  })
-
-  it("says that a task came or went", () => {
-    expect(taskChangeText({ task: "OPP-1", kind: "added", title: "Ship it" })).toBe("Created")
-    expect(taskChangeText({ task: "OPP-1", kind: "removed", title: "Ship it" })).toBe("Deleted “Ship it”")
-    expect(taskChangeText({ task: "OPP-1", kind: "modified" })).toBe("Edited")
+describe("tagChangeText", () => {
+  it("says what happened to the tag, and the old name of a renamed one", () => {
+    expect(tagChangeText({ tag: "bug", kind: "added" })).toBe("Created")
+    expect(tagChangeText({ tag: "server", kind: "modified", renamed_from: "backend" })).toBe("Renamed from backend")
   })
 })
 
-describe("tagChangeText", () => {
-  it("names the tag and what happened to it", () => {
-    expect(tagChangeText({ tag: "bug", kind: "added" })).toBe("Tag bug created")
-    expect(tagChangeText({ tag: "server", kind: "modified", renamed_from: "backend" })).toBe(
-      "Tag backend renamed to server",
-    )
+describe("documentChangeText", () => {
+  it("names each kind of change", () => {
+    expect(documentChangeText("added")).toBe("Created")
+    expect(documentChangeText("modified")).toBe("Edited")
+    expect(documentChangeText("removed")).toBe("Deleted")
   })
 })

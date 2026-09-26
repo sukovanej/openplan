@@ -1,11 +1,9 @@
-import { Link } from "react-router-dom"
-
-import { RevisionMeta, revisionPath, shortRevision, taskChangeText } from "@openplan/task-ui"
-import { Row, Section, SkeletonList } from "@openplan/ui"
+import { Section, SkeletonList } from "@openplan/ui"
 
 import { errorText } from "../lib/format"
-import { taskChangeOf, useTaskHistory } from "../lib/history"
+import { useTaskHistory } from "../lib/history"
 import { OlderRevisions } from "./older-revisions"
+import { RevisionList } from "./revision-list"
 
 export function TaskHistory({ project, id, selected }: { project: string; id: string; selected: string | undefined }) {
   const history = useTaskHistory(project, id)
@@ -19,31 +17,7 @@ export function TaskHistory({ project, id, selected }: { project: string; id: st
         <p className="text-muted-foreground text-sm">No revision holds this task.</p>
       ) : (
         <>
-          <ol className="space-y-0.5">
-            {history.data.map((entry) => {
-              const revision = entry.revision
-              const change = taskChangeOf(entry, id)
-              const current = revision.id === selected
-              return (
-                <li key={revision.id}>
-                  <Row
-                    as={Link}
-                    variant="option"
-                    active={current}
-                    hoverable
-                    aria-current={current ? "page" : undefined}
-                    to={revisionPath(project, id, revision.id)}
-                    className="flex-col items-stretch gap-1"
-                  >
-                    <span className="min-w-0 truncate">
-                      {change === undefined ? shortRevision(revision.id) : taskChangeText(change)}
-                    </span>
-                    <RevisionMeta revision={revision} />
-                  </Row>
-                </li>
-              )
-            })}
-          </ol>
+          <RevisionList project={project} entries={history.data} task={id} selected={selected} />
           <OlderRevisions history={history} className="mt-2" />
         </>
       )}

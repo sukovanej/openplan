@@ -64,7 +64,10 @@ const tick = () =>
     await new Promise((resume) => setTimeout(resume, 0))
   })
 
-const entries = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLAnchorElement>("li > a"))
+// One item for each revision, and the link in it opens the task as that revision left it.
+const entries = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll<HTMLLIElement>("ol[aria-label='Revisions'] > li"))
+const href = (entry: Element | undefined) => entry?.querySelector("a")?.getAttribute("href")
 
 async function until(check: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -106,10 +109,11 @@ describe("the history of a task", () => {
     expect(served.pages).toEqual([{ before: undefined, limit: TASK_HISTORY_PAGE }])
     expect(entries(root)).toHaveLength(TASK_HISTORY_PAGE)
     const newest = entries(root)[0]
-    expect(newest.getAttribute("href")).toBe("/openplan/task/OPP-1?revision=r24")
+    expect(href(newest)).toBe("/openplan/task/OPP-1?revision=r24")
     expect(newest.textContent).toContain("Field r24")
     expect(newest.textContent).not.toContain("Change r24")
-    expect(newest.textContent).toContain("claude_code")
+    expect(newest.querySelector("[aria-label='via claude_code']")).not.toBeNull()
+    expect(newest.textContent).not.toContain("OPP-1")
   })
 
   it("pages on from the oldest revision it holds, and stops at the first one", async () => {
@@ -126,8 +130,8 @@ describe("the history of a task", () => {
   it("marks the revision on screen", async () => {
     const root = await show("r23")
 
-    const current = entries(root).filter((entry) => entry.getAttribute("aria-current") === "page")
-    expect(current.map((entry) => entry.getAttribute("href"))).toEqual(["/openplan/task/OPP-1?revision=r23"])
+    const current = entries(root).filter((entry) => entry.querySelector("a[aria-current='page']") !== null)
+    expect(current.map(href)).toEqual(["/openplan/task/OPP-1?revision=r23"])
   })
 
   // A write to the task is a new revision, and the daemon names the task it changed.
@@ -136,7 +140,7 @@ describe("the history of a task", () => {
     served.revisions = ["r25", ...served.revisions]
 
     queryInvalidator.refreshTask("openplan", "OPP-1")
-    await until(() => entries(root)[0]?.getAttribute("href") === "/openplan/task/OPP-1?revision=r25")
+    await until(() => href(entries(root)[0]) === "/openplan/task/OPP-1?revision=r25")
   })
 
   // The change adds a revision at the top, and the pages the reader went back through stay as they were.
@@ -148,7 +152,7 @@ describe("the history of a task", () => {
     served.pages = []
 
     queryInvalidator.refreshTask("openplan", "OPP-1")
-    await until(() => entries(root)[0]?.getAttribute("href") === "/openplan/task/OPP-1?revision=r25")
+    await until(() => href(entries(root)[0]) === "/openplan/task/OPP-1?revision=r25")
 
     expect(served.pages).toEqual([{ before: undefined, limit: TASK_HISTORY_PAGE }])
     expect(entries(root)).toHaveLength(TASK_HISTORY_PAGE)

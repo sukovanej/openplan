@@ -1,6 +1,8 @@
+export { AgentTag } from "./agent-tag"
 export { TaskBodyWithConflicts } from "./body-conflict"
 export { type BodySegment, bodySegments } from "./body-segments"
 export { ChangeMark } from "./change-mark"
+export { DocumentChangeView, TagChangeView, TaskChangeView } from "./change-view"
 export { CommentThread } from "./comment-thread"
 export { CONFLICT_TINT, ConflictBadge, conflictCount } from "./conflict-mark"
 export { type ConflictChoice, FieldConflict } from "./field-conflict"
@@ -26,6 +28,7 @@ export { RevisionMeta, shortRevision } from "./revision-meta"
 export { StatusMenu } from "./status-menu"
 export {
   STATUSES,
+  StatusBadge,
   statusBorder,
   StatusChip,
   statusFaint,
@@ -41,7 +44,6 @@ export {
   statusText,
 } from "./status"
 export { TagChip } from "./tag-chip"
-export { fieldChangeText, tagChangeText, taskChangeText } from "./task-change"
 export { ColorDot, ColorPicker } from "./tag-palette"
 export { TaskBody } from "./task-body"
 export {
