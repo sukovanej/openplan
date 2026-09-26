@@ -42,6 +42,7 @@ export interface DetailControls {
   readonly editParent: () => void
   readonly addSubtask: () => void
   readonly editTags: () => void
+  readonly editDescription: () => void
   readonly goToParent: () => void
   readonly escape: () => void
 }

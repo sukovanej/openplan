@@ -86,7 +86,8 @@ pub struct RenderError;
 // that did not parse is left out rather than guessed at (`Metadata::problems` names those).
 pub fn render_task_file(
     metadata: &Metadata,
-    body: &str,
+    title: &str,
+    description: &str,
     comments: &[Comment],
 ) -> Result<String, RenderError> {
     let mut frontmatter = serde_yaml::Mapping::new();
@@ -130,6 +131,18 @@ pub fn render_task_file(
     let yaml =
         op_task::with_field_conflicts(&yaml, &conflicts_of(fields)).map_err(|_| RenderError)?;
     let parsed: Vec<op_task::comment::Comment> = comments.iter().map(Into::into).collect();
-    let body = op_task::comment::with_comments(body, &parsed);
+    let body = op_task::comment::with_comments(&body_of(title, description), &parsed);
     Ok(format!("---\n{yaml}---\n{body}"))
+}
+
+// A title that `split` could not cut out, because it sits inside a conflict block, is still in the
+// description.
+fn body_of(title: &str, description: &str) -> String {
+    if title.is_empty() || op_task::content::title(description).is_some() {
+        return description.to_owned();
+    }
+    match description.is_empty() {
+        true => format!("# {title}\n"),
+        false => format!("# {title}\n\n{description}"),
+    }
 }

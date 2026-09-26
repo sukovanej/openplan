@@ -21,29 +21,31 @@ pub(crate) fn single_title(body: &str) -> Result<String, TrackerError> {
 // Only sync writes a conflict. A write may keep one exactly as it is, or resolve all of it, so no
 // write adds a conflict or edits inside one.
 pub(crate) fn keeps_conflicts(old: Option<&Task>, new: &Task) -> Result<(), TrackerError> {
-    let refused = || {
-        TrackerError::Invalid(
-            "a write cannot add a conflict or edit inside one; keep each conflict block as it \
-             is, or replace the whole block with the text you want"
-                .to_owned(),
-        )
-    };
     let fields = old.map_or(&[][..], |old| old.conflicts.as_slice());
     if new
         .conflicts
         .iter()
         .any(|conflict| !fields.contains(conflict))
     {
-        return Err(refused());
+        return Err(conflict_edited());
     }
-    let blocks = old.map(|old| block_texts(&old.body)).unwrap_or_default();
-    match block_texts(&new.body)
-        .iter()
-        .all(|block| blocks.contains(block))
-    {
+    keeps_blocks(old.map_or("", |old| &old.body), &new.body)
+}
+
+pub(crate) fn keeps_blocks(old: &str, new: &str) -> Result<(), TrackerError> {
+    let blocks = block_texts(old);
+    match block_texts(new).iter().all(|block| blocks.contains(block)) {
         true => Ok(()),
-        false => Err(refused()),
+        false => Err(conflict_edited()),
     }
+}
+
+fn conflict_edited() -> TrackerError {
+    TrackerError::Invalid(
+        "a write cannot add a conflict or edit inside one; keep each conflict block as it is, or \
+         replace the whole block with the text you want"
+            .to_owned(),
+    )
 }
 
 fn block_texts(body: &str) -> Vec<String> {
@@ -152,13 +154,7 @@ fn reference(text: &str) -> Result<u64, TrackerError> {
 // follow one. A reference to a deleted task keeps its number, and a body reference that names no
 // file is written as the key, so it resolves once that task exists.
 pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
-    let named = |reference: &str| match ref_id(reference).and_then(|number| plan.path_of(number)) {
-        None => reference.to_owned(),
-        Some(path) => with_section(
-            &op_task::task_ref(op_task::layout::file_name(path)),
-            reference,
-        ),
-    };
+    let named = |reference: &str| named(plan, reference);
     let mut task = task.clone();
     for conflict in &mut task.conflicts {
         conflict.other = match (conflict.field.as_str(), conflict.other.take()) {
@@ -179,8 +175,13 @@ pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
         .iter()
         .map(|reference| named(reference))
         .collect();
-    task.body = body_in_file_form(&task.body, |reference| {
-        let renamed = named(reference);
+    task.body = body_in_file_form(plan, &task.body);
+    task
+}
+
+pub(crate) fn body_in_file_form(plan: &Plan, body: &str) -> String {
+    renamed_body_refs(body, |reference| {
+        let renamed = named(plan, reference);
         if renamed != reference {
             return renamed;
         }
@@ -188,8 +189,17 @@ pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
             Some(number) => with_section(&plan.key(number), reference),
             None => renamed,
         }
-    });
-    task
+    })
+}
+
+fn named(plan: &Plan, reference: &str) -> String {
+    match ref_id(reference).and_then(|number| plan.path_of(number)) {
+        None => reference.to_owned(),
+        Some(path) => with_section(
+            &op_task::task_ref(op_task::layout::file_name(path)),
+            reference,
+        ),
+    }
 }
 
 // A reference YAML reads as a number is one all the same.
@@ -209,7 +219,7 @@ fn with_section(target: &str, reference: &str) -> String {
 }
 
 // Text inside `[[…]]` that names no task is ordinary bracketed prose and stays as written.
-fn body_in_file_form(body: &str, named: impl Fn(&str) -> String) -> String {
+fn renamed_body_refs(body: &str, named: impl Fn(&str) -> String) -> String {
     let mut out = String::new();
     let mut last = 0;
     for (span, inner) in op_task::body_ref_spans(body) {

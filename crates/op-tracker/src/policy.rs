@@ -72,14 +72,15 @@ impl MergePolicy for TaskMergePolicy {
 }
 
 fn labels(tips: Tips<'_>) -> Labels {
-    let label = |revision: &Revision| {
-        let id = revision.id.as_str();
-        format!("{} ({})", revision.author.name, &id[..id.len().min(7)])
-    };
     Labels {
         ours: label(tips.ours),
         theirs: label(tips.theirs),
     }
+}
+
+pub(crate) fn label(revision: &Revision) -> String {
+    let id = revision.id.as_str();
+    format!("{} ({})", revision.author.name, &id[..id.len().min(7)])
 }
 
 // A task that only one side renamed keeps the new name.

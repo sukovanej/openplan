@@ -1,11 +1,13 @@
 @import "tailwindcss";
 @import "@openplan/ui/styles.css";
 @import "@openplan/ui/diagram.css";
+@import "@openplan/editor/editor.css";
 @plugin "@tailwindcss/typography";
 
 /* Tailwind scans the Vite root and skips node_modules, so the workspace packages have to be named. */
 @source "../../ui/src";
 @source "../../task-ui/src";
+@source "../../editor/src";
 
 @custom-variant dark (&:is(.dark *));
 

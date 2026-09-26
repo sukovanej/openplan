@@ -156,12 +156,15 @@ pub struct TaskDetail {
     pub id: String,
     pub title: String,
     pub metadata: Metadata,
-    pub body: String,
+    pub description: String,
     // The open conflicts sync left in the task: fields in `metadata`, and blocks of both versions
-    // in `body`.
+    // in `description`.
     pub conflicts: usize,
     pub problems: Vec<Problem>,
     pub updated: Field<Rfc3339>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub author: Option<Author>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub parent_title: Option<String>,
@@ -192,6 +195,23 @@ pub struct TaskListItem {
     pub conflicts: usize,
     pub problems: Vec<Problem>,
     pub updated: Field<Rfc3339>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub author: Option<Author>,
+}
+
+// Who wrote the revision that created the task. Absent where the daemon did not read back as far as
+// that revision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Author {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub email: Option<String>,
+    // The coding agent that created the task for `name`; absent when a person did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub agent: Option<String>,
 }
 
 // Which part of a task the query matched, and the order the hits come back in. A reader who types a

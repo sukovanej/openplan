@@ -103,6 +103,14 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.detail.editTags(),
   },
   {
+    id: "detail.description",
+    keys: "e",
+    scope: "detail",
+    label: "Edit the description",
+    group: "Task",
+    run: (ctx) => ctx.detail.editDescription(),
+  },
+  {
     id: "task.status",
     keys: "s",
     scope: "global",

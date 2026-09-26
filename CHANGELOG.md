@@ -9,6 +9,20 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The web UI edits the title and the description of a task in place. The
+  description is a markdown editor with a live preview: the markdown shows where
+  the caret is, and the rest shows as it renders. `/` inserts a block, `@` or
+  `[[` inserts a reference to a task, and `e` on a task page starts the edit.
+  The text saves when you leave it, and a draft that did not save comes back on
+  the next visit.
+- `PUT /api/projects/{project}/tasks/{id}/text` writes the title and the
+  description of a task. It takes the text the edit started from and merges the
+  edit with what other writers changed since. Where both changed the same lines,
+  a conflict block keeps both versions.
+- The web UI shows the author of each task in the task list and on the task
+  page. The author is the person who wrote the revision that created the task,
+  and the task page also shows the agent. A task list row and the task detail
+  in the API have an `author` with a `name`, an `email`, and an `agent`.
 - Canary builds. Each push to `main` replaces the prerelease `canary` with a
   new build of the CLI and the daemon, versioned `<next patch>-canary.<run>`.
   `openplan update --canary` installs it. `openplan update` goes back to the
@@ -45,9 +59,15 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The web UI reloads the page when the daemon runs a new version after a
   reconnect, so the tab gets the new web app. When the page holds an open
   dialog or typed text, it shows "New version" with a Reload button instead.
+- `openplan url <key>...` prints the address of each task page in the web UI.
+  The openplan skill tells the agent to write each task key in a reply as a
+  link to that page.
 
 ### Changed
 
+- `TaskDetail` and revision snapshots carry `description` in place of `body`:
+  the text without the `# ` title line, with task references as keys.
+  `openplan get --json` shows the same.
 - The `daemon_stopping` event has a `reason`: `stop` or `update`. On `update`,
   the web UI shows "Updating" and connects again at once.
 - `openplan update` refuses a binary in a directory with a `CACHEDIR.TAG`, such
@@ -98,6 +118,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- `POST /api/projects/{project}/tasks/{id}/resolve`. To settle a conflict
+  block, replace it in the description and write the text with
+  `PUT /api/projects/{project}/tasks/{id}/text`.
 - `d2` fenced code blocks no longer render as diagrams. They show as code. Use
   `mermaid`.
 - `GET /api/flow`. `GET /api/flow/drawing` takes the same query.

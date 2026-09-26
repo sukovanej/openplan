@@ -12,6 +12,7 @@
   "dependencies": {
     "@fontsource-variable/source-serif-4": "^5.3.0",
     "@openplan/api-client": "workspace:*",
+    "@openplan/editor": "workspace:*",
     "@openplan/task-ui": "workspace:*",
     "@openplan/ui": "workspace:*",
     "@tanstack/react-query": "catalog:",

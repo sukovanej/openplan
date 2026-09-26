@@ -1,7 +1,8 @@
 export { AgentTag } from "./agent-tag"
-export { TaskBodyWithConflicts } from "./body-conflict"
-export { type BodySegment, bodySegments } from "./body-segments"
+export { BodyConflict, TaskBodyWithConflicts } from "./body-conflict"
+export { type BodySegment, bodySegments, type ConflictBlock } from "./body-segments"
 export { ChangeMark } from "./change-mark"
+export { isDiagramTag } from "./code-block"
 export { DocumentChangeView, TagChangeView, TaskChangeView } from "./change-view"
 export { CommentThread } from "./comment-thread"
 export { CONFLICT_TINT, ConflictBadge, conflictCount } from "./conflict-mark"
@@ -48,6 +49,9 @@ export {
 export { TagChip } from "./tag-chip"
 export { ColorDot, ColorPicker } from "./tag-palette"
 export { TaskBody } from "./task-body"
+export { referencedTask, type ReferencedTask, taskRefMatches } from "./task-links"
+export { ensureHighlighter, highlightTokens, resolveLang, watchHighlighter } from "./highlighter"
+export { DiagramBlock } from "./diagram-block"
 export {
   ACTIVITY_ROUTE,
   activityPath,
@@ -65,6 +69,7 @@ export {
   type TaskRoute,
   taskRouteOf,
 } from "./task-path"
+export { TaskAuthor } from "./task-author"
 export { TaskIdentity, UnresolvedMark } from "./task-identity"
 export { TaskRefChip } from "./task-ref-chip"
 export { TaskTags } from "./task-tags"

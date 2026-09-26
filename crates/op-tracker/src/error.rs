@@ -21,8 +21,6 @@ pub enum TrackerError {
     InvalidRef { reference: String },
     #[error("{0}")]
     Invalid(String),
-    #[error("that conflict is no longer in the task; read the task again")]
-    ConflictGone,
     #[error(
         "{path} has no `created:` field, so it cannot be written — a write must not invent when \
          the task was created. Add the field to its frontmatter, for example `created: {example}`"

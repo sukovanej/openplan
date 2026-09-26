@@ -25,6 +25,7 @@ fn with_metadata(id: &str, metadata: Metadata) -> TaskListItem {
         conflicts: 0,
         problems: Vec::new(),
         updated: op_api::Field::Error(op_api::FieldError::Missing),
+        author: None,
     }
 }
 
@@ -53,6 +54,7 @@ fn rows(board: &Board, status: Status) -> Vec<(&str, &str, usize)> {
 fn dated(id: &str, status: Status, parent: Option<&str>, at: &str) -> TaskListItem {
     TaskListItem {
         updated: Field::Value(op_api::Rfc3339(at.parse().unwrap())),
+        author: None,
         ..item(id, status, parent, None)
     }
 }

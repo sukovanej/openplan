@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent } from "react"
 
-export type DetailAction = "edit-parent" | "add-subtask" | "edit-tags" | "go-parent"
+export type DetailAction = "edit-parent" | "add-subtask" | "edit-tags" | "edit-description" | "go-parent"
 
 export type EscapeOutcome = "clear-selection" | "back" | "to-list"
 

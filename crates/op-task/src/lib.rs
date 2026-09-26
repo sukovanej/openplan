@@ -6,6 +6,7 @@ pub use jiff::Timestamp;
 pub mod comment;
 pub mod config;
 pub mod conflict;
+pub mod content;
 pub mod layout;
 pub mod merge;
 pub mod rank;
@@ -513,7 +514,7 @@ impl Task {
     }
 
     pub fn title(&self) -> Option<String> {
-        op_md::title(&conflict::published(&self.body))
+        content::title(&self.body)
     }
 
     pub fn conflict_count(&self) -> usize {

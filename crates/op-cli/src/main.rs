@@ -188,6 +188,11 @@ enum Command {
     },
     /// Open the realtime web UI in the default browser
     Open,
+    /// Print the web UI address of each task
+    Url {
+        #[arg(required = true)]
+        keys: Vec<String>,
+    },
     /// Report task problems (fields, references, cycles, tags, conflicts, Mermaid diagrams) and stale agent skills; never starts a daemon
     Lint {
         /// Report only these tasks; every task is checked all the same
@@ -464,6 +469,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         .map(|()| ExitCode::SUCCESS),
         Command::Sync { status, json } => history::sync(root, daemon_url, status, json),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
+        Command::Url { keys } => task_urls(root, daemon_url, &keys).map(|()| ExitCode::SUCCESS),
         Command::Lint { keys, json, skills } => lint::run(root, &keys, json, skills),
         Command::Tag { command } => tag::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Project { command } => {
@@ -620,7 +626,12 @@ fn get(
         }
         print!(
             "{}",
-            op_api::render_task_file(&detail.metadata, &detail.body, &detail.comments)?
+            op_api::render_task_file(
+                &detail.metadata,
+                &detail.title,
+                &detail.description,
+                &detail.comments
+            )?
         );
     }
     Ok(())
@@ -692,6 +703,16 @@ fn shown<T: std::fmt::Display>(field: &Field<T>) -> String {
         Field::Error(FieldError::Missing) => "(missing)".to_owned(),
         Field::Error(FieldError::Invalid { message }) => format!("({message})"),
     }
+}
+
+fn task_urls(root: &Path, daemon_url: Option<&str>, keys: &[String]) -> Result<()> {
+    let plan = Plan::resolve(root, daemon_url)?;
+    for key in keys {
+        // A link to a task that does not exist opens an empty page, so a mistyped key fails here.
+        plan.get(key)?;
+        println!("{}", plan.task_page(key));
+    }
+    Ok(())
 }
 
 fn show(root: &Path, daemon_url: Option<&str>, id: &str) -> Result<()> {

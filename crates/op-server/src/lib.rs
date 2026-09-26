@@ -581,7 +581,7 @@ fn documented() -> OpenApiRouter<AppState> {
             tasks::delete_task
         ))
         .routes(routes!(tasks::write_task_file))
-        .routes(routes!(tasks::resolve_conflict))
+        .routes(routes!(tasks::write_text))
         .routes(routes!(tasks::get_task_tree))
         .routes(routes!(tasks::list_comments, tasks::add_comment))
         .routes(routes!(tasks::task_history))
@@ -1044,7 +1044,6 @@ impl From<TrackerError> for ApiError {
             | TrackerError::TagReferenced { .. }
             | TrackerError::AlreadyInitialized(_)
             | TrackerError::NotInitialized
-            | TrackerError::ConflictGone
             | TrackerError::Backend(BackendError::Contended) => StatusCode::CONFLICT,
             // The request is fine; the stored document is what has to change.
             TrackerError::MissingCreated { .. }
