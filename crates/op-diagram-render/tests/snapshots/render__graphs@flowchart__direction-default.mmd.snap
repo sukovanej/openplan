@@ -1,6 +1,7 @@
 ---
 source: crates/op-diagram-render/tests/render.rs
-expression: svg(&scene)
+expression: "reviewable(&checked(&graph, path))"
 input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/direction-default.mmd
+extension: svg
+snapshot_kind: binary
 ---
-<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 56.58 152" width="56.58" height="152" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><g class="edge stroke-solid"><path class="edge-line" d="M28.29 48L28.29 96"/><g class="head head-arrow"><path d="M28.29 104L23.79 95L32.79 95Z"/></g></g><g class="node shape-rectangle"><rect class="outline" x="8.35" y="8" width="39.88" height="40" rx="3"/><text class="text-label" x="28.29" y="33.09" font-size="14" font-weight="400" text-anchor="middle">a</text></g><g class="node shape-rectangle"><rect class="outline" x="8" y="104" width="40.58" height="40" rx="3"/><text class="text-label" x="28.29" y="129.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g></svg>

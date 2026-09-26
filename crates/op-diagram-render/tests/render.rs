@@ -13,7 +13,7 @@ fn graphs() {
             let Diagram::Graph(graph) = op_diagram_mermaid::parse(&source).unwrap() else {
                 return;
             };
-            insta::assert_snapshot!(checked(&graph, path));
+            insta::assert_binary_snapshot!(".svg", reviewable(&checked(&graph, path)));
         }
     );
 }
@@ -25,8 +25,21 @@ fn ir() {
         let Diagram::Graph(graph) = serde_json::from_str(&json).unwrap() else {
             panic!("{} holds no graph", path.display());
         };
-        insta::assert_snapshot!(checked(&graph, path));
+        insta::assert_binary_snapshot!(".svg", reviewable(&checked(&graph, path)));
     });
+}
+
+// GitHub shows an SVG file of a diff as an image. The SVG leaves its colors to the page, so the
+// snapshot takes a stylesheet in the page's place.
+fn reviewable(drawn: &str) -> Vec<u8> {
+    let opened = drawn.find('>').expect("the SVG opens with a tag") + 1;
+    format!(
+        "{}<style>{}</style>{}",
+        &drawn[..opened],
+        include_str!("review.css"),
+        &drawn[opened..]
+    )
+    .into_bytes()
 }
 
 fn checked(graph: &Graph, path: &std::path::Path) -> String {
