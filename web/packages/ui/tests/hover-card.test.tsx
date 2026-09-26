@@ -32,7 +32,7 @@ describe("HoverCard", () => {
     const container = render(card())
     const anchor = container.firstElementChild!
     enter(anchor)
-    wait(299)
+    wait(99)
     expect(mounted).not.toHaveBeenCalled()
     wait(1)
     expect(cards(container).map((open) => open.getAttribute("aria-label"))).toEqual(["Diff of one"])
@@ -43,7 +43,7 @@ describe("HoverCard", () => {
     const container = render(card())
     const anchor = container.firstElementChild!
     enter(anchor)
-    wait(100)
+    wait(50)
     leave(anchor)
     wait(1000)
     expect(mounted).not.toHaveBeenCalled()
@@ -53,7 +53,7 @@ describe("HoverCard", () => {
     const container = render(card())
     const anchor = container.firstElementChild!
     enter(anchor)
-    wait(300)
+    wait(100)
     leave(anchor)
     wait(100)
     enter(cards(container)[0])
@@ -65,7 +65,7 @@ describe("HoverCard", () => {
     const container = render(card())
     const anchor = container.firstElementChild!
     enter(anchor)
-    wait(300)
+    wait(100)
     leave(anchor)
     wait(150)
     expect(cards(container)).toHaveLength(0)
@@ -108,7 +108,7 @@ describe("HoverCard", () => {
     const [one, two] = Array.from(container.children) as HTMLElement[]
     act(() => one.focus())
     enter(two)
-    wait(300)
+    wait(100)
     expect(cards(container).map((open) => open.getAttribute("aria-label"))).toEqual(["Diff of two"])
   })
 })

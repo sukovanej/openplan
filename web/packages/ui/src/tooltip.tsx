@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } f
 import { cn } from "./cn"
 
 const GAP = 6
-export const HOVER_DELAY = 300
+const HOVER_DELAY = 300
 
 export function Tooltip({
   content,

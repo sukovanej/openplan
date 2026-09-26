@@ -10,9 +10,8 @@ import {
 } from "react"
 
 import { cn } from "./cn"
-import { HOVER_DELAY } from "./tooltip"
-
 const GAP = 6
+const HOVER_DELAY = 100
 // The pointer crosses the gap between the anchor and the card on its way to scroll the card.
 const LEAVE_DELAY = 150
 
