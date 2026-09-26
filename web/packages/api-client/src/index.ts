@@ -162,6 +162,10 @@ export type ConflictSide_String = { readonly label: string; readonly value: stri
 export const ConflictSide_String = Schema.Struct({ label: Schema.String, value: Schema.String }).annotate({
   identifier: "ConflictSide_String",
 })
+export type WriteBody = { readonly base: string; readonly text: string }
+export const WriteBody = Schema.Struct({ base: Schema.String, text: Schema.String }).annotate({
+  identifier: "WriteBody",
+})
 export type CreateComment = { readonly agent?: string; readonly author: string; readonly text: string }
 export const CreateComment = Schema.Struct({
   agent: Schema.optionalKey(Schema.String),
@@ -972,6 +976,18 @@ export type PatchTask409 = ApiErrorBody
 export const PatchTask409 = ApiErrorBody
 export type PatchTask503 = ApiErrorBody
 export const PatchTask503 = ApiErrorBody
+export type WriteBodyRequestJson = WriteBody
+export const WriteBodyRequestJson = WriteBody
+export type WriteBody200 = TaskDetail
+export const WriteBody200 = TaskDetail
+export type WriteBody400 = ApiErrorBody
+export const WriteBody400 = ApiErrorBody
+export type WriteBody404 = ApiErrorBody
+export const WriteBody404 = ApiErrorBody
+export type WriteBody409 = ApiErrorBody
+export const WriteBody409 = ApiErrorBody
+export type WriteBody503 = ApiErrorBody
+export const WriteBody503 = ApiErrorBody
 export type ListCommentsParams = { readonly fresh?: boolean }
 export const ListCommentsParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
 export type ListComments200 = ReadonlyArray<Comment>
@@ -1728,6 +1744,28 @@ export const make = (
           ),
         ),
       ),
+    writeBody: (project, id, options) =>
+      __makePathRequest(
+        HttpClientRequest.put,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/body",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(WriteBody200),
+                "400": decodeError("WriteBody400", WriteBody400),
+                "404": decodeError("WriteBody404", WriteBody404),
+                "409": decodeError("WriteBody409", WriteBody409),
+                "503": decodeError("WriteBody503", WriteBody503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
     listComments: (project, id, options) =>
       __makePathRequest(
         HttpClientRequest.get,
@@ -2228,6 +2266,19 @@ export interface TasksClient {
     | TasksClientError<"PatchTask404", typeof PatchTask404.Type>
     | TasksClientError<"PatchTask409", typeof PatchTask409.Type>
     | TasksClientError<"PatchTask503", typeof PatchTask503.Type>
+  >
+  readonly writeBody: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: { readonly payload: typeof WriteBodyRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof WriteBody200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"WriteBody400", typeof WriteBody400.Type>
+    | TasksClientError<"WriteBody404", typeof WriteBody404.Type>
+    | TasksClientError<"WriteBody409", typeof WriteBody409.Type>
+    | TasksClientError<"WriteBody503", typeof WriteBody503.Type>
   >
   readonly listComments: <Config extends OperationConfig>(
     project: string,

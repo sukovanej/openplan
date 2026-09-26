@@ -301,6 +301,24 @@ export const resolveConflict = (
     }),
   )
 
+// `base` is the body the text was edited from. The daemon merges the edit with any change another
+// writer made since, and answers with the body it wrote.
+export const writeBody = (
+  project: string,
+  id: string,
+  base: string,
+  text: string,
+): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.writeBody(project, id, { payload: { base, text } })).pipe(
+    Effect.catchTags({
+      WriteBody400: refusal,
+      WriteBody404: () => Effect.fail(new TaskNotFound({ id })),
+      WriteBody409: refusal,
+      WriteBody503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
 export const createTask = (
   project: string,
   input: Api.CreateTask,

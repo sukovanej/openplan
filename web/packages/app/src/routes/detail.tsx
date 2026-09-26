@@ -54,8 +54,9 @@ import { ConflictBanner, FieldConflictControl } from "../components/field-confli
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { TagsField } from "../components/tags-field"
+import { TaskContent } from "../components/task-content"
 import { TaskHistory } from "../components/task-history"
-import { createTask, getTask, listTasks, patchTask, resolveConflict, TaskNotFound } from "../lib/api"
+import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { taskFlowPath } from "../lib/flow-selection"
@@ -142,6 +143,22 @@ function TaskDetailView({
   // page. Each section renders a slice of it and offsets its own rows into it.
   const rows = useMemo(() => detailRows(project, detail), [project, detail])
   const { index } = useDetailCursor(taskPath(project, task.id), rows.paths)
+  // `created` arrives with the full detail while `updated` is already on the seeded list item, so the
+  // line renders as soon as the header does and fills in rather than shifting the body twice.
+  const meta = (saveNote: ReactNode) => (
+    <TimesAndTags>
+      <MetaLine className={timesLine}>
+        <TaskTimes
+          created={detail === null ? undefined : createdOf(detail.metadata)}
+          updated={task.updated}
+          problems={detail === null ? [] : problems(detail.metadata)}
+        />
+        <FieldConflictControl project={project} id={task.id} metadata={task.metadata} field="created" />
+        {saveNote}
+      </MetaLine>
+      <TagsField project={project} id={task.id} metadata={task.metadata} className={tagsBox} />
+    </TimesAndTags>
+  )
   return (
     <DetailColumns
       main={
@@ -193,27 +210,22 @@ function TaskDetailView({
           <PanelBody className="p-6">
             <ConflictBanner project={project} id={task.id} metadata={task.metadata} count={task.conflicts} />
             <ProblemBanner problems={task.problems} />
-            <TaskTitle title={task.title} />
-            {/* `created` arrives with the full detail while `updated` is already on the seeded list
-                item, so the line renders as soon as the header does and fills in rather than shifting
-                the body twice. */}
-            <TimesAndTags>
-              <MetaLine className={timesLine}>
-                <TaskTimes
-                  created={detail === null ? undefined : createdOf(detail.metadata)}
-                  updated={task.updated}
-                  problems={detail === null ? [] : problems(detail.metadata)}
-                />
-                <FieldConflictControl project={project} id={task.id} metadata={task.metadata} field="created" />
-              </MetaLine>
-              <TagsField project={project} id={task.id} metadata={task.metadata} className={tagsBox} />
-            </TimesAndTags>
-            {/* The box is as wide as the reading measure, so the text fills it and the rule over an
-                `h2` bleeds back over the padding to divide the whole box. */}
-            {body === undefined ? (
-              <BodySkeleton />
+            {body === undefined || abbreviation === undefined ? (
+              <>
+                <TaskTitle title={task.title} />
+                {meta(null)}
+                <BodySkeleton />
+              </>
             ) : (
-              <LiveBody project={project} id={task.id} body={body} refs={detail?.refs} abbreviation={abbreviation} />
+              <TaskContent
+                project={project}
+                id={task.id}
+                body={body}
+                refs={detail?.refs}
+                abbreviation={abbreviation}
+                fallbackTitle={task.title}
+                meta={meta}
+              />
             )}
           </PanelBody>
         </>
@@ -779,39 +791,6 @@ function NotFound({ project, id }: { project: string; id: string }) {
 }
 
 const PROSE = "prose-h2:-mx-6 prose-h2:px-6"
-
-// `body` goes to the segments exactly as the daemon sent it, because a resolve names a block by its
-// text.
-function LiveBody({
-  project,
-  id,
-  body,
-  refs,
-  abbreviation,
-}: {
-  project: string
-  id: string
-  body: string
-  refs: TaskDetail["refs"]
-  abbreviation: string | undefined
-}) {
-  const segments = useMemo(() => untitled(bodySegments(body)), [body])
-  // A write settles by re-reading the project, which also brings back a block that a 409 found
-  // changed under it.
-  const { mutate, isPending } = useProjectMutation(project)
-  return (
-    <TaskBodyWithConflicts
-      segments={segments}
-      project={project}
-      refs={refs}
-      abbreviation={abbreviation}
-      proseClassName={PROSE}
-      onResolve={(block, text) => mutate(resolveConflict(project, id, block, text))}
-      pending={isPending}
-      data-keys-ignore
-    />
-  )
-}
 
 function TaskTitle({ title }: { title: string }) {
   return <h1 className="mb-1.5 text-2xl font-semibold tracking-tight">{title}</h1>

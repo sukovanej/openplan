@@ -37,6 +37,14 @@ pub(crate) fn key_of(abbreviation: Abbreviation, reference: &str) -> String {
 // number and another store's key both name no task here, and a file that already holds one shows it
 // as the plain text it is.
 pub fn body_from_keys(abbreviation: Abbreviation, body: &str) -> Result<String, KeyError> {
+    body_from_keys_keeping(abbreviation, body, |_| false)
+}
+
+pub(crate) fn body_from_keys_keeping(
+    abbreviation: Abbreviation,
+    body: &str,
+    left_as_prose: impl Fn(&str) -> bool,
+) -> Result<String, KeyError> {
     let mut out = String::new();
     let mut last = 0;
     for (span, inner) in op_task::body_ref_spans(body) {
@@ -45,7 +53,9 @@ pub fn body_from_keys(abbreviation: Abbreviation, body: &str) -> Result<String, 
             out.push_str(&body[last..span.start]);
             out.push_str(&format!("[[{reference}]]"));
             last = span.end;
-        } else if op_task::parse_id(target).is_some() || op_task::is_key_shaped(target) {
+        } else if (op_task::parse_id(target).is_some() || op_task::is_key_shaped(target))
+            && !left_as_prose(target)
+        {
             return Err(KeyError::new(abbreviation, target));
         }
     }

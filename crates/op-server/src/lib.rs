@@ -552,6 +552,7 @@ fn documented() -> OpenApiRouter<AppState> {
             tasks::delete_task
         ))
         .routes(routes!(tasks::write_task_file))
+        .routes(routes!(tasks::write_body))
         .routes(routes!(tasks::resolve_conflict))
         .routes(routes!(tasks::get_task_tree))
         .routes(routes!(tasks::list_comments, tasks::add_comment))

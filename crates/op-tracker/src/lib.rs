@@ -4,8 +4,9 @@ use op_backend::{
     Actor, Backend, BackendError, BackendExt as _, ChangeKind, Committed, Edit, LogEntry, LogQuery,
     Op, RevisionId, Snapshot,
 };
-use op_task::comment::NewComment;
+use op_task::comment::{self, NewComment};
 use op_task::config::Config;
+use op_task::conflict::{self, Labels};
 use op_task::layout;
 use op_task::tag::Tag;
 use op_task::{Abbreviation, PartialMetadata, Task, parse_partial};
@@ -176,10 +177,7 @@ impl Tracker {
         block: &str,
         text: &str,
     ) -> Result<Updated<Task>, TrackerError> {
-        let text = match text.is_empty() || text.ends_with('\n') {
-            true => text.to_owned(),
-            false => format!("{text}\n"),
-        };
+        let text = with_final_newline(text);
         self.update_task(actor, number, |task| {
             let found = op_task::conflict::in_body(&task.body)
                 .into_iter()
@@ -188,6 +186,92 @@ impl Tracker {
             task.body.replace_range(found.range, &text);
             Ok(())
         })
+    }
+
+    // `base` is the body without its comment log, as the caller last read it, and `text` is the body
+    // the caller wants. Lines that another writer changed since `base` merge with `text`. Where both
+    // changed the same lines, a conflict block keeps both versions, and the published one stays in
+    // force. So the check on conflicts compares `text` with `base`: a block the merge makes is not
+    // the caller's edit.
+    pub fn edit_body(
+        &self,
+        actor: &Actor,
+        number: u64,
+        base: &str,
+        text: &str,
+    ) -> Result<Updated<Task>, TrackerError> {
+        let base = with_final_newline(base);
+        let text = with_final_newline(text);
+        if !comment::sections(&text).is_empty() {
+            return Err(TrackerError::Invalid(format!(
+                "the body cannot hold a `## {}` section; the comment log is append-only, so add \
+                 a comment with `openplan comment`",
+                comment::HEADING
+            )));
+        }
+        let labels = Labels {
+            ours: format!("{} (editor)", actor.name),
+            theirs: self.writer_since(number, &base)?,
+        };
+        let (committed, task) = self.write(actor, |plan| {
+            let path = plan
+                .path_of(number)
+                .ok_or_else(|| plan.not_found(number))?
+                .to_owned();
+            let old = plan.task(number)?;
+            let base = files::body_in_file_form(plan, &base);
+            let text = files::body_in_file_form(plan, &text);
+            files::keeps_blocks(&base, &text)?;
+            let current = files::body_in_file_form(plan, &comment::strip(&old.body));
+            let merged = match base == current {
+                true => text,
+                false => conflict::merge(&base, &text, &current, &labels),
+            };
+            if merged == current {
+                return Ok((Vec::new(), old));
+            }
+            files::single_title(&merged)?;
+            let log = comment::sections(&old.body)
+                .into_iter()
+                .map(|section| &old.body[section.span]);
+            let mut task = old.clone();
+            task.body = op_md::paragraphs(std::iter::once(merged.as_str()).chain(log));
+            files::validate(
+                plan,
+                Some(number),
+                Some(&old.frontmatter),
+                &task.frontmatter,
+            )?;
+            let text = files::in_file_form(plan, &task).to_file_string()?;
+            Ok((vec![Op::put(path, text)], task))
+        })?;
+        Ok(Updated {
+            value: task,
+            committed,
+        })
+    }
+
+    // The name the merge gives the version another writer published since `base`. It is read before
+    // the write, because the backend holds its lock while a write runs and a log read takes it too. A
+    // body nobody moved needs no name, and most saves are that, so they read no log. A writer that
+    // lands in between is named one revision late, or `published`.
+    fn writer_since(&self, number: u64, base: &str) -> Result<String, TrackerError> {
+        let plan = self.plan()?;
+        let current = comment::strip(&plan.task(number)?.body);
+        if files::body_in_file_form(&plan, base) == files::body_in_file_form(&plan, &current) {
+            return Ok(PUBLISHED.to_owned());
+        }
+        let entries = self.task_history(
+            number,
+            &HistoryQuery {
+                before: None,
+                limit: Some(1),
+            },
+        )?;
+        Ok(entries.first().map_or_else(
+            || PUBLISHED.to_owned(),
+            |entry| policy::label(&entry.revision),
+        ))
     }
 
     pub fn add_comment(
@@ -401,6 +485,15 @@ impl Tracker {
             true => plan.raw(number).map(Some),
             false => Ok(None),
         }
+    }
+}
+
+const PUBLISHED: &str = "published";
+
+fn with_final_newline(text: &str) -> String {
+    match text.is_empty() || text.ends_with('\n') {
+        true => text.to_owned(),
+        false => format!("{text}\n"),
     }
 }
 

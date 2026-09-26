@@ -4,7 +4,7 @@ use utoipa::ToSchema;
 use op_task::{Abbreviation, Status, Task, Timestamp};
 
 use crate::field::FieldUpdate;
-use crate::keys::{KeyError, body_from_keys, reference_of};
+use crate::keys::{KeyError, body_from_keys, body_from_keys_keeping, reference_of};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CreateTask {
@@ -103,6 +103,30 @@ impl TaskPatch {
 pub struct ResolveConflict {
     pub block: String,
     pub text: String,
+}
+
+// A task's body as the web editor writes it: `base` is `TaskDetail::body` exactly as the editor last
+// read it, and `text` is the new body in the same spelling. The daemon merges `text` with what other
+// writers changed since `base`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct WriteBody {
+    pub base: String,
+    pub text: String,
+}
+
+impl WriteBody {
+    // A file can hold a reference in a spelling a write may not add, such as another store's key.
+    // The text may keep each one that `base` holds, so an edit elsewhere is not refused for it.
+    pub fn into_bodies(self, abbreviation: Abbreviation) -> Result<(String, String), KeyError> {
+        let held: Vec<&str> = op_task::body_ref_spans(&self.base)
+            .into_iter()
+            .map(|(_, inner)| op_task::ref_target(inner))
+            .collect();
+        let base = body_from_keys_keeping(abbreviation, &self.base, |_| true)?;
+        let text =
+            body_from_keys_keeping(abbreviation, &self.text, |target| held.contains(&target))?;
+        Ok((base, text))
+    }
 }
 
 // A whole task file, as `openplan get` prints one, to write back over the task. The comment log is

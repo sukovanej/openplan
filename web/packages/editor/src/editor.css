@@ -1,0 +1,242 @@
+.op-editor .cm-editor {
+  background: transparent;
+}
+
+/* The editor takes its type from Prose, whose image margins would open a gap at each hidden image
+   CodeMirror keeps beside a widget for the caret. */
+.op-editor img.cm-widgetBuffer {
+  margin: 0;
+}
+
+.op-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.op-editor .cm-scroller {
+  font-family: inherit;
+  line-height: inherit;
+  overflow: visible;
+}
+
+.op-editor .cm-content {
+  min-height: 6rem;
+  padding: 0;
+  caret-color: var(--foreground);
+}
+
+.op-editor .cm-line {
+  padding: 0;
+}
+
+.op-editor .cm-placeholder {
+  color: var(--muted-foreground);
+}
+
+.op-editor .cm-h1,
+.op-editor .cm-h2,
+.op-editor .cm-h3,
+.op-editor .cm-h4,
+.op-editor .cm-h5,
+.op-editor .cm-h6 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--prose-heading);
+}
+
+.op-editor .cm-h1 {
+  font-size: 24px;
+  padding-top: 20px;
+}
+
+.op-editor .cm-h2 {
+  font-size: var(--prose-h2-size);
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+
+.op-editor .cm-h3 {
+  font-size: var(--prose-h3-size);
+  padding-top: 14px;
+}
+
+.op-editor .cm-h4,
+.op-editor .cm-h5,
+.op-editor .cm-h6 {
+  font-size: var(--prose-h4-size);
+  padding-top: 10px;
+}
+
+.op-editor .cm-strong {
+  font-weight: 600;
+}
+
+.op-editor .cm-em {
+  font-style: italic;
+}
+
+.op-editor .cm-strike {
+  text-decoration: line-through;
+}
+
+.op-editor .cm-inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  color: var(--prose-code);
+  background: var(--prose-code-surface);
+  border: 1px solid var(--prose-code-border);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.25em;
+}
+
+.op-editor .cm-link {
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
+  text-underline-offset: 2px;
+}
+
+.op-editor .cm-link[data-href] {
+  cursor: pointer;
+}
+
+.op-editor .cm-ref-source {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--muted-foreground);
+}
+
+.op-editor .cm-quote {
+  border-left: 3px solid var(--border);
+  padding-left: 1em !important;
+  font-style: italic;
+}
+
+.op-editor .cm-bullet {
+  display: inline-block;
+  width: 0.9em;
+  color: var(--prose-marker);
+}
+
+.op-editor .cm-list-number {
+  color: var(--prose-marker);
+}
+
+.op-editor .cm-task-box {
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0 0.45em 0 0;
+  vertical-align: -0.15em;
+  cursor: pointer;
+  accent-color: var(--success);
+}
+
+.op-editor .cm-task-done {
+  color: var(--muted-foreground);
+}
+
+.op-editor .cm-rule {
+  display: inline-block;
+  width: 100%;
+  vertical-align: middle;
+  border-top: 1px solid var(--border);
+}
+
+.op-editor .cm-image {
+  max-width: 100%;
+  border-radius: 0.375rem;
+}
+
+.op-editor .cm-code-line,
+.op-editor .cm-table-source {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.op-editor .cm-code-line {
+  background: var(--muted);
+  color: var(--foreground);
+  padding: 0 1rem !important;
+}
+
+.op-editor .cm-code-first {
+  border-top-left-radius: 0.375rem;
+  border-top-right-radius: 0.375rem;
+  padding-top: 0.6rem !important;
+}
+
+.op-editor .cm-code-last {
+  border-bottom-left-radius: 0.375rem;
+  border-bottom-right-radius: 0.375rem;
+  padding-bottom: 0.6rem !important;
+}
+
+/* Away from the caret a fence line is only the edge of the block, as in the read view. */
+.op-editor .cm-fence-hidden {
+  font-size: 0;
+  line-height: 0;
+  padding-top: 0.6rem !important;
+  padding-bottom: 0 !important;
+}
+
+.op-editor .cm-code-last.cm-fence-hidden {
+  padding-top: 0 !important;
+  padding-bottom: 0.6rem !important;
+}
+
+.op-editor .cm-code-line span {
+  color: var(--shiki-light);
+}
+
+.dark .op-editor .cm-code-line span {
+  color: var(--shiki-dark);
+}
+
+.op-editor .cm-rendered-block {
+  margin: 0.25rem 0;
+}
+
+.op-editor .cm-tooltip.cm-tooltip-autocomplete {
+  background: var(--popover);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+  padding: 0.25rem;
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+.op-editor .cm-tooltip-autocomplete > ul {
+  max-height: 18rem;
+  min-width: 16rem;
+}
+
+.op-editor .cm-tooltip-autocomplete > ul > li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  border-radius: 0.25rem;
+  padding: 0.3rem 0.5rem !important;
+}
+
+.op-editor .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.op-editor .cm-completionDetail {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.op-editor .cm-completionMatchedText {
+  text-decoration: none;
+  font-weight: 600;
+}

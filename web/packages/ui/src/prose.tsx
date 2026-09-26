@@ -12,7 +12,7 @@ const proseBody = "font-serif text-[15px] leading-6 max-w-none dark:[font-weight
 // Headings stay on the UI face. The rule above an h2 is what gives a task with a dozen `##` sections
 // visible breaks, which margin alone did not.
 const proseHeadings =
-  "prose-headings:font-sans prose-headings:mt-7 prose-headings:mb-3 prose-h2:mt-[34px] prose-h2:border-t prose-h2:border-border prose-h2:pt-[18px] prose-h2:text-[19px] prose-h2:font-semibold prose-h3:mt-[26px] prose-h3:mb-1.5 prose-h3:text-[15px] prose-h4:text-sm"
+  "prose-headings:font-sans prose-headings:mt-7 prose-headings:mb-3 prose-h2:mt-[34px] prose-h2:border-t prose-h2:border-border prose-h2:pt-[18px] prose-h2:text-(length:--prose-h2-size) prose-h2:font-semibold prose-h3:mt-[26px] prose-h3:mb-1.5 prose-h3:text-(length:--prose-h3-size) prose-h4:text-(length:--prose-h4-size)"
 
 const proseSpacing =
   "prose-p:my-[14px] prose-ul:my-[14px] prose-ol:my-[14px] prose-li:my-1 prose-pre:my-3 prose-pre:bg-muted prose-pre:font-mono prose-pre:text-foreground"

@@ -9,6 +9,16 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The web UI edits the title and the description of a task in place. The
+  description is a markdown editor with a live preview: the markdown shows where
+  the caret is, and the rest shows as it renders. `/` inserts a block, `@` or
+  `[[` inserts a reference to a task, and `e` on a task page starts the edit.
+  The text saves when you leave it, and a draft that did not save comes back on
+  the next visit.
+- `PUT /api/projects/{project}/tasks/{id}/body` writes the body of a task. It
+  takes the body the edit started from and merges the edit with what other
+  writers changed since. Where both changed the same lines, a conflict block
+  keeps both versions.
 - Canary builds. Each push to `main` replaces the prerelease `canary` with a
   new build of the CLI and the daemon, versioned `<next patch>-canary.<run>`.
   `openplan update --canary` installs it. `openplan update` goes back to the

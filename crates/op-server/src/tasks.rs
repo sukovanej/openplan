@@ -9,7 +9,7 @@ use op_api::{
     DocumentChangeKind, FieldChange, Flow, FlowQuery, HistoryEntry, KeyError, Metadata,
     ResolveConflict, RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch,
     TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot,
-    TaskSummary, TaskTree, TaskTreeView, WriteTaskFile,
+    TaskSummary, TaskTree, TaskTreeView, WriteBody, WriteTaskFile,
 };
 use op_backend::{Change, ChangeKind, Committed, LogEntry, RevisionId};
 use op_task::{Abbreviation, Task, layout};
@@ -278,6 +278,43 @@ pub(crate) async fn write_task_file(
             *task = written.clone();
             Ok(())
         })?;
+        project.written(updated.committed.as_ref());
+        project.detail(&id, number)
+    })
+    .await?;
+    Ok(Json(detail))
+}
+
+// The web editor's save. The daemon merges the edit with what other writers changed since the
+// editor read the body, so a save never drops their lines.
+#[utoipa::path(
+    put,
+    path = "/api/projects/{project}/tasks/{id}/body",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$")
+    ),
+    request_body = WriteBody,
+    responses(
+        (status = 200, description = "The task with the body written", body = TaskDetail),
+        (status = 400, description = "The text adds a conflict or edits inside one, names a key that is not this store's, or has a second `# ` title", body = ApiErrorBody),
+        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
+        (status = 409, description = "Another writer kept moving the tasks", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+pub(crate) async fn write_body(
+    State(state): State<AppState>,
+    Path((project, id)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(body): Json<WriteBody>,
+) -> Result<Json<TaskDetail>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let actor = actor_of(&headers, &project);
+    let detail = blocking(move || {
+        let number = project.number(&id)?;
+        let (base, text) = body.into_bodies(project.abbreviation()?)?;
+        let updated = project.tracker().edit_body(&actor, number, &base, &text)?;
         project.written(updated.committed.as_ref());
         project.detail(&id, number)
     })
