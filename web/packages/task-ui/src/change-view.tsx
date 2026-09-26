@@ -60,8 +60,10 @@ function Marked({
   children: ReactNode
 }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5">
-      <Icon aria-hidden className={cn("size-3.5 shrink-0", tint)} />
+    <span className="inline-flex min-w-0 items-start gap-1.5">
+      <span className="flex h-lh shrink-0 items-center">
+        <Icon aria-hidden className={cn("size-3.5", tint)} />
+      </span>
       <span>{children}</span>
     </span>
   )
