@@ -802,5 +802,5 @@ function TimesAndTags({ children }: { children: ReactNode }) {
   return <div className="mb-4 flex min-h-8 items-center justify-between gap-4">{children}</div>
 }
 
-const timesLine = "h-6 shrink-0"
+const timesLine = "shrink-0"
 const tagsBox = "min-w-0 justify-end"
