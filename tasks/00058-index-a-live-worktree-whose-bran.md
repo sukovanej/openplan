@@ -68,3 +68,9 @@ worktree's files rather than a blob. The pieces that need to agree:
   [[./00057-route-every-cli-query-through-th.md]] leaves `op-cli`'s tests
   passing.
 - `cargo build && cargo test && cargo fmt --check && cargo clippy -- -D warnings` pass.
+
+## Comments
+
+### 2026-09-26T04:56:10Z by Milan Suk via claude-code
+
+> Cancelled: the move of the tasks to refs/openplan/tasks (#161) removed the code that this task describes.
