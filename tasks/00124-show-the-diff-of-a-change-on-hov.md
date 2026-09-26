@@ -58,3 +58,9 @@ sequenceDiagram
 - Restore `DiffView` from `d275e32` (OPP-112, removed in #161) into `@openplan/ui`. Load it and the Shiki `diff` grammar with `React.lazy`, so the activity route chunk does not grow.
 - Give the popover a fixed maximum height and width, and let it scroll. Show a skeleton while the diff loads. When `truncated` is set, show a line that says so.
 - A task line can hold two paths when a new title renamed the file. Send the removed path as `from` and the added path as `path`.
+
+## Comments
+
+### 2026-09-26T06:54:10Z by Milan Suk via claude-code
+
+> The Shiki diff grammar is not loaded: the restored DiffView colors the diff itself and does not use Shiki.
