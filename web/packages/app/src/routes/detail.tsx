@@ -193,30 +193,21 @@ function TaskDetailView({
           <PanelBody className="p-6">
             <ConflictBanner project={project} id={task.id} metadata={task.metadata} count={task.conflicts} />
             <ProblemBanner problems={task.problems} />
-            {/* The tags sit level with the first line of the title: the row aligns to the top, and the
-                chips centre inside a box as tall as that line. They wrap inside half the row rather
-                than holding their width — a task carrying a handful of them squeezed the title to
-                nothing. */}
-            <div className="mb-1.5 flex items-start justify-between gap-4">
-              <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
-              <TagsField
-                project={project}
-                id={task.id}
-                metadata={task.metadata}
-                className="min-h-8 max-w-[50%] justify-end"
-              />
-            </div>
+            <TaskTitle title={task.title} />
             {/* `created` arrives with the full detail while `updated` is already on the seeded list
                 item, so the line renders as soon as the header does and fills in rather than shifting
                 the body twice. */}
-            <MetaLine className="mb-4 h-4">
-              <TaskTimes
-                created={detail === null ? undefined : createdOf(detail.metadata)}
-                updated={task.updated}
-                problems={detail === null ? [] : problems(detail.metadata)}
-              />
-              <FieldConflictControl project={project} id={task.id} metadata={task.metadata} field="created" />
-            </MetaLine>
+            <TimesAndTags>
+              <MetaLine className={timesLine}>
+                <TaskTimes
+                  created={detail === null ? undefined : createdOf(detail.metadata)}
+                  updated={task.updated}
+                  problems={detail === null ? [] : problems(detail.metadata)}
+                />
+                <FieldConflictControl project={project} id={task.id} metadata={task.metadata} field="created" />
+              </MetaLine>
+              <TagsField project={project} id={task.id} metadata={task.metadata} className={tagsBox} />
+            </TimesAndTags>
             {/* The box is as wide as the reading measure, so the text fills it and the rule over an
                 `h2` bleeds back over the padding to divide the whole box. */}
             {body === undefined ? (
@@ -394,13 +385,17 @@ function Snapshot({
   const refs = useQueryClient().getQueryData<TaskDetail>(taskKey(project, id))?.refs
   return (
     <>
-      <div className="mb-1.5 flex items-start justify-between gap-4">
-        <h1 className="min-w-0 text-2xl font-semibold tracking-tight">{task.title}</h1>
-        <TaskTags metadata={task.metadata} tags={tags} className="min-h-8 max-w-[50%] justify-end" />
-      </div>
-      <MetaLine className="mb-4 h-4">
-        <TaskTimes created={createdOf(task.metadata)} updated={entry?.revision.at} problems={problems(task.metadata)} />
-      </MetaLine>
+      <TaskTitle title={task.title} />
+      <TimesAndTags>
+        <MetaLine className={timesLine}>
+          <TaskTimes
+            created={createdOf(task.metadata)}
+            updated={entry?.revision.at}
+            problems={problems(task.metadata)}
+          />
+        </MetaLine>
+        <TaskTags metadata={task.metadata} tags={tags} className={tagsBox} />
+      </TimesAndTags>
       <TaskBodyWithConflicts
         segments={untitled(bodySegments(task.body))}
         project={project}
@@ -817,6 +812,18 @@ function LiveBody({
     />
   )
 }
+
+function TaskTitle({ title }: { title: string }) {
+  return <h1 className="mb-1.5 text-2xl font-semibold tracking-tight">{title}</h1>
+}
+
+// As tall as a tag chip, so the body does not move when the tags load or the last one goes.
+function TimesAndTags({ children }: { children: ReactNode }) {
+  return <div className="mb-4 flex min-h-8 items-center justify-between gap-4">{children}</div>
+}
+
+const timesLine = "h-4 shrink-0"
+const tagsBox = "min-w-0 justify-end"
 
 // The title can sit inside a conflict block, and then each version keeps its own.
 function untitled(segments: ReadonlyArray<BodySegment>): ReadonlyArray<BodySegment> {
