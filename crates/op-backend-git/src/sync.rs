@@ -22,6 +22,7 @@ pub(crate) fn run(inner: &Inner) -> Result<SyncReport, BackendError> {
         ));
     };
     let started = op_backend::now();
+    announce_start(inner);
     let result = exchange(inner, remote);
     let previous = lock(&inner.status).clone();
     let status = match &result {
@@ -32,6 +33,7 @@ pub(crate) fn run(inner: &Inner) -> Result<SyncReport, BackendError> {
             ahead: 0,
             behind: 0,
             error: None,
+            syncing: false,
         },
         Err(err) => {
             let (ahead, behind) = divergence(inner, remote).unwrap_or((0, 0));
@@ -42,12 +44,22 @@ pub(crate) fn run(inner: &Inner) -> Result<SyncReport, BackendError> {
                 ahead,
                 behind,
                 error: Some(err.to_string()),
+                syncing: false,
             }
         }
     };
     *lock(&inner.status) = status.clone();
     inner.events.send(BackendEvent::Sync(status));
     result
+}
+
+fn announce_start(inner: &Inner) {
+    let status = {
+        let mut status = lock(&inner.status);
+        status.syncing = true;
+        status.clone()
+    };
+    inner.events.send(BackendEvent::Sync(status));
 }
 
 fn exchange(inner: &Inner, remote: &str) -> Result<SyncReport, BackendError> {

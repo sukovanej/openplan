@@ -497,7 +497,7 @@ it.effect("a sync posts to the project's route and decodes what moved", () =>
         received: 2,
         sent: 1,
         merged: true,
-        status: { remote: "origin", last_success: "2026-01-02T00:00:00Z", ahead: 0, behind: 0 },
+        status: { remote: "origin", last_success: "2026-01-02T00:00:00Z", ahead: 0, behind: 0, syncing: false },
       }),
     )
     const result = yield* provide(runSync(PROJECT))

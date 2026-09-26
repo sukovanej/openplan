@@ -525,6 +525,7 @@ pub fn sync_view(status: &SyncStatus) -> SyncView {
         ahead: status.ahead,
         behind: status.behind,
         error: status.error.clone(),
+        syncing: status.syncing,
     }
 }
 

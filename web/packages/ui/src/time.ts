@@ -14,6 +14,8 @@ const UNITS: ReadonlyArray<[Intl.RelativeTimeFormatUnit, number]> = [
   ["minute", 60],
 ]
 
+const SECONDS_STEP = 10
+
 export function relativeTime(iso: string, now: number = Date.now()): string {
   const at = Date.parse(iso)
   if (Number.isNaN(at)) return iso
@@ -24,7 +26,8 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
     // print the next unit's value in this one's name — "24 hours ago", "60 minutes ago".
     if (Math.abs(count) >= 1) return RELATIVE.format(Math.trunc(count), unit)
   }
-  return "just now"
+  const steps = Math.trunc(seconds / SECONDS_STEP)
+  return steps === 0 ? "just now" : RELATIVE.format(steps * SECONDS_STEP, "second")
 }
 
 export function absoluteTime(iso: string): string {

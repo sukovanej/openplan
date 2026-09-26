@@ -87,6 +87,7 @@ pub struct SyncStatus {
     pub ahead: usize,
     pub behind: usize,
     pub error: Option<String>,
+    pub syncing: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

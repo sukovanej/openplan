@@ -196,7 +196,14 @@ it.effect("decodes the sync state of a project", () =>
   Effect.gen(function* () {
     const tasks = make(
       clientReturning(() =>
-        json({ remote: "origin", last_attempt: "2026-01-02T00:00:00Z", ahead: 1, behind: 0, error: "no route" }),
+        json({
+          remote: "origin",
+          last_attempt: "2026-01-02T00:00:00Z",
+          ahead: 1,
+          behind: 0,
+          syncing: true,
+          error: "no route",
+        }),
       ),
     )
     const sync = yield* tasks.getSync("openplan", undefined)
@@ -205,6 +212,7 @@ it.effect("decodes the sync state of a project", () =>
       last_attempt: "2026-01-02T00:00:00Z",
       ahead: 1,
       behind: 0,
+      syncing: true,
       error: "no route",
     })
   }),

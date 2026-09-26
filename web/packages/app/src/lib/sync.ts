@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
 
-import type { Board, ProjectView, SyncResult, SyncView, TaskListItem } from "@openplan/api-client"
+import type { ProjectView, SyncResult, SyncView } from "@openplan/api-client"
 
 import { getSync, runSync } from "./api"
 import { useProjects } from "./projects"
@@ -22,27 +22,12 @@ export function failed(syncs: ReadonlyArray<ProjectSync>): ReadonlyArray<Project
   return syncs.filter((one) => one.view.error !== undefined)
 }
 
-export function tasksInConflict(board: Board): ReadonlyArray<TaskListItem> {
-  return board.groups.flatMap((group) => group.rows.map((row) => row.task)).filter((task) => task.conflicts > 0)
-}
-
 // A failure outranks a count, because it is what keeps the count from going down.
 export function syncState(syncs: ReadonlyArray<ProjectSync>, live: boolean, working: boolean): SyncState {
   if (!live) return "offline"
-  if (working) return "syncing"
+  if (working || syncs.some((one) => one.view.syncing)) return "syncing"
   if (failed(syncs).length > 0) return "failed"
   return waitingCount(syncs) > 0 ? "waiting" : "idle"
-}
-
-const revisions = (count: number): string => `${count} ${count === 1 ? "revision" : "revisions"}`
-
-export function syncResultText(result: SyncResult): string {
-  if (result.received === 0 && result.sent === 0) return "Nothing to receive or send."
-  const parts: Array<string> = []
-  if (result.received > 0) parts.push(`Received ${revisions(result.received)}.`)
-  if (result.merged) parts.push("Merged them with the local changes.")
-  if (result.sent > 0) parts.push(`Sent ${revisions(result.sent)}.`)
-  return parts.join(" ")
 }
 
 // Only tasks in a git ref sync, and only with a remote to sync with. The daemon names that remote

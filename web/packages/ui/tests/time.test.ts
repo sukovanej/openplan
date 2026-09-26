@@ -7,11 +7,19 @@ const ago = (seconds: number) => new Date(NOW - seconds * 1000).toISOString()
 
 describe("relativeTime", () => {
   it("reports a span in the coarsest unit it fills", () => {
-    expect(relativeTime(ago(30), NOW)).toBe("just now")
     expect(relativeTime(ago(90), NOW)).toBe("1 minute ago")
     expect(relativeTime(ago(2 * 60 * 60), NOW)).toBe("2 hours ago")
     expect(relativeTime(ago(3 * 24 * 60 * 60), NOW)).toBe("3 days ago")
     expect(relativeTime(ago(14 * 24 * 60 * 60), NOW)).toBe("2 weeks ago")
+  })
+
+  it("counts the first minute in steps of ten seconds", () => {
+    expect(relativeTime(ago(0), NOW)).toBe("just now")
+    expect(relativeTime(ago(9), NOW)).toBe("just now")
+    expect(relativeTime(ago(10), NOW)).toBe("10 seconds ago")
+    expect(relativeTime(ago(29), NOW)).toBe("20 seconds ago")
+    expect(relativeTime(ago(59), NOW)).toBe("50 seconds ago")
+    expect(relativeTime(ago(60), NOW)).toBe("1 minute ago")
   })
 
   // Rounding the count after the unit was chosen prints the next unit's value under this unit's

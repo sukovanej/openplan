@@ -337,6 +337,7 @@ export type SyncView = {
   readonly last_attempt?: Rfc3339
   readonly last_success?: Rfc3339
   readonly remote: string
+  readonly syncing: boolean
 }
 export const SyncView = Schema.Struct({
   ahead: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
@@ -349,6 +350,7 @@ export const SyncView = Schema.Struct({
   last_attempt: Schema.optionalKey(Rfc3339),
   last_success: Schema.optionalKey(Rfc3339),
   remote: Schema.String,
+  syncing: Schema.Boolean,
 }).annotate({ identifier: "SyncView" })
 export type SessionSummary = {
   readonly agent: string

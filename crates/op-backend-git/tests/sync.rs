@@ -360,7 +360,27 @@ fn an_unreachable_remote_reports_the_failure_in_the_status() {
     let status = alice.remote().expect("remote").status();
     assert!(status.error.is_some());
     assert_eq!(status.ahead, 1);
-    assert!(matches!(events.try_recv(), Ok(BackendEvent::Sync(_))));
+    assert_eq!(syncing_flags(&mut events), [true, false]);
+}
+
+#[test]
+fn a_sync_announces_its_start_and_its_end() {
+    let team = Team::new();
+    let alice = open(&team.clone("alice"));
+    put(&alice, "a.md", "a");
+    let mut events = alice.subscribe();
+    sync(&alice);
+    assert_eq!(syncing_flags(&mut events), [true, false]);
+    assert!(!alice.remote().expect("remote").status().syncing);
+}
+
+fn syncing_flags(events: &mut tokio::sync::broadcast::Receiver<BackendEvent>) -> Vec<bool> {
+    std::iter::from_fn(|| events.try_recv().ok())
+        .filter_map(|event| match event {
+            BackendEvent::Sync(status) => Some(status.syncing),
+            BackendEvent::HeadMoved(_) => None,
+        })
+        .collect()
 }
 
 #[test]
