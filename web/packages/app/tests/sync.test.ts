@@ -6,22 +6,20 @@ import { createRoot, type Root } from "react-dom/client"
 import { MemoryRouter } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { Board, ProjectView, SyncView, TaskListItem } from "@openplan/api-client"
+import type { ProjectView, SyncView } from "@openplan/api-client"
 
 import { SYNC_LABEL, SyncStatus } from "../src/components/sync-status"
 import { connectionStore } from "../src/lib/connection"
 import { queryClient, queryInvalidator } from "../src/lib/query-client"
-import {
-  failed,
-  type ProjectSync,
-  syncable,
-  syncResultText,
-  syncState,
-  tasksInConflict,
-  waitingCount,
-} from "../src/lib/sync"
+import { failed, type ProjectSync, syncable, syncState, waitingCount } from "../src/lib/sync"
 
-const view = (over: Partial<SyncView> = {}): SyncView => ({ remote: "origin", ahead: 0, behind: 0, ...over })
+const view = (over: Partial<SyncView> = {}): SyncView => ({
+  remote: "origin",
+  ahead: 0,
+  behind: 0,
+  syncing: false,
+  ...over,
+})
 const sync = (project: string, over: Partial<SyncView> = {}): ProjectSync => ({ project, view: view(over) })
 
 describe("the sync state", () => {
@@ -50,31 +48,13 @@ describe("the sync state", () => {
     expect(syncState([sync("a", { error: "no route" })], true, true)).toBe("syncing")
   })
 
+  it("is syncing while the daemon runs a sync of its own", () => {
+    expect(syncState([sync("a", { ahead: 2 }), sync("b", { syncing: true })], true, false)).toBe("syncing")
+  })
+
   // Nothing can sync while the daemon is down, and what the control holds is already stale.
   it("is offline whatever the daemon last reported", () => {
     expect(syncState([sync("a", { ahead: 3, error: "no route" })], false, true)).toBe("offline")
-  })
-})
-
-const task = (id: string, conflicts: number): TaskListItem => ({
-  project: "openplan",
-  id,
-  title: `Task ${id}`,
-  metadata: { status: "todo", created: "2026-01-01T00:00:00Z", parent: null, rank: null, dependencies: [], tags: [] },
-  updated: "2026-01-02T00:00:00Z",
-  comment_count: 0,
-  conflicts,
-  problems: [],
-})
-
-const board = (...tasks: ReadonlyArray<TaskListItem>): Board => ({
-  groups: [{ status: "todo", rows: tasks.map((one) => ({ task: one, depth: 0, has_children: false })) }],
-})
-
-describe("the tasks a sync left in conflict", () => {
-  it("are the tasks that hold at least one conflict, in board order", () => {
-    const ids = tasksInConflict(board(task("OPP-1", 0), task("OPP-2", 2), task("OPP-3", 1))).map((one) => one.id)
-    expect(ids).toEqual(["OPP-2", "OPP-3"])
   })
 })
 
@@ -100,30 +80,18 @@ describe("which projects sync", () => {
   })
 })
 
-describe("what a sync did", () => {
-  it("says that nothing moved", () => {
-    expect(syncResultText({ received: 0, sent: 0, merged: false, status: view() })).toBe("Nothing to receive or send.")
-  })
-
-  it("says what came in, what went out, and whether the two merged", () => {
-    expect(syncResultText({ received: 2, sent: 1, merged: true, status: view() })).toBe(
-      "Received 2 revisions. Merged them with the local changes. Sent 1 revision.",
-    )
-  })
-})
-
 const served = vi.hoisted(() => ({
-  view: { remote: "origin", ahead: 1, behind: 0 } as {
+  view: { remote: "origin", ahead: 1, behind: 0, syncing: false } as {
     remote: string
     ahead: number
     behind: number
+    syncing: boolean
     last_success?: string
     last_attempt?: string
     error?: string
   },
   reads: 0,
   synced: [] as Array<string>,
-  tasks: [] as Array<TaskListItem>,
 }))
 
 vi.mock("../src/lib/api", async () => {
@@ -137,14 +105,10 @@ vi.mock("../src/lib/api", async () => {
         backend: "git",
         abbreviation: "OPP",
         status: { state: "ok" },
-        sync: { remote: "origin", ahead: 1, behind: 0 },
+        sync: { remote: "origin", ahead: 1, behind: 0, syncing: false },
       },
       { name: "notes", root: "/notes", backend: "local", abbreviation: "NTS", status: { state: "ok" } },
     ]),
-    getBoard: () =>
-      Effect.sync(() => ({
-        groups: [{ status: "todo", rows: served.tasks.map((one) => ({ task: one, depth: 0, has_children: false })) }],
-      })),
     getSync: () =>
       Effect.sync(() => {
         served.reads += 1
@@ -153,7 +117,7 @@ vi.mock("../src/lib/api", async () => {
     runSync: (project: string) =>
       Effect.sync(() => {
         served.synced.push(project)
-        served.view = { remote: "origin", ahead: 0, behind: 0, last_success: "2026-01-02T00:00:00Z" }
+        served.view = { remote: "origin", ahead: 0, behind: 0, syncing: false, last_success: "2026-01-02T00:00:00Z" }
         return { received: 2, sent: 1, merged: false, status: served.view }
       }),
   }
@@ -168,10 +132,9 @@ afterEach(async () => {
     await act(async () => held.root.unmount())
     held.container.remove()
   }
-  served.view = { remote: "origin", ahead: 1, behind: 0 }
+  served.view = { remote: "origin", ahead: 1, behind: 0, syncing: false }
   served.reads = 0
   served.synced = []
-  served.tasks = []
   queryClient.clear()
 })
 
@@ -227,51 +190,45 @@ describe("the sync control", () => {
   it("shows the git project from the project list, and leaves the local one out", async () => {
     const root = await openTheControl()
 
-    expect(root.textContent).toContain("origin")
-    expect(root.textContent).toContain("Never")
-    expect(root.querySelector('section[aria-label="notes"]')).toBeNull()
+    expect(root.querySelector('li[aria-label="openplan"]')?.textContent).toContain("Never synced")
+    expect(root.querySelector('li[aria-label="notes"]')).toBeNull()
     expect(served.reads).toBe(0)
   })
 
-  it("re-reads the state when the daemon says a sync ran, and shows why it failed", async () => {
+  it("re-reads the state when the daemon says a sync ran, and marks a failed sync", async () => {
     const root = await openTheControl()
-    served.view = { remote: "origin", ahead: 1, behind: 0, error: "could not reach origin" }
+    served.view = { remote: "origin", ahead: 1, behind: 0, syncing: false, error: "could not reach origin" }
 
     queryInvalidator.refreshSync("openplan")
     await tick()
     await tick()
 
     expect(served.reads).toBe(1)
-    expect(root.querySelector('[role="alert"]')?.textContent).toContain("could not reach origin")
+    expect(root.querySelector('[aria-label="The last sync failed"]')).not.toBeNull()
   })
 
-  it("links each task of the project that holds a conflict", async () => {
-    served.tasks = [task("OPP-1", 0), task("OPP-2", 2)]
+  it("spins the sync icon while the daemon runs a sync", async () => {
     const root = await openTheControl()
+    served.view = { remote: "origin", ahead: 1, behind: 0, syncing: true }
+
+    queryInvalidator.refreshSync("openplan")
+    await tick()
     await tick()
 
-    const note = root.querySelector('[role="note"]')
-    expect(note?.textContent).toContain("1 task holds conflicts from a sync.")
-    const links = Array.from(note?.querySelectorAll("a") ?? [])
-    expect(links.map((link) => link.getAttribute("href"))).toEqual(["/openplan/task/OPP-2"])
-    expect(links[0].textContent).toContain("2 conflicts")
+    const button = labelled(root, "Sync now")
+    expect(button.disabled).toBe(true)
+    expect(button.querySelector("svg")?.getAttribute("class")).toContain("animate-spin")
   })
 
-  it("says nothing about conflicts when no task holds one", async () => {
-    served.tasks = [task("OPP-1", 0)]
-    const root = await openTheControl()
-    await tick()
-
-    expect(root.querySelector('[role="note"]')).toBeNull()
-  })
-
-  it("syncs now, and says what the sync moved", async () => {
+  it("syncs now, and shows when the sync succeeded", async () => {
     const root = await openTheControl()
 
     await click(labelled(root, "Sync now"))
     await tick()
 
     expect(served.synced).toEqual(["openplan"])
-    expect(root.textContent).toContain("Received 2 revisions. Sent 1 revision.")
+    const row = root.querySelector('li[aria-label="openplan"]')
+    expect(row?.textContent).toContain("Synced")
+    expect(row?.textContent).not.toContain("Never")
   })
 })

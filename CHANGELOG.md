@@ -15,6 +15,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - In the status menu of the web UI, one letter key sets a status and closes the
   menu: `b` backlog, `t` todo, `p` in progress, `r` in review, `d` done, and
   `c` cancelled. The menu shows the letter next to each status.
+- The sync state of a project (`GET /api/projects/{project}/sync`, and `sync`
+  in the project list) has a `syncing` flag. The daemon sends a `sync_changed`
+  event when a sync starts and another when it ends. The web UI spins the sync
+  icon while a sync runs.
 
 ### Changed
 
@@ -49,6 +53,13 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that change.
 - The CLI help shows the permitted values of `--status` on `create` and `list`,
   and of `--color` on `tag create`. Shell completion offers them too.
+- The sync popover of the web UI shows one line for each project: the name,
+  the time of the last successful sync, and "Sync now". A warning icon marks a
+  failed sync, and its tooltip gives the error. The header button and "Sync
+  now" use the same icon and the same state color.
+- Each relative time in the web UI updates while it is on screen. Below one
+  minute, it counts in steps of ten seconds: "just now", "10 seconds ago",
+  "20 seconds ago", and so on.
 
 ## [0.0.3](https://github.com/sukovanej/openplan/compare/v0.0.2...v0.0.3) - 2026-09-25
 
