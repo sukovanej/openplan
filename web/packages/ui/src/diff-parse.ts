@@ -97,17 +97,20 @@ function compare(was: string, now: string): [DiffSpan[], DiffSpan[]] {
   return [spans(a, kept.a), spans(b, kept.b)]
 }
 
-// Each word carries the space that follows it, so a run of changed words renders as one span rather
-// than as words separated by unmarked gaps.
-function words(text: string): string[] {
-  return text.match(/\s*\S+\s*/g) ?? []
+interface Word {
+  readonly lead: string
+  readonly text: string
+  readonly gap: string
 }
 
-// Which words the two lines share, by longest common subsequence. The trailing space a word carries
-// is for rendering, so the comparison drops it.
-function shared(a: ReadonlyArray<string>, b: ReadonlyArray<string>): { a: boolean[]; b: boolean[] } {
-  const left = a.map((word) => word.trim())
-  const right = b.map((word) => word.trim())
+function words(line: string): Word[] {
+  return Array.from(line.matchAll(/(\s*)(\S+)(\s*)/g), ([, lead, text, gap]) => ({ lead, text, gap }))
+}
+
+// Which words the two lines share, by longest common subsequence.
+function shared(a: ReadonlyArray<Word>, b: ReadonlyArray<Word>): { a: boolean[]; b: boolean[] } {
+  const left = a.map((word) => word.text)
+  const right = b.map((word) => word.text)
   const table = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0))
   for (let i = left.length - 1; i >= 0; i--) {
     for (let j = right.length - 1; j >= 0; j--) {
@@ -133,17 +136,25 @@ function shared(a: ReadonlyArray<string>, b: ReadonlyArray<string>): { a: boolea
   return { a: inA, b: inB }
 }
 
-function spans(words: ReadonlyArray<string>, kept: ReadonlyArray<boolean>): DiffSpan[] {
+// A gap is marked only between two changed words, so a run of them renders as one span and the mark
+// stops at the edge of its last word.
+function spans(words: ReadonlyArray<Word>, kept: ReadonlyArray<boolean>): DiffSpan[] {
   const out: DiffSpan[] = []
-  for (let at = 0; at < words.length; at++) {
-    const changed = !kept[at]
+  const append = (text: string, changed: boolean) => {
+    if (text === "") return
     const last = out[out.length - 1]
     if (last !== undefined && last.changed === changed) {
-      out[out.length - 1] = { text: last.text + words[at], changed }
+      out[out.length - 1] = { text: last.text + text, changed }
     } else {
-      out.push({ text: words[at], changed })
+      out.push({ text, changed })
     }
   }
+  words.forEach((word, at) => {
+    const changed = !kept[at]
+    append(word.lead, false)
+    append(word.text, changed)
+    append(word.gap, changed && kept[at + 1] === false)
+  })
   return out
 }
 

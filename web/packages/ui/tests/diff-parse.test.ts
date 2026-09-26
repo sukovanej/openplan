@@ -50,8 +50,19 @@ describe("parseDiff", () => {
 
   it("marks the words that differ between a removed line and the added line that follows it", () => {
     const lines = parseDiff(modified)[0].lines
-    expect(changed(lines[2])).toEqual(["old "])
-    expect(changed(lines[3])).toEqual(["new "])
+    expect(changed(lines[2])).toEqual(["old"])
+    expect(changed(lines[3])).toEqual(["new"])
+  })
+
+  it("marks the space between two changed words but not the space around the run", () => {
+    const lines = parseDiff(["@@ -1 +1 @@", "-### [ ] Pick", "+### [x] Pick"].join("\n"))[0].lines
+    expect(lines.map(changed)).toEqual([["[ ]"], ["[x]"]])
+  })
+
+  it("keeps the indent of a line out of the mark on its first word", () => {
+    const lines = parseDiff(["@@ -1 +1 @@", "-  - item", "+  * item"].join("\n"))[0].lines
+    expect(lines.map(changed)).toEqual([["-"], ["*"]])
+    expect(lines.map(text)).toEqual(["  - item", "  * item"])
   })
 
   it("pairs a run of removed lines with the run of added lines by offset", () => {
