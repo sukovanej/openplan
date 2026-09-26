@@ -1,4 +1,4 @@
-import { DOCS_ROUTE, FLOW_ROUTE } from "@openplan/task-ui"
+import { FLOW_ROUTE } from "@openplan/task-ui"
 
 import type { Binding } from "./types"
 
@@ -55,12 +55,12 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.back(),
   },
   {
-    id: "go.list",
-    keys: ["g", "l"],
+    id: "go.tasks",
+    keys: ["g", "t"],
     scope: "global",
-    label: "Go to list",
+    label: "Go to tasks",
     group: "Navigation",
-    run: (ctx) => ctx.navigate("/"),
+    run: (ctx) => ctx.goToList("tasks"),
   },
   {
     id: "go.flow",
@@ -76,7 +76,15 @@ export const bindings: ReadonlyArray<Binding> = [
     scope: "global",
     label: "Go to the docs",
     group: "Navigation",
-    run: (ctx) => ctx.navigate(DOCS_ROUTE),
+    run: (ctx) => ctx.goToList("docs"),
+  },
+  {
+    id: "project.choose",
+    keys: "mod+p",
+    scope: "global",
+    label: "Change the project",
+    group: "Navigation",
+    run: (ctx) => ctx.chooseProject(),
   },
   {
     id: "go.parent",

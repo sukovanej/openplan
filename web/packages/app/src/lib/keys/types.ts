@@ -14,6 +14,8 @@ export function isOverlayScope(scope: Scope): scope is OverlayName {
 // answers for, and the tasks a query finds. `search` is the task search alone.
 export type PaletteTarget = "home" | "search"
 
+import type { ListView } from "../project-scope"
+
 export type KeySpec = string | ReadonlyArray<string>
 
 export interface OverlayControls {
@@ -49,6 +51,8 @@ export interface DetailControls {
 
 export interface RunContext {
   readonly navigate: (to: string) => void
+  readonly goToList: (view: ListView) => void
+  readonly chooseProject: () => void
   // Back to where the reader came from, or to the page above this one when it opened the session.
   readonly back: () => void
   readonly overlay: (name: OverlayName) => OverlayControls

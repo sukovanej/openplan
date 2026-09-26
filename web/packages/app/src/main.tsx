@@ -9,6 +9,7 @@ import {
   DOC_ROUTE,
   DOCS_ROUTE,
   FLOW_ROUTE,
+  PROJECT_DOCS_ROUTE,
   TAGS_ROUTE,
   TASK_ROUTE,
 } from "@openplan/task-ui"
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
       { path: FLOW_ROUTE, element: <FlowRoute /> },
       { path: BOARD_ROUTE, element: <ListRoute /> },
       { path: DOCS_ROUTE, element: <DocsRoute /> },
+      { path: PROJECT_DOCS_ROUTE, element: <DocsRoute /> },
       { path: TAGS_ROUTE, element: <TagsRoute /> },
       { path: ACTIVITY_ROUTE, element: <ActivityRoute /> },
       { path: DOC_ROUTE, element: <DocRoute /> },

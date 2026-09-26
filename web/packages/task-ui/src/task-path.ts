@@ -3,21 +3,22 @@ const TAGS_SEGMENT = "tags"
 const ACTIVITY_SEGMENT = "activity"
 const DOC_SEGMENT = "doc"
 const DOCS_SEGMENT = "docs"
+const FLOW_SEGMENT = "flow"
 
 export const REVISION_PARAM = "revision"
 
 // The flow is not a read of one project: one query can name several, so it sits above them all and
 // carries its whole selection in the query string.
-export const FLOW_ROUTE = "/flow"
+export const FLOW_ROUTE = `/${FLOW_SEGMENT}`
 
+// A list with no project in its path is the list of every project: `/` and `/docs` hold what
+// `/:project` and `/:project/docs` hold for one.
 export const BOARD_ROUTE = "/:project"
 export const TASK_ROUTE = `${BOARD_ROUTE}/${TASK_SEGMENT}/:id`
 export const TAGS_ROUTE = `${BOARD_ROUTE}/${TAGS_SEGMENT}`
 export const ACTIVITY_ROUTE = `${BOARD_ROUTE}/${ACTIVITY_SEGMENT}`
-// Docs span every project the daemon serves, so the list sits above them all and narrows through
-// `?project=`. One doc still belongs to one store — two of them can carry the same name — so a
-// doc's own page stays under its project.
 export const DOCS_ROUTE = `/${DOCS_SEGMENT}`
+export const PROJECT_DOCS_ROUTE = `${BOARD_ROUTE}/${DOCS_SEGMENT}`
 export const DOC_ROUTE = `${BOARD_ROUTE}/${DOC_SEGMENT}/:name`
 
 // Two stores can commit the same abbreviation, so a key names a task only inside its project. Every
@@ -27,8 +28,8 @@ export interface TaskRoute {
   readonly id: string
 }
 
-export function boardPath(project: string): string {
-  return `/${encodeURIComponent(project)}`
+export function boardPath(project?: string): string {
+  return project === undefined ? "/" : `/${encodeURIComponent(project)}`
 }
 
 export function tagsPath(project: string): string {
@@ -40,7 +41,7 @@ export function activityPath(project: string): string {
 }
 
 export function docsPath(project?: string): string {
-  return project === undefined ? DOCS_ROUTE : `${DOCS_ROUTE}?project=${encodeURIComponent(project)}`
+  return project === undefined ? DOCS_ROUTE : `${boardPath(project)}/${DOCS_SEGMENT}`
 }
 
 // A doc's name is its whole id, so its URL carries the name the way a task URL carries its key.
@@ -77,10 +78,25 @@ export function taskReference(reference: string): { id: string; section: string 
     : { id: reference.slice(0, hash), section: reference.slice(hash + 1) || undefined }
 }
 
-export function activityProjectOf(path: string): string | undefined {
-  const [, project, segment, rest] = path.split("/")
-  if (project === undefined || project === "" || segment !== ACTIVITY_SEGMENT || (rest ?? "") !== "") return undefined
+// The registry refuses `docs` and `flow` as project names, so the pages above every project cannot
+// hide one.
+export function projectOfPath(path: string): string | undefined {
+  const [, project] = path.split("/")
+  if (project === undefined || project === "" || project === DOCS_SEGMENT || project === FLOW_SEGMENT) return undefined
   return decodeURIComponent(project)
+}
+
+function projectPageOf(path: string, page: string): string | undefined {
+  const [, project, segment, rest] = path.split("/")
+  if (project === undefined || project === "" || segment !== page || (rest ?? "") !== "") return undefined
+  return decodeURIComponent(project)
+}
+
+export const activityProjectOf = (path: string) => projectPageOf(path, ACTIVITY_SEGMENT)
+export const tagsProjectOf = (path: string) => projectPageOf(path, TAGS_SEGMENT)
+
+export function isDocsPath(path: string): boolean {
+  return path === DOCS_ROUTE || projectPageOf(path, DOCS_SEGMENT) !== undefined || docRouteOf(path) !== undefined
 }
 
 export function taskRouteOf(path: string): TaskRoute | undefined {

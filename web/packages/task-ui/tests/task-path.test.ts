@@ -1,10 +1,67 @@
 import { describe, expect, it } from "vitest"
 
-import { activityPath, activityProjectOf, boardPath, revisionPath, taskPath, taskRouteOf } from "../src/task-path"
+import {
+  activityPath,
+  activityProjectOf,
+  boardPath,
+  docPath,
+  docsPath,
+  isDocsPath,
+  projectOfPath,
+  revisionPath,
+  tagsPath,
+  tagsProjectOf,
+  taskPath,
+  taskRouteOf,
+} from "../src/task-path"
 
 describe("boardPath", () => {
-  it("spells the route for a project's board", () => {
+  it("spells the route for a project's board, and for the board of every project", () => {
     expect(boardPath("openplan")).toBe("/openplan")
+    expect(boardPath(undefined)).toBe("/")
+  })
+})
+
+describe("docsPath", () => {
+  it("spells the docs of a project under the project, and the docs of every project above them", () => {
+    expect(docsPath("open plan")).toBe("/open%20plan/docs")
+    expect(docsPath(undefined)).toBe("/docs")
+  })
+})
+
+describe("projectOfPath", () => {
+  it("reads the project from the first segment", () => {
+    expect(projectOfPath("/openplan")).toBe("openplan")
+    expect(projectOfPath(docsPath("open plan"))).toBe("open plan")
+    expect(projectOfPath(taskPath("openplan", "OPP-1"))).toBe("openplan")
+  })
+
+  it("has no project on the pages above every project", () => {
+    expect(projectOfPath("/")).toBeUndefined()
+    expect(projectOfPath("/docs")).toBeUndefined()
+    expect(projectOfPath("/flow")).toBeUndefined()
+  })
+})
+
+describe("isDocsPath", () => {
+  it("covers both docs lists and a doc's page", () => {
+    expect(isDocsPath("/docs")).toBe(true)
+    expect(isDocsPath(docsPath("openplan"))).toBe(true)
+    expect(isDocsPath(docPath("openplan", "storage"))).toBe(true)
+  })
+
+  it("leaves out the task pages", () => {
+    expect(isDocsPath("/")).toBe(false)
+    expect(isDocsPath("/openplan")).toBe(false)
+    expect(isDocsPath(taskPath("openplan", "OPP-1"))).toBe(false)
+  })
+})
+
+describe("tagsProjectOf", () => {
+  it("reads the project back out of the tags route only", () => {
+    expect(tagsProjectOf(tagsPath("open plan"))).toBe("open plan")
+    expect(tagsProjectOf("/openplan")).toBeUndefined()
+    expect(tagsProjectOf("/openplan/activity")).toBeUndefined()
   })
 })
 

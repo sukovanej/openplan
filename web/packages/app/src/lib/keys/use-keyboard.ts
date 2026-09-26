@@ -6,6 +6,8 @@ import { activityProjectOf, boardPath, docRouteOf, docsPath, FLOW_ROUTE, taskRou
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
 import { taskFlowPath } from "../flow-selection"
+import { openProjectMenu } from "../project-menu"
+import { listPath, selectedProject } from "../project-scope"
 import { detailCursor, focusedRow, liveCursor } from "../row-cursor"
 import { hoveredRow, taskAtHand } from "../row-target"
 import { statusRequests } from "../status-requests"
@@ -27,7 +29,7 @@ function pageAbove(pathname: string): string {
   const doc = docRouteOf(pathname)
   if (doc !== undefined) return docsPath(doc.project)
   const project = taskRouteOf(pathname)?.project ?? activityProjectOf(pathname)
-  return project === undefined ? "/" : boardPath(project)
+  return boardPath(project)
 }
 
 export interface Keyboard {
@@ -42,9 +44,9 @@ export function useKeyboard(): Keyboard {
   const [activeOverlay, setActiveOverlay] = useState<OverlayName | null>(null)
   const [paletteTarget, setPaletteTarget] = useState<PaletteTarget>("home")
 
-  const pathname = location.pathname
+  const { pathname, search } = location
   const scope = routeScope(pathname)
-  const live = useEffectEvent(() => ({ navigate, pathname, scope, activeOverlay }))
+  const live = useEffectEvent(() => ({ navigate, pathname, search, scope, activeOverlay }))
 
   // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
   // route would stay the task at hand on the next one.
@@ -71,6 +73,8 @@ export function useKeyboard(): Keyboard {
     const canGoBack = () => historyIndex() > entryIndex.current
     const context = (): RunContext => ({
       navigate: (to) => live().navigate(to),
+      goToList: (view) => live().navigate(listPath(view, selectedProject(live().pathname, live().search))),
+      chooseProject: openProjectMenu,
       back: () => (canGoBack() ? live().navigate(-1) : live().navigate(pageAbove(live().pathname))),
       overlay: (name) => ({
         open: () => setActiveOverlay(name),

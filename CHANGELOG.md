@@ -7,6 +7,17 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.4...main)
 
+### Changed
+
+- The web UI selects the project with a menu in the header. The selection
+  applies to the tasks and to the docs. `Cmd+P` (`Ctrl+P` on Linux and
+  Windows) opens the menu. The docs of one project are at `/<project>/docs`,
+  not at `/docs?project=<project>`.
+- The task list and the docs list have `Tasks` and `Docs` tabs. The header has
+  no Docs link.
+- `g t` goes to the tasks of the selected project and replaces `g l`. `g d`
+  goes to the docs of the selected project.
+
 ## [0.0.4](https://github.com/sukovanej/openplan/compare/v0.0.3...v0.0.4) - 2026-09-26
 
 ### Added
