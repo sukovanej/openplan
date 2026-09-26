@@ -23,7 +23,7 @@ use op_api::{
 use op_task::tag::Color;
 use op_task::{Status, rank};
 
-use op_daemon::Home;
+use op_daemon::{Home, Updates};
 use op_update::Channel;
 use plan::Plan;
 
@@ -214,6 +214,10 @@ enum Command {
         /// back to the stable release
         #[arg(long)]
         canary: bool,
+        /// Turn the daemon's own updates on or off, and install nothing now. The daemon checks
+        /// every hour and installs a new release when no agent session runs
+        #[arg(long, value_enum, conflicts_with = "canary")]
+        auto: Option<Toggle>,
     },
     /// Manage the background daemon and web UI
     Server {
@@ -243,6 +247,12 @@ impl Backend {
             Self::Local => BackendKind::Local,
         }
     }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Toggle {
+    On,
+    Off,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -330,7 +340,7 @@ enum ServerCommand {
 }
 
 fn main() -> ExitCode {
-    if let Some(code) = op_daemon::serve_if_requested(std::env::args()) {
+    if let Some(code) = op_daemon::serve_if_requested(std::env::args(), Updates::Auto) {
         return code;
     }
     let cli = Cli::parse();
@@ -459,7 +469,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
-        Command::Update { canary } => {
+        Command::Update {
+            auto: Some(toggle), ..
+        } => update::auto(matches!(toggle, Toggle::On)).map(|()| ExitCode::SUCCESS),
+        Command::Update { canary, auto: None } => {
             let channel = if canary {
                 Channel::Canary
             } else {
@@ -476,7 +489,7 @@ fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> 
         ServerCommand::Start { port, foreground } => {
             reject_remote_override(daemon_url, "start")?;
             if foreground {
-                return Ok(op_daemon::serve(Home::resolve()?, port));
+                return Ok(op_daemon::serve(Home::resolve()?, port, Updates::Auto));
             }
             daemon::start(port)?;
             Ok(ExitCode::SUCCESS)

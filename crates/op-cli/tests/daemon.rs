@@ -157,6 +157,33 @@ fn soon(cond: impl FnMut() -> bool) {
 }
 
 #[test]
+fn a_cargo_build_does_not_update_itself_and_ping_says_why() {
+    let daemon = Daemon::new();
+    daemon.start();
+
+    let mut ping = String::new();
+    soon(|| {
+        ping = ok(daemon.run(&["server", "ping"]));
+        ping.contains("no automatic updates")
+    });
+    assert!(ping.contains("cache directory"), "{ping}");
+
+    ok(daemon.run(&["server", "stop"]));
+}
+
+#[test]
+fn ping_says_when_automatic_updates_are_off() {
+    let daemon = Daemon::new();
+    daemon.start();
+
+    ok(daemon.run(&["update", "--auto", "off"]));
+
+    let ping = ok(daemon.run(&["server", "ping"]));
+    assert!(ping.contains("automatic updates: off"), "{ping}");
+    ok(daemon.run(&["server", "stop"]));
+}
+
+#[test]
 fn start_ping_stop_roundtrip() {
     let daemon = Daemon::new();
 

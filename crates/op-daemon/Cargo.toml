@@ -11,9 +11,11 @@ repository.workspace = true
 op-api.workspace = true
 op-client.workspace = true
 op-server.workspace = true
+op-update.workspace = true
 anyhow.workspace = true
 fs2.workspace = true
 nix.workspace = true
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
@@ -21,6 +23,10 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
+flate2.workspace = true
+sha2.workspace = true
+tar.workspace = true
 tempfile.workspace = true
 
 [lints]
