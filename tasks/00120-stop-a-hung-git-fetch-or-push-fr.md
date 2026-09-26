@@ -19,17 +19,17 @@ The daemon started `git fetch ... refs/openplan/tasks`. Git ran
 This is a dead half-open connection after a sleep or a network change. The
 fetch hung for 1 h 42 min, until someone killed the `ssh` process.
 
-```d2
-shape: sequence_diagram
-ui: Web UI
-loop: Sync thread
-git: git fetch
-ssh: ssh
-ui -> loop: sync now (sets due)
-loop -> git: Command::output()
-git -> ssh: git-upload-pack
-ssh -> ssh: waits on a dead connection
-ui -> loop: sync now (nobody reads due)
+```mermaid
+sequenceDiagram
+  participant ui as Web UI
+  participant sync as Sync thread
+  participant git as git fetch
+  participant ssh
+  ui ->> sync: sync now (sets due)
+  sync ->> git: Command::output()
+  git ->> ssh: git-upload-pack
+  ssh ->> ssh: waits on a dead connection
+  ui ->> sync: sync now (nobody reads due)
 ```
 
 ## Cause
