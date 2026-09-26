@@ -15,6 +15,12 @@ export type TaskTree = {
 }
 export const TaskTree = Schema.suspend((): Schema.Codec<TaskTree> => __recursive_TaskTree)
 // non-recursive definitions
+export type Author = { readonly agent?: string; readonly email?: string; readonly name: string }
+export const Author = Schema.Struct({
+  agent: Schema.optionalKey(Schema.String),
+  email: Schema.optionalKey(Schema.String),
+  name: Schema.String,
+}).annotate({ identifier: "Author" })
 export type MetadataErrorTag = "error"
 export const MetadataErrorTag = Schema.Literal("error").annotate({ identifier: "MetadataErrorTag" })
 export type FieldError = { readonly kind: "missing" } | { readonly kind: "invalid"; readonly message: string }
@@ -602,6 +608,7 @@ export const Metadata = Schema.Union(
   { mode: "oneOf" },
 ).annotate({ identifier: "Metadata" })
 export type TaskListItem = {
+  readonly author?: Author
   readonly comment_count: number
   readonly conflicts: number
   readonly id: string
@@ -612,6 +619,7 @@ export type TaskListItem = {
   readonly updated: Field_Rfc3339
 }
 export const TaskListItem = Schema.Struct({
+  author: Schema.optionalKey(Author),
   comment_count: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
     Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
   ),
@@ -626,6 +634,7 @@ export const TaskListItem = Schema.Struct({
   updated: Field_Rfc3339,
 }).annotate({ identifier: "TaskListItem" })
 export type TaskDetail = {
+  readonly author?: Author
   readonly blocks?: ReadonlyArray<TaskRef>
   readonly children?: ReadonlyArray<TaskChild>
   readonly comments?: ReadonlyArray<Comment>
@@ -642,6 +651,7 @@ export type TaskDetail = {
   readonly updated: Field_Rfc3339
 }
 export const TaskDetail = Schema.Struct({
+  author: Schema.optionalKey(Author),
   blocks: Schema.optionalKey(Schema.Array(TaskRef)),
   children: Schema.optionalKey(Schema.Array(TaskChild)),
   comments: Schema.optionalKey(Schema.Array(Comment)),

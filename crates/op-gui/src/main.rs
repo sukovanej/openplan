@@ -15,7 +15,12 @@ fn main() -> ExitCode {
     // The Windows GUI deliberately has no daemon binary. Its daemon lives in WSL and is reached
     // through Windows' localhost forwarding, so only Unix builds can answer a re-exec request.
     #[cfg(not(target_os = "windows"))]
-    if let Some(code) = op_daemon::serve_if_requested(std::env::args()) {
+    if let Some(code) = op_daemon::serve_if_requested(
+        std::env::args(),
+        op_daemon::Updates::Never(
+            "the desktop app runs this daemon, and an update replaces only the CLI",
+        ),
+    ) {
         return code;
     }
     match std::env::args().nth(1).as_deref() {

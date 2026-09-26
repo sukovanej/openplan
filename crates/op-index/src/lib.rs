@@ -3,10 +3,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 mod problems;
 
 use op_api::{
-    Comment, Metadata, Problem, SearchHit, SearchMatch, TaskChild, TaskDetail, TaskListItem,
-    TaskRef, hit_cmp, list_item_cmp, updated_field,
+    Author, Comment, Metadata, Problem, SearchHit, SearchMatch, TaskChild, TaskDetail,
+    TaskListItem, TaskRef, hit_cmp, list_item_cmp, updated_field,
 };
-use op_backend::{LogEntry, Timestamp};
+use op_backend::{Actor, Change, ChangeKind, LogEntry, Timestamp};
 use op_task::{Abbreviation, FieldError, layout};
 use op_tracker::{Plan, TrackerError};
 
@@ -15,6 +15,7 @@ pub struct Index {
     abbreviation: Option<Abbreviation>,
     tasks: BTreeMap<u64, Entry>,
     updated: HashMap<u64, Timestamp>,
+    authors: HashMap<u64, Author>,
     problems: HashMap<u64, Vec<Problem>>,
 }
 
@@ -131,6 +132,24 @@ impl Index {
         self.updated.insert(number, at);
     }
 
+    // A log lists the newest revision first, so the first entry to create a task names its author:
+    // a task deleted and created again under the same number is a new task.
+    pub fn credit(&mut self, log: &[LogEntry]) {
+        let mut found = HashMap::new();
+        for entry in log {
+            for number in created(&entry.changes) {
+                found
+                    .entry(number)
+                    .or_insert_with(|| author_of(&entry.revision.author));
+            }
+        }
+        self.authors.extend(found);
+    }
+
+    pub fn credited(&self, number: u64) -> bool {
+        self.authors.contains_key(&number)
+    }
+
     pub fn abbreviation(&self) -> Option<Abbreviation> {
         self.abbreviation
     }
@@ -184,6 +203,7 @@ impl Index {
             problems: self.problems_of(number),
             description: self.description_of(&partial.body),
             updated: self.updated_of(number, entry),
+            author: self.authors.get(&number).cloned(),
             parent_title: hierarchy.parent_title,
             children: hierarchy.children,
             refs: hierarchy.refs,
@@ -301,6 +321,7 @@ impl Index {
             conflicts: entry.conflicts,
             problems: self.problems_of(number),
             updated: self.updated_of(number, entry),
+            author: self.authors.get(&number).cloned(),
         }
     }
 
@@ -342,6 +363,27 @@ impl Entry {
             metadata,
             raw,
         }
+    }
+}
+
+// The tasks whose file `changes` adds. A new title moves a task to a file with a new name, so a
+// change that also removes a file of the same task only renames it.
+pub fn created(changes: &[Change]) -> BTreeSet<u64> {
+    let numbers = |kind: ChangeKind| -> BTreeSet<u64> {
+        changes
+            .iter()
+            .filter(|change| change.kind == kind)
+            .filter_map(|change| layout::task_number(&change.path))
+            .collect()
+    };
+    &numbers(ChangeKind::Added) - &numbers(ChangeKind::Removed)
+}
+
+fn author_of(actor: &Actor) -> Author {
+    Author {
+        name: actor.name.clone(),
+        email: actor.email.clone(),
+        agent: actor.via.clone(),
     }
 }
 

@@ -449,3 +449,56 @@ async fn a_reopened_project_dates_its_tasks_from_the_log() {
         updated
     );
 }
+
+async fn write_as(state: &AppState, method: &str, uri: &str, body: Value, name: &str) {
+    let headers = [
+        (op_api::AUTHOR_HEADER, name),
+        (op_api::AGENT_HEADER, "claude-code"),
+    ];
+    let response = send_as(state, method, uri, Some(body), &headers).await;
+    assert!(response.status().is_success(), "{method} {uri}");
+}
+
+// A later edit, and a new title that moves the task to another file, leave the author as it was.
+#[tokio::test]
+async fn a_task_names_the_author_of_the_revision_that_created_it() {
+    for (_dir, state) in [local_state(), git_state()] {
+        let tasks = "/api/projects/test/tasks";
+        write_as(&state, "POST", tasks, json!({ "title": "One" }), "Ann").await;
+        write_as(&state, "POST", tasks, json!({ "title": "Two" }), "Ben").await;
+        let one = format!("{tasks}/OPP-1");
+        write_as(&state, "PATCH", &one, json!({ "status": "done" }), "Ben").await;
+        let renamed = json!({ "text": task_file("done", "One renamed", "") });
+        write_as(&state, "PUT", &format!("{one}/file"), renamed, "Ben").await;
+
+        let rows = json_of(&state, tasks).await;
+        let authors: Vec<&Value> = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| &row["author"]["name"])
+            .collect();
+        assert_eq!(authors, ["Ann", "Ben"]);
+        assert_eq!(rows[0]["author"]["agent"], "claude-code");
+        assert_eq!(json_of(&state, &one).await["author"], rows[0]["author"]);
+    }
+}
+
+#[tokio::test]
+async fn a_reopened_project_credits_its_tasks_from_the_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = AppState::new([local_project(PROJECT, dir.path(), "OPP")]);
+    write_as(
+        &state,
+        "POST",
+        "/api/projects/test/tasks",
+        json!({ "title": "One" }),
+        "Ann",
+    )
+    .await;
+    drop(state);
+
+    let reopened = AppState::new([open(PROJECT, dir.path(), op_api::BackendKind::Local)]);
+    let rows = json_of(&reopened, "/api/projects/test/tasks").await;
+    assert_eq!(rows[0]["author"]["name"], "Ann");
+}

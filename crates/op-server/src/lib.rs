@@ -18,7 +18,7 @@ use axum::{
 };
 use op_api::{
     ApiErrorBody, ChangeEvent, DaemonInfo, FlowCycles, KeyError, ProjectView, Refusal,
-    RegisterProject, RenameProject, SourcePosition,
+    RegisterProject, RenameProject, SourcePosition, StopReason,
 };
 use op_backend::{Actor, BackendError};
 use op_tracker::TrackerError;
@@ -176,7 +176,7 @@ pub struct AppState {
     projects: Arc<RwLock<BTreeMap<String, Arc<Project>>>>,
     // Absent for a state built from a fixed project list, which has no file to keep in step.
     registry: Option<Arc<PathBuf>>,
-    shutdown: Arc<watch::Sender<bool>>,
+    shutdown: Arc<watch::Sender<Option<StopReason>>>,
     health: Option<Arc<DaemonInfo>>,
     publisher: Publisher,
     agents: Arc<AgentSessions>,
@@ -197,7 +197,7 @@ impl AppState {
         Self {
             projects: Arc::new(RwLock::new(map)),
             registry: None,
-            shutdown: Arc::new(watch::channel(false).0),
+            shutdown: Arc::new(watch::channel(None).0),
             health: None,
             publisher: Publisher::new(),
             agents: Arc::new(AgentSessions::new(agent::backends())),
@@ -411,10 +411,38 @@ impl AppState {
     }
 
     pub fn stop(&self) {
-        let _ = self.shutdown.send(true);
+        self.stop_for(StopReason::Stop);
     }
 
-    pub(crate) fn stopping(&self) -> watch::Receiver<bool> {
+    // The first reason wins, so the stop an update starts still reads as an update when a signal
+    // follows it.
+    fn stop_for(&self, reason: StopReason) {
+        self.shutdown.send_if_modified(|current| {
+            let first = current.is_none();
+            if first {
+                *current = Some(reason);
+            }
+            first
+        });
+    }
+
+    pub fn stop_reason(&self) -> Option<StopReason> {
+        *self.shutdown.borrow()
+    }
+
+    // `install` runs and the daemon stops for the update only while no agent session is live. Both
+    // happen under the lock that starting a session takes, so no session starts in between.
+    pub fn update_if_idle<E>(&self, install: impl FnOnce() -> Result<(), E>) -> Result<bool, E> {
+        let sessions = self.agents.held();
+        if self.stop_reason().is_some() || sessions.values().any(|session| session.live()) {
+            return Ok(false);
+        }
+        install()?;
+        self.stop_for(StopReason::Update);
+        Ok(true)
+    }
+
+    pub(crate) fn stopping(&self) -> watch::Receiver<Option<StopReason>> {
         self.shutdown.subscribe()
     }
 
@@ -713,20 +741,20 @@ pub async fn serve(
     state: AppState,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    let stop = state.shutdown.clone();
+    let stop = state.clone();
     let agents = state.agents();
     let watchdog = tokio::spawn(watch_projects(state.clone()));
     let stopping = state.clone();
     let result = axum::serve(listener, app(state))
         .with_graceful_shutdown(async move {
-            let mut stopping = stop.subscribe();
+            let mut stopping = stop.stopping();
             tokio::select! {
                 _ = shutdown => {}
-                _ = stopping.wait_for(|&stopping| stopping) => {}
+                _ = stopping.wait_for(Option::is_some) => {}
             }
             // An external signal arrives here without touching the watch; publish it so open SSE
             // streams observe the stop and end.
-            let _ = stop.send(true);
+            stop.stop();
         })
         .await;
     watchdog.abort();
@@ -864,7 +892,7 @@ async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Re
     if !headers.contains_key(op_api::ADMIN_HEADER) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let _ = state.shutdown.send(true);
+    state.stop();
     (StatusCode::OK, "shutting down").into_response()
 }
 
@@ -882,7 +910,7 @@ async fn events(
     headers: HeaderMap,
     Query(query): Query<EventsQuery>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let mut shutdown = state.shutdown.subscribe();
+    let mut shutdown = state.stopping();
     let publisher = state.publisher.clone();
     let mut changes = BroadcastStream::new(publisher.subscribe());
     let cursor = headers
@@ -912,8 +940,9 @@ async fn events(
         loop {
             let event = tokio::select! {
                 _ = tx.closed() => return,
-                _ = shutdown.wait_for(|&stopping| stopping) => {
-                    let _ = tx.try_send(Ok(plain(&ChangeEvent::DaemonStopping)));
+                stopped = shutdown.wait_for(Option::is_some) => {
+                    let reason = stopped.ok().and_then(|reason| *reason).unwrap_or(StopReason::Stop);
+                    let _ = tx.try_send(Ok(plain(&ChangeEvent::DaemonStopping { reason })));
                     return;
                 }
                 message = changes.next() => match message {
@@ -929,8 +958,9 @@ async fn events(
                         return;
                     }
                 }
-                _ = shutdown.wait_for(|&stopping| stopping) => {
-                    let _ = tx.try_send(Ok(plain(&ChangeEvent::DaemonStopping)));
+                stopped = shutdown.wait_for(Option::is_some) => {
+                    let reason = stopped.ok().and_then(|reason| *reason).unwrap_or(StopReason::Stop);
+                    let _ = tx.try_send(Ok(plain(&ChangeEvent::DaemonStopping { reason })));
                     return;
                 }
             }

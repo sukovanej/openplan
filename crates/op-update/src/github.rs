@@ -21,6 +21,16 @@ pub enum Channel {
     Canary,
 }
 
+impl Channel {
+    pub fn of(installed: &Version) -> Self {
+        if installed.pre.as_str().starts_with("canary.") {
+            Channel::Canary
+        } else {
+            Channel::Stable
+        }
+    }
+}
+
 pub struct Release {
     pub version: Version,
     pub tag: String,

@@ -80,3 +80,20 @@ fn the_refusal_names_the_owner_and_the_path() {
     assert!(text.contains("cargo install"), "{text}");
     assert!(text.contains("/Users/me/.cargo/bin/openplan"), "{text}");
 }
+
+#[test]
+fn a_build_in_a_cache_directory_is_not_ours() {
+    let target = tempfile::tempdir().unwrap();
+    std::fs::write(
+        target.path().join("CACHEDIR.TAG"),
+        "Signature: 8a477f597d28d172789f06886806bc55\n",
+    )
+    .unwrap();
+    let debug = target.path().join("debug");
+    std::fs::create_dir_all(&debug).unwrap();
+
+    assert_eq!(
+        owner_of(&debug.join("openplan"), &env(false)),
+        Some(Owner::BuildCache)
+    );
+}

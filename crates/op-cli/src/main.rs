@@ -23,7 +23,7 @@ use op_api::{
 use op_task::tag::Color;
 use op_task::{Status, rank};
 
-use op_daemon::Home;
+use op_daemon::{Home, Updates};
 use op_update::Channel;
 use plan::Plan;
 
@@ -188,6 +188,11 @@ enum Command {
     },
     /// Open the realtime web UI in the default browser
     Open,
+    /// Print the web UI address of each task
+    Url {
+        #[arg(required = true)]
+        keys: Vec<String>,
+    },
     /// Report task problems (fields, references, cycles, tags, conflicts, Mermaid diagrams) and stale agent skills; never starts a daemon
     Lint {
         /// Report only these tasks; every task is checked all the same
@@ -214,6 +219,10 @@ enum Command {
         /// back to the stable release
         #[arg(long)]
         canary: bool,
+        /// Turn the daemon's own updates on or off, and install nothing now. The daemon checks
+        /// every hour and installs a new release when no agent session runs
+        #[arg(long, value_enum, conflicts_with = "canary")]
+        auto: Option<Toggle>,
     },
     /// Manage the background daemon and web UI
     Server {
@@ -243,6 +252,12 @@ impl Backend {
             Self::Local => BackendKind::Local,
         }
     }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Toggle {
+    On,
+    Off,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -330,7 +345,7 @@ enum ServerCommand {
 }
 
 fn main() -> ExitCode {
-    if let Some(code) = op_daemon::serve_if_requested(std::env::args()) {
+    if let Some(code) = op_daemon::serve_if_requested(std::env::args(), Updates::Auto) {
         return code;
     }
     let cli = Cli::parse();
@@ -454,12 +469,16 @@ fn run(cli: Cli) -> Result<ExitCode> {
         .map(|()| ExitCode::SUCCESS),
         Command::Sync { status, json } => history::sync(root, daemon_url, status, json),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
+        Command::Url { keys } => task_urls(root, daemon_url, &keys).map(|()| ExitCode::SUCCESS),
         Command::Lint { keys, json, skills } => lint::run(root, &keys, json, skills),
         Command::Tag { command } => tag::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
-        Command::Update { canary } => {
+        Command::Update {
+            auto: Some(toggle), ..
+        } => update::auto(matches!(toggle, Toggle::On)).map(|()| ExitCode::SUCCESS),
+        Command::Update { canary, auto: None } => {
             let channel = if canary {
                 Channel::Canary
             } else {
@@ -476,7 +495,7 @@ fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> 
         ServerCommand::Start { port, foreground } => {
             reject_remote_override(daemon_url, "start")?;
             if foreground {
-                return Ok(op_daemon::serve(Home::resolve()?, port));
+                return Ok(op_daemon::serve(Home::resolve()?, port, Updates::Auto));
             }
             daemon::start(port)?;
             Ok(ExitCode::SUCCESS)
@@ -684,6 +703,16 @@ fn shown<T: std::fmt::Display>(field: &Field<T>) -> String {
         Field::Error(FieldError::Missing) => "(missing)".to_owned(),
         Field::Error(FieldError::Invalid { message }) => format!("({message})"),
     }
+}
+
+fn task_urls(root: &Path, daemon_url: Option<&str>, keys: &[String]) -> Result<()> {
+    let plan = Plan::resolve(root, daemon_url)?;
+    for key in keys {
+        // A link to a task that does not exist opens an empty page, so a mistyped key fails here.
+        plan.get(key)?;
+        println!("{}", plan.task_page(key));
+    }
+    Ok(())
 }
 
 fn show(root: &Path, daemon_url: Option<&str>, id: &str) -> Result<()> {

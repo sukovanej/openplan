@@ -14,13 +14,37 @@ pub(super) struct Sizes<'a> {
     pub(super) group_parent: &'a [Level],
     pub(super) group_pad: &'a [(f32, f32)],
     pub(super) group_min_breadth: &'a [f32],
-    pub(super) links: &'a [(usize, usize, f32)],
+    pub(super) links: &'a [Link],
+    pub(super) paths: &'a [Path<'a>],
+}
+
+// One step of an edge from a vertex to one in the next rank. A port is where the step meets its
+// vertex, as an offset from the center of that vertex.
+pub(super) struct Link {
+    pub(super) upper: usize,
+    pub(super) lower: usize,
+    pub(super) weight: f32,
+    pub(super) upper_port: f32,
+    pub(super) lower_port: f32,
+}
+
+pub(super) struct Path<'a> {
+    pub(super) vertices: &'a [usize],
+    pub(super) exit: f32,
+    pub(super) entry: f32,
 }
 
 pub(super) struct Placement {
     pub(super) center: Vec<f32>,
     pub(super) group_bounds: Vec<(f32, f32)>,
     pub(super) breadth: f32,
+}
+
+// A link that crosses the edge of an entry, from the vertex and port inside it to those outside.
+struct Touch {
+    inside: (usize, f32),
+    outside: (usize, f32),
+    weight: f32,
 }
 
 // The entries next to one entry in one of its rows.
@@ -30,8 +54,64 @@ struct Beside {
     after: Option<Entry>,
 }
 
+// The inside of an edge lines up with one end, so the edge meets that end straight and bends once,
+// next to the other. It takes the end that no other edge shares that side of, since the edges that
+// share a side spread along it and bend there anyway. When both ends are free, it takes the one with
+// more edges, which holds its place while the other end follows.
+enum Line {
+    Upper,
+    Lower,
+    Between,
+}
+
+struct Run<'a> {
+    inside: &'a [usize],
+    upper: usize,
+    lower: usize,
+    exit: f32,
+    entry: f32,
+    line: Line,
+}
+
+fn runs<'a>(paths: &[Path<'a>]) -> Vec<Run<'a>> {
+    let mut leaving: HashMap<usize, usize> = HashMap::new();
+    let mut arriving: HashMap<usize, usize> = HashMap::new();
+    for path in paths {
+        let vertices = path.vertices;
+        *leaving.entry(vertices[0]).or_default() += 1;
+        *arriving.entry(vertices[vertices.len() - 1]).or_default() += 1;
+    }
+    paths
+        .iter()
+        .filter(|path| path.vertices.len() > 2)
+        .map(|path| {
+            let vertices = path.vertices;
+            let (upper, lower) = (vertices[0], vertices[vertices.len() - 1]);
+            let edges = |vertex| {
+                leaving.get(&vertex).copied().unwrap_or(0)
+                    + arriving.get(&vertex).copied().unwrap_or(0)
+            };
+            let line = match (leaving[&upper] == 1, arriving[&lower] == 1) {
+                (true, true) if edges(lower) > edges(upper) => Line::Lower,
+                (true, _) => Line::Upper,
+                (false, true) => Line::Lower,
+                (false, false) => Line::Between,
+            };
+            Run {
+                inside: &vertices[1..vertices.len() - 1],
+                upper,
+                lower,
+                exit: path.exit,
+                entry: path.entry,
+                line,
+            }
+        })
+        .collect()
+}
+
 struct Levels<'a> {
     sizes: &'a Sizes<'a>,
+    runs: Vec<Run<'a>>,
     left: HashMap<(Level, Entry), f32>,
     outer: Vec<f32>,
     content_offset: Vec<f32>,
@@ -48,6 +128,7 @@ pub(super) fn place(ordering: &Ordering, sizes: &Sizes<'_>) -> Placement {
     }
     let mut levels = Levels {
         sizes,
+        runs: runs(sizes.paths),
         left: HashMap::new(),
         outer: vec![0.0; groups],
         content_offset: vec![0.0; groups],
@@ -208,22 +289,31 @@ impl Levels<'_> {
                 });
             }
         }
-        let mut touching: HashMap<Entry, Vec<(usize, usize, f32)>> = HashMap::new();
-        for &(upper, lower, strength) in self.sizes.links {
-            let (Some(first), Some(second)) =
-                (self.entry_of(level, upper), self.entry_of(level, lower))
-            else {
+        let mut touching: HashMap<Entry, Vec<Touch>> = HashMap::new();
+        for link in self.sizes.links {
+            let (Some(first), Some(second)) = (
+                self.entry_of(level, link.upper),
+                self.entry_of(level, link.lower),
+            ) else {
                 continue;
             };
             if first != second {
-                touching
-                    .entry(first)
-                    .or_default()
-                    .push((upper, lower, strength));
-                touching
-                    .entry(second)
-                    .or_default()
-                    .push((lower, upper, strength));
+                touching.entry(first).or_default().push(Touch {
+                    inside: (link.upper, link.upper_port),
+                    outside: (link.lower, link.lower_port),
+                    weight: link.weight,
+                });
+                touching.entry(second).or_default().push(Touch {
+                    inside: (link.lower, link.lower_port),
+                    outside: (link.upper, link.upper_port),
+                    weight: link.weight,
+                });
+            }
+        }
+        let mut run_of: HashMap<Entry, usize> = HashMap::new();
+        for (at, run) in self.runs.iter().enumerate() {
+            for &vertex in run.inside {
+                run_of.insert(Entry::Vertex(vertex), at);
             }
         }
         for entry in &entries {
@@ -233,7 +323,14 @@ impl Levels<'_> {
         for _ in 0..ROUNDS {
             let mut moved = 0.0f32;
             for &entry in &entries {
-                let Some(shift) = self.pull(level, touching.get(&entry)) else {
+                let straight = match (entry, run_of.get(&entry)) {
+                    (Entry::Vertex(vertex), Some(&run)) => self
+                        .line_up(level, run, &neighbors)
+                        .and_then(|line| Some(line - self.position(level, vertex)?)),
+                    _ => None,
+                };
+                let Some(shift) = straight.or_else(|| self.pull(level, touching.get(&entry)))
+                else {
                     continue;
                 };
                 let (low, high) = self.room(level, entry, &neighbors[&entry]);
@@ -280,21 +377,51 @@ impl Levels<'_> {
         }
     }
 
-    // The weighted median of how far each neighbor outside the entry sits from the vertex inside it
-    // that it links to: the shift that makes the links shortest in total. A mean would put every
-    // parent halfway between its children, and a chain of them would zigzag. A link to a long edge
-    // weighs more, so long edges run straight.
-    fn pull(&self, level: Level, links: Option<&Vec<(usize, usize, f32)>>) -> Option<f32> {
-        let offsets = links?
+    // The weighted median of how far the port of each neighbor outside the entry sits from the port
+    // inside it that it links to: the shift that makes the links shortest in total. A mean would
+    // put every parent halfway between its children, and a chain of them would zigzag. A link to a
+    // long edge weighs more, so long edges run straight.
+    fn pull(&self, level: Level, touches: Option<&Vec<Touch>>) -> Option<f32> {
+        let offsets = touches?
             .iter()
-            .filter_map(|&(inside, outside, strength)| {
-                Some((
-                    self.position(level, outside)? - self.position(level, inside)?,
-                    strength,
-                ))
+            .filter_map(|touch| {
+                let port =
+                    |(vertex, port): (usize, f32)| Some(self.position(level, vertex)? + port);
+                Some((port(touch.outside)? - port(touch.inside)?, touch.weight))
             })
             .collect();
         weighted_median(offsets)
+    }
+
+    // The line nearest its chosen end that the whole inside of a run fits on, or nothing while
+    // the vertices beside it leave no such line.
+    fn line_up(
+        &self,
+        level: Level,
+        run: usize,
+        neighbors: &HashMap<Entry, Vec<Beside>>,
+    ) -> Option<f32> {
+        let run = &self.runs[run];
+        let target = match run.line {
+            Line::Upper => self.position(level, run.upper)? + run.exit,
+            Line::Lower => self.position(level, run.lower)? + run.entry,
+            Line::Between => {
+                (self.position(level, run.upper)?
+                    + run.exit
+                    + self.position(level, run.lower)?
+                    + run.entry)
+                    / 2.0
+            }
+        };
+        let (mut lowest, mut highest) = (f32::NEG_INFINITY, f32::INFINITY);
+        for &vertex in run.inside {
+            let entry = Entry::Vertex(vertex);
+            let (low, high) = self.room(level, entry, &neighbors[&entry]);
+            let half = self.sizes.vertex_breadth[vertex] / 2.0;
+            lowest = lowest.max(low + half);
+            highest = highest.min(high + half);
+        }
+        (lowest <= highest).then(|| target.clamp(lowest, highest))
     }
 
     fn room(&self, level: Level, entry: Entry, neighbors: &[Beside]) -> (f32, f32) {

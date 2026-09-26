@@ -1,14 +1,16 @@
 mod control;
 mod home;
 mod serve;
+mod update;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use control::{Control, Started, StopOutcome};
-pub use home::{AppInfo, Home};
+pub use home::{AppInfo, Home, LastCheck, UpdateRecord};
 pub use op_api::DaemonInfo;
 pub use op_client::{DEFAULT_PORT, InvalidPort, base_url, default_port};
 pub use serve::{SERVE_ARG, serve, serve_if_requested, serve_request};
+pub use update::{Checked, Updater, Updates, check, confirm_install};
 
 pub fn now_unix() -> u64 {
     SystemTime::now()

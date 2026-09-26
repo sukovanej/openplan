@@ -17,6 +17,7 @@ import {
   statusGroupLabel,
   tagsPath,
   taskPath,
+  TaskAuthor,
   TaskTags,
   TaskTimes,
 } from "@openplan/task-ui"
@@ -327,6 +328,7 @@ const TaskRow = memo(function TaskRow({
           {parent_title !== undefined && parent !== undefined && (
             <ParentLink project={task.project} id={parent} title={parent_title} />
           )}
+          <TaskAuthor author={task.author} withAgent={false} />
           <TaskTimes created={created} updated={task.updated} problems={broken} />
           {task.comment_count > 0 && (
             <MetaItem icon={MessageSquare} className="shrink-0 whitespace-nowrap tabular-nums">

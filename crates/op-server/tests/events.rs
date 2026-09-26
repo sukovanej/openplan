@@ -104,6 +104,42 @@ async fn events_stream_ends_on_shutdown_with_final_event() {
 }
 
 #[tokio::test]
+async fn a_stop_tells_the_client_it_is_a_stop() {
+    let (_dir, state) = local_state();
+    let mut events = EventStream::open(&state, None).await;
+
+    state.stop();
+
+    assert_eq!(
+        events.expect().await.data,
+        json!({ "kind": "daemon_stopping", "reason": "stop" })
+    );
+}
+
+#[tokio::test]
+async fn a_stop_for_an_update_tells_the_client_it_is_an_update() {
+    let (_dir, state) = local_state();
+    let mut events = EventStream::open(&state, None).await;
+
+    assert_eq!(state.update_if_idle(|| Ok::<(), ()>(())), Ok(true));
+
+    assert_eq!(
+        events.expect().await.data,
+        json!({ "kind": "daemon_stopping", "reason": "update" })
+    );
+}
+
+#[tokio::test]
+async fn a_signal_after_an_update_keeps_the_update_as_the_reason() {
+    let (_dir, state) = local_state();
+
+    assert_eq!(state.update_if_idle(|| Ok::<(), ()>(())), Ok(true));
+    state.stop();
+
+    assert_eq!(state.stop_reason(), Some(op_api::StopReason::Update));
+}
+
+#[tokio::test]
 async fn every_event_carries_a_number_and_a_reconnect_replays_what_it_missed() {
     let (_dir, state) = local_state();
     state.start_projects();

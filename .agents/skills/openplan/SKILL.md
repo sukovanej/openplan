@@ -15,6 +15,12 @@ A task's key is `OPP-42`. The CLI takes and prints that spelling only. In a task
 file, one task names another by its file: `parent: ./00042-ship-login-page.md`,
 and `[[./00042-ship-login-page.md]]` in prose.
 
+In a reply to the user, write each task key as a link to the task page in the
+web UI: `[OPP-42](<address>)`. Get the addresses from `openplan url <key>...`.
+Do not write an address yourself, because the port and the project name are
+different on each machine. In a task file, a commit message, or a pull request,
+write the key only. Other people cannot open a local address.
+
 Statuses: `backlog` `todo` `in_progress` `in_review` `done` `cancelled`.
 
 Every write is one revision in the task history. The revision records who wrote
@@ -32,6 +38,7 @@ openplan get  <key>                 # the whole task file
 openplan get  <key> --json          # {id,title,metadata,description,comments}
 openplan history <key>              # the revisions of the task, newest first
 openplan get  <key> --revision <id> # the task file as it stood at a revision
+openplan url  <key>...              # the web UI address of each task
 ```
 
 ## Create

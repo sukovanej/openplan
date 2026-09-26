@@ -14,5 +14,13 @@ pub enum ChangeEvent {
     SyncChanged { project: String },
     // The stream dropped events and cannot say which, so the client reads everything on screen again.
     Resync,
-    DaemonStopping,
+    DaemonStopping { reason: StopReason },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StopReason {
+    Stop,
+    // The daemon installed a new release and starts again on it, so a client reconnects at once.
+    Update,
 }
