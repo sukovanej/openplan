@@ -6,10 +6,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use op_api::{
     ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask, DocumentChange,
-    DocumentChangeKind, Flow, FlowQuery, HistoryEntry, KeyError, Metadata, ResolveConflict,
-    RevisionView, SearchHit, Status, SyncResult, SyncView, TagPatch, TagView, TaskAtRevision,
-    TaskDetail, TaskListItem, TaskPatch, TaskSnapshot, TaskSummary, TaskTree, TaskTreeView,
-    WriteTaskFile,
+    DocumentChangeKind, FieldChange, Flow, FlowQuery, HistoryEntry, KeyError, Metadata,
+    ResolveConflict, RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch,
+    TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot,
+    TaskSummary, TaskTree, TaskTreeView, WriteTaskFile,
 };
 use op_backend::{Change, ChangeKind, Committed, LogEntry, RevisionId};
 use op_task::{Abbreviation, Task, layout};
@@ -521,7 +521,7 @@ pub(crate) async fn project_history(
     let project = project_of(&state, &project)?;
     let entries = blocking(move || {
         let log = project.tracker().history(&history_query(page))?;
-        Ok(history(&project, log))
+        history(&project, log)
     })
     .await?;
     Ok(Json(entries))
@@ -553,7 +553,7 @@ pub(crate) async fn task_history(
         let log = project
             .tracker()
             .task_history(number, &history_query(page))?;
-        Ok(history(&project, log))
+        history(&project, log)
     })
     .await?;
     Ok(Json(entries))
@@ -613,16 +613,31 @@ fn history_query(page: PageQuery) -> HistoryQuery {
     }
 }
 
-fn history(project: &Project, log: Vec<LogEntry>) -> Vec<HistoryEntry> {
-    let index = project.index();
+// The index lock is not held while the revisions are read.
+fn history(project: &Project, log: Vec<LogEntry>) -> Result<Vec<HistoryEntry>, ApiError> {
+    let abbreviation = project.index().abbreviation();
+    let key = |number: u64| match abbreviation {
+        Some(abbreviation) => abbreviation.format_key(number),
+        None => number.to_string(),
+    };
     log.into_iter()
-        .map(|entry| HistoryEntry {
-            revision: revision_view(&entry.revision),
-            changes: entry
-                .changes
-                .into_iter()
-                .map(|change| document_change(change, |number| index.key(number)))
-                .collect(),
+        .map(|entry| {
+            let described = project.tracker().describe(&entry)?;
+            Ok(HistoryEntry {
+                revision: revision_view(&entry.revision),
+                summary: described.lines(abbreviation),
+                tasks: described
+                    .tasks
+                    .into_iter()
+                    .map(|task| task_change(task, &key))
+                    .collect(),
+                tags: described.tags.into_iter().map(tag_change).collect(),
+                changes: entry
+                    .changes
+                    .into_iter()
+                    .map(|change| document_change(change, &key))
+                    .collect(),
+            })
         })
         .collect()
 }
@@ -639,15 +654,69 @@ pub(crate) fn revision_view(revision: &op_backend::Revision) -> RevisionView {
     }
 }
 
-fn document_change(change: Change, key: impl Fn(u64) -> String) -> DocumentChange {
+fn document_change(change: Change, key: &dyn Fn(u64) -> String) -> DocumentChange {
     DocumentChange {
         task: layout::task_number(&change.path).map(key),
-        kind: match change.kind {
-            ChangeKind::Added => DocumentChangeKind::Added,
-            ChangeKind::Modified => DocumentChangeKind::Modified,
-            ChangeKind::Removed => DocumentChangeKind::Removed,
-        },
+        tag: layout::tag_name(&change.path).map(str::to_owned),
+        kind: change_kind(change.kind),
         path: change.path,
+    }
+}
+
+fn change_kind(kind: ChangeKind) -> DocumentChangeKind {
+    match kind {
+        ChangeKind::Added => DocumentChangeKind::Added,
+        ChangeKind::Modified => DocumentChangeKind::Modified,
+        ChangeKind::Removed => DocumentChangeKind::Removed,
+    }
+}
+
+fn task_change(task: op_tracker::TaskChange, key: &dyn Fn(u64) -> String) -> TaskChange {
+    TaskChange {
+        task: key(task.number),
+        kind: change_kind(task.kind),
+        title: task.title,
+        fields: task
+            .fields
+            .into_iter()
+            .map(|field| field_change(field, key))
+            .collect(),
+    }
+}
+
+fn field_change(field: op_tracker::FieldChange, key: &dyn Fn(u64) -> String) -> FieldChange {
+    use op_tracker::FieldChange as Field;
+    let keys = |numbers: Vec<u64>| numbers.into_iter().map(key).collect();
+    match field {
+        Field::Number { from, to } => FieldChange::Number {
+            from: key(from),
+            to: key(to),
+        },
+        Field::Status { from, to } => FieldChange::Status { from, to },
+        Field::Parent { from, to } => FieldChange::Parent {
+            from: from.map(key),
+            to: to.map(key),
+        },
+        Field::Order => FieldChange::Order,
+        Field::Dependencies { from, to } => FieldChange::Dependencies {
+            from: keys(from),
+            to: keys(to),
+        },
+        Field::Tags { from, to } => FieldChange::Tags { from, to },
+        Field::Title { from, to } => FieldChange::Title { from, to },
+        Field::Description => FieldChange::Description,
+        Field::Comments { added, removed } => FieldChange::Comments { added, removed },
+        Field::Conflicts { from, to } => FieldChange::Conflicts { from, to },
+        Field::Other(name) => FieldChange::Other { name },
+        Field::Frontmatter => FieldChange::Frontmatter,
+    }
+}
+
+fn tag_change(tag: op_tracker::TagChange) -> TagChange {
+    TagChange {
+        tag: tag.name,
+        kind: change_kind(tag.kind),
+        renamed_from: tag.renamed_from,
     }
 }
 

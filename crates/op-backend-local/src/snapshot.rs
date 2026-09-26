@@ -47,6 +47,13 @@ impl Blobs {
             })
             .map_err(storage)
     }
+
+    pub fn bytes(&self, stored: &Stored) -> Result<Vec<u8>, BackendError> {
+        match stored {
+            Stored::Held(held) => Ok(held.to_vec()),
+            Stored::InHistory { hash } => self.read(hash),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -104,11 +111,10 @@ impl Snapshot for LocalSnapshot {
     }
 
     fn read(&self, path: &str) -> Result<Option<Vec<u8>>, BackendError> {
-        match self.files.get(path) {
-            None => Ok(None),
-            Some(Stored::Held(held)) => Ok(Some(held.to_vec())),
-            Some(Stored::InHistory { hash }) => self.blobs.read(hash).map(Some),
-        }
+        self.files
+            .get(path)
+            .map(|stored| self.blobs.bytes(stored))
+            .transpose()
     }
 
     fn files(&self) -> Result<Vec<String>, BackendError> {

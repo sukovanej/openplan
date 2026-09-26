@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use op_backend::{
-    Actor, Backend, BackendExt as _, Committed, Edit, LogEntry, LogQuery, Op, RevisionId, Snapshot,
+    Actor, Backend, BackendError, BackendExt as _, ChangeKind, Committed, Edit, LogEntry, LogQuery,
+    Op, RevisionId, Snapshot,
 };
 use op_task::comment::NewComment;
 use op_task::config::Config;
@@ -9,12 +10,14 @@ use op_task::layout;
 use op_task::tag::Tag;
 use op_task::{Abbreviation, PartialMetadata, Task, parse_partial};
 
+mod describe;
 mod error;
 mod files;
 mod message;
 mod plan;
 mod policy;
 
+pub use describe::{Described, FieldChange, TagChange, TaskChange};
 pub use error::TrackerError;
 pub use plan::Plan;
 pub use policy::TaskMergePolicy;
@@ -62,10 +65,13 @@ impl Tracker {
     fn write<T>(
         &self,
         actor: &Actor,
-        mut write: impl FnMut(&Plan) -> Result<(Edit, T), TrackerError>,
+        mut write: impl FnMut(&Plan) -> Result<(Vec<Op>, T), TrackerError>,
     ) -> Result<(Option<Committed>, T), TrackerError> {
         self.backend.transact(actor, |snapshot: Arc<dyn Snapshot>| {
-            write(&Plan::read(snapshot)?)
+            let plan = Plan::read(snapshot)?;
+            let (ops, value) = write(&plan)?;
+            let message = message::of(&plan, &ops)?;
+            Ok((Edit::new(message, ops), value))
         })
     }
 
@@ -79,7 +85,7 @@ impl Tracker {
         let (committed, ()) = self.write(actor, |plan| {
             match plan.config() {
                 Ok(config) if config.abbreviation == abbreviation => {
-                    return Ok((Edit::nothing(), ()));
+                    return Ok((Vec::new(), ()));
                 }
                 Ok(config) => {
                     return Err(TrackerError::AlreadyInitialized(
@@ -98,10 +104,7 @@ impl Tracker {
                     ops.push(Op::put(layout::tag_path(&tag.name), tag_text(&tag)?));
                 }
             }
-            Ok((
-                Edit::new(format!("Start the {abbreviation} tasks"), ops),
-                (),
-            ))
+            Ok((ops, ()))
         })?;
         Ok(committed)
     }
@@ -122,12 +125,8 @@ impl Tracker {
                 })?,
             };
             let text = files::in_file_form(plan, task).to_file_string()?;
-            let key = plan.key(number);
             Ok((
-                Edit::new(
-                    message::created(&key, &title),
-                    vec![Op::put(layout::task_path(number, &title), text)],
-                ),
+                vec![Op::put(layout::task_path(number, &title), text)],
                 number,
             ))
         })?;
@@ -160,8 +159,7 @@ impl Tracker {
             let in_file_form = files::in_file_form(plan, &task);
             files::keeps_conflicts(Some(&old), &in_file_form)?;
             let text = in_file_form.to_file_string()?;
-            let message = message::updated(plan, &plan.key(number), &old, &task);
-            Ok((Edit::new(message, vec![Op::put(path, text)]), task))
+            Ok((vec![Op::put(path, text)], task))
         })?;
         Ok(Updated {
             value: task,
@@ -205,13 +203,7 @@ impl Tracker {
                 .to_owned();
             let mut task = plan.task(number)?;
             task.append_comment(comment);
-            Ok((
-                Edit::new(
-                    message::commented(&plan.key(number)),
-                    vec![Op::put(path, task.to_file_string()?)],
-                ),
-                (),
-            ))
+            Ok((vec![Op::put(path, task.to_file_string()?)], ()))
         })?;
         Ok(committed)
     }
@@ -226,14 +218,7 @@ impl Tracker {
                 .path_of(number)
                 .ok_or_else(|| plan.not_found(number))?
                 .to_owned();
-            let title = parse_partial(&plan.raw(number)?).title.unwrap_or_default();
-            Ok((
-                Edit::new(
-                    message::deleted(&plan.key(number), &title),
-                    vec![Op::remove(path)],
-                ),
-                (),
-            ))
+            Ok((vec![Op::remove(path)], ()))
         })?;
         Ok(committed)
     }
@@ -249,10 +234,7 @@ impl Tracker {
                 });
             }
             Ok((
-                Edit::new(
-                    message::tag_created(&tag.name),
-                    vec![Op::put(layout::tag_path(&tag.name), tag_text(&tag)?)],
-                ),
+                vec![Op::put(layout::tag_path(&tag.name), tag_text(&tag)?)],
                 (),
             ))
         })?;
@@ -276,13 +258,7 @@ impl Tracker {
                     tag.name
                 )));
             }
-            Ok((
-                Edit::new(
-                    message::tag_updated(&name),
-                    vec![Op::put(layout::tag_path(&name), tag_text(&tag)?)],
-                ),
-                tag,
-            ))
+            Ok((vec![Op::put(layout::tag_path(&name), tag_text(&tag)?)], tag))
         })?;
         Ok(tag)
     }
@@ -303,10 +279,7 @@ impl Tracker {
                 .map_err(|err| TrackerError::Invalid(err.to_string()))?;
             if renamed.name == name {
                 return Ok((
-                    Edit::new(
-                        message::tag_updated(&name),
-                        vec![Op::put(layout::tag_path(&name), tag_text(&renamed)?)],
-                    ),
+                    vec![Op::put(layout::tag_path(&name), tag_text(&renamed)?)],
                     (renamed, Vec::new()),
                 ));
             }
@@ -335,10 +308,7 @@ impl Tracker {
                 let path = plan.path_of(*number).expect("a tagged task has a path");
                 ops.push(Op::put(path, task.to_file_string()?));
             }
-            Ok((
-                Edit::new(message::tag_renamed(&name, &renamed.name), ops),
-                (renamed, referencing),
-            ))
+            Ok((ops, (renamed, referencing)))
         })?;
         Ok(Updated {
             value: renamed,
@@ -361,13 +331,7 @@ impl Tracker {
                     });
                 }
             }
-            Ok((
-                Edit::new(
-                    message::tag_deleted(&name),
-                    vec![Op::remove(layout::tag_path(&name))],
-                ),
-                (),
-            ))
+            Ok((vec![Op::remove(layout::tag_path(&name))], ()))
         })?;
         Ok(())
     }
@@ -390,6 +354,40 @@ impl Tracker {
             before: query.before.clone(),
             limit: query.limit,
         })?)
+    }
+
+    // Read from the documents themselves, not from the message: a revision that another tool wrote
+    // says what it changes in its own words, or in none. A merge is described against its first
+    // parent.
+    pub fn describe(&self, entry: &LogEntry) -> Result<Described, TrackerError> {
+        let revision = &entry.revision;
+        // A shallow clone holds its oldest revisions without their parents, and a missing parent
+        // reads as empty rather than fail the whole page.
+        let absent_when_unknown = |read| match read {
+            Err(BackendError::UnknownRevision(_)) => Ok(None),
+            read => read,
+        };
+        let before = |path: &str| match revision.parents.first() {
+            Some(parent) => absent_when_unknown(self.backend.read_at(parent, path)),
+            None => Ok(None),
+        };
+        let after = |path: &str| self.backend.read_at(&revision.id, path);
+        let adds_a_task = entry.changes.iter().any(|change| {
+            change.kind == ChangeKind::Added && layout::task_number(&change.path).is_some()
+        });
+        let moved_from = match revision.parents.as_slice() {
+            [first, _, ..] if adds_a_task => match self.backend.at(first) {
+                Err(BackendError::UnknownRevision(_)) => None,
+                snapshot => Some(snapshot?),
+            },
+            _ => None,
+        };
+        Ok(describe::describe(
+            &entry.changes,
+            &before,
+            &after,
+            moved_from.as_deref(),
+        )?)
     }
 
     // The task's file as it stood at `revision`; `None` where the task did not exist then.

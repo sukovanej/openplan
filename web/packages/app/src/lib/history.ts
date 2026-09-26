@@ -2,7 +2,7 @@ import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-q
 import type { Effect } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 
-import type { DocumentChange, DocumentChangeKind, HistoryEntry } from "@openplan/api-client"
+import type { DocumentChange, HistoryEntry, TagChange, TaskChange } from "@openplan/api-client"
 import { revisionPath, taskPath } from "@openplan/task-ui"
 
 import { type ApiError, getProjectHistory, getTaskHistory, getTaskRevision, type HistoryPage } from "./api"
@@ -47,30 +47,32 @@ export function useTaskRevision(project: string, id: string, revision: string) {
   })
 }
 
-export interface TaskChange {
-  readonly id: string
-  readonly kind: DocumentChangeKind
-}
+// The daemon reads the tasks and the tags into changes of their own, and this is the rest, such as
+// the config and the assets.
+export const otherChanges = (entry: HistoryEntry): ReadonlyArray<DocumentChange> =>
+  entry.changes.filter((change) => change.task === undefined && change.tag === undefined)
 
-export interface RevisionChanges {
-  readonly tasks: ReadonlyArray<TaskChange>
-  readonly others: ReadonlyArray<DocumentChange>
-}
+export const taskChangeOf = (entry: HistoryEntry, id: string): TaskChange | undefined =>
+  entry.tasks.find((change) => change.task === id)
 
-// A new title moves the task to a file with a new name, which the revision records as one file
-// removed and one added. Both name the same task, and for the task that is one modification.
-export function revisionChanges(entry: HistoryEntry): RevisionChanges {
-  const kinds = new Map<string, DocumentChangeKind>()
-  const others: Array<DocumentChange> = []
-  for (const change of entry.changes) {
-    if (change.task === undefined) {
-      others.push(change)
-      continue
-    }
-    const held = kinds.get(change.task)
-    kinds.set(change.task, held === undefined || held === change.kind ? change.kind : "modified")
-  }
-  return { tasks: [...kinds].map(([id, kind]) => ({ id, kind })), others }
+export type ActivityRow =
+  | { readonly kind: "task"; readonly change: TaskChange }
+  | { readonly kind: "tag"; readonly change: TagChange }
+  | { readonly kind: "document"; readonly change: DocumentChange }
+  | { readonly kind: "more"; readonly count: number }
+
+// One revision can write a hundred tasks at once, and the table is for reading what happened.
+export const SHOWN_CHANGES = 12
+
+export function activityRows(entry: HistoryEntry): ReadonlyArray<ActivityRow> {
+  const rows: ReadonlyArray<ActivityRow> = [
+    ...entry.tasks.map((change) => ({ kind: "task", change }) as const),
+    ...entry.tags.map((change) => ({ kind: "tag", change }) as const),
+    ...otherChanges(entry).map((change) => ({ kind: "document", change }) as const),
+  ]
+  return rows.length <= SHOWN_CHANGES
+    ? rows
+    : [...rows.slice(0, SHOWN_CHANGES), { kind: "more", count: rows.length - SHOWN_CHANGES }]
 }
 
 // A task that is gone has no page of its own, so its link opens the task as the revision left it — or,
@@ -82,8 +84,8 @@ export function changePath(
   exists: boolean,
 ): string | undefined {
   if (change.kind !== "removed") {
-    return exists ? taskPath(project, change.id) : revisionPath(project, change.id, entry.revision.id)
+    return exists ? taskPath(project, change.task) : revisionPath(project, change.task, entry.revision.id)
   }
   const before = entry.revision.parents[0]
-  return before === undefined ? undefined : revisionPath(project, change.id, before)
+  return before === undefined ? undefined : revisionPath(project, change.task, before)
 }

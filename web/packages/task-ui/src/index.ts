@@ -1,6 +1,8 @@
+export { AgentTag } from "./agent-tag"
 export { TaskBodyWithConflicts } from "./body-conflict"
 export { type BodySegment, bodySegments } from "./body-segments"
 export { ChangeMark } from "./change-mark"
+export { DocumentChangeView, TagChangeView, TaskChangeView } from "./change-view"
 export { CommentThread } from "./comment-thread"
 export { CONFLICT_TINT, ConflictBadge, conflictCount } from "./conflict-mark"
 export { type ConflictChoice, FieldConflict } from "./field-conflict"
@@ -22,10 +24,11 @@ export {
 } from "./metadata"
 export { ParentLink } from "./parent-link"
 export { ProblemBadge, ProblemBanner } from "./problem-mark"
-export { RevisionMeta, revisionSummary, shortRevision } from "./revision-meta"
+export { RevisionMeta, shortRevision } from "./revision-meta"
 export { StatusMenu } from "./status-menu"
 export {
   STATUSES,
+  StatusBadge,
   statusBorder,
   StatusChip,
   statusFaint,

@@ -68,8 +68,8 @@ fn sync_brings_the_tasks_of_one_clone_to_the_other() {
 }
 
 // Two clones that create a task while neither can reach the remote pick the same number. The sync
-// keeps both tasks: the one that reaches the remote second moves to the next free number and says
-// so in its comment log.
+// keeps both tasks: the one that reaches the remote second moves to the next free number, and the
+// history says so.
 #[test]
 fn sync_keeps_both_tasks_two_clones_created_under_one_number() {
     let remote = Remote::new();
@@ -97,15 +97,8 @@ fn sync_keeps_both_tasks_two_clones_created_under_one_number() {
     assert_eq!(names, ["From Ann", "From Ben"], "no task is lost: {seen:?}");
 
     let history = ok(remote.run(&ann, &["history"]));
-    let moved = seen
-        .iter()
-        .find(|(id, _)| id == "OPP-2")
-        .map(|(_, title)| title.as_str())
-        .expect("OPP-2");
     assert!(
-        history.contains(&format!(
-            "    OPP-1 \"{moved}\" is now OPP-2: another task took OPP-1 first."
-        )),
+        history.contains("  OPP-2: moved from OPP-1\n"),
         "the merge revision tells of the move: {history}"
     );
     assert!(

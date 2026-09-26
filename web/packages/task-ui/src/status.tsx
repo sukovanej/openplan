@@ -104,6 +104,23 @@ export function StatusIcon({ status, className }: { status: Status; className?: 
   )
 }
 
+// The tinted label of a group header, small enough to sit in a line of text.
+export function StatusBadge({ status, className }: { status: Status; className?: string }) {
+  const { icon: Icon, label, header } = styles[status]
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-px text-xs leading-4 font-medium",
+        header,
+        className,
+      )}
+    >
+      <Icon aria-hidden className="size-3.5 shrink-0" />
+      {label}
+    </span>
+  )
+}
+
 const UNREADABLE = "Status could not be read"
 
 // A status that could not be read gets its own mark, so a broken file never wears a status it does

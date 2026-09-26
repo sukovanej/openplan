@@ -220,7 +220,17 @@ fn history_prints_the_revisions_newest_first() {
 
     let printed = ok(project.run(&["history"]));
 
-    let lines: Vec<&str> = printed.lines().collect();
+    let (lines, more): (Vec<&str>, Vec<&str>) =
+        printed.lines().partition(|line| !line.starts_with(' '));
+    assert_eq!(
+        more,
+        [
+            "    tag bug: create",
+            "    tag draft: create",
+            "    tag feature: create"
+        ],
+        "a revision that changed more than one document names each one below its line"
+    );
     let signed = format!("Test via {AGENT}");
     let entries = [
         (signed.as_str(), "OPP-1: comment"),
@@ -300,9 +310,8 @@ fn history_pages_with_before() {
         assert_eq!(second, all[2..4].to_vec());
 
         let last = ok(project.run(&["history", "--limit", "2", "--before", &all[3]]));
-        assert_eq!(
-            last.lines().count(),
-            1,
+        assert!(
+            !last.contains("(older: --before"),
             "the last page holds no hint: {last}"
         );
         assert!(last.contains("Start the OPP tasks"), "{last}");
@@ -325,5 +334,13 @@ fn history_json_carries_the_revision_and_its_changes() {
     assert_eq!(
         entry["changes"],
         serde_json::json!([{"path": "tasks/00001-ship-it.md", "kind": "added", "task": "OPP-1"}])
+    );
+    assert_eq!(
+        entry["summary"],
+        serde_json::json!(["OPP-1: create \"Ship it\""])
+    );
+    assert_eq!(
+        entry["tasks"],
+        serde_json::json!([{"task": "OPP-1", "kind": "added", "title": "Ship it"}])
     );
 }

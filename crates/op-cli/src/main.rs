@@ -165,7 +165,7 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
-    /// Print the revisions of the project, or of one task, newest first
+    /// Print the revisions of the project, or of one task, newest first, and what each one changed
     History {
         /// A task key; omit for every revision of the project
         id: Option<String>,

@@ -1,23 +1,15 @@
 import { useQuery } from "@tanstack/react-query"
-import { memo } from "react"
 import { Link, useParams } from "react-router-dom"
 
-import type { Board, FieldError, HistoryEntry, TaskRef } from "@openplan/api-client"
-import {
-  boardPath,
-  ChangeMark,
-  RevisionMeta,
-  revisionSummary,
-  shortRevision,
-  statusField,
-  TaskRefChip,
-} from "@openplan/task-ui"
-import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, Row, SkeletonList } from "@openplan/ui"
+import type { Board, FieldError, TaskRef } from "@openplan/api-client"
+import { boardPath, statusField } from "@openplan/task-ui"
+import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, SkeletonList } from "@openplan/ui"
 
 import { OlderRevisions } from "../components/older-revisions"
+import { RevisionList } from "../components/revision-list"
 import { getBoard } from "../lib/api"
 import { errorText } from "../lib/format"
-import { changePath, revisionChanges, useProjectHistory } from "../lib/history"
+import { useProjectHistory } from "../lib/history"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
 import { boardKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
@@ -26,8 +18,6 @@ import { abortable } from "../lib/runtime"
 // This page holds no task rows, and the cursor is the board's — left as it was, `j` then Enter here
 // would open a task the reader can no longer see.
 const NO_ROWS: ReadonlyArray<string> = []
-// One revision can write a hundred tasks at once, and the list is for reading what happened.
-const SHOWN_CHANGES = 12
 const UNREAD: FieldError = { kind: "missing" }
 
 // The revisions name tasks by key alone, and the board holds each one's title and status.
@@ -59,7 +49,7 @@ export function ActivityRoute() {
   return <Activity project={project} />
 }
 
-function Activity({ project }: { project: string }) {
+export function Activity({ project }: { project: string }) {
   const history = useProjectHistory(project)
   const refs = useQuery({
     queryKey: boardKey(project),
@@ -83,13 +73,7 @@ function Activity({ project }: { project: string }) {
           <p className="text-muted-foreground text-sm">No revisions yet.</p>
         ) : (
           <>
-            <ol aria-label="Revisions">
-              {history.data.map((entry, index) => (
-                <li key={entry.revision.id}>
-                  <Revision project={project} entry={entry} refs={refs} last={index === history.data.length - 1} />
-                </li>
-              ))}
-            </ol>
+            <RevisionList project={project} entries={history.data} refs={refs} />
             <OlderRevisions history={history} className="mt-3" />
           </>
         )}
@@ -97,55 +81,3 @@ function Activity({ project }: { project: string }) {
     </Panel>
   )
 }
-
-// A revision never changes, so a row renders again only when the titles on the board do.
-const Revision = memo(function Revision({
-  project,
-  entry,
-  refs,
-  last,
-}: {
-  project: string
-  entry: HistoryEntry
-  // `undefined` until the board is read, and until then every task counts as one that exists.
-  refs: ReadonlyMap<string, TaskRef> | undefined
-  last: boolean
-}) {
-  const { tasks, others } = revisionChanges(entry)
-  const shownTasks = tasks.slice(0, SHOWN_CHANGES)
-  const shownOthers = others.slice(0, Math.max(0, SHOWN_CHANGES - shownTasks.length))
-  const hidden = tasks.length + others.length - shownTasks.length - shownOthers.length
-  return (
-    <Row variant="divided" last={last} className="flex flex-col gap-1.5 px-2 py-3">
-      <span className="text-foreground/90 truncate text-sm">
-        {revisionSummary(entry.revision.message) || shortRevision(entry.revision.id)}
-      </span>
-      <RevisionMeta revision={entry.revision} />
-      {shownTasks.length + shownOthers.length > 0 && (
-        <ul aria-label="Changes" className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          {shownTasks.map((change) => {
-            const task = refs?.get(change.id)
-            const to = changePath(project, entry, change, refs === undefined || task !== undefined)
-            return (
-              <li key={change.id} className="flex max-w-full min-w-0 items-center gap-1">
-                <ChangeMark kind={change.kind} />
-                {to === undefined ? (
-                  <span className="text-muted-foreground text-xs tabular-nums">{change.id}</span>
-                ) : (
-                  <TaskRefChip to={to} id={change.id} task={change.kind === "removed" ? undefined : task} />
-                )}
-              </li>
-            )
-          })}
-          {shownOthers.map((change) => (
-            <li key={change.path} className="flex max-w-full min-w-0 items-center gap-1.5">
-              <ChangeMark kind={change.kind} />
-              <span className="text-muted-foreground truncate font-mono text-xs">{change.path}</span>
-            </li>
-          ))}
-          {hidden > 0 && <li className="text-muted-foreground text-xs">and {hidden} more</li>}
-        </ul>
-      )}
-    </Row>
-  )
-})

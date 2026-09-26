@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { RevisionView } from "@openplan/api-client"
 
-import { RevisionMeta, revisionSummary, shortRevision } from "../src/revision-meta"
+import { RevisionMeta, shortRevision } from "../src/revision-meta"
 import { render } from "./render"
 
 const revision = (over: Partial<RevisionView> = {}): RevisionView => ({
@@ -12,13 +12,6 @@ const revision = (over: Partial<RevisionView> = {}): RevisionView => ({
   at: "2026-01-02T00:00:00Z",
   message: "Set OPP-1 to done",
   ...over,
-})
-
-describe("revisionSummary", () => {
-  it("takes the first line that holds text", () => {
-    expect(revisionSummary("\n  Set OPP-1 to done  \n\nThe details.")).toBe("Set OPP-1 to done")
-    expect(revisionSummary("")).toBe("")
-  })
 })
 
 describe("shortRevision", () => {
