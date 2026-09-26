@@ -22,21 +22,20 @@ The activity view (`web/packages/app/src/routes/activity.tsx`) lists revisions w
 
 A diff is a function of a revision and a path. A revision never changes, so each diff is computed once and then comes from a cache.
 
-```d2
-shape: sequence_diagram
-line: change line
-query: React Query
-daemon: daemon
-backend: Backend
-
-line -> line: hover delay ends
-line -> query: diff(project, revision, path)
-query -> daemon: GET only on a cache miss
-daemon -> backend: read_at(parent, path)
-daemon -> backend: read_at(revision, path)
-daemon -> daemon: diff in process, cap the size
-daemon -> query: "{ diff, truncated }"
-query -> line: DiffView in the popover
+```mermaid
+sequenceDiagram
+  participant line as change line
+  participant query as React Query
+  participant daemon
+  participant backend as Backend
+  line ->> line: hover delay ends
+  line ->> query: diff(project, revision, path)
+  query ->> daemon: GET only on a cache miss
+  daemon ->> backend: read_at(parent, path)
+  daemon ->> backend: read_at(revision, path)
+  daemon ->> daemon: diff in process, cap the size
+  daemon -->> query: { diff, truncated }
+  query -->> line: DiffView in the popover
 ```
 
 ### Daemon
