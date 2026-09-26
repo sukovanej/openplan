@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import type { Problem } from "@openplan/api-client"
 
-import { ProblemBadge, ProblemBanner } from "../src/problem-mark"
+import { ProblemBadge, ProblemBanner, withoutTextProblems } from "../src/problem-mark"
 import { render } from "./render"
 
 const MISSING_PARENT: Problem = { code: "reference", message: "the parent OPP-9 does not exist" }
@@ -55,5 +55,16 @@ describe("ProblemBanner", () => {
     const { className } = render(<ProblemBanner problems={[MISSING_PARENT]} />).querySelector("[role=note]")!
     expect(className).toContain("border-danger/40")
     expect(className).not.toContain("warning")
+  })
+})
+
+describe("withoutTextProblems", () => {
+  it("drops the problems the daemon finds in the text and keeps the rest", () => {
+    const text: ReadonlyArray<Problem> = [
+      { code: "title", message: "a task needs exactly one `# ` title" },
+      { code: "comment", message: "a comment has no author" },
+      { code: "diagram", message: "the Mermaid diagram fails at line 9, column 8: expected a node id" },
+    ]
+    expect(withoutTextProblems([...text, MISSING_PARENT, WAITS_FOR_ITSELF])).toEqual([MISSING_PARENT, WAITS_FOR_ITSELF])
   })
 })

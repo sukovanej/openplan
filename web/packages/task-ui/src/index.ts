@@ -26,7 +26,7 @@ export {
   tagsOf,
 } from "./metadata"
 export { ParentLink } from "./parent-link"
-export { ProblemBadge, ProblemBanner } from "./problem-mark"
+export { ProblemBadge, ProblemBanner, withoutTextProblems } from "./problem-mark"
 export { RevisionMeta, shortRevision } from "./revision-meta"
 export { StatusMenu } from "./status-menu"
 export {
