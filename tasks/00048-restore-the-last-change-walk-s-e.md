@@ -72,3 +72,9 @@ git could not date, and this is the same kind of "we could not find out".
 - `openplan get --json` on a repo with thousands of commits is not dominated by the
   walk.
 - The budget is either gone, or reachable only in cases the field explains.
+
+## Comments
+
+### 2026-09-26T04:56:10Z by Milan Suk via claude-code
+
+> Cancelled: the move of the tasks to refs/openplan/tasks (#161) removed the code that this task describes.
