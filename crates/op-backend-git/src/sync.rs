@@ -1,11 +1,17 @@
+use std::os::unix::process::CommandExt as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::Duration;
 
 use gix::ObjectId;
+use nix::errno::Errno;
+use nix::sys::signal::{Signal, killpg};
+use nix::unistd::Pid;
 use op_backend::{BackendError, BackendEvent, Origin, SyncReport, SyncStatus, Tips};
 
 use crate::objects::{self, GitSnapshot};
-use crate::{Inner, TASKS_NAME, TASKS_REF, lock, tracking_reference};
+use crate::{Inner, NETWORK_TIMEOUT, TASKS_NAME, TASKS_REF, lock, tracking_reference};
 
 const ATTEMPTS: usize = 5;
 
@@ -215,7 +221,7 @@ fn divergence(inner: &Inner, remote: &str) -> Result<(usize, usize), BackendErro
 }
 
 fn fetch(inner: &Inner, remote: &str, tracking: &str) -> Result<Option<ObjectId>, BackendError> {
-    match fetch_into(&inner.common_dir, remote, tracking)? {
+    match fetch_into(&inner.common_dir, remote, tracking, inner.network_timeout)? {
         true => objects::tip(&inner.local(), tracking),
         false => Ok(None),
     }
@@ -228,14 +234,25 @@ pub fn fetch_tasks(path: &Path, remote: &str) -> Result<bool, BackendError> {
     if repo.find_remote(remote).is_err() {
         return Ok(false);
     }
-    fetch_into(repo.common_dir(), remote, &tracking_reference(remote))
+    fetch_into(
+        repo.common_dir(),
+        remote,
+        &tracking_reference(remote),
+        NETWORK_TIMEOUT,
+    )
 }
 
-fn fetch_into(common_dir: &Path, remote: &str, tracking: &str) -> Result<bool, BackendError> {
+fn fetch_into(
+    common_dir: &Path,
+    remote: &str,
+    tracking: &str,
+    timeout: Duration,
+) -> Result<bool, BackendError> {
     let refspec = format!("+{TASKS_REF}:{tracking}");
     match git(
         common_dir,
         &["fetch", "--quiet", "--no-tags", remote, &refspec],
+        timeout,
     ) {
         Ok(()) => Ok(true),
         Err(message) if message.contains("couldn't find remote ref") => Ok(false),
@@ -250,6 +267,7 @@ fn push(inner: &Inner, remote: &str, commit: ObjectId) -> Result<Pushed, Backend
     match git(
         &inner.common_dir,
         &["push", "--quiet", "--no-verify", remote, &refspec],
+        inner.network_timeout,
     ) {
         Ok(()) => Ok(Pushed::Accepted),
         Err(message) if is_rejection(&message) => Ok(Pushed::Rejected),
@@ -269,9 +287,10 @@ fn is_rejection(message: &str) -> bool {
 }
 
 // The git CLI rather than gix for the network, so the user's SSH setup and credential helpers work
-// as they do for every other push.
-fn git(common_dir: &Path, args: &[&str]) -> Result<(), String> {
-    let output = Command::new("git")
+// as they do for every other push. Git runs ssh as a child of its own, and a hung ssh keeps the
+// stderr pipe open, so the deadline kills the whole process group.
+fn git(common_dir: &Path, args: &[&str], timeout: Duration) -> Result<(), String> {
+    let child = Command::new("git")
         .arg("--git-dir")
         .arg(common_dir)
         .args(args)
@@ -280,8 +299,31 @@ fn git(common_dir: &Path, args: &[&str]) -> Result<(), String> {
         .env_remove("GIT_WORK_TREE")
         .env_remove("GIT_INDEX_FILE")
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .process_group(0)
+        .spawn()
         .map_err(|err| format!("cannot run git: {err}"))?;
+    let group = Pid::from_raw(i32::try_from(child.id()).expect("a pid fits in pid_t"));
+    let (sender, finished) = mpsc::channel();
+    std::thread::spawn(move || sender.send(child.wait_with_output()));
+    let output = match finished.recv_timeout(timeout) {
+        Ok(output) => output.map_err(|err| format!("cannot run git: {err}"))?,
+        Err(RecvTimeoutError::Timeout) => {
+            let command = args[0];
+            return match killpg(group, Signal::SIGKILL) {
+                Ok(()) | Err(Errno::ESRCH) => Err(format!(
+                    "git {command} got no answer from the remote in {timeout:?}"
+                )),
+                Err(err) => Err(format!(
+                    "git {command} got no answer from the remote in {timeout:?}, and cannot be stopped: {err}"
+                )),
+            };
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            return Err("the thread that waits for git stopped".to_owned());
+        }
+    };
     match output.status.success() {
         true => Ok(()),
         false => Err(String::from_utf8_lossy(&output.stderr).trim().to_owned()),

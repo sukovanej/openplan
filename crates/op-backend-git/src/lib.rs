@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use gix::ObjectId;
 use op_backend::{
@@ -25,6 +26,7 @@ use objects::{GitSnapshot, object_id, storage};
 pub const TASKS_REF: &str = "refs/openplan/tasks";
 pub const TASKS_NAME: &str = "openplan/tasks";
 pub const DEFAULT_REMOTE: &str = "origin";
+pub const NETWORK_TIMEOUT: Duration = Duration::from_secs(60);
 
 const WRITE_ATTEMPTS: usize = 64;
 
@@ -34,6 +36,8 @@ pub struct Options {
     pub policy: Arc<dyn MergePolicy>,
     // Signs merge commits and reference logs, which no person wrote.
     pub machine: Actor,
+    // A half-open connection after a sleep or a network change makes git wait with no end.
+    pub network_timeout: Duration,
 }
 
 impl Options {
@@ -42,6 +46,7 @@ impl Options {
             remote: Some(DEFAULT_REMOTE.to_owned()),
             policy,
             machine: Actor::new("openplan"),
+            network_timeout: NETWORK_TIMEOUT,
         }
     }
 }
@@ -56,6 +61,7 @@ pub(crate) struct Inner {
     remote: Option<String>,
     policy: Arc<dyn MergePolicy>,
     machine: Actor,
+    network_timeout: Duration,
     writing: Mutex<()>,
     syncing: Mutex<()>,
     announced: Mutex<Option<ObjectId>>,
@@ -89,6 +95,7 @@ impl GitBackend {
                 remote,
                 policy: options.policy,
                 machine: options.machine,
+                network_timeout: options.network_timeout,
                 writing: Mutex::new(()),
                 syncing: Mutex::new(()),
                 announced: Mutex::new(announced),

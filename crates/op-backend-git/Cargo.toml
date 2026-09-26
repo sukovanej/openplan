@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 op-backend.workspace = true
 gix.workspace = true
+nix.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
