@@ -7,7 +7,7 @@ const proseColors =
 
 // The serif reads thin against the dark ground at 400, so the body spends one step of the variable
 // face there.
-const proseBody = "font-serif text-[17px] leading-7 max-w-none dark:[font-weight:450]"
+const proseBody = "font-serif text-[15px] leading-6 max-w-none dark:[font-weight:450]"
 
 // Headings stay on the UI face. The rule above an h2 is what gives a task with a dozen `##` sections
 // visible breaks, which margin alone did not.
