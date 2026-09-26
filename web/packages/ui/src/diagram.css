@@ -2,15 +2,15 @@
    lists every class. The shades mix from the theme tokens, so `.dark` recolors a diagram with no new
    request. They mix in oklab: the gray tokens carry a hue of 0 in oklch, and a mix there turns red. */
 .op-diagram {
-  --diagram-canvas: var(--background);
+  --diagram-canvas: var(--surface, var(--background));
   --diagram-ink: var(--foreground);
   --diagram-faint-ink: var(--muted-foreground);
-  --diagram-line: color-mix(in oklab, var(--foreground) 55%, var(--background));
-  --diagram-faint-line: color-mix(in oklab, var(--foreground) 30%, var(--background));
-  --diagram-surface: color-mix(in oklab, var(--foreground) 5%, var(--background));
-  --diagram-cluster: color-mix(in oklab, var(--foreground) 2.5%, var(--background));
-  --diagram-note: color-mix(in oklab, var(--warning) 14%, var(--background));
-  --diagram-note-line: color-mix(in oklab, var(--warning) 70%, var(--background));
+  --diagram-line: color-mix(in oklab, var(--foreground) 55%, var(--diagram-canvas));
+  --diagram-faint-line: color-mix(in oklab, var(--foreground) 30%, var(--diagram-canvas));
+  --diagram-surface: color-mix(in oklab, var(--foreground) 5%, var(--diagram-canvas));
+  --diagram-cluster: color-mix(in oklab, var(--foreground) 2.5%, var(--diagram-canvas));
+  --diagram-note: color-mix(in oklab, var(--warning) 14%, var(--diagram-canvas));
+  --diagram-note-line: color-mix(in oklab, var(--warning) 70%, var(--diagram-canvas));
   font-family: "Inter Diagram", sans-serif;
   overflow: visible;
 }
