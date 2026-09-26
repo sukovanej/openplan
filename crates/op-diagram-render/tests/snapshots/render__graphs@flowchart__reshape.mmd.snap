@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-render/tests/render.rs
+expression: svg(&scene)
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/reshape.mmd
+---
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 140.91 172" width="140.91" height="172" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><g class="edge stroke-solid"><path class="edge-line" d="M70.45 68L70.45 116"/><g class="head head-arrow"><path d="M70.45 124L65.95 115L74.95 115Z"/></g></g><g class="node shape-diamond"><polygon class="outline" points="70.45,8 132.91,38 70.45,68 8,38"/><text class="text-label" x="70.45" y="43.09" font-size="14" font-weight="400" text-anchor="middle">Choice</text></g><g class="node shape-rectangle"><rect class="outline" x="50.16" y="124" width="40.58" height="40" rx="3"/><text class="text-label" x="70.45" y="149.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g></svg>

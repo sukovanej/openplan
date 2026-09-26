@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-render/tests/render.rs
+expression: svg(&scene)
+input_file: crates/op-diagram-mermaid/tests/diagrams/er/compact.mmd
+---
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 120.25 165" width="120.25" height="165" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><g class="edge stroke-solid"><path class="edge-line" d="M60.13 44L60.13 121"/><g class="head head-cardinality"><path d="M65.13 50L55.13 50M65.13 54L55.13 54"/></g><g class="head head-cardinality"><path d="M60.13 109L55.13 121M60.13 109L60.13 121M60.13 109L65.13 121"/><circle class="head-ring" cx="60.13" cy="103" r="4"/></g></g><g class="node shape-table"><rect class="outline" x="8" y="8" width="104.25" height="36" rx="3"/><text class="text-header" x="60.13" y="31.09" font-size="14" font-weight="600" text-anchor="middle">CUSTOMER</text></g><g class="node shape-table"><rect class="outline" x="24.31" y="121" width="71.63" height="36" rx="3"/><text class="text-header" x="60.13" y="144.09" font-size="14" font-weight="600" text-anchor="middle">ORDER</text></g><g class="edge-label"><rect class="edge-label-box" x="37.53" y="72" width="45.19" height="21" rx="3"/><text class="text-edge-label" x="60.13" y="86.87" font-size="12" font-weight="400" text-anchor="middle">places</text></g></svg>

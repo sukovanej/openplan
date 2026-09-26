@@ -4005,6 +4005,9 @@ name = "op-diagram-render"
 version = "0.0.3"
 dependencies = [
  "insta",
+ "op-diagram",
+ "op-diagram-mermaid",
+ "serde_json",
 ]
 
 [[package]]
