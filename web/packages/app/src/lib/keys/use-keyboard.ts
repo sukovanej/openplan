@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { boardPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
+import { activityProjectOf, boardPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
@@ -16,7 +16,14 @@ import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types
 
 function routeScope(pathname: string): RouteScope {
   if (pathname === FLOW_ROUTE) return "flow"
+  if (activityProjectOf(pathname) !== undefined) return "activity"
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
+}
+
+// A task and the activity belong to a board, which is the page they would have been opened from.
+function pageAbove(pathname: string): string {
+  const project = taskRouteOf(pathname)?.project ?? activityProjectOf(pathname)
+  return project === undefined ? "/" : boardPath(project)
 }
 
 export interface Keyboard {
@@ -52,7 +59,7 @@ export function useKeyboard(): Keyboard {
     const canGoBack = () => historyIndex() > entryIndex.current
     const context = (): RunContext => ({
       navigate: (to) => live().navigate(to),
-      back: () => (canGoBack() ? live().navigate(-1) : live().navigate("/")),
+      back: () => (canGoBack() ? live().navigate(-1) : live().navigate(pageAbove(live().pathname))),
       overlay: (name) => ({
         open: () => setActiveOverlay(name),
         close: () => setActiveOverlay((open) => (open === name ? null : open)),
@@ -106,12 +113,7 @@ export function useKeyboard(): Keyboard {
           const outcome = escapeOutcome(detailCursor.getSnapshot().index >= 0, canGoBack())
           if (outcome === "clear-selection") detailCursor.clear()
           else if (outcome === "back") live().navigate(-1)
-          else {
-            // Nothing to go back to: leave for the board of the project the task belongs to, which
-            // is the page this detail would have been opened from.
-            const task = taskRouteOf(live().pathname)
-            live().navigate(task === undefined ? "/" : boardPath(task.project))
-          }
+          else live().navigate(pageAbove(live().pathname))
         },
       },
     })

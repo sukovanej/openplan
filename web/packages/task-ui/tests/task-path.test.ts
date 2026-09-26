@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { activityPath, boardPath, revisionPath, taskPath, taskRouteOf } from "../src/task-path"
+import { activityPath, activityProjectOf, boardPath, revisionPath, taskPath, taskRouteOf } from "../src/task-path"
 
 describe("boardPath", () => {
   it("spells the route for a project's board", () => {
@@ -46,5 +46,20 @@ describe("taskRouteOf", () => {
     expect(taskRouteOf("/openplan")).toBeUndefined()
     expect(taskRouteOf("/openplan/task/")).toBeUndefined()
     expect(taskRouteOf("/task/OPP-1")).toBeUndefined()
+  })
+})
+
+describe("activityProjectOf", () => {
+  it("reads the project back out of the activity route", () => {
+    expect(activityProjectOf(activityPath("open plan"))).toBe("open plan")
+    expect(activityProjectOf("/web/activity/")).toBe("web")
+  })
+
+  it("has no project off the activity route", () => {
+    expect(activityProjectOf("/")).toBeUndefined()
+    expect(activityProjectOf("/web")).toBeUndefined()
+    expect(activityProjectOf("/web/tags")).toBeUndefined()
+    expect(activityProjectOf("/activity")).toBeUndefined()
+    expect(activityProjectOf("/web/activity/more")).toBeUndefined()
   })
 })
