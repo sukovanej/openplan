@@ -1,4 +1,4 @@
-import { Bot, FileText, Tag as TagIcon } from "lucide-react"
+import { Bot, FileText, FolderGit2, Tag as TagIcon } from "lucide-react"
 import { memo, type MouseEvent, useMemo } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 
@@ -15,11 +15,19 @@ import {
   TaskIdentity,
   UnresolvedMark,
 } from "@openplan/task-ui"
-import { cn, HoverCard, TimeAgo, Tooltip } from "@openplan/ui"
+import { cn, HoverCard, MetaItem, TimeAgo, Tooltip } from "@openplan/ui"
 
-import { type ActivityRow, activityRows, changePath, diffTarget, docChangePath, taskChangeOf } from "../lib/history"
+import {
+  type ActivityRow,
+  activityRows,
+  changePath,
+  diffTarget,
+  docChangePath,
+  type ProjectEntry,
+  taskChangeOf,
+} from "../lib/history"
 import { type RevisionNavigation, revisionNavigation } from "../lib/revision-navigation"
-import { useTags } from "../lib/tags"
+import { useTagRegistries, useTags } from "../lib/tags"
 import { ChangeDiff } from "./change-diff"
 
 // With `task` or `doc`, the list is the history of that one task or doc: a line needs not name it,
@@ -62,6 +70,45 @@ export function RevisionList({
           doc={doc}
           current={entry.revision.id === selected}
           navigation={navigation}
+          showProject={false}
+        />
+      ))}
+    </ol>
+  )
+}
+
+const NO_REFS: ReadonlyMap<string, TaskRef> = new Map()
+const NO_TITLES: ReadonlyMap<string, string> = new Map()
+
+// The revisions of every project, each read against the board, the docs, and the tags of its own.
+export function MergedRevisionList({
+  entries,
+  refs,
+  docTitles,
+}: {
+  entries: ReadonlyArray<ProjectEntry>
+  refs?: ReadonlyMap<string, ReadonlyMap<string, TaskRef>>
+  docTitles?: ReadonlyMap<string, ReadonlyMap<string, string>>
+}) {
+  const { state } = useLocation()
+  const navigation = useMemo(() => revisionNavigation(false, state), [state])
+  const projects = useMemo(() => [...new Set(entries.map((entry) => entry.project))], [entries])
+  const tags = useTagRegistries(projects)
+  return (
+    <ol aria-label="Revisions" className="text-sm">
+      {entries.map(({ project, entry }) => (
+        <Revision
+          key={`${project} ${entry.revision.id}`}
+          project={project}
+          entry={entry}
+          refs={refs === undefined ? undefined : (refs.get(project) ?? NO_REFS)}
+          docTitles={docTitles === undefined ? undefined : (docTitles.get(project) ?? NO_TITLES)}
+          tags={tags[project]}
+          task={undefined}
+          doc={undefined}
+          current={false}
+          navigation={navigation}
+          showProject
         />
       ))}
     </ol>
@@ -98,6 +145,7 @@ const Revision = memo(function Revision({
   doc,
   current,
   navigation,
+  showProject,
 }: {
   project: string
   entry: HistoryEntry
@@ -108,6 +156,7 @@ const Revision = memo(function Revision({
   doc: string | undefined
   current: boolean
   navigation: RevisionNavigation
+  showProject: boolean
 }) {
   const navigate = useNavigate()
   const one = task !== undefined || doc !== undefined
@@ -158,6 +207,11 @@ const Revision = memo(function Revision({
           )}
         </span>
         <Who revision={entry.revision} compact={one} />
+        {showProject && (
+          <MetaItem icon={FolderGit2} className="text-muted-foreground text-xs">
+            {project}
+          </MetaItem>
+        )}
       </span>
       <ul aria-label="Changes" className="flex min-w-0 flex-1 basis-40 flex-col gap-1">
         {lines.map((line) => {

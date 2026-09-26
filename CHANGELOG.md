@@ -17,6 +17,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no Docs link.
 - `g t` goes to the tasks of the selected project and replaces `g l`. `g d`
   goes to the docs of the selected project.
+- The activity and the tags have a page for all projects, at `/activity` and
+  `/tags`. The activity of all projects shows the revisions of every project,
+  newest first. The tags of all projects show each project in a section of its
+  own. The task list of all projects links to both pages.
+- A new project cannot take the name `activity` or `tags`, as it cannot take
+  `docs` or `flow`.
 
 ## [0.0.4](https://github.com/sukovanej/openplan/compare/v0.0.3...v0.0.4) - 2026-09-26
 

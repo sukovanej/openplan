@@ -7,6 +7,7 @@ import {
   changePath,
   diffTarget,
   docChangePath,
+  mergeHistories,
   olderThan,
   otherChanges,
   SHOWN_CHANGES,
@@ -209,5 +210,77 @@ describe("the document a change line diffs", () => {
       path: "config.toml",
     })
     expect(diffTarget(other, { kind: "more", count: 3 })).toBeUndefined()
+  })
+})
+
+describe("mergeHistories", () => {
+  const at = (id: string, time: string): HistoryEntry => ({
+    ...entry(id),
+    revision: { ...entry(id).revision, at: time },
+  })
+  const ids = (page: ReturnType<typeof mergeHistories>) =>
+    page.entries.map(({ project, entry }) => `${project}:${entry.revision.id}`)
+
+  it("takes the newest revisions of every project, newest first", () => {
+    const page = mergeHistories(
+      [
+        {
+          stream: { project: "a", before: undefined },
+          entries: [at("a3", "2026-01-05T00:00:00Z"), at("a2", "2026-01-02T00:00:00Z")],
+        },
+        {
+          stream: { project: "b", before: undefined },
+          entries: [at("b2", "2026-01-04T00:00:00Z"), at("b1", "2026-01-03T00:00:00Z")],
+        },
+      ],
+      3,
+    )
+    expect(ids(page)).toEqual(["a:a3", "b:b2", "b:b1"])
+  })
+
+  it("goes on from the last revision it took of each project, and from the same place where it took none", () => {
+    const page = mergeHistories(
+      [
+        {
+          stream: { project: "a", before: "a9" },
+          entries: [at("a3", "2026-01-05T00:00:00Z"), at("a2", "2026-01-02T00:00:00Z")],
+        },
+        {
+          stream: { project: "b", before: "b9" },
+          entries: [at("b2", "2026-01-01T00:00:00Z"), at("b1", "2026-01-01T00:00:00Z")],
+        },
+      ],
+      2,
+    )
+    expect(ids(page)).toEqual(["a:a3", "a:a2"])
+    expect(page.next).toEqual([
+      { project: "a", before: "a2" },
+      { project: "b", before: "b9" },
+    ])
+  })
+
+  it("stops a project once a short read is all taken", () => {
+    const page = mergeHistories(
+      [
+        { stream: { project: "a", before: undefined }, entries: [at("a1", "2026-01-05T00:00:00Z")] },
+        { stream: { project: "b", before: undefined }, entries: [] },
+      ],
+      2,
+    )
+    expect(ids(page)).toEqual(["a:a1"])
+    expect(page.next).toEqual([])
+  })
+
+  it("keeps the order of each project, whatever its times say", () => {
+    const page = mergeHistories(
+      [
+        {
+          stream: { project: "a", before: undefined },
+          entries: [at("a2", "2026-01-01T00:00:00Z"), at("a1", "2026-01-05T00:00:00Z")],
+        },
+      ],
+      2,
+    )
+    expect(ids(page)).toEqual(["a:a2", "a:a1"])
   })
 })

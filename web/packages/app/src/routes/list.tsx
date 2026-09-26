@@ -68,41 +68,32 @@ function ProjectBoard({ project }: { project: string }) {
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }
+  return <BoardState board={board} project={project} />
+}
+
+function BoardLinks({ project }: { project: string | undefined }) {
   return (
-    <BoardState
-      board={board}
-      project={project}
-      action={
-        <div className="flex items-center gap-4">
-          <Link
-            to={activityPath(project)}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
-          >
-            <Activity className="size-3.5" />
-            Activity
-          </Link>
-          <Link
-            to={tagsPath(project)}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
-          >
-            <Tags className="size-3.5" />
-            Tags
-          </Link>
-        </div>
-      }
-    />
+    <div className="flex items-center gap-4">
+      <Link
+        to={activityPath(project)}
+        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
+      >
+        <Activity className="size-3.5" />
+        Activity
+      </Link>
+      <Link
+        to={tagsPath(project)}
+        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
+      >
+        <Tags className="size-3.5" />
+        Tags
+      </Link>
+    </div>
   )
 }
 
-function BoardState({
-  board,
-  project,
-  action,
-}: {
-  board: UseQueryResult<Board>
-  project: string | undefined
-  action?: ReactNode
-}) {
+function BoardState({ board, project }: { board: UseQueryResult<Board>; project: string | undefined }) {
+  const action = <BoardLinks project={project} />
   const header = <ListHeader view="tasks" project={project} action={action} />
   if (board.isPending) return <ListSkeleton view="tasks" project={project} action={action} />
   if (board.isError) return <EmptyState title="Could not load tasks" detail={errorText(board.error)} />

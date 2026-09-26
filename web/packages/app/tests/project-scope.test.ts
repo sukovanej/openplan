@@ -24,6 +24,8 @@ describe("selectedProjects", () => {
     expect(selectedProjects("/", "")).toEqual([])
     expect(selectedProjects("/docs", "")).toEqual([])
     expect(selectedProjects("/flow", "")).toEqual([])
+    expect(selectedProjects("/tags", "")).toEqual([])
+    expect(selectedProjects("/activity", "")).toEqual([])
   })
 
   it("reads the flow's selection from its query", () => {
@@ -45,10 +47,11 @@ describe("switchProjectPath", () => {
     expect(switchProjectPath("/conquer/doc/storage", "", undefined)).toBe("/docs")
   })
 
-  it("keeps the tags and the activity of a project, which every project has", () => {
+  it("keeps the tags and the activity", () => {
     expect(switchProjectPath("/conquer/tags", "", "openplan")).toBe("/openplan/tags")
     expect(switchProjectPath("/conquer/activity", "", "openplan")).toBe("/openplan/activity")
-    expect(switchProjectPath("/conquer/tags", "", undefined)).toBe("/")
+    expect(switchProjectPath("/conquer/tags", "", undefined)).toBe("/tags")
+    expect(switchProjectPath("/activity", "", "conquer")).toBe("/conquer/activity")
   })
 
   it("narrows the flow to the project, keeps its other filters, and drops the tasks it names", () => {

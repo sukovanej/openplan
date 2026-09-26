@@ -1,13 +1,13 @@
 import {
   activityPath,
-  activityProjectOf,
   boardPath,
   docsPath,
   FLOW_ROUTE,
+  isActivityPath,
   isDocsPath,
+  isTagsPath,
   projectOfPath,
   tagsPath,
-  tagsProjectOf,
 } from "@openplan/task-ui"
 
 import { readSelection, selectionParams } from "./flow-selection"
@@ -39,7 +39,7 @@ export function switchProjectPath(pathname: string, search: string, project: str
     return query.toString() === "" ? FLOW_ROUTE : `${FLOW_ROUTE}?${query}`
   }
   if (isDocsPath(pathname)) return docsPath(project)
-  if (project !== undefined && tagsProjectOf(pathname) !== undefined) return tagsPath(project)
-  if (project !== undefined && activityProjectOf(pathname) !== undefined) return activityPath(project)
+  if (isTagsPath(pathname)) return tagsPath(project)
+  if (isActivityPath(pathname)) return activityPath(project)
   return boardPath(project)
 }

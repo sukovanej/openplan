@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest"
 
 import {
   activityPath,
-  activityProjectOf,
   boardPath,
   docPath,
   docsPath,
+  isActivityPath,
   isDocsPath,
+  isTagsPath,
   projectOfPath,
   revisionPath,
   tagsPath,
-  tagsProjectOf,
   taskPath,
   taskRouteOf,
 } from "../src/task-path"
@@ -40,6 +40,8 @@ describe("projectOfPath", () => {
     expect(projectOfPath("/")).toBeUndefined()
     expect(projectOfPath("/docs")).toBeUndefined()
     expect(projectOfPath("/flow")).toBeUndefined()
+    expect(projectOfPath("/tags")).toBeUndefined()
+    expect(projectOfPath("/activity")).toBeUndefined()
   })
 })
 
@@ -57,11 +59,19 @@ describe("isDocsPath", () => {
   })
 })
 
-describe("tagsProjectOf", () => {
-  it("reads the project back out of the tags route only", () => {
-    expect(tagsProjectOf(tagsPath("open plan"))).toBe("open plan")
-    expect(tagsProjectOf("/openplan")).toBeUndefined()
-    expect(tagsProjectOf("/openplan/activity")).toBeUndefined()
+describe("tagsPath", () => {
+  it("spells the tags of a project under the project, and the tags of every project above them", () => {
+    expect(tagsPath("open plan")).toBe("/open%20plan/tags")
+    expect(tagsPath(undefined)).toBe("/tags")
+  })
+})
+
+describe("isTagsPath", () => {
+  it("covers the tags of a project and of every project", () => {
+    expect(isTagsPath(tagsPath("openplan"))).toBe(true)
+    expect(isTagsPath("/tags")).toBe(true)
+    expect(isTagsPath("/openplan")).toBe(false)
+    expect(isTagsPath("/openplan/activity")).toBe(false)
   })
 })
 
@@ -75,6 +85,7 @@ describe("taskPath", () => {
 describe("activityPath", () => {
   it("spells the route for a project's activity", () => {
     expect(activityPath("openplan")).toBe("/openplan/activity")
+    expect(activityPath(undefined)).toBe("/activity")
   })
 })
 
@@ -106,17 +117,17 @@ describe("taskRouteOf", () => {
   })
 })
 
-describe("activityProjectOf", () => {
-  it("reads the project back out of the activity route", () => {
-    expect(activityProjectOf(activityPath("open plan"))).toBe("open plan")
-    expect(activityProjectOf("/web/activity/")).toBe("web")
+describe("isActivityPath", () => {
+  it("covers the activity of a project and of every project", () => {
+    expect(isActivityPath(activityPath("open plan"))).toBe(true)
+    expect(isActivityPath("/web/activity/")).toBe(true)
+    expect(isActivityPath("/activity")).toBe(true)
   })
 
-  it("has no project off the activity route", () => {
-    expect(activityProjectOf("/")).toBeUndefined()
-    expect(activityProjectOf("/web")).toBeUndefined()
-    expect(activityProjectOf("/web/tags")).toBeUndefined()
-    expect(activityProjectOf("/activity")).toBeUndefined()
-    expect(activityProjectOf("/web/activity/more")).toBeUndefined()
+  it("leaves out every other page", () => {
+    expect(isActivityPath("/")).toBe(false)
+    expect(isActivityPath("/web")).toBe(false)
+    expect(isActivityPath("/web/tags")).toBe(false)
+    expect(isActivityPath("/web/activity/more")).toBe(false)
   })
 })

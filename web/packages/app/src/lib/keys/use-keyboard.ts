@@ -1,7 +1,15 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { activityProjectOf, boardPath, docRouteOf, docsPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
+import {
+  boardPath,
+  docRouteOf,
+  docsPath,
+  FLOW_ROUTE,
+  isActivityPath,
+  projectOfPath,
+  taskRouteOf,
+} from "@openplan/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
@@ -18,7 +26,7 @@ import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types
 
 function routeScope(pathname: string): RouteScope {
   if (pathname === FLOW_ROUTE) return "flow"
-  if (activityProjectOf(pathname) !== undefined) return "activity"
+  if (isActivityPath(pathname)) return "activity"
   if (docRouteOf(pathname) !== undefined) return "detail"
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
 }
@@ -28,8 +36,7 @@ function routeScope(pathname: string): RouteScope {
 function pageAbove(pathname: string): string {
   const doc = docRouteOf(pathname)
   if (doc !== undefined) return docsPath(doc.project)
-  const project = taskRouteOf(pathname)?.project ?? activityProjectOf(pathname)
-  return boardPath(project)
+  return boardPath(projectOfPath(pathname))
 }
 
 export interface Keyboard {
