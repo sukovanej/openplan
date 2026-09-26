@@ -64,3 +64,7 @@ sequenceDiagram
 ### 2026-09-26T06:54:10Z by Milan Suk via claude-code
 
 > The Shiki diff grammar is not loaded: the restored DiffView colors the diff itself and does not use Shiki.
+
+### 2026-09-26T06:58:15Z by Milan Suk via claude-code
+
+> The card opens with no hover delay, as the user asked. A pointer that sweeps the list now starts a request on each line it crosses, and aborts it when it leaves the line.
