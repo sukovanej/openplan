@@ -1,5 +1,5 @@
 import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
-import type { Effect } from "effect"
+import { Effect } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 
 import type { DocChange, DocumentChange, HistoryEntry, TagChange, TaskChange } from "@openplan/api-client"
@@ -16,7 +16,15 @@ import {
   getTaskRevision,
   type HistoryPage,
 } from "./api"
-import { diffKey, docHistoryKey, docRevisionKey, historyKey, revisionKey, taskHistoryKey } from "./query-client"
+import {
+  diffKey,
+  docHistoryKey,
+  docRevisionKey,
+  historyKey,
+  mergedHistoryKey,
+  revisionKey,
+  taskHistoryKey,
+} from "./query-client"
 import { abortable, runtime } from "./runtime"
 
 export const PROJECT_HISTORY_PAGE = 50
@@ -44,6 +52,75 @@ function usePagedHistory(queryKey: ReadonlyArray<unknown>, read: Read, limit: nu
 
 export function useProjectHistory(project: string) {
   return usePagedHistory(historyKey(project), (page) => getProjectHistory(project, page), PROJECT_HISTORY_PAGE)
+}
+
+export interface ProjectEntry {
+  readonly project: string
+  readonly entry: HistoryEntry
+}
+
+// Where the history of one project goes on from. `before` is undefined at its newest revision.
+export interface HistoryStream {
+  readonly project: string
+  readonly before: string | undefined
+}
+
+export interface MergedPage {
+  readonly entries: ReadonlyArray<ProjectEntry>
+  // Empty once every project has no older revision.
+  readonly next: ReadonlyArray<HistoryStream>
+}
+
+// Each read holds the next `limit` revisions of its project, so the newest `limit` of all of them are
+// the next `limit` of the merged history. A read keeps its own order, whatever its times say.
+export function mergeHistories(
+  reads: ReadonlyArray<{ readonly stream: HistoryStream; readonly entries: ReadonlyArray<HistoryEntry> }>,
+  limit: number,
+): MergedPage {
+  const taken = reads.map(() => 0)
+  const entries: Array<ProjectEntry> = []
+  while (entries.length < limit) {
+    let newest: { at: number; time: number } | undefined
+    reads.forEach((read, at) => {
+      const head = read.entries[taken[at]]
+      if (head === undefined) return
+      const time = Date.parse(head.revision.at)
+      if (newest === undefined || time > newest.time) newest = { at, time }
+    })
+    if (newest === undefined) break
+    const read = reads[newest.at]
+    entries.push({ project: read.stream.project, entry: read.entries[taken[newest.at]] })
+    taken[newest.at]++
+  }
+  const next = reads.flatMap(({ stream, entries: page }, at) => {
+    const count = taken[at]
+    if (count === page.length && page.length < limit) return []
+    return [{ project: stream.project, before: count === 0 ? stream.before : page[count - 1].revision.id }]
+  })
+  return { entries, next }
+}
+
+const readStream = (stream: HistoryStream) =>
+  Effect.map(getProjectHistory(stream.project, { before: stream.before, limit: PROJECT_HISTORY_PAGE }), (entries) => ({
+    stream,
+    entries,
+  }))
+
+export function useMergedHistory(projects: ReadonlyArray<string>) {
+  const newest: ReadonlyArray<HistoryStream> = projects.map((project) => ({ project, before: undefined }))
+  return useInfiniteQuery({
+    queryKey: mergedHistoryKey(projects),
+    queryFn: ({ pageParam, signal }) =>
+      runtime.runPromise(
+        Effect.map(Effect.all(pageParam.map(readStream), { concurrency: "unbounded" }), (reads) =>
+          mergeHistories(reads, PROJECT_HISTORY_PAGE),
+        ),
+        { signal },
+      ),
+    initialPageParam: newest,
+    getNextPageParam: (last) => (last.next.length === 0 ? undefined : last.next),
+    select: (data) => data.pages.flatMap((page) => page.entries),
+  })
 }
 
 export function useTaskHistory(project: string, id: string) {

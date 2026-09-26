@@ -8,6 +8,7 @@ import { bindings } from "../../src/lib/keys/bindings"
 import { Dispatcher } from "../../src/lib/keys/dispatcher"
 import { fromEvent, normalizeToken } from "../../src/lib/keys/match"
 import type { Binding, OverlayName, PaletteTarget, RouteScope, RunContext } from "../../src/lib/keys/types"
+import { listPath, selectedProject } from "../../src/lib/project-scope"
 import { detailCursor, focusedRow, liveCursor, rowCursor } from "../../src/lib/row-cursor"
 import { hoveredRow, taskAtHand } from "../../src/lib/row-target"
 import type { StatusTarget } from "../../src/lib/status-requests"
@@ -22,6 +23,7 @@ interface Harness {
   readonly closed: Array<OverlayName>
   readonly opened: Array<PaletteTarget>
   readonly went: Array<"back">
+  readonly projectMenu: { opened: number }
   readonly detail: {
     editParent: number
     addSubtask: number
@@ -49,11 +51,14 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const closed: Array<OverlayName> = []
   const opened: Array<PaletteTarget> = []
   const went: Array<"back"> = []
+  const projectMenu = { opened: 0 }
   const detail = { editParent: 0, addSubtask: 0, editTags: 0, editDescription: 0, goToParent: 0, escape: 0 }
   const activeCursor = () => liveCursor(scope)
   const targetTask = () => taskAtHand(activeCursor().getSnapshot(), pathname)
   const context = (): RunContext => ({
     navigate: (to) => navigations.push(to),
+    goToList: (view) => navigations.push(listPath(view, selectedProject(pathname, ""))),
+    chooseProject: () => void projectMenu.opened++,
     back: () => void went.push("back"),
     overlay: (name) => ({
       open: () => void overlay.open++,
@@ -114,6 +119,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
     copied,
     statuses,
     went,
+    projectMenu,
     overlay,
     closed,
     opened,
@@ -149,15 +155,15 @@ afterEach(() => {
 })
 
 describe("chord buffering", () => {
-  it("fires the g-l chord exactly once when completed in time", () => {
+  it("fires the g-t chord exactly once when completed in time", () => {
     const h = mount()
     press("g")
     expect(h.navigations).toEqual([])
-    press("l")
+    press("t")
     expect(h.navigations).toEqual(["/"])
 
     press("g")
-    press("l")
+    press("t")
     expect(h.navigations).toEqual(["/", "/"])
   })
 
@@ -166,7 +172,7 @@ describe("chord buffering", () => {
     const h = mount()
     press("g")
     vi.advanceTimersByTime(1000)
-    press("l")
+    press("t")
     expect(h.navigations).toEqual([])
   })
 
@@ -176,8 +182,70 @@ describe("chord buffering", () => {
     press("x")
     expect(h.navigations).toEqual([])
     press("g")
-    press("l")
+    press("t")
     expect(h.navigations).toEqual(["/"])
+  })
+})
+
+describe("the lists keep the project of the page", () => {
+  it("goes to the tasks and the docs of the project a task belongs to", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("12"))
+
+    press("g")
+    press("t")
+    press("g")
+    press("d")
+    expect(h.navigations).toEqual(["/openplan", "/openplan/docs"])
+  })
+
+  it("goes to the lists of every project from a page above them all", () => {
+    const h = mount()
+    h.setPath("/docs")
+
+    press("g")
+    press("t")
+    expect(h.navigations).toEqual(["/"])
+  })
+
+  it("wins over the tag key of a task page when it completes a chord", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("12"))
+
+    press("g")
+    press("t")
+    expect(h.detail.editTags).toBe(0)
+  })
+})
+
+describe("o opens the project menu", () => {
+  it("opens it from any page", () => {
+    const h = mount()
+    press("o")
+    h.setScope("detail")
+    h.setPath(path("12"))
+    press("o")
+    expect(h.projectMenu.opened).toBe(2)
+  })
+
+  it("leaves p to the parent of a task", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("12"))
+    press("p")
+    expect(h.projectMenu.opened).toBe(0)
+    expect(h.detail.editParent).toBe(1)
+  })
+
+  it("does not open it while the focus is in a text field", () => {
+    const h = mount()
+    const input = document.createElement("input")
+    document.body.append(input)
+    press("o", input)
+    input.remove()
+    expect(h.projectMenu.opened).toBe(0)
   })
 })
 
@@ -447,7 +515,7 @@ describe("scope resolution", () => {
     press("j")
     expect(rowCursor.getSnapshot().index).toBe(-1)
     press("g")
-    press("l")
+    press("t")
     expect(h.navigations).toEqual([])
 
     press("Escape")

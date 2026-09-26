@@ -7,6 +7,23 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.4...main)
 
+### Changed
+
+- The web UI selects the project with a menu in the header. The selection
+  applies to the tasks and to the docs. `o` opens the menu, `0` selects all
+  projects, and `1` to `9` select the first nine projects. The docs of one
+  project are at `/<project>/docs`, not at `/docs?project=<project>`.
+- The task list and the docs list have `Tasks` and `Docs` tabs. The header has
+  no Docs link.
+- `g t` goes to the tasks of the selected project and replaces `g l`. `g d`
+  goes to the docs of the selected project.
+- The activity and the tags have a page for all projects, at `/activity` and
+  `/tags`. The activity of all projects shows the revisions of every project,
+  newest first. The tags of all projects show each project in a section of its
+  own. The task list of all projects links to both pages.
+- A new project cannot take the name `activity` or `tags`, as it cannot take
+  `docs` or `flow`.
+
 ## [0.0.4](https://github.com/sukovanej/openplan/compare/v0.0.3...v0.0.4) - 2026-09-26
 
 ### Added

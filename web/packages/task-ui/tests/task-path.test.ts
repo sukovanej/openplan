@@ -1,10 +1,77 @@
 import { describe, expect, it } from "vitest"
 
-import { activityPath, activityProjectOf, boardPath, revisionPath, taskPath, taskRouteOf } from "../src/task-path"
+import {
+  activityPath,
+  boardPath,
+  docPath,
+  docsPath,
+  isActivityPath,
+  isDocsPath,
+  isTagsPath,
+  projectOfPath,
+  revisionPath,
+  tagsPath,
+  taskPath,
+  taskRouteOf,
+} from "../src/task-path"
 
 describe("boardPath", () => {
-  it("spells the route for a project's board", () => {
+  it("spells the route for a project's board, and for the board of every project", () => {
     expect(boardPath("openplan")).toBe("/openplan")
+    expect(boardPath(undefined)).toBe("/")
+  })
+})
+
+describe("docsPath", () => {
+  it("spells the docs of a project under the project, and the docs of every project above them", () => {
+    expect(docsPath("open plan")).toBe("/open%20plan/docs")
+    expect(docsPath(undefined)).toBe("/docs")
+  })
+})
+
+describe("projectOfPath", () => {
+  it("reads the project from the first segment", () => {
+    expect(projectOfPath("/openplan")).toBe("openplan")
+    expect(projectOfPath(docsPath("open plan"))).toBe("open plan")
+    expect(projectOfPath(taskPath("openplan", "OPP-1"))).toBe("openplan")
+  })
+
+  it("has no project on the pages above every project", () => {
+    expect(projectOfPath("/")).toBeUndefined()
+    expect(projectOfPath("/docs")).toBeUndefined()
+    expect(projectOfPath("/flow")).toBeUndefined()
+    expect(projectOfPath("/tags")).toBeUndefined()
+    expect(projectOfPath("/activity")).toBeUndefined()
+  })
+})
+
+describe("isDocsPath", () => {
+  it("covers both docs lists and a doc's page", () => {
+    expect(isDocsPath("/docs")).toBe(true)
+    expect(isDocsPath(docsPath("openplan"))).toBe(true)
+    expect(isDocsPath(docPath("openplan", "storage"))).toBe(true)
+  })
+
+  it("leaves out the task pages", () => {
+    expect(isDocsPath("/")).toBe(false)
+    expect(isDocsPath("/openplan")).toBe(false)
+    expect(isDocsPath(taskPath("openplan", "OPP-1"))).toBe(false)
+  })
+})
+
+describe("tagsPath", () => {
+  it("spells the tags of a project under the project, and the tags of every project above them", () => {
+    expect(tagsPath("open plan")).toBe("/open%20plan/tags")
+    expect(tagsPath(undefined)).toBe("/tags")
+  })
+})
+
+describe("isTagsPath", () => {
+  it("covers the tags of a project and of every project", () => {
+    expect(isTagsPath(tagsPath("openplan"))).toBe(true)
+    expect(isTagsPath("/tags")).toBe(true)
+    expect(isTagsPath("/openplan")).toBe(false)
+    expect(isTagsPath("/openplan/activity")).toBe(false)
   })
 })
 
@@ -18,6 +85,7 @@ describe("taskPath", () => {
 describe("activityPath", () => {
   it("spells the route for a project's activity", () => {
     expect(activityPath("openplan")).toBe("/openplan/activity")
+    expect(activityPath(undefined)).toBe("/activity")
   })
 })
 
@@ -49,17 +117,17 @@ describe("taskRouteOf", () => {
   })
 })
 
-describe("activityProjectOf", () => {
-  it("reads the project back out of the activity route", () => {
-    expect(activityProjectOf(activityPath("open plan"))).toBe("open plan")
-    expect(activityProjectOf("/web/activity/")).toBe("web")
+describe("isActivityPath", () => {
+  it("covers the activity of a project and of every project", () => {
+    expect(isActivityPath(activityPath("open plan"))).toBe(true)
+    expect(isActivityPath("/web/activity/")).toBe(true)
+    expect(isActivityPath("/activity")).toBe(true)
   })
 
-  it("has no project off the activity route", () => {
-    expect(activityProjectOf("/")).toBeUndefined()
-    expect(activityProjectOf("/web")).toBeUndefined()
-    expect(activityProjectOf("/web/tags")).toBeUndefined()
-    expect(activityProjectOf("/activity")).toBeUndefined()
-    expect(activityProjectOf("/web/activity/more")).toBeUndefined()
+  it("leaves out every other page", () => {
+    expect(isActivityPath("/")).toBe(false)
+    expect(isActivityPath("/web")).toBe(false)
+    expect(isActivityPath("/web/tags")).toBe(false)
+    expect(isActivityPath("/web/activity/more")).toBe(false)
   })
 })

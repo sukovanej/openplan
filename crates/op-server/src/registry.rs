@@ -105,7 +105,7 @@ impl ProjectRegistry {
 // The web UI's own top-level pages, and the prefix of the API. A project under one of these names
 // would have no board, or no task pages, so no new name takes one. A project registered under one
 // before keeps it, and can be renamed.
-const RESERVED: [&str; 3] = ["api", "docs", "flow"];
+const RESERVED: [&str; 5] = ["activity", "api", "docs", "flow", "tags"];
 
 pub fn is_reserved(name: &str) -> bool {
     RESERVED.contains(&name)

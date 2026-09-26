@@ -1,14 +1,14 @@
-import { FileText, Waypoints } from "lucide-react"
+import { Waypoints } from "lucide-react"
 import { Link, Outlet } from "react-router-dom"
 
-import { DiagramDrawer, DOCS_ROUTE, FLOW_ROUTE } from "@openplan/task-ui"
+import { DiagramDrawer, FLOW_ROUTE } from "@openplan/task-ui"
 
 import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"
 import { Flash } from "./components/flash"
 import { HelpOverlay } from "./components/help-overlay"
 import { MutationError } from "./components/mutation-error"
-import { ProjectSwitcher } from "./components/project-switcher"
+import { ProjectSelect } from "./components/project-select"
 import { SyncStatus } from "./components/sync-status"
 import { ThemeToggle } from "./components/theme-toggle"
 import { drawDiagramOnce } from "./lib/diagrams"
@@ -23,21 +23,14 @@ export function App() {
           <Link to="/" className="shrink-0 text-2xl font-semibold tracking-tight">
             Open Plan
           </Link>
-          <ProjectSwitcher />
+          <ProjectSelect />
           <ConnectionStatus />
           <Link
-            to={DOCS_ROUTE}
+            to={FLOW_ROUTE}
             className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
           >
-            <FileText className="size-3.5" />
-            Docs
-          </Link>
-          <Link
-            to={FLOW_ROUTE}
-            className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1.5 text-xs"
-          >
             <Waypoints className="size-3.5" />
-            Flow
+            <span className="sr-only sm:not-sr-only">Flow</span>
           </Link>
           <SyncStatus />
           <ThemeToggle />

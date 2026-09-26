@@ -3,22 +3,28 @@ const TAGS_SEGMENT = "tags"
 const ACTIVITY_SEGMENT = "activity"
 const DOC_SEGMENT = "doc"
 const DOCS_SEGMENT = "docs"
+const FLOW_SEGMENT = "flow"
 
 export const REVISION_PARAM = "revision"
 
 // The flow is not a read of one project: one query can name several, so it sits above them all and
 // carries its whole selection in the query string.
-export const FLOW_ROUTE = "/flow"
+export const FLOW_ROUTE = `/${FLOW_SEGMENT}`
 
+// A page with no project in its path is the page of every project: `/` and `/docs` hold what
+// `/:project` and `/:project/docs` hold for one.
 export const BOARD_ROUTE = "/:project"
 export const TASK_ROUTE = `${BOARD_ROUTE}/${TASK_SEGMENT}/:id`
-export const TAGS_ROUTE = `${BOARD_ROUTE}/${TAGS_SEGMENT}`
-export const ACTIVITY_ROUTE = `${BOARD_ROUTE}/${ACTIVITY_SEGMENT}`
-// Docs span every project the daemon serves, so the list sits above them all and narrows through
-// `?project=`. One doc still belongs to one store — two of them can carry the same name — so a
-// doc's own page stays under its project.
-export const DOCS_ROUTE = `/${DOCS_SEGMENT}`
 export const DOC_ROUTE = `${BOARD_ROUTE}/${DOC_SEGMENT}/:name`
+export const DOCS_ROUTE = `/${DOCS_SEGMENT}`
+export const PROJECT_DOCS_ROUTE = `${BOARD_ROUTE}/${DOCS_SEGMENT}`
+export const TAGS_ROUTE = `/${TAGS_SEGMENT}`
+export const PROJECT_TAGS_ROUTE = `${BOARD_ROUTE}/${TAGS_SEGMENT}`
+export const ACTIVITY_ROUTE = `/${ACTIVITY_SEGMENT}`
+export const PROJECT_ACTIVITY_ROUTE = `${BOARD_ROUTE}/${ACTIVITY_SEGMENT}`
+
+// The registry refuses these as project names, so no project hides behind one.
+const ABOVE_PROJECTS: ReadonlySet<string> = new Set([DOCS_SEGMENT, FLOW_SEGMENT, TAGS_SEGMENT, ACTIVITY_SEGMENT])
 
 // Two stores can commit the same abbreviation, so a key names a task only inside its project. Every
 // task URL therefore carries the project, and every helper here takes it.
@@ -27,21 +33,17 @@ export interface TaskRoute {
   readonly id: string
 }
 
-export function boardPath(project: string): string {
-  return `/${encodeURIComponent(project)}`
+export function boardPath(project?: string): string {
+  return project === undefined ? "/" : `/${encodeURIComponent(project)}`
 }
 
-export function tagsPath(project: string): string {
-  return `${boardPath(project)}/${TAGS_SEGMENT}`
+function pagePath(segment: string, project: string | undefined): string {
+  return project === undefined ? `/${segment}` : `${boardPath(project)}/${segment}`
 }
 
-export function activityPath(project: string): string {
-  return `${boardPath(project)}/${ACTIVITY_SEGMENT}`
-}
-
-export function docsPath(project?: string): string {
-  return project === undefined ? DOCS_ROUTE : `${DOCS_ROUTE}?project=${encodeURIComponent(project)}`
-}
+export const docsPath = (project?: string) => pagePath(DOCS_SEGMENT, project)
+export const tagsPath = (project?: string) => pagePath(TAGS_SEGMENT, project)
+export const activityPath = (project?: string) => pagePath(ACTIVITY_SEGMENT, project)
 
 // A doc's name is its whole id, so its URL carries the name the way a task URL carries its key.
 export function docPath(project: string, name: string, section?: string): string {
@@ -77,11 +79,20 @@ export function taskReference(reference: string): { id: string; section: string 
     : { id: reference.slice(0, hash), section: reference.slice(hash + 1) || undefined }
 }
 
-export function activityProjectOf(path: string): string | undefined {
-  const [, project, segment, rest] = path.split("/")
-  if (project === undefined || project === "" || segment !== ACTIVITY_SEGMENT || (rest ?? "") !== "") return undefined
+export function projectOfPath(path: string): string | undefined {
+  const [, project] = path.split("/")
+  if (project === undefined || project === "" || ABOVE_PROJECTS.has(project)) return undefined
   return decodeURIComponent(project)
 }
+
+function isPage(path: string, segment: string): boolean {
+  const parts = path.split("/").filter((part) => part !== "")
+  return parts.length === 1 ? parts[0] === segment : parts.length === 2 && parts[1] === segment
+}
+
+export const isDocsPath = (path: string) => isPage(path, DOCS_SEGMENT) || docRouteOf(path) !== undefined
+export const isTagsPath = (path: string) => isPage(path, TAGS_SEGMENT)
+export const isActivityPath = (path: string) => isPage(path, ACTIVITY_SEGMENT)
 
 export function taskRouteOf(path: string): TaskRoute | undefined {
   const [, project, segment, rest] = path.split("/")

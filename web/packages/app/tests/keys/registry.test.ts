@@ -26,10 +26,10 @@ describe("help overlay content is derived from the registry", () => {
   })
 
   it("carries each binding's label and normalized keys verbatim", () => {
-    const source = bindings.find((binding) => binding.id === "go.list")!
-    const entry = groups.flatMap((group) => group.entries).find((item) => item.id === "go.list")!
+    const source = bindings.find((binding) => binding.id === "go.tasks")!
+    const entry = groups.flatMap((group) => group.entries).find((item) => item.id === "go.tasks")!
     expect(entry.label).toBe(source.label)
     expect(entry.keys).toEqual(chordOf(source.keys))
-    expect(entry.keys).toEqual(["g", "l"])
+    expect(entry.keys).toEqual(["g", "t"])
   })
 })

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { useNavigate } from "react-router-dom"
 
-import { cn, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@openplan/ui"
+import { cn, Panel, PanelBody, Row } from "@openplan/ui"
 
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
@@ -34,8 +34,7 @@ const NO_GUIDES: RowGuides = { columns: [], opensChildren: false }
 
 export function RowGrid<T>({
   label,
-  title,
-  action,
+  header,
   groups,
   lead,
   pathOf,
@@ -43,8 +42,7 @@ export function RowGrid<T>({
   children,
 }: {
   label: string
-  title: ReactNode
-  action?: ReactNode
+  header: ReactNode
   groups: ReadonlyArray<RowGroup<T>>
   // Rendered above the first group, inside the scrolling body.
   lead?: ReactNode
@@ -88,10 +86,7 @@ export function RowGrid<T>({
       tabIndex={0}
       className="text-sm focus:outline-none"
     >
-      <PanelHeader className="gap-3">
-        <PanelTitle>{title}</PanelTitle>
-        {action !== undefined && <div className="ml-auto flex min-w-0 items-center">{action}</div>}
-      </PanelHeader>
+      {header}
       {/* The pointer only marks a row while the keyboard cursor is idle, so the two never claim one
           at once. The rows read that from this attribute, and a cursor that starts or stops draws
           none of them again. */}
