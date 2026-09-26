@@ -80,7 +80,7 @@ export const bindings: ReadonlyArray<Binding> = [
   },
   {
     id: "project.choose",
-    keys: "mod+p",
+    keys: "o",
     scope: "global",
     label: "Change the project",
     group: "Navigation",

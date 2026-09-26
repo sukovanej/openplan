@@ -220,20 +220,32 @@ describe("the lists keep the project of the page", () => {
   })
 })
 
-describe("mod+p opens the project menu", () => {
+describe("o opens the project menu", () => {
   it("opens it from any page", () => {
     const h = mount()
-    press("p", window, { metaKey: true })
-    expect(h.projectMenu.opened).toBe(1)
+    press("o")
+    h.setScope("detail")
+    h.setPath(path("12"))
+    press("o")
+    expect(h.projectMenu.opened).toBe(2)
   })
 
-  it("opens it while the focus is in a text field, because it carries a modifier", () => {
+  it("leaves p to the parent of a task", () => {
+    const h = mount()
+    h.setScope("detail")
+    h.setPath(path("12"))
+    press("p")
+    expect(h.projectMenu.opened).toBe(0)
+    expect(h.detail.editParent).toBe(1)
+  })
+
+  it("does not open it while the focus is in a text field", () => {
     const h = mount()
     const input = document.createElement("input")
     document.body.append(input)
-    press("p", input, { ctrlKey: true })
+    press("o", input)
     input.remove()
-    expect(h.projectMenu.opened).toBe(1)
+    expect(h.projectMenu.opened).toBe(0)
   })
 })
 

@@ -10,9 +10,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - The web UI selects the project with a menu in the header. The selection
-  applies to the tasks and to the docs. `Cmd+P` (`Ctrl+P` on Linux and
-  Windows) opens the menu. The docs of one project are at `/<project>/docs`,
-  not at `/docs?project=<project>`.
+  applies to the tasks and to the docs. `o` opens the menu, `0` selects all
+  projects, and `1` to `9` select the first nine projects. The docs of one
+  project are at `/<project>/docs`, not at `/docs?project=<project>`.
 - The task list and the docs list have `Tasks` and `Docs` tabs. The header has
   no Docs link.
 - `g t` goes to the tasks of the selected project and replaces `g l`. `g d`
