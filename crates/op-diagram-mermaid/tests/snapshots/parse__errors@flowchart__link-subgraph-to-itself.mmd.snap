@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/link-subgraph-to-itself.mmd
+---
+line 5, column 5: the subgraph `s` cannot link to itself

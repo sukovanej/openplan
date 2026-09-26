@@ -1,0 +1,8 @@
+flowchart LR
+  timer[Timer] -->|check| daemon[Daemon]
+  daemon -->|wait until idle, replace the binary, restart| daemon
+  daemon --> store[(Store)]
+  subgraph cache[Cache]
+    entry[Entry] -->|expire| entry
+  end
+  store --> entry

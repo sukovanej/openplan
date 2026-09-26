@@ -48,6 +48,8 @@ struct Chart {
     clusters: Vec<Cluster>,
     cluster_at: HashMap<String, usize>,
     edges: Vec<Edge>,
+    // Where each edge's link starts, for an error that only the whole chart can find.
+    edge_places: Vec<ParseError>,
     open: Vec<Frame>,
     claimed: HashSet<String>,
     untitled: usize,
@@ -190,6 +192,7 @@ impl Chart {
             if cursor.at_end() || cursor.starts_with(";") {
                 return Ok(());
             }
+            let place = cursor.error_at(cursor.offset(), "");
             let link = link(cursor)?;
             cursor.skip_spaces();
             let to = self.vertex_group(cursor)?;
@@ -204,6 +207,7 @@ impl Chart {
                         head: link.head,
                         min_length: link.min_length,
                     });
+                    self.edge_places.push(place.clone());
                 }
             }
             from = to;
@@ -275,6 +279,39 @@ impl Chart {
         Ok(id)
     }
 
+    // Such a link would start inside its own target and end on that target's border, so no drawing
+    // of it reads as a link.
+    fn joins_its_own_subgraph(&self, edge: &Edge) -> Option<String> {
+        for (inner, outer) in [(&edge.from, &edge.to), (&edge.to, &edge.from)] {
+            if !self.cluster_at.contains_key(outer) {
+                continue;
+            }
+            if inner == outer {
+                return Some(format!("the subgraph `{outer}` cannot link to itself"));
+            }
+            let mut above = self.parent(inner);
+            while let Some(at) = above {
+                if at == outer {
+                    return Some(format!(
+                        "`{inner}` is inside the subgraph `{outer}`, so no link can join them"
+                    ));
+                }
+                above = self.parent(at);
+            }
+        }
+        None
+    }
+
+    fn parent(&self, id: &str) -> Option<&str> {
+        match self.cluster_at.get(id) {
+            Some(&at) => self.clusters[at].parent.as_deref(),
+            None => self
+                .node_at
+                .get(id)
+                .and_then(|&at| self.nodes[at].parent.as_deref()),
+        }
+    }
+
     fn push_node(&mut self, node: Node) {
         self.node_at.insert(node.id.clone(), self.nodes.len());
         self.nodes.push(node);
@@ -283,6 +320,14 @@ impl Chart {
     fn finish(self) -> Result<Graph, ParseError> {
         if let Some(frame) = self.open.last() {
             return Err(frame.error.clone());
+        }
+        for (edge, place) in self.edges.iter().zip(&self.edge_places) {
+            if let Some(message) = self.joins_its_own_subgraph(edge) {
+                return Err(ParseError {
+                    message,
+                    ..place.clone()
+                });
+            }
         }
         let clusters = self.cluster_at;
         Ok(Graph {

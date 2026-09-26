@@ -1,0 +1,107 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/cluster-edge-labels.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "a",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "A"
+      ],
+      "parent": "s"
+    },
+    {
+      "id": "b",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "B"
+      ],
+      "parent": "s"
+    },
+    {
+      "id": "c",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "C"
+      ],
+      "parent": "t"
+    },
+    {
+      "id": "x",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "X"
+      ]
+    }
+  ],
+  "clusters": [
+    {
+      "id": "s",
+      "label": [
+        "Group"
+      ]
+    },
+    {
+      "id": "t",
+      "label": [
+        "Other"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "b",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "x",
+      "to": "s",
+      "label": [
+        "into"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "s",
+      "to": "t",
+      "label": [
+        "beside"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "b",
+      "to": "c",
+      "label": [
+        "out"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

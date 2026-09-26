@@ -1,0 +1,107 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/loop-labels-lr.mmd
+---
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "timer",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Timer"
+      ]
+    },
+    {
+      "id": "daemon",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Daemon"
+      ]
+    },
+    {
+      "id": "store",
+      "shape": {
+        "kind": "cylinder"
+      },
+      "label": [
+        "Store"
+      ]
+    },
+    {
+      "id": "entry",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Entry"
+      ],
+      "parent": "cache"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "cache",
+      "label": [
+        "Cache"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "timer",
+      "to": "daemon",
+      "label": [
+        "check"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "daemon",
+      "to": "daemon",
+      "label": [
+        "wait until idle, replace the binary, restart"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "daemon",
+      "to": "store",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "entry",
+      "to": "entry",
+      "label": [
+        "expire"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "store",
+      "to": "entry",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

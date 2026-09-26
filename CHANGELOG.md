@@ -85,6 +85,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A Mermaid self-loop (`a -->|text| a`) shows its label beside the loop. Two
+  loops on one node no longer share one path. A loop on the last node of a row
+  stays inside its subgraph and inside the drawing.
+- `openplan lint` reports a link between a node and a subgraph that holds it,
+  and a link from a subgraph to itself. The diagram drew such a link through
+  its own node and dropped its label.
 - Two or more commands that open a new local project at the same time now all
   work. Before, a command could fail with "database is locked". A command could
   also delete a file of the project from the disk, such as `.plan/config.toml`,

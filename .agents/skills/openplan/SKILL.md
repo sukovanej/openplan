@@ -209,7 +209,7 @@ subset of [Mermaid](https://mermaid.js.org):
 - Parts and how they connect: `flowchart TD` or `flowchart LR`. Give a node a
   shape with `[ ]`, `( )`, `{ }`, `[( )]`, or `(( ))`. Join nodes with `-->`,
   `---`, `-.->`, or `==>`, and label an edge with `-->|text|`. Group nodes with
-  `subgraph … end`.
+  `subgraph … end`. Do not link a node to the subgraph that holds it.
 - Order of events: `sequenceDiagram` with `participant`, `actor`, the messages
   `->>` and `-->>`, `Note`, and the blocks `loop`, `alt`, `opt`, and `par`.
 - A schema or record: `erDiagram` with entity blocks (`type name PK "comment"`)

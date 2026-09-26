@@ -1,0 +1,10 @@
+flowchart TD
+  subgraph s[Group]
+    a[A] --> b[B]
+  end
+  subgraph t[Other]
+    c[C]
+  end
+  x[X] -->|into| s
+  s -->|beside| t
+  b -->|out| c

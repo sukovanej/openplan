@@ -5,7 +5,7 @@ mod rank;
 mod route;
 mod size;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use op_diagram::{Direction, Graph, Shape, Stroke};
 
@@ -19,9 +19,11 @@ const TRACK_GAP: f32 = 10.0;
 const MARGIN: f32 = 8.0;
 const CLUSTER_PAD: f32 = 12.0;
 const HEADER_GAP: f32 = 6.0;
-const LOOP_ROOM: f32 = 24.0;
 const LOOP_REACH: f32 = 18.0;
 const LOOP_SPREAD: f32 = 8.0;
+const LOOP_NEST: f32 = 8.0;
+const LOOP_CLEAR: f32 = 6.0;
+const LOOP_LABEL_GAP: f32 = 4.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Kind {
@@ -326,15 +328,19 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
 
     let mut chains: Vec<Chain> = Vec::new();
     let mut labels: HashMap<usize, size::Label> = HashMap::new();
-    let mut loops: Vec<(usize, usize)> = Vec::new();
+    let mut loops: BTreeMap<usize, Loops> = BTreeMap::new();
     let mut directs: Vec<(usize, End, End)> = Vec::new();
     for (index, (edge, pair)) in graph.edges.iter().zip(&ends).enumerate() {
         let Some((from, to)) = *pair else {
             continue;
         };
         if from == to {
-            if let End::Node(node) = from {
-                loops.push((index, node));
+            if let (End::Node(node), true) = (from, edge.stroke != Stroke::Invisible) {
+                let at = loops.entry(node).or_default();
+                at.edges.push(index);
+                if !edge.label.is_empty() {
+                    at.labels.push((index, size::edge_label(&edge.label)));
+                }
             }
             continue;
         }
@@ -461,8 +467,8 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
     let vertex_breadth: Vec<f32> = vertices.iter().map(|vertex| vertex.breadth).collect();
     let vertex_thin: Vec<bool> = vertices.iter().map(Vertex::thin).collect();
     let mut room_after = vec![0.0; vertices.len()];
-    for (_, node) in &loops {
-        room_after[*node] = LOOP_ROOM;
+    for (&node, at) in &loops {
+        room_after[node] = at.room(orient);
     }
     let group_pad: Vec<(f32, f32)> = pads.iter().map(|pad| pad.breadth).collect();
     let group_min_breadth: Vec<f32> = headers
@@ -545,7 +551,7 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
         _ => 0.0,
     };
 
-    let rows = Rows::new(
+    let mut rows = Rows::new(
         &vertices,
         &group_parent,
         &span,
@@ -554,6 +560,11 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
         doubled,
         &tracks.count,
     );
+    // The labels of a node's loops stack across its row. The node keeps its own depth, which is
+    // where its edges end.
+    for (&node, at) in &loops {
+        rows.hold(vertices[node].rank, at.label_extent(orient).1);
+    }
     let rows = rows.fit_headers(
         &headers,
         &span,
@@ -662,25 +673,42 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
             continue;
         }
         let (a, b) = (rect_of(from), rect_of(to));
-        let points = vec![clip(&a, b.center()), clip(&b, a.center())];
-        edges.push(edge_path(graph, index, points, None));
+        let (start, end) = (clip(&a, b.center()), clip(&b, a.center()));
+        let label = (!graph.edges[index].label.is_empty()).then(|| {
+            let label = size::edge_label(&graph.edges[index].label);
+            let rect = Rect {
+                x: (start.x + end.x - label.width) / 2.0,
+                y: (start.y + end.y - label.height) / 2.0,
+                width: label.width,
+                height: label.height,
+            };
+            EdgeLabel {
+                rect,
+                texts: label.texts(rect.x + rect.width / 2.0, rect.y),
+            }
+        });
+        edges.push(edge_path(graph, index, vec![start, end], label));
     }
-    for &(index, node) in &loops {
-        if graph.edges[index].stroke == Stroke::Invisible {
-            continue;
-        }
+    for (&node, at) in &loops {
         let side = center[node] + vertices[node].breadth / 2.0;
         let middle = rows.middle(vertices[node].rank);
-        let points = [
-            (side, middle - LOOP_SPREAD),
-            (side + LOOP_REACH, middle - LOOP_SPREAD),
-            (side + LOOP_REACH, middle + LOOP_SPREAD),
-            (side, middle + LOOP_SPREAD),
-        ]
-        .into_iter()
-        .map(|(breadth, depth)| frame.point(breadth, depth))
-        .collect();
-        edges.push(edge_path(graph, index, points, None));
+        let (_, body_depth) = orient.extent(bodies[node].width, bodies[node].height);
+        let mut labels = at.label_boxes(frame, side, middle);
+        for (nested, &index) in at.edges.iter().enumerate() {
+            let reach = LOOP_REACH + LOOP_NEST * nested as f32;
+            let spread =
+                (LOOP_SPREAD + LOOP_NEST / 2.0 * nested as f32).min(body_depth / 2.0 - 2.0);
+            let points = [
+                (side, middle - spread),
+                (side + reach, middle - spread),
+                (side + reach, middle + spread),
+                (side, middle + spread),
+            ]
+            .into_iter()
+            .map(|(breadth, depth)| frame.point(breadth, depth))
+            .collect();
+            edges.push(edge_path(graph, index, points, labels.remove(&index)));
+        }
     }
 
     let (width, height) = if frame.vertical() {
@@ -695,6 +723,67 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
         nodes,
         edges,
         guides: Vec::new(),
+    }
+}
+
+// The loops of one node nest beside it, each one outside the one before. Their labels stack beyond
+// the outermost loop.
+#[derive(Default)]
+struct Loops {
+    edges: Vec<usize>,
+    labels: Vec<(usize, size::Label)>,
+}
+
+impl Loops {
+    fn reach(&self) -> f32 {
+        LOOP_REACH + LOOP_NEST * self.edges.len().saturating_sub(1) as f32
+    }
+
+    // The breadth of the widest label, and the depth of all of them one after another.
+    fn label_extent(&self, orient: Frame) -> (f32, f32) {
+        let extents = self
+            .labels
+            .iter()
+            .map(|(_, label)| orient.extent(label.width, label.height));
+        let breadth = extents
+            .clone()
+            .map(|(breadth, _)| breadth)
+            .fold(0.0, f32::max);
+        let depth = extents.map(|(_, depth)| depth).sum::<f32>()
+            + LOOP_LABEL_GAP * self.labels.len().saturating_sub(1) as f32;
+        (breadth, depth)
+    }
+
+    fn room(&self, orient: Frame) -> f32 {
+        let loops = self.reach() + LOOP_CLEAR;
+        match self.labels.is_empty() {
+            true => loops,
+            false => loops + LOOP_LABEL_GAP + self.label_extent(orient).0,
+        }
+    }
+
+    fn label_boxes(&self, frame: Frame, side: f32, middle: f32) -> HashMap<usize, EdgeLabel> {
+        let beyond = side + self.reach() + LOOP_LABEL_GAP;
+        let mut depth = middle - self.label_extent(frame).1 / 2.0;
+        let mut boxes = HashMap::new();
+        for (index, label) in &self.labels {
+            let (breadth, extent) = frame.extent(label.width, label.height);
+            let rect = frame.centered(
+                beyond + breadth / 2.0,
+                depth + extent / 2.0,
+                label.width,
+                label.height,
+            );
+            depth += extent + LOOP_LABEL_GAP;
+            boxes.insert(
+                *index,
+                EdgeLabel {
+                    rect,
+                    texts: label.texts(rect.x + rect.width / 2.0, rect.y),
+                },
+            );
+        }
+        boxes
     }
 }
 
@@ -857,6 +946,13 @@ impl Rows {
         };
         rows.stack();
         rows
+    }
+
+    fn hold(&mut self, rank: usize, depth: f32) {
+        if depth > self.row[rank] {
+            self.row[rank] = depth;
+            self.stack();
+        }
     }
 
     fn stack(&mut self) {

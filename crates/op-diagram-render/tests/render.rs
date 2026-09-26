@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use op_diagram::{Diagram, Direction, Graph};
+use op_diagram::{Diagram, Direction, Graph, Stroke};
 use op_diagram_render::{
     Anchor, ClusterBox, Point, Rect, Scene, Text, layout, line_metrics, svg, text_width,
 };
@@ -68,6 +68,7 @@ fn checked(diagram: &Diagram, path: &Path) -> String {
         Diagram::Graph(graph) => {
             let mut problems = problems(&scene);
             problems.extend(waves(graph, &scene));
+            problems.extend(lost_labels(graph, &scene));
             problems
         }
         Diagram::Sequence(_) => sequence_problems(&scene),
@@ -281,6 +282,14 @@ fn problems(scene: &Scene) -> Vec<String> {
     }
     for edge in &scene.edges {
         for node in &scene.nodes {
+            if let Some(label) = &edge.label {
+                if label.rect.inset(0.5).overlaps(&node.rect) {
+                    problems.push(format!(
+                        "the label of {} -> {} overlaps the node {}",
+                        edge.from, edge.to, node.id
+                    ));
+                }
+            }
             if node.id == edge.from || node.id == edge.to {
                 continue;
             }
@@ -295,17 +304,42 @@ fn problems(scene: &Scene) -> Vec<String> {
                     edge.from, edge.to, node.id
                 ));
             }
-            if let Some(label) = &edge.label {
-                if label.rect.inset(0.5).overlaps(&node.rect) {
+        }
+        for other in &scene.edges {
+            if let (Some(first), Some(second)) = (&edge.label, &other.label) {
+                if !std::ptr::eq(edge, other) && first.rect.inset(0.5).overlaps(&second.rect) {
                     problems.push(format!(
-                        "the label of {} -> {} overlaps the node {}",
-                        edge.from, edge.to, node.id
+                        "the labels of {} -> {} and {} -> {} overlap",
+                        edge.from, edge.to, other.from, other.to
                     ));
                 }
             }
         }
     }
     problems
+}
+
+fn lost_labels(graph: &Graph, scene: &Scene) -> Vec<String> {
+    let mut written: Vec<(&str, &str)> = graph
+        .edges
+        .iter()
+        .filter(|edge| !edge.label.is_empty() && edge.stroke != Stroke::Invisible)
+        .map(|edge| (edge.from.as_str(), edge.to.as_str()))
+        .collect();
+    let mut drawn: Vec<(&str, &str)> = scene
+        .edges
+        .iter()
+        .filter(|edge| edge.label.is_some())
+        .map(|edge| (edge.from.as_str(), edge.to.as_str()))
+        .collect();
+    written.sort_unstable();
+    drawn.sort_unstable();
+    match written == drawn {
+        true => Vec::new(),
+        false => vec![format!(
+            "the source labels the edges {written:?}, the drawing {drawn:?}"
+        )],
+    }
 }
 
 fn within<'a>(

@@ -1,0 +1,6 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: error.to_string()
+input_file: crates/op-diagram-mermaid/tests/errors/flowchart/link-to-own-subgraph.mmd
+---
+line 6, column 5: `a` is inside the subgraph `s`, so no link can join them
