@@ -1,7 +1,7 @@
 import { act } from "react"
 import { describe, expect, it, vi } from "vitest"
 
-import { type DiagramOutcome, DiagramDrawer } from "../src/diagram-drawer"
+import { type DiagramOutcome, DiagramDrawer, type DrawDiagram } from "../src/diagram-drawer"
 import { TaskBody } from "../src/task-body"
 import { render } from "./render"
 
@@ -87,6 +87,44 @@ describe("a mermaid fence", () => {
     const root = await drawn("```d2\na -> b\n```")
     expect(root.querySelector("[data-diagram]")).toBeNull()
     expect(root.querySelector("pre code")!.textContent).toBe("a -> b\n")
+  })
+})
+
+describe("a draw that fails", () => {
+  const flaky = vi.fn<DrawDiagram>(async () => ({ failed: "could not reach the openplan daemon" }))
+
+  async function failed(): Promise<HTMLElement> {
+    const root = render(
+      <DiagramDrawer value={flaky}>
+        <TaskBody project="openplan" abbreviation="OPP" markdown={"```mermaid\nflowchart LR\n  p --> q\n```"} />
+      </DiagramDrawer>,
+    )
+    await settle()
+    return root
+  }
+
+  it("says why without blaming the source", async () => {
+    const root = await failed()
+    const block = root.querySelector("[data-diagram='failed']")!
+    expect(block.querySelector("[role='alert']")!.textContent).toBe(
+      "Could not draw the diagram: could not reach the openplan daemon",
+    )
+    expect(root.querySelector("[data-diagram='error']")).toBeNull()
+    expect(root.querySelector("pre")).toBeNull()
+  })
+
+  it("draws the same source again on Try again", async () => {
+    flaky.mockClear()
+    const root = await failed()
+    flaky.mockImplementationOnce(draw)
+    act(() => {
+      ;[...root.querySelectorAll("button")].find((button) => button.textContent === "Try again")!.click()
+    })
+    expect(root.querySelector("[data-diagram='drawing']")).not.toBeNull()
+    await settle()
+    expect(flaky).toHaveBeenCalledTimes(2)
+    expect(flaky).toHaveBeenLastCalledWith("flowchart LR\n  p --> q\n")
+    expect(root.querySelector("figure[data-diagram='drawn'] svg")!.textContent).toBe("p to q")
   })
 })
 

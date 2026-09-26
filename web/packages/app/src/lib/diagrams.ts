@@ -11,5 +11,5 @@ export const drawDiagramOnce: DrawDiagram = (source) =>
     (error: unknown) =>
       error instanceof DiagramRefused
         ? { error: error.message, line: error.position?.line }
-        : { error: errorText(error) },
+        : { failed: errorText(error) },
   )
