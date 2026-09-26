@@ -20,8 +20,9 @@ use crate::Publisher;
 
 pub const STORE_DIR: &str = ".plan";
 
-// How far back the first load looks for the last change of each task. A task changed longer ago
-// than this reads as undated.
+// How far back the first load looks for the first and the last change of each task. A task changed
+// longer ago than this reads as undated, and one created longer ago reads with no author until it
+// changes again.
 const DATING_BUDGET: usize = 4096;
 // Two misses in sequence, so a root that reads as absent for a moment does not demote the project.
 const ROOT_MISSES: u32 = 2;
@@ -359,6 +360,7 @@ impl Project {
                 })?;
                 index.load(&plan)?;
                 index.date(&log);
+                index.credit(&log);
             }
             Some(changes) if changes.is_empty() => {}
             Some(changes) => {
@@ -370,6 +372,17 @@ impl Project {
                 }
                 for (number, at) in dated {
                     index.touch(number, at);
+                }
+                let created = op_index::created(&changes);
+                for number in numbers {
+                    if index.contains(number)
+                        && (created.contains(&number) || !index.credited(number))
+                    {
+                        let history = self
+                            .tracker
+                            .task_history(number, &HistoryQuery::default())?;
+                        index.credit(&history);
+                    }
                 }
             }
         }

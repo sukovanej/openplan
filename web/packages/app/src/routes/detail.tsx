@@ -30,6 +30,7 @@ import {
   statusField,
   TaskBodyWithConflicts,
   TaskChangeView,
+  TaskAuthor,
   TaskIdentity,
   taskPath,
   TaskTags,
@@ -199,6 +200,7 @@ function TaskDetailView({
                 the body twice. */}
             <TimesAndTags>
               <MetaLine className={timesLine}>
+                <TaskAuthor author={task.author} withAgent />
                 <TaskTimes
                   created={detail === null ? undefined : createdOf(detail.metadata)}
                   updated={task.updated}

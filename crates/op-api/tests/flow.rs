@@ -65,6 +65,7 @@ impl Build {
             conflicts: 0,
             problems: Vec::new(),
             updated: Field::Error(op_api::FieldError::Missing),
+            author: None,
         }
     }
 }

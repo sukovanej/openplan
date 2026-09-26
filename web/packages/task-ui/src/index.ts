@@ -65,6 +65,7 @@ export {
   type TaskRoute,
   taskRouteOf,
 } from "./task-path"
+export { TaskAuthor } from "./task-author"
 export { TaskIdentity, UnresolvedMark } from "./task-identity"
 export { TaskRefChip } from "./task-ref-chip"
 export { TaskTags } from "./task-tags"
