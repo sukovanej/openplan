@@ -42,7 +42,7 @@ query -> line: DiffView in the popover
 ### Daemon
 
 - Add `GET /api/projects/{project}/revisions/{revision}/diff?path=<path>`. It returns `{ diff: string, truncated: bool }` as a unified diff.
-- Take the path from `DocumentChange.path`. This lets one route serve task, tag, config, and asset lines.
+- Take the path from `DocumentChange.path`. This lets one route serve task, tag, config, and asset lines. An optional `from=<path>` gives the parent side a different path, for a renamed task file.
 - Read the two sides with `Backend::read_at` at the first parent and at the revision. Both backends already have this method. A missing side is an empty file. Do not check out a tree. Do not start a `git` process.
 - Compute the diff in the daemon with one in-process diff crate. `gix` already carries `imara-diff`, so prefer that crate to a new dependency.
 - Run the work in `blocking`, as the history routes do.
@@ -53,9 +53,9 @@ query -> line: DiffView in the popover
 ### Web
 
 - Start the query when the hover delay ends (use the `HOVER_DELAY` of `Tooltip`), not on `pointerenter`. A pointer that moves across the list must send no request.
-- Put the query key beside `revisionKey`, outside the task keys: `[...projectKey(project), "revision", revision, "diff", path]`. Keep `staleTime: Infinity`. The change events must not invalidate this key.
+- Put the query key beside `revisionKey`, outside the task keys: `[...projectKey(project), "revision", revision, "diff", from, path]`. Keep `staleTime: Infinity`. The change events must not invalidate this key.
 - Read through `abortable`. When the popover closes before the answer arrives, the request stops.
 - Keep one open popover for the whole list. Keep the hover state in the change line, so that a hover does not render `RevisionList` or the memoized `Revision` again.
 - Restore `DiffView` from `d275e32` (OPP-112, removed in #161) into `@openplan/ui`. Load it and the Shiki `diff` grammar with `React.lazy`, so the activity route chunk does not grow.
 - Give the popover a fixed maximum height and width, and let it scroll. Show a skeleton while the diff loads. When `truncated` is set, show a line that says so.
-- A task line can hold two paths when a new title renamed the file. Diff the old path against the new path, and send both paths.
+- A task line can hold two paths when a new title renamed the file. Send the removed path as `from` and the added path as `path`.
