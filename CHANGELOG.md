@@ -61,6 +61,13 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   minute, it counts in steps of ten seconds: "just now", "10 seconds ago",
   "20 seconds ago", and so on.
 
+### Fixed
+
+- Two or more commands that open a new local project at the same time now all
+  work. Before, a command could fail with "database is locked". A command could
+  also delete a file of the project from the disk, such as `.plan/config.toml`,
+  when another command recorded that file at the same time.
+
 ## [0.0.3](https://github.com/sukovanej/openplan/compare/v0.0.2...v0.0.3) - 2026-09-25
 
 ### Added
