@@ -4019,6 +4019,7 @@ dependencies = [
  "op-api",
  "op-backend",
  "op-backend-local",
+ "op-diagram-mermaid",
  "op-md",
  "op-task",
  "op-tracker",

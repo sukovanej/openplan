@@ -1,49 +1,23 @@
 import { act } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
+import { type DiagramOutcome, DiagramDrawer } from "../src/diagram-drawer"
 import { TaskBody } from "../src/task-body"
 import { render } from "./render"
 
-// The real engine answers one message at a time, so the fake counts the calls in flight and the
-// tests assert the count never passes one.
-let inFlight = 0
-let mostInFlight = 0
-
-async function oneMessage<T>(reply: () => T): Promise<T> {
-  inFlight += 1
-  mostInFlight = Math.max(mostInFlight, inFlight)
+const draw = vi.fn(async (source: string): Promise<DiagramOutcome> => {
   await new Promise((resolve) => setTimeout(resolve, 1))
-  inFlight -= 1
-  return reply()
-}
-
-type CompileRequest = { fs: { index: string }; options: { sketch?: boolean; layout?: string } }
-
-const compile = vi.fn(({ fs }: CompileRequest) =>
-  oneMessage(() => {
-    const source = fs.index
-    if (source.includes("->\n")) {
-      throw new Error(
-        JSON.stringify([{ range: "index,0:0:0-0:4:4", errmsg: "index:1:1: connection missing destination" }]),
-      )
-    }
-    return { diagram: { source }, renderOptions: { pad: 16 } }
-  }),
-)
-
-const renderSvg = vi.fn((diagram: { source: string }, options: { themeID: number }) =>
-  oneMessage(() => `<svg viewBox="0 0 120 40"><text>${diagram.source.trim()} theme ${options.themeID}</text></svg>`),
-)
-
-vi.mock("@terrastruct/d2", () => ({
-  D2: class {
-    compile = compile
-    render = renderSvg
-  },
-}))
-
-afterEach(() => {
-  document.documentElement.classList.remove("dark")
+  if (source.includes("-->\n")) return { error: "line 2, column 7: expected a node id", line: 2 }
+  if (source.trim() === "flowchart TD") return { drawing: { svg: "", width: 0, height: 0 } }
+  const [, from, to] = /(\w) --> (\w)/.exec(source)!
+  const label = `${from} to ${to}`
+  return {
+    drawing: {
+      svg: `<svg class="op-diagram" viewBox="0 0 120 40" width="120" height="40"><text>${label}</text></svg>`,
+      width: 120,
+      height: 40,
+    },
+  }
 })
 
 async function settle(): Promise<void> {
@@ -52,93 +26,67 @@ async function settle(): Promise<void> {
   })
 }
 
+function body(markdown: string): HTMLElement {
+  return render(
+    <DiagramDrawer value={draw}>
+      <TaskBody project="openplan" abbreviation="OPP" markdown={markdown} />
+    </DiagramDrawer>,
+  )
+}
+
 async function drawn(markdown: string): Promise<HTMLElement> {
-  const root = render(<TaskBody project="openplan" abbreviation="OPP" markdown={markdown} />)
+  const root = body(markdown)
   await settle()
   return root
 }
 
-function decoded(img: Element): string {
-  return decodeURIComponent(img.getAttribute("src")!.replace("data:image/svg+xml;charset=utf-8,", ""))
-}
-
-describe("a d2 fence", () => {
-  it("says it is drawing until the picture arrives", async () => {
-    const root = render(<TaskBody project="openplan" abbreviation="OPP" markdown={"```d2\nw -> v\n```"} />)
+describe("a mermaid fence", () => {
+  it("says it is drawing until the drawing arrives", async () => {
+    const root = body("```mermaid\nflowchart LR\n  w --> v\n```")
     expect(root.querySelector("pre")).toBeNull()
     const placeholder = root.querySelector("[data-diagram='drawing'][role='status']")!
     expect(placeholder.textContent).toContain("Drawing")
-    expect(placeholder.querySelectorAll("[data-slot='skeleton']").length).toBeGreaterThan(1)
     await settle()
     expect(root.querySelector("[data-diagram='drawing']")).toBeNull()
-    expect(root.querySelector("figure[data-diagram='drawn'] img")).not.toBeNull()
+    expect(root.querySelector("figure[data-diagram='drawn'] svg.op-diagram")).not.toBeNull()
   })
 
-  it("draws the current theme only", async () => {
-    renderSvg.mockClear()
-    const root = await drawn("```d2\na -> b\n```")
-    const images = [...root.querySelectorAll("figure[data-diagram='drawn'] img")]
-    expect(images).toHaveLength(1)
-    expect(decoded(images[0]!)).toContain("a -> b theme 3")
-    expect(images[0]!.getAttribute("width")).toBe("90")
-    expect(images[0]!.getAttribute("height")).toBe("30")
-    expect(renderSvg).toHaveBeenCalledTimes(1)
+  it("puts the SVG inline, where the theme CSS reaches it", async () => {
+    const root = await drawn("```mermaid\nflowchart LR\n  a --> b\n```")
+    const svg = root.querySelector("figure[data-diagram='drawn'] svg")!
+    expect(svg.textContent).toBe("a to b")
+    expect(root.querySelector("figure img")).toBeNull()
   })
 
-  it("draws the dark theme when the page is dark", async () => {
-    document.documentElement.classList.add("dark")
-    const root = await drawn("```d2\ne -> f\n```")
-    expect(decoded(root.querySelector("figure[data-diagram='drawn'] img")!)).toContain("e -> f theme 200")
+  it("sends the source of the fence to the daemon", async () => {
+    draw.mockClear()
+    await drawn("```mermaid\nflowchart LR\n  c --> d\n```")
+    expect(draw).toHaveBeenCalledWith("flowchart LR\n  c --> d\n")
   })
 
-  it("keeps the picture up while a theme flip draws the other one", async () => {
-    compile.mockClear()
-    const root = await drawn("```d2\ng -> h\n```")
-    act(() => {
-      document.documentElement.classList.add("dark")
-    })
-    await act(async () => {
-      await Promise.resolve()
-    })
-    expect(root.querySelector("[data-diagram='drawing']")).toBeNull()
-    expect(decoded(root.querySelector("figure[data-diagram='drawn'] img")!)).toContain("theme 3")
-    await settle()
-    expect(decoded(root.querySelector("figure[data-diagram='drawn'] img")!)).toContain("g -> h theme 200")
-    expect(compile).toHaveBeenCalledTimes(1)
-  })
-
-  it("asks for the sketch look and the elk layout", async () => {
-    await drawn("```d2\nm -> n\n```")
-    const request = compile.mock.calls.at(-1)![0]
-    expect(request.options.sketch).toBe(true)
-    expect(request.options.layout).toBe("elk")
-  })
-
-  it("keeps the source and names the problem when the compiler refuses it", async () => {
-    const root = await drawn("```d2\na ->\n```")
+  it("shows the message and marks the line where the source stops", async () => {
+    const root = await drawn("```mermaid\nflowchart LR\n  a -->\n```")
     const block = root.querySelector("[data-diagram='error']")!
-    expect(block.querySelector("[role='alert']")!.textContent).toBe("1:1: connection missing destination")
-    expect(block.querySelector("pre code")!.textContent).toBe("a ->\n")
+    expect(block.querySelector("[role='alert']")!.textContent).toBe("line 2, column 7: expected a node id")
+    expect(block.querySelector("pre code")!.textContent).toBe("flowchart LR  a -->")
+    expect(block.querySelector("[data-failed]")!.textContent).toBe("  a -->")
+    expect(root.querySelector("svg")).toBeNull()
   })
 
-  it("compiles one source once", async () => {
-    compile.mockClear()
-    await drawn("```d2\nx -> y\n```")
-    await drawn("```d2\nx -> y\n```")
-    expect(compile).toHaveBeenCalledTimes(1)
-  })
-
-  it("sends the engine one message at a time across diagrams", async () => {
-    mostInFlight = 0
-    const root = await drawn("```d2\np -> q\n```\n\n```d2\nq -> r\n```\n\n```d2\nr ->\n```")
-    expect(root.querySelectorAll("figure[data-diagram='drawn']")).toHaveLength(2)
-    expect(root.querySelectorAll("[data-diagram='error']")).toHaveLength(1)
-    expect(mostInFlight).toBe(1)
+  it("says so when the diagram is empty", async () => {
+    const root = await drawn("```mermaid\nflowchart TD\n```")
+    expect(root.querySelector("[data-diagram='empty']")!.textContent).toContain("empty")
   })
 
   it("reads the tag with any case", async () => {
-    const root = await drawn("```D2\nc -> d\n```")
+    const root = await drawn("```Mermaid\nflowchart LR\n  e --> f\n```")
     expect(root.querySelector("figure[data-diagram='drawn']")).not.toBeNull()
+  })
+
+  it("leaves a d2 fence as code", async () => {
+    const root = await drawn("```d2\na -> b\n```")
+    expect(root.querySelector("[data-diagram]")).toBeNull()
+    expect(root.querySelector("pre code")!.textContent).toBe("a -> b\n")
   })
 })
 
@@ -151,26 +99,23 @@ describe("the full view of a diagram", () => {
     return document.querySelector<HTMLElement>("[role='dialog']")!
   }
 
-  it("opens on a click and shows the same picture", async () => {
-    const dialog = await opened("```d2\ns -> t\n```")
-    expect(decoded(dialog.querySelector("img")!)).toContain("s -> t theme 3")
+  it("opens on a click and shows the same drawing in a viewport", async () => {
+    const dialog = await opened("```mermaid\nflowchart LR\n  s --> t\n```")
+    const viewport = dialog.querySelector("[role='group'][aria-label='Diagram']")!
+    expect(viewport.querySelector("svg")!.textContent).toBe("s to t")
+    expect(viewport.querySelector("[aria-label='Zoom in']")).not.toBeNull()
   })
 
   it("closes on Escape", async () => {
-    const dialog = await opened("```d2\nu -> v\n```")
+    const dialog = await opened("```mermaid\nflowchart LR\n  u --> v\n```")
     act(() => {
       dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
     })
     expect(document.querySelector("[role='dialog']")).toBeNull()
   })
 
-  it("gives the page to the picture, with no heading", async () => {
-    const dialog = await opened("```d2\nk -> l\n```")
-    expect(dialog.querySelector("h1, h2, h3")).toBeNull()
-  })
-
-  it("closes from the button on the picture", async () => {
-    const dialog = await opened("```d2\nm -> o\n```")
+  it("closes from the button on the drawing", async () => {
+    const dialog = await opened("```mermaid\nflowchart LR\n  m --> o\n```")
     act(() => {
       dialog.querySelector<HTMLElement>("[aria-label='Close']")!.click()
     })
@@ -178,7 +123,7 @@ describe("the full view of a diagram", () => {
   })
 
   it("keeps the page's single-key bindings off the keys pressed in it", async () => {
-    const dialog = await opened("```d2\nw -> z\n```")
+    const dialog = await opened("```mermaid\nflowchart LR\n  w --> z\n```")
     expect(dialog.hasAttribute("data-keys-ignore")).toBe(true)
   })
 })

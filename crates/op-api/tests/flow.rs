@@ -516,34 +516,30 @@ fn a_leaf_carries_its_place_and_a_box_carries_none() {
         task("OPP-40", Status::Todo),
         task("OPP-41", Status::Todo).parent("OPP-40"),
     ]);
-    let json = serde_json::to_value(&flow).expect("serializes");
 
     assert_eq!(
-        json,
-        serde_json::json!({
-            "nodes": [
-                {
-                    "kind": "box",
-                    "project": "one",
-                    "id": "OPP-40",
-                    "title": "title of OPP-40",
-                    "status": "todo",
-                },
-                {
-                    "kind": "leaf",
-                    "project": "one",
-                    "id": "OPP-41",
-                    "title": "title of OPP-41",
-                    "status": "todo",
-                    "parent": "OPP-40",
-                    "wave": 0,
-                    "position": 0,
-                    "blocks_count": 0,
-                },
-            ],
-            "edges": [],
-        })
+        flow.nodes,
+        vec![
+            FlowNode::Box {
+                project: "one".to_owned(),
+                id: "OPP-40".to_owned(),
+                title: "title of OPP-40".to_owned(),
+                status: Field::Value(Status::Todo),
+                parent: None,
+            },
+            FlowNode::Leaf {
+                project: "one".to_owned(),
+                id: "OPP-41".to_owned(),
+                title: "title of OPP-41".to_owned(),
+                status: Field::Value(Status::Todo),
+                parent: Some("OPP-40".to_owned()),
+                wave: 0,
+                position: 0,
+                blocks_count: 0,
+            },
+        ]
     );
+    assert!(flow.edges.is_empty());
 }
 
 #[test]

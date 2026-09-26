@@ -5,6 +5,8 @@ export { ChangeMark } from "./change-mark"
 export { DocumentChangeView, TagChangeView, TaskChangeView } from "./change-view"
 export { CommentThread } from "./comment-thread"
 export { CONFLICT_TINT, ConflictBadge, conflictCount } from "./conflict-mark"
+export { type DiagramOutcome, DiagramDrawer, type DrawDiagram } from "./diagram-drawer"
+export { DiagramViewport } from "./diagram-viewport"
 export { type ConflictChoice, FieldConflict } from "./field-conflict"
 export {
   conflictedFields,

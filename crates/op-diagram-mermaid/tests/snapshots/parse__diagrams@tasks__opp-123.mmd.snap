@@ -1,0 +1,79 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/opp-123.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "main",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "push to main"
+      ]
+    },
+    {
+      "id": "workflow",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "canary.yml"
+      ]
+    },
+    {
+      "id": "release",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "GitHub prerelease, tag canary"
+      ]
+    },
+    {
+      "id": "cli",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "openplan update --canary"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "main",
+      "to": "workflow",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "workflow",
+      "to": "release",
+      "label": [
+        "replaces the assets"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "cli",
+      "to": "release",
+      "label": [
+        "releases/tags/canary"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

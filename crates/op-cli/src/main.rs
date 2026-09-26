@@ -187,7 +187,7 @@ enum Command {
     },
     /// Open the realtime web UI in the default browser
     Open,
-    /// Report task problems (fields, references, cycles, tags, conflicts) and stale agent skills; never starts a daemon
+    /// Report task problems (fields, references, cycles, tags, conflicts, Mermaid diagrams) and stale agent skills; never starts a daemon
     Lint {
         /// Report only these tasks; every task is checked all the same
         keys: Vec<String>,

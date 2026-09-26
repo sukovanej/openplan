@@ -1,0 +1,4 @@
+flowchart LR
+  request -->|"path */.* *.php /wp-* /cgi-bin/*<br>not /.well-known/*"| probe[respond 404]
+  request -->|"@server"| server["reverse_proxy :8080"]
+  request -->|everything else| app["file_server, falls back to index.html"]

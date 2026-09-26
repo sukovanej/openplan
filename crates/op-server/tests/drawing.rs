@@ -115,19 +115,6 @@ async fn the_flow_drawing_links_each_task_to_its_page() {
 }
 
 #[tokio::test]
-async fn the_flow_drawing_takes_the_query_of_the_flow() {
-    let (_alpha, _beta, state) = two_projects();
-    todo(&state, "alpha", "alpha one", &[]).await;
-    todo(&state, "beta", "beta one", &[]).await;
-
-    let body = json_of(&state, "/api/flow/drawing?project=beta").await;
-    let svg = body["svg"].as_str().unwrap();
-
-    assert!(svg.contains(">beta one</text>"), "{svg}");
-    assert!(!svg.contains(">alpha one</text>"), "{svg}");
-}
-
-#[tokio::test]
 async fn the_flow_drawing_fills_the_shape_of_the_page() {
     let (_alpha, _beta, state) = two_projects();
     for number in 1..=9 {
@@ -163,28 +150,6 @@ async fn an_empty_flow_has_no_size() {
 
     assert_eq!(body["width"], json!(0.0));
     assert_eq!(body["height"], json!(0.0));
-}
-
-#[tokio::test]
-async fn a_cycle_refuses_the_flow_drawing_and_names_its_members() {
-    let (_alpha, _beta, state) = two_projects();
-    let first = todo(&state, "alpha", "alpha one", &[]).await;
-    let second = todo(&state, "alpha", "alpha two", &[&first]).await;
-    let patched = send(
-        &state,
-        "PATCH",
-        &format!("/api/projects/alpha/tasks/{first}"),
-        Some(json!({ "dependencies": [second] })),
-    )
-    .await;
-    assert_eq!(patched.status(), StatusCode::OK);
-
-    let response = send(&state, "GET", "/api/flow/drawing", None).await;
-    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(
-        body_json(response).await["cycles"],
-        json!([["AAA-1", "AAA-2"]])
-    );
 }
 
 fn diagram(source: &str) -> op_diagram::Diagram {

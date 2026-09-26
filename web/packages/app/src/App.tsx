@@ -1,7 +1,7 @@
 import { Waypoints } from "lucide-react"
 import { Link, Outlet } from "react-router-dom"
 
-import { FLOW_ROUTE } from "@openplan/task-ui"
+import { DiagramDrawer, FLOW_ROUTE } from "@openplan/task-ui"
 
 import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"
@@ -11,6 +11,7 @@ import { MutationError } from "./components/mutation-error"
 import { ProjectSwitcher } from "./components/project-switcher"
 import { SyncStatus } from "./components/sync-status"
 import { ThemeToggle } from "./components/theme-toggle"
+import { drawDiagramOnce } from "./lib/diagrams"
 import { useKeyboard } from "./lib/keys"
 
 export function App() {
@@ -36,7 +37,9 @@ export function App() {
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-hidden px-4 py-4">
-        <Outlet />
+        <DiagramDrawer value={drawDiagramOnce}>
+          <Outlet />
+        </DiagramDrawer>
       </main>
       <HelpOverlay open={activeOverlay === "help"} onClose={closeOverlay} />
       <CommandPalette open={activeOverlay === "palette"} target={paletteTarget} onClose={closeOverlay} />

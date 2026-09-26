@@ -19,6 +19,13 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in the project list) has a `syncing` flag. The daemon sends a `sync_changed`
   event when a sync starts and another when it ends. The web UI spins the sync
   icon while a sync runs.
+- `mermaid` fenced code blocks in a task body render as diagrams in the web UI.
+  The daemon draws them (`POST /api/diagram`) with its own layout engine: a
+  subset of `flowchart`, `sequenceDiagram`, and `erDiagram`. A block that does
+  not parse shows the message and marks the line.
+- `openplan lint` reports a `mermaid` block that does not parse, in a task body
+  or in a comment, with its line and column in the task file. The daemon and
+  the web UI show it as a task problem (`diagram`).
 
 ### Changed
 
@@ -60,6 +67,17 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Each relative time in the web UI updates while it is on screen. Below one
   minute, it counts in steps of ten seconds: "just now", "10 seconds ago",
   "20 seconds ago", and so on.
+- The flow page shows an SVG that the daemon draws (`GET /api/flow/drawing`)
+  for the size of the page. It asks for a new drawing after a resize. A
+  two-finger scroll or the wheel pans a diagram, and a pinch or Ctrl with the
+  wheel zooms it. A click on a card opens its task without a reload.
+- The web app is smaller: its assets are 2.3 MB instead of 12 MB.
+
+### Removed
+
+- `d2` fenced code blocks no longer render as diagrams. They show as code. Use
+  `mermaid`.
+- `GET /api/flow`. `GET /api/flow/drawing` takes the same query.
 
 ### Fixed
 

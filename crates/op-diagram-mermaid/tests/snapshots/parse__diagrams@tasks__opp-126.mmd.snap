@@ -1,0 +1,102 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/opp-126.mmd
+---
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "timer",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "every 6 hours and 5 minutes after start"
+      ]
+    },
+    {
+      "id": "daemon",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "daemon"
+      ]
+    },
+    {
+      "id": "github",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "GitHub releases"
+      ]
+    },
+    {
+      "id": "swap",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "wait until idle, replace the binary, restart"
+      ]
+    },
+    {
+      "id": "home",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "OPENPLAN_HOME/update.json"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "timer",
+      "to": "daemon",
+      "label": [
+        "check"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "daemon",
+      "to": "github",
+      "label": [
+        "latest or canary"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "daemon",
+      "to": "swap",
+      "label": [
+        "a newer release"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "daemon",
+      "to": "home",
+      "label": [
+        "last check and its result"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

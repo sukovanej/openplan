@@ -1949,6 +1949,30 @@ fn lint_reports_every_comment_failure() {
     }
 }
 
+#[test]
+fn lint_reports_a_broken_mermaid_fence_in_the_body_and_in_a_comment() {
+    let store = LintStore::new();
+    store.put(
+        "tasks/00001-drawn.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Drawn\n\n```mermaid\npie\n```\n\n\
+         ## Comments\n\n### 2026-01-01T00:00:00Z by Test\n\n> ```mermaid\n> flowchart LR\n>   a -->\n> ```\n",
+    );
+
+    let out = store.lint(&[]);
+    let report = stdout(&out);
+
+    assert!(!out.status.success(), "{}", combined(&out));
+    for expected in [
+        "OPP-1: error[diagram]: the Mermaid diagram fails at line 8, column 1: `pie` is not a supported diagram type",
+        "OPP-1: error[diagram]: the Mermaid diagram fails at line 17, column 10: expected a node id",
+    ] {
+        assert!(
+            report.contains(expected),
+            "{expected} is not reported: {report}"
+        );
+    }
+}
+
 // A worktree is a checkout of its own, so the skills a person installs there stay there.
 #[test]
 fn setup_skills_in_a_worktree_writes_into_that_worktree() {

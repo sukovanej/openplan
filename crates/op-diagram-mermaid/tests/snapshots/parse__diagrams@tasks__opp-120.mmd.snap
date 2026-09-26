@@ -1,0 +1,95 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/opp-120.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "ui",
+      "label": [
+        "Web UI"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "sync",
+      "label": [
+        "Sync thread"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "git",
+      "label": [
+        "git fetch"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "ssh",
+      "label": [
+        "ssh"
+      ],
+      "kind": "box"
+    }
+  ],
+  "items": [
+    {
+      "kind": "message",
+      "from": "ui",
+      "to": "sync",
+      "text": [
+        "sync now (sets due)"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "sync",
+      "to": "git",
+      "text": [
+        "Command::output()"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "git",
+      "to": "ssh",
+      "text": [
+        "git-upload-pack"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "ssh",
+      "to": "ssh",
+      "text": [
+        "waits on a dead connection"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "ui",
+      "to": "sync",
+      "text": [
+        "sync now (nobody reads due)"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+flowchart TD
+  main[push to main] --> workflow[canary.yml]
+  workflow -->|replaces the assets| release["GitHub prerelease, tag canary"]
+  cli["openplan update --canary"] -->|releases/tags/canary| release

@@ -1,4 +1,4 @@
-use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Heading {
@@ -6,6 +6,13 @@ pub struct Heading {
     pub text: String,
     pub start: usize,
     pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fence {
+    pub language: String,
+    pub text: String,
+    pub text_start: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +114,33 @@ pub fn opaque_ranges(body: &str) -> Vec<std::ops::Range<usize>> {
             _ => None,
         })
         .collect()
+}
+
+pub fn fences(body: &str) -> Vec<Fence> {
+    let mut out = Vec::new();
+    let mut open: Option<Fence> = None;
+    for (event, range) in Parser::new(body).into_offset_iter() {
+        match event {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
+                let opener_end = body[range.start..]
+                    .find('\n')
+                    .map_or(range.end, |at| range.start + at + 1);
+                open = Some(Fence {
+                    language: info.split_whitespace().next().unwrap_or("").to_owned(),
+                    text: String::new(),
+                    text_start: opener_end,
+                });
+            }
+            Event::Text(text) => {
+                if let Some(fence) = open.as_mut() {
+                    fence.text.push_str(&text);
+                }
+            }
+            Event::End(TagEnd::CodeBlock) => out.extend(open.take()),
+            _ => {}
+        }
+    }
+    out
 }
 
 pub fn title(body: &str) -> Option<String> {

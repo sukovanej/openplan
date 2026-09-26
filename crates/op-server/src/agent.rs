@@ -287,12 +287,14 @@ fn instructions(workspace: &Workspace, kind: AgentKind, task: Option<&str>) -> S
              Run `{exe} lint` after each edit."
         ),
         "Never run git, and never create a worktree.".to_owned(),
-        "Prefer a diagram to prose. When a task body describes how parts connect, how data \
-         flows, or what order events take, draw it as a fenced code block tagged `d2`. The UI \
-         renders it. Use plain d2: shapes, containers, connections, sequence diagrams, and \
-         tables. Do not use imports, icons, links, or layout settings. Write prose only for a \
-         rule, a reason, or a number."
-            .to_owned(),
+        format!(
+            "Prefer a diagram to prose. When a task body describes how parts connect, how data \
+             flows, or what order events take, draw it as a fenced code block tagged `mermaid`. \
+             The daemon draws it, and `{exe} lint` reports a block that does not parse. Use only \
+             `flowchart`, `sequenceDiagram`, and `erDiagram`. Do not use `%%{{init}}%%`, front \
+             matter, `@{{ }}` shapes, `click`, `classDef`, or `style`. Write prose only for a \
+             rule, a reason, or a number."
+        ),
     ];
     if let Some(task) = task {
         lines.push(format!(

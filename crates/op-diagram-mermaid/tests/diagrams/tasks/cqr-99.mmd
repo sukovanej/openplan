@@ -1,0 +1,3 @@
+flowchart LR
+  browser -->|mudro.cz| app["Caddy: web/, else index.html"]
+  browser -->|"api.mudro.cz: fetch, sockets, OAuth"| server["Caddy: reverse_proxy :8080"]

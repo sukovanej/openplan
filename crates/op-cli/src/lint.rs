@@ -157,6 +157,9 @@ fn help(code: ProblemCode) -> &'static str {
         ProblemCode::Comment => {
             "repair the comment log with `openplan write`; add entries with `openplan comment`"
         }
+        ProblemCode::Diagram => {
+            "repair the `mermaid` fence; the openplan skill lists the Mermaid it accepts"
+        }
         ProblemCode::Reference => "name a task that exists, or remove the reference",
         ProblemCode::Tag => {
             "register the tag with `openplan tag`, or remove it with `openplan set <key> tags`"
