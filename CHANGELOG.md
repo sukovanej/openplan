@@ -9,6 +9,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The web UI shows the author of each task in the task list and on the task
+  page. The author is the person who wrote the revision that created the task,
+  and the task page also shows the agent. A task list row and the task detail
+  in the API have an `author` with a `name`, an `email`, and an `agent`.
 - Canary builds. Each push to `main` replaces the prerelease `canary` with a
   new build of the CLI and the daemon, versioned `<next patch>-canary.<run>`.
   `openplan update --canary` installs it. `openplan update` goes back to the
