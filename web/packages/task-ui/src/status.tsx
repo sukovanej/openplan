@@ -7,10 +7,20 @@ import { fieldValue, statusField } from "./metadata"
 
 const styles: Record<
   Status,
-  { label: string; icon: LucideIcon; mark: string; header: string; border: string; surface: string; faint: string }
+  {
+    label: string
+    shortcut: string
+    icon: LucideIcon
+    mark: string
+    header: string
+    border: string
+    surface: string
+    faint: string
+  }
 > = {
   backlog: {
     label: "Backlog",
+    shortcut: "b",
     icon: CircleEllipsis,
     mark: "text-status-backlog",
     header: "bg-status-backlog-surface/8 border-status-backlog-surface/20 text-status-backlog-text/80",
@@ -20,6 +30,7 @@ const styles: Record<
   },
   todo: {
     label: "Todo",
+    shortcut: "t",
     icon: Clock,
     mark: "text-status-todo",
     header: "bg-status-todo-surface/8 border-status-todo-surface/20 text-status-todo-text/80",
@@ -29,6 +40,7 @@ const styles: Record<
   },
   in_progress: {
     label: "In progress",
+    shortcut: "p",
     icon: CircleDot,
     mark: "text-status-in-progress",
     header: "bg-status-in-progress-surface/8 border-status-in-progress-surface/20 text-status-in-progress-text/80",
@@ -38,6 +50,7 @@ const styles: Record<
   },
   in_review: {
     label: "In review",
+    shortcut: "r",
     icon: Eye,
     mark: "text-status-in-review",
     header: "bg-status-in-review-surface/8 border-status-in-review-surface/20 text-status-in-review-text/80",
@@ -47,6 +60,7 @@ const styles: Record<
   },
   done: {
     label: "Done",
+    shortcut: "d",
     icon: CircleCheck,
     mark: "text-status-done",
     header: "bg-status-done-surface/8 border-status-done-surface/20 text-status-done-text/80",
@@ -56,6 +70,7 @@ const styles: Record<
   },
   cancelled: {
     label: "Cancelled",
+    shortcut: "c",
     icon: CircleX,
     mark: "text-status-cancelled",
     header: "bg-status-cancelled-surface/8 border-status-cancelled-surface/20 text-status-cancelled-text/80",
@@ -75,6 +90,11 @@ const UNREADABLE_FAINT = "bg-status-unreadable-surface/6"
 export const STATUSES = Object.keys(styles) as ReadonlyArray<Status>
 
 export const statusLabel = (status: Status): string => styles[status].label
+
+export const statusShortcut = (status: Status): string => styles[status].shortcut
+
+export const statusOfShortcut = (key: string): Status | undefined =>
+  STATUSES.find((status) => styles[status].shortcut === key)
 
 export const statusIcon = (status: Status): LucideIcon => styles[status].icon
 

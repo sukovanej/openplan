@@ -21,7 +21,7 @@ const noop = () => {}
 describe("StatusMenu", () => {
   it("offers every status the board groups by, in that order", () => {
     const root = render(<StatusMenu current="todo" onPick={noop} onClose={noop} />)
-    expect(options(root).map((option) => option.textContent)).toEqual([
+    expect(options(root).map((option) => option.querySelector("span")?.textContent)).toEqual([
       "Backlog",
       "Todo",
       "In progress",
@@ -35,7 +35,7 @@ describe("StatusMenu", () => {
   it("opens on the status the task carries", () => {
     const root = render(<StatusMenu current="done" onPick={noop} onClose={noop} />)
     const active = options(root).filter((option) => option.getAttribute("aria-selected") === "true")
-    expect(active.map((option) => option.textContent)).toEqual(["Done"])
+    expect(active.map((option) => option.querySelector("span")?.textContent)).toEqual(["Done"])
   })
 
   it("opens on the first status when the task carries none that could be read", () => {
@@ -68,6 +68,45 @@ describe("StatusMenu", () => {
     press(root, "ArrowUp")
     press(root, "Enter")
     expect(picked).toEqual(["cancelled"])
+  })
+
+  it("shows the letter that picks each status", () => {
+    const root = render(<StatusMenu current="todo" onPick={noop} onClose={noop} />)
+    expect(options(root).map((option) => option.querySelector("kbd")?.textContent)).toEqual([
+      "B",
+      "T",
+      "P",
+      "R",
+      "D",
+      "C",
+    ])
+    expect(options(root).map((option) => option.getAttribute("aria-keyshortcuts"))).toEqual([
+      "b",
+      "t",
+      "p",
+      "r",
+      "d",
+      "c",
+    ])
+  })
+
+  it("picks a status with its letter", () => {
+    const picked: Array<Status> = []
+    const root = render(<StatusMenu current="backlog" onPick={(status) => picked.push(status)} onClose={noop} />)
+    press(root, "r")
+    press(root, "c")
+    expect(picked).toEqual(["in_review", "cancelled"])
+  })
+
+  it("leaves a letter alone when a modifier is held with it", () => {
+    const picked: Array<Status> = []
+    const root = render(<StatusMenu current="backlog" onPick={(status) => picked.push(status)} onClose={noop} />)
+    const list = root.querySelector("[role='listbox']")!
+    act(() => {
+      list.dispatchEvent(new KeyboardEvent("keydown", { key: "d", ctrlKey: true, bubbles: true, cancelable: true }))
+    })
+    press(root, "x")
+    expect(picked).toEqual([])
   })
 
   it("closes on Escape without picking anything", () => {
