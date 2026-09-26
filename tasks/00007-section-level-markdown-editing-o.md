@@ -48,7 +48,7 @@ GFM coverage (tables, `- [ ]` checklists), and speed. Record the choice and why.
 
 ## Splice engine (shared core crate)
 One engine, called identically by the CLI, the HTTP endpoint, and (where relevant) the
-[[merge-driver]]. Capabilities:
+sync merge driver. Capabilities:
 - **Address** a section by deduped heading-slug path (`Section`, `Section.Sub`) → source
   byte range (heading through the byte before the next same-or-higher heading).
 - **Overwrite** a section: splice new text into its byte range; surrounding bytes unchanged.
