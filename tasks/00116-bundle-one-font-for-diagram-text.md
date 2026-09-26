@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 created: 2026-09-25T15:18:48Z
 tags:
 - daemon
@@ -12,6 +12,14 @@ The daemon will lay out diagrams, and the browser will draw them. Layout
 needs the width of each label in the font that the browser draws. The UI
 uses the system font, which is different on each operating system, so the
 daemon cannot know it. One bundled font removes the difference.
+
+## State
+
+Done in #171: the subset fonts, `@font-face` in the SPA, the width table,
+`text_width`, and the line metrics. The SVG of the daemon sets the font.
+The wait for `document.fonts.load()` in item 4 belongs to the web viewer,
+so it moved to
+[[./00122-show-the-daemon-s-mermaid-diagra.md]].
 
 ## Scope
 
