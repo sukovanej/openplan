@@ -75,8 +75,8 @@ flowchart LR
    comments.
 3. **Web.** `task-ui` shows a `mermaid` fence inline, and so do the full
    view and the flow page. The flow page sends the size of its page. One
-   viewport component pans and zooms, and one
-   CSS file gives the classes of the SVG their theme colors. One click
+   viewport component pans and zooms, and one CSS file gives the classes
+   of the SVG their theme colors. One click
    handler on the viewport gives internal links to React Router. Remove
    the three dependencies, and regenerate the client with
    `mise run generate-web-client`.
