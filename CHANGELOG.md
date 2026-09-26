@@ -45,6 +45,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The web UI reloads the page when the daemon runs a new version after a
   reconnect, so the tab gets the new web app. When the page holds an open
   dialog or typed text, it shows "New version" with a Reload button instead.
+- `openplan url <key>...` prints the address of each task page in the web UI.
+  The openplan skill tells the agent to write each task key in a reply as a
+  link to that page.
 
 ### Changed
 

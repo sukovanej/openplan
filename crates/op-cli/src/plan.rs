@@ -43,6 +43,12 @@ impl Plan {
         served(self.client.task(&self.base_url, &self.project, id))
     }
 
+    // The web UI owns this route: `taskPath` in `web/packages/task-ui/src/task-path.ts`. A project
+    // name and a key hold only characters that need no escape in a path.
+    pub fn task_page(&self, id: &str) -> String {
+        format!("{}/{}/task/{id}", self.base_url, self.project)
+    }
+
     pub fn tree(&self, id: &str, depth: Option<usize>) -> Result<TaskTreeView> {
         served(
             self.client
