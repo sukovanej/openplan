@@ -1,6 +1,8 @@
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Edit, LogQuery, MergeInput, MergePolicy, Op,
@@ -459,4 +461,62 @@ fn inspect_finds_the_tasks_locally_or_fetched() {
         Some(bob_path.canonicalize().expect("path").as_path())
     );
     assert!(op_backend_git::inspect(team.root.as_path()).is_none());
+}
+
+#[test]
+fn a_remote_that_never_answers_fails_the_sync_and_stops_ssh() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    git(dir.path(), &["init", "--quiet", "-b", "main"]);
+    let ssh = dir.path().join("hung-ssh");
+    let pid_file = dir.path().join("hung-ssh.pid");
+    std::fs::write(
+        &ssh,
+        format!(
+            "#!/bin/sh\necho $$ > '{}'\nexec sleep 600\n",
+            pid_file.display()
+        ),
+    )
+    .expect("write");
+    std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    git(
+        dir.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "ssh://git@example.invalid/tasks.git",
+        ],
+    );
+    git(
+        dir.path(),
+        &["config", "core.sshCommand", ssh.to_str().expect("utf-8")],
+    );
+    git(dir.path(), &["config", "ssh.variant", "simple"]);
+    let mut options = Options::new(Arc::new(PreferTheirs));
+    options.network_timeout = Duration::from_millis(500);
+    let backend = GitBackend::open(dir.path(), options).expect("open");
+
+    let started = Instant::now();
+    let err = backend
+        .remote()
+        .expect("a remote")
+        .sync()
+        .expect_err("the remote never answers");
+
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(err.to_string().contains("got no answer"), "{err}");
+    let pid = std::fs::read_to_string(&pid_file).expect("ssh ran");
+    let ssh_alive = || {
+        Command::new("kill")
+            .args(["-0", pid.trim()])
+            .stderr(Stdio::null())
+            .status()
+            .expect("run kill")
+            .success()
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ssh_alive() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(!ssh_alive(), "the hung ssh outlives the sync");
 }
