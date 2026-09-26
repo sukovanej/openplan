@@ -5,7 +5,9 @@ All notable changes to openplan are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.3...main)
+## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.4...main)
+
+## [0.0.4](https://github.com/sukovanej/openplan/compare/v0.0.3...v0.0.4) - 2026-09-26
 
 ### Added
 
@@ -94,6 +96,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `openplan url <key>...` prints the address of each task page in the web UI.
   The openplan skill tells the agent to write each task key in a reply as a
   link to that page.
+- In the activity view and in the history of a task, a change line opens a
+  card with the diff of the change when the pointer is on the line or when
+  the line has the keyboard focus.
+  `GET /api/projects/{project}/revisions/{revision}/diff?path=<path>` gives
+  the unified diff of one document against the first parent of the
+  revision. The diff stops at 400 lines, and a binary document has no diff.
 
 ### Changed
 

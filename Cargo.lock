@@ -3846,7 +3846,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "op-agent"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -3857,7 +3857,7 @@ dependencies = [
 
 [[package]]
 name = "op-agent-claude"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "op-agent",
  "op-claude",
@@ -3868,7 +3868,7 @@ dependencies = [
 
 [[package]]
 name = "op-agent-codex"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "op-agent",
  "serde",
@@ -3879,7 +3879,7 @@ dependencies = [
 
 [[package]]
 name = "op-api"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "insta",
  "op-diagram",
@@ -3893,7 +3893,7 @@ dependencies = [
 
 [[package]]
 name = "op-backend"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "jiff",
  "serde",
@@ -3904,14 +3904,14 @@ dependencies = [
 
 [[package]]
 name = "op-backend-conformance"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "op-backend",
 ]
 
 [[package]]
 name = "op-backend-git"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "gix",
  "nix",
@@ -3924,7 +3924,7 @@ dependencies = [
 
 [[package]]
 name = "op-backend-local"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "getrandom 0.4.3",
  "notify",
@@ -3939,14 +3939,14 @@ dependencies = [
 
 [[package]]
 name = "op-browser"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "op-claude"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -3955,7 +3955,7 @@ dependencies = [
 
 [[package]]
 name = "op-client"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "op-api",
  "op-server",
@@ -3968,7 +3968,7 @@ dependencies = [
 
 [[package]]
 name = "op-daemon"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -3992,7 +3992,7 @@ dependencies = [
 
 [[package]]
 name = "op-diagram"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "insta",
  "serde",
@@ -4001,7 +4001,7 @@ dependencies = [
 
 [[package]]
 name = "op-diagram-mermaid"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "insta",
  "op-diagram",
@@ -4011,7 +4011,7 @@ dependencies = [
 
 [[package]]
 name = "op-diagram-render"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "insta",
  "op-diagram",
@@ -4021,7 +4021,7 @@ dependencies = [
 
 [[package]]
 name = "op-index"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "op-api",
  "op-backend",
@@ -4035,14 +4035,14 @@ dependencies = [
 
 [[package]]
 name = "op-md"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "pulldown-cmark",
 ]
 
 [[package]]
 name = "op-server"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "axum",
  "getrandom 0.4.3",
@@ -4080,7 +4080,7 @@ dependencies = [
 
 [[package]]
 name = "op-skills"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "tempfile",
@@ -4088,7 +4088,7 @@ dependencies = [
 
 [[package]]
 name = "op-task"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "jiff",
  "op-md",
@@ -4101,7 +4101,7 @@ dependencies = [
 
 [[package]]
 name = "op-tracker"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "op-backend",
  "op-backend-git",
@@ -4115,7 +4115,7 @@ dependencies = [
 
 [[package]]
 name = "op-update"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -4132,7 +4132,7 @@ dependencies = [
 
 [[package]]
 name = "openplan"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -4161,7 +4161,7 @@ dependencies = [
 
 [[package]]
 name = "openplan-gui"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "op-client",
