@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const refreshed = vi.hoisted(() => ({ calls: [] as Array<string> }))
+const page = vi.hoisted(() => ({ unsaved: false, reloads: 0, version: "1.0.0" as string | undefined, up: true }))
 
 vi.mock("../src/lib/query-client", () => ({
   queryInvalidator: {
@@ -11,6 +12,10 @@ vi.mock("../src/lib/query-client", () => ({
     refreshSync: (project: string) => refreshed.calls.push(`sync ${project}`),
     refreshVisible: (project?: string) => refreshed.calls.push(`screen ${project ?? "every"}`),
   },
+}))
+
+vi.mock("../src/lib/unsaved-work", () => ({
+  holdsUnsavedWork: () => page.unsaved,
 }))
 
 class FakeEventSource {
@@ -30,13 +35,25 @@ class FakeEventSource {
   }
 }
 
+// `/health` answers with the daemon's version, the text "ok" from a server that is not a daemon,
+// or nothing while the daemon is down.
+async function health(): Promise<Response> {
+  if (!page.up) throw new TypeError("connection refused")
+  if (page.version === undefined) return new Response("ok")
+  return new Response(JSON.stringify({ pid: 1, port: 7373, started_at: 0, version: page.version }))
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.stubGlobal("EventSource", FakeEventSource)
+  vi.stubGlobal("fetch", health)
+  vi.stubGlobal("document", {})
+  vi.stubGlobal("window", { location: { reload: () => (page.reloads += 1) } })
   // The stream is a module singleton, so each test starts a fresh module.
   vi.resetModules()
   FakeEventSource.made = []
   refreshed.calls = []
+  Object.assign(page, { unsaved: false, reloads: 0, version: "1.0.0", up: true })
 })
 
 afterEach(() => {
@@ -47,17 +64,28 @@ afterEach(() => {
 async function start(): Promise<FakeEventSource> {
   const { startRealtime } = await import("../src/lib/realtime")
   startRealtime()
+  await vi.advanceTimersByTimeAsync(0)
   const stream = FakeEventSource.made[0]
   stream.onopen?.()
   return stream
 }
 
-function reconnect(stream: FakeEventSource): FakeEventSource {
+async function connection(): Promise<string> {
+  const { connectionStore } = await import("../src/lib/connection")
+  return connectionStore.getSnapshot()
+}
+
+async function drop(stream: FakeEventSource, wait = 1000): Promise<FakeEventSource | undefined> {
+  const before = FakeEventSource.made.length
   stream.onerror?.()
-  vi.advanceTimersByTime(1000)
-  const next = FakeEventSource.made.at(-1)!
-  next.onopen?.()
-  return next
+  await vi.advanceTimersByTimeAsync(wait)
+  return FakeEventSource.made.length > before ? FakeEventSource.made.at(-1) : undefined
+}
+
+async function reconnect(stream: FakeEventSource): Promise<FakeEventSource> {
+  const next = await drop(stream)
+  next!.onopen?.()
+  return next!
 }
 
 describe("the event stream", () => {
@@ -92,7 +120,7 @@ describe("the event stream", () => {
     vi.advanceTimersByTime(50)
     refreshed.calls = []
 
-    const next = reconnect(stream)
+    const next = await reconnect(stream)
     vi.advanceTimersByTime(50)
 
     expect(next.url).toBe("/api/events?last_event_id=7")
@@ -103,9 +131,72 @@ describe("the event stream", () => {
     const stream = await start()
     refreshed.calls = []
 
-    const next = reconnect(stream)
+    const next = await reconnect(stream)
 
     expect(next.url).toBe("/api/events")
     expect(refreshed.calls).toEqual(["projects", "screen every"])
+  })
+
+  it("waits ten seconds before it connects again after a stop", async () => {
+    const stream = await start()
+    stream.send({ kind: "daemon_stopping", reason: "stop" })
+    expect(await connection()).toBe("stopped")
+
+    expect(await drop(stream)).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(9000)
+    expect(FakeEventSource.made).toHaveLength(2)
+  })
+
+  it("connects again at once after a stop for an update", async () => {
+    const stream = await start()
+    stream.send({ kind: "daemon_stopping", reason: "update" })
+    expect(await connection()).toBe("updating")
+
+    expect(await drop(stream)).toBeDefined()
+  })
+
+  it("keeps saying it updates while the new daemon starts", async () => {
+    const stream = await start()
+    stream.send({ kind: "daemon_stopping", reason: "update" })
+    page.up = false
+
+    expect(await drop(stream)).toBeUndefined()
+    expect(await connection()).toBe("updating")
+  })
+})
+
+describe("a new version of the daemon", () => {
+  it("reloads the page before the stream opens again", async () => {
+    const stream = await start()
+    page.version = "1.1.0"
+
+    expect(await drop(stream)).toBeUndefined()
+    expect(page.reloads).toBe(1)
+    expect(refreshed.calls).toEqual(["projects", "screen every"])
+  })
+
+  it("does not reload the page for the same version", async () => {
+    const stream = await start()
+
+    expect(await drop(stream)).toBeDefined()
+    expect(page.reloads).toBe(0)
+  })
+
+  it("does not reload the page when the server tells no version", async () => {
+    page.version = undefined
+    const stream = await start()
+
+    expect(await drop(stream)).toBeDefined()
+    expect(page.reloads).toBe(0)
+  })
+
+  it("asks for a reload when the page holds unsaved work", async () => {
+    const stream = await start()
+    page.version = "1.1.0"
+    page.unsaved = true
+
+    expect(await drop(stream)).toBeUndefined()
+    expect(page.reloads).toBe(0)
+    expect(await connection()).toBe("outdated")
   })
 })

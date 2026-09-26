@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react"
 
-export type ConnectionState = "connecting" | "live" | "reconnecting" | "stopped"
+// `updating` is a daemon that starts again on a new release. `outdated` is a page that still runs the
+// web app of the release before, because a reload would drop what the user typed.
+export type ConnectionState = "connecting" | "live" | "reconnecting" | "stopped" | "updating" | "outdated"
 
 class ConnectionStore {
   private state: ConnectionState = "connecting"

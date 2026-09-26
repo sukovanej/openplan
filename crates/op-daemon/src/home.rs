@@ -15,6 +15,31 @@ pub struct AppInfo {
     pub bundle: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UpdateRecord {
+    pub auto: bool,
+    pub last_check: Option<LastCheck>,
+    // The version the daemon installed before it started again. The new process confirms it.
+    pub installing: Option<String>,
+}
+
+impl Default for UpdateRecord {
+    fn default() -> Self {
+        Self {
+            auto: true,
+            last_check: None,
+            installing: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LastCheck {
+    pub at: u64,
+    pub result: String,
+}
+
 pub struct Home {
     dir: PathBuf,
 }
@@ -44,6 +69,10 @@ impl Home {
 
     pub fn app_info_path(&self) -> PathBuf {
         self.dir.join("app.json")
+    }
+
+    pub fn update_path(&self) -> PathBuf {
+        self.dir.join("update.json")
     }
 
     pub fn lock_path(&self) -> PathBuf {
@@ -89,6 +118,26 @@ impl Home {
         let tmp = self.dir.join(format!("app.json.{}.tmp", info.pid));
         std::fs::write(&tmp, &bytes)?;
         std::fs::rename(&tmp, self.app_info_path())?;
+        Ok(())
+    }
+
+    pub fn read_update(&self) -> UpdateRecord {
+        std::fs::read_to_string(self.update_path())
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn edit_update(&self, change: impl FnOnce(&mut UpdateRecord)) -> Result<()> {
+        let mut record = self.read_update();
+        change(&mut record);
+        self.ensure_dir()?;
+        let bytes = serde_json::to_vec_pretty(&record)?;
+        let tmp = self
+            .dir
+            .join(format!("update.json.{}.tmp", std::process::id()));
+        std::fs::write(&tmp, &bytes)?;
+        std::fs::rename(&tmp, self.update_path())?;
         Ok(())
     }
 

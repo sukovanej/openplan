@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use op_api::ProjectView;
-use op_daemon::{Control, Started, StopOutcome, base_url, default_port, now_unix};
+use op_daemon::{Control, Started, StopOutcome, UpdateRecord, base_url, default_port, now_unix};
 use op_server::{Location, same_path};
 
 pub fn start(port: u16) -> Result<()> {
@@ -52,13 +52,15 @@ pub fn ping(override_url: Option<&str>) -> Result<bool> {
         return Ok(up);
     }
 
-    match Control::resolve()?.recorded() {
+    let control = Control::resolve()?;
+    match control.recorded() {
         Some(info) if op_daemon::serves(&client, &info) => {
             let uptime = fmt_uptime(now_unix().saturating_sub(info.started_at));
             println!(
                 "running (pid {}, port {}, up {}, v{})",
                 info.pid, info.port, uptime, info.version
             );
+            print_updates(&control.home().read_update());
             Ok(true)
         }
         Some(info) => {
@@ -125,6 +127,16 @@ pub fn project_named(views: &[ProjectView], location: &Location) -> Option<Strin
             },
         )
         .map(|view| view.name.clone())
+}
+
+fn print_updates(record: &UpdateRecord) {
+    if !record.auto {
+        println!("automatic updates: off");
+    }
+    if let Some(check) = &record.last_check {
+        let ago = fmt_uptime(now_unix().saturating_sub(check.at));
+        println!("last update check {ago} ago: {}", check.result);
+    }
 }
 
 fn fmt_uptime(secs: u64) -> String {

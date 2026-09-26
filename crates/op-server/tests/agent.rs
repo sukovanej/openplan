@@ -500,6 +500,65 @@ async fn the_daemons_stop_asks_every_session_to_stop() {
 }
 
 #[tokio::test]
+async fn an_update_waits_until_no_session_runs() {
+    let (_dir, state, agents) = with_agent();
+    start_session(&state, json!({ "prompt": "go" })).await;
+    let started = agents.recv().unwrap();
+    let mut installs = 0;
+
+    let updated = state.update_if_idle(|| {
+        installs += 1;
+        Ok::<(), ()>(())
+    });
+
+    assert_eq!(updated, Ok(false));
+    assert_eq!(installs, 0);
+    assert_eq!(state.stop_reason(), None);
+
+    feed(&started, AgentEvent::Exited { code: Some(0) }).await;
+    drop(started);
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    while state.update_if_idle(|| {
+        installs += 1;
+        Ok::<(), ()>(())
+    }) != Ok(true)
+    {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the session did not end in time"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(installs, 1);
+    assert_eq!(state.stop_reason(), Some(op_api::StopReason::Update));
+}
+
+#[tokio::test]
+async fn a_failed_install_leaves_the_daemon_running() {
+    let (_dir, state, _agents) = with_agent();
+
+    assert_eq!(
+        state.update_if_idle(|| Err("no space left")),
+        Err("no space left")
+    );
+    assert_eq!(state.stop_reason(), None);
+}
+
+#[tokio::test]
+async fn no_session_starts_once_an_update_stops_the_daemon() {
+    let (_dir, state, agents) = with_agent();
+
+    assert_eq!(state.update_if_idle(|| Ok::<(), ()>(())), Ok(true));
+    let uri = format!("/api/projects/{PROJECT}/agent/sessions");
+    let response = send(&state, "POST", &uri, Some(json!({ "prompt": "go" }))).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let mut started = agents.recv().unwrap();
+    assert_eq!(next_command(&mut started).await, Command::Shutdown);
+    assert!(sessions(&state).await.is_empty());
+}
+
+#[tokio::test]
 async fn the_list_answers_newest_first() {
     let (_dir, state, agents) = with_agent();
 

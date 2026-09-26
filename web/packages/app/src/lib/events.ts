@@ -22,6 +22,7 @@ export const ChangeEvent = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("daemon_stopping"),
+    reason: Schema.Literals(["stop", "update"]),
   }),
 ])
 export type ChangeEvent = typeof ChangeEvent.Type
