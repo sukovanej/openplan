@@ -63,13 +63,19 @@ flowchart LR
 
 ## Other parts
 
-1. **API.** `POST /api/diagram` takes a source and returns SVG or a parse
-   error. `/api/flow` returns the SVG of the flow. The daemon keeps the
-   SVG in a cache by source hash.
+1. **API.** `POST /api/diagram` takes a source and returns the SVG with
+   its width and height. A source that does not parse gets a 422 with the
+   line and the column in `position`. `GET /api/flow/drawing` takes the
+   query of `/api/flow` and returns the SVG of the flow. With the `width`
+   and the `height` of the page, the flow packs its parts to the shape of
+   the page. An empty diagram has a width and a height of zero. The daemon
+   keeps the drawings in a cache with the diagram IR as the key, up to
+   16 MB of SVG.
 2. **CLI.** `openplan lint` reports Mermaid errors in task bodies and in
    comments.
 3. **Web.** `task-ui` shows a `mermaid` fence inline, and so do the full
-   view and the flow page. One viewport component pans and zooms, and one
+   view and the flow page. The flow page sends the size of its page. One
+   viewport component pans and zooms, and one
    CSS file gives the classes of the SVG their theme colors. One click
    handler on the viewport gives internal links to React Router. Remove
    the three dependencies, and regenerate the client with
@@ -123,7 +129,7 @@ A headless Chromium benchmark (pixel ratio 2) measured one zoom frame:
 
 - Cargo tests check the geometry: no two nodes overlap, no edge crosses a
   node that it does not join, each child stays in its cluster, and each
-  wave of the flow is one row.
+  wave is one row in its part of the flow.
 - The 7 converted blocks and the diagram in this task parse and draw
   without an error.
 - The SPA bundle holds no D2, ELK, or React Flow code.
@@ -137,6 +143,13 @@ A headless Chromium benchmark (pixel ratio 2) measured one zoom frame:
   class diagrams can come later on the same IR.
 - Flow order: the layout can reorder the tasks of one wave to cut
   crossings. It starts from the order of the server.
+- Flow on a page: each part of the flow that no edge joins to another has
+  a layout of its own, and the parts are packed in rows to the shape of
+  the page, as the ELK flow page does. On the real tasks most tasks have
+  no dependency, so one row for each wave made the flow of 187 tasks
+  48,000 px wide. Packed into a 1600 by 900 page it is 4,816 by 2,785 px.
+- Cards: a node with an icon is a card. All cards have one width, so the
+  cards of a flow line up in columns.
 
 ## Open question
 
