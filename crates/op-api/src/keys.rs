@@ -66,6 +66,27 @@ pub(crate) fn body_from_keys_keeping(
     Ok(out)
 }
 
+pub fn body_to_keys(abbreviation: Abbreviation, body: &str) -> String {
+    let mut out = String::new();
+    let mut last = 0;
+    for (span, inner) in op_task::body_ref_spans(body) {
+        let Some(number) = op_task::body_ref_id(abbreviation, inner) else {
+            continue;
+        };
+        out.push_str(&body[last..span.start]);
+        out.push_str("[[");
+        out.push_str(&abbreviation.format_key(number));
+        if let Some((_, section)) = inner.split_once('#') {
+            out.push('#');
+            out.push_str(section);
+        }
+        out.push_str("]]");
+        last = span.end;
+    }
+    out.push_str(&body[last..]);
+    out
+}
+
 pub(crate) fn key_number(key: &str) -> Option<u64> {
     op_task::parse_id(key.rsplit_once('-')?.1)
 }

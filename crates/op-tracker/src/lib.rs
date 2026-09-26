@@ -7,6 +7,7 @@ use op_backend::{
 use op_task::comment::{self, NewComment};
 use op_task::config::Config;
 use op_task::conflict::{self, Labels};
+use op_task::content::{self, Text};
 use op_task::layout;
 use op_task::tag::Tag;
 use op_task::{Abbreviation, PartialMetadata, Task, parse_partial};
@@ -168,50 +169,28 @@ impl Tracker {
         })
     }
 
-    // `block` is one conflict block exactly as the caller read it. A block that changed since is
-    // refused, so a resolution never lands on a version nobody saw.
-    pub fn resolve_block(
-        &self,
-        actor: &Actor,
-        number: u64,
-        block: &str,
-        text: &str,
-    ) -> Result<Updated<Task>, TrackerError> {
-        let text = with_final_newline(text);
-        self.update_task(actor, number, |task| {
-            let found = op_task::conflict::in_body(&task.body)
-                .into_iter()
-                .find(|found| task.body[found.range.clone()] == *block)
-                .ok_or(TrackerError::ConflictGone)?;
-            task.body.replace_range(found.range, &text);
-            Ok(())
-        })
-    }
-
-    // `base` is the body without its comment log, as the caller last read it, and `text` is the body
-    // the caller wants. Lines that another writer changed since `base` merge with `text`. Where both
+    // `base` is the text as the caller last read it, and `text` is the text the caller wants, both in
+    // the store spelling. Lines that another writer changed since `base` merge with `text`. Where both
     // changed the same lines, a conflict block keeps both versions, and the published one stays in
     // force. So the check on conflicts compares `text` with `base`: a block the merge makes is not
     // the caller's edit.
-    pub fn edit_body(
+    pub fn edit_text(
         &self,
         actor: &Actor,
         number: u64,
-        base: &str,
-        text: &str,
+        base: &Text,
+        text: &Text,
     ) -> Result<Updated<Task>, TrackerError> {
-        let base = with_final_newline(base);
-        let text = with_final_newline(text);
-        if !comment::sections(&text).is_empty() {
+        if !comment::sections(&text.description).is_empty() {
             return Err(TrackerError::Invalid(format!(
-                "the body cannot hold a `## {}` section; the comment log is append-only, so add \
-                 a comment with `openplan comment`",
+                "the description cannot hold a `## {}` section; the comment log is append-only, \
+                 so add a comment with `openplan comment`",
                 comment::HEADING
             )));
         }
         let labels = Labels {
             ours: format!("{} (editor)", actor.name),
-            theirs: self.writer_since(number, &base)?,
+            theirs: self.writer_since(number, base)?,
         };
         let (committed, task) = self.write(actor, |plan| {
             let path = plan
@@ -219,10 +198,10 @@ impl Tracker {
                 .ok_or_else(|| plan.not_found(number))?
                 .to_owned();
             let old = plan.task(number)?;
-            let base = files::body_in_file_form(plan, &base);
-            let text = files::body_in_file_form(plan, &text);
+            let current = current_body(plan, &old);
+            let base = joined(plan, &current, base)?;
+            let text = joined(plan, &current, text)?;
             files::keeps_blocks(&base, &text)?;
-            let current = files::body_in_file_form(plan, &comment::strip(&old.body));
             let merged = match base == current {
                 true => text,
                 false => conflict::merge(&base, &text, &current, &labels),
@@ -255,10 +234,10 @@ impl Tracker {
     // the write, because the backend holds its lock while a write runs and a log read takes it too. A
     // body nobody moved needs no name, and most saves are that, so they read no log. A writer that
     // lands in between is named one revision late, or `published`.
-    fn writer_since(&self, number: u64, base: &str) -> Result<String, TrackerError> {
+    fn writer_since(&self, number: u64, base: &Text) -> Result<String, TrackerError> {
         let plan = self.plan()?;
-        let current = comment::strip(&plan.task(number)?.body);
-        if files::body_in_file_form(&plan, base) == files::body_in_file_form(&plan, &current) {
+        let current = current_body(&plan, &plan.task(number)?);
+        if joined(&plan, &current, base)? == current {
             return Ok(PUBLISHED.to_owned());
         }
         let entries = self.task_history(
@@ -489,6 +468,19 @@ impl Tracker {
 }
 
 const PUBLISHED: &str = "published";
+
+fn current_body(plan: &Plan, task: &Task) -> String {
+    with_final_newline(&files::body_in_file_form(plan, &comment::strip(&task.body)))
+}
+
+// The body the text makes in the layout of the current one, so the parts the text does not carry
+// (the title line's markup, the blank lines around it) are no change.
+fn joined(plan: &Plan, current: &str, text: &Text) -> Result<String, TrackerError> {
+    let description = files::body_in_file_form(plan, &text.description);
+    content::join(current, &text.title, &description)
+        .map(|body| with_final_newline(&body))
+        .map_err(|err| TrackerError::Invalid(err.to_string()))
+}
 
 fn with_final_newline(text: &str) -> String {
     match text.is_empty() || text.ends_with('\n') {

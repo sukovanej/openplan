@@ -61,16 +61,11 @@ async fn a_whole_file_replaces_the_task() {
         assert_eq!(written["title"], "Wire the parser");
         assert_eq!(written["metadata"]["status"], "todo");
         assert_eq!(written["metadata"]["rank"], "m");
-        assert!(
-            written["body"]
-                .as_str()
-                .unwrap()
-                .contains("The parser must accept a tab.")
-        );
+        assert_eq!(written["description"], "The parser must accept a tab.\n");
 
         let read = json_of(&state, &format!("/api/projects/test/tasks/{id}")).await;
         assert_eq!(read["title"], written["title"]);
-        assert_eq!(read["body"], written["body"]);
+        assert_eq!(read["description"], written["description"]);
         assert_eq!(file_of(&state, &id).await, text);
     }
 }
@@ -125,7 +120,7 @@ async fn a_file_must_keep_every_comment_the_task_has() {
     let edited = format!("{}\nMore context.\n\n## Comments{log}", head.trim_end());
     let (status, written) = put(&state, &id, &edited).await;
     assert_eq!(status, StatusCode::OK, "{written}");
-    assert!(written["body"].as_str().unwrap().contains("More context."));
+    assert_eq!(written["description"], "More context.\n");
     assert_eq!(written["comments"][0]["text"], "first");
 
     let appended = format!(

@@ -29,7 +29,7 @@ openplan list --parent <key>        # children of a task
 openplan list --json                # [{id,title,status,parent?}]
 openplan show <key>                 # metadata: id, title, status, parent, dependencies
 openplan get  <key>                 # the whole task file
-openplan get  <key> --json          # {id,title,metadata,body,comments}
+openplan get  <key> --json          # {id,title,metadata,description,comments}
 openplan history <key>              # the revisions of the task, newest first
 openplan get  <key> --revision <id> # the task file as it stood at a revision
 ```

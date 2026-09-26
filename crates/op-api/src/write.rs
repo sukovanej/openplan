@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use op_task::content::Text;
 use op_task::{Abbreviation, Status, Task, Timestamp};
 
 use crate::field::FieldUpdate;
@@ -97,35 +98,42 @@ impl TaskPatch {
     }
 }
 
-// One conflict block of a task's body, exactly as `TaskDetail::body` carries it, and the text to put
-// in its place: one version, both, or new text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct ResolveConflict {
-    pub block: String,
-    pub text: String,
+pub struct TaskText {
+    pub title: String,
+    pub description: String,
 }
 
-// A task's body as the web editor writes it: `base` is `TaskDetail::body` exactly as the editor last
-// read it, and `text` is the new body in the same spelling. The daemon merges `text` with what other
-// writers changed since `base`.
+// The web editor's save: `base` is the text exactly as the editor last read it from `TaskDetail`, and
+// the daemon merges `text` with what other writers changed since.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct WriteBody {
-    pub base: String,
-    pub text: String,
+pub struct WriteTaskText {
+    pub base: TaskText,
+    pub text: TaskText,
 }
 
-impl WriteBody {
+impl WriteTaskText {
     // A file can hold a reference in a spelling a write may not add, such as another store's key.
     // The text may keep each one that `base` holds, so an edit elsewhere is not refused for it.
-    pub fn into_bodies(self, abbreviation: Abbreviation) -> Result<(String, String), KeyError> {
-        let held: Vec<&str> = op_task::body_ref_spans(&self.base)
+    pub fn into_texts(self, abbreviation: Abbreviation) -> Result<(Text, Text), KeyError> {
+        let held: Vec<&str> = op_task::body_ref_spans(&self.base.description)
             .into_iter()
             .map(|(_, inner)| op_task::ref_target(inner))
             .collect();
-        let base = body_from_keys_keeping(abbreviation, &self.base, |_| true)?;
-        let text =
-            body_from_keys_keeping(abbreviation, &self.text, |target| held.contains(&target))?;
-        Ok((base, text))
+        let base = body_from_keys_keeping(abbreviation, &self.base.description, |_| true)?;
+        let text = body_from_keys_keeping(abbreviation, &self.text.description, |target| {
+            held.contains(&target)
+        })?;
+        Ok((
+            Text {
+                title: self.base.title,
+                description: base,
+            },
+            Text {
+                title: self.text.title,
+                description: text,
+            },
+        ))
     }
 }
 

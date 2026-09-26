@@ -11,9 +11,9 @@ import {
   getTaskRevision,
   listTasks,
   patchTask,
-  resolveConflict,
   runSync,
   TaskRejected,
+  writeTaskText,
   TaskNotFound,
 } from "../src/lib/api"
 
@@ -104,7 +104,7 @@ it.effect("decodes a task detail with its hierarchy from GET /api/projects/:proj
       project: "openplan",
       id: "a-1",
       title: "First",
-      body: "# First\n",
+      description: "See [[OPP-2]].\n",
       conflicts: 0,
       problems: [],
       metadata: {
@@ -125,7 +125,7 @@ it.effect("decodes a task detail with its hierarchy from GET /api/projects/:proj
       const task = yield* getTask(PROJECT, "a-1")
       expect(task.title).toBe("First")
       expect(task.metadata).toMatchObject({ status: "todo" })
-      expect(task.body).toBe("# First\n")
+      expect(task.description).toBe("See [[OPP-2]].\n")
       expect(task.parent_title).toBe("Epic")
       expect(task.children?.map((c) => c.id)).toEqual(["kid-1"])
       expect(task.refs?.[0].title).toBe("Epic")
@@ -147,7 +147,7 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
         dependencies: [],
         tags: [],
       },
-      body: "# Solo\n",
+      description: "",
       conflicts: 0,
       problems: [],
       updated: "2026-01-02T00:00:00Z",
@@ -177,7 +177,7 @@ it.effect("sends no query for a task read", () =>
           dependencies: [],
           tags: [],
         },
-        body: "# First\n",
+        description: "",
         conflicts: 0,
         problems: [],
         updated: "2026-01-02T00:00:00Z",
@@ -275,7 +275,7 @@ it.effect("PATCH sends parent: null to unparent and decodes the detail", () =>
           dependencies: [],
           tags: [],
         },
-        body: "# Child\n",
+        description: "",
         conflicts: 0,
         problems: [],
         updated: "2026-01-02T00:00:00Z",
@@ -304,7 +304,7 @@ it.effect("PATCH sends a parent id to reparent", () =>
           dependencies: [],
           tags: [],
         },
-        body: "# Child\n",
+        description: "",
         conflicts: 0,
         problems: [],
         updated: "2026-01-02T00:00:00Z",
@@ -478,14 +478,14 @@ it.effect("reads a task as a revision left it", () =>
             dependencies: [],
             tags: [],
           },
-          body: "The old body",
+          description: "The old body",
           raw: "---\nstatus: todo\n---\n# First\n\nThe old body\n",
         },
       }),
     )
     const at = yield* provide(getTaskRevision(PROJECT, "OPP-1", "abc"))
     expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/tasks/OPP-1/revisions/abc`)
-    expect(at.task?.body).toBe("The old body")
+    expect(at.task?.description).toBe("The old body")
     expect(at.task?.comments).toBeUndefined()
   }),
 )
@@ -520,9 +520,7 @@ it.effect("a sync the remote refuses carries its reason", () =>
   }),
 )
 
-const BLOCK = "<<<<<<< Ann (a1b2c3d)\nUse OAuth only.\n=======\nUse OAuth and email login.\n>>>>>>> Ben (e4f5a6b)\n"
-
-it.effect("a resolve posts the exact block and its replacement, and decodes the task", () =>
+it.effect("a text write puts the text and the text it started from, and decodes the task", () =>
   Effect.gen(function* () {
     const { captured, provide } = captureRequest(() =>
       json({
@@ -537,29 +535,30 @@ it.effect("a resolve posts the exact block and its replacement, and decodes the 
           dependencies: [],
           tags: [],
         },
-        body: "# First\n\nUse OAuth only.\n",
+        description: "Use OAuth only.\n",
         conflicts: 0,
         problems: [],
         updated: "2026-01-02T00:00:00Z",
       }),
     )
-    const detail = yield* provide(resolveConflict(PROJECT, "OPP-1", BLOCK, "Use OAuth only.\n"))
-    expect(captured.request?.method).toBe("POST")
-    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/tasks/OPP-1/resolve`)
-    expect(requestBody(captured.request!)).toEqual({ block: BLOCK, text: "Use OAuth only.\n" })
-    expect(detail.conflicts).toBe(0)
+    const base = { title: "First", description: "" }
+    const text = { title: "First", description: "Use OAuth only.\n" }
+    const detail = yield* provide(writeTaskText(PROJECT, "OPP-1", base, text))
+    expect(captured.request?.method).toBe("PUT")
+    expect(captured.request?.url).toContain(`/api/projects/${PROJECT}/tasks/OPP-1/text`)
+    expect(requestBody(captured.request!)).toEqual({ base, text })
+    expect(detail.description).toBe("Use OAuth only.\n")
   }),
 )
 
-it.effect("a resolve of a block that is gone carries the 409 reason", () =>
+it.effect("a text write the daemon refuses carries its reason", () =>
   Effect.gen(function* () {
-    const { provide } = captureRequest(() =>
-      json({ message: "that conflict is no longer in the task; read the task again" }, 409),
-    )
-    const result = yield* Effect.result(provide(resolveConflict(PROJECT, "OPP-1", BLOCK, "")))
+    const { provide } = captureRequest(() => json({ message: "a write cannot add a conflict or edit inside one" }, 400))
+    const text = { title: "First", description: "x" }
+    const result = yield* Effect.result(provide(writeTaskText(PROJECT, "OPP-1", text, text)))
     const error = Result.isFailure(result) ? result.failure : undefined
     expect(error).toBeInstanceOf(TaskRejected)
-    expect((error as TaskRejected).status).toBe(409)
-    expect((error as TaskRejected).message).toContain("no longer in the task")
+    expect((error as TaskRejected).status).toBe(400)
+    expect((error as TaskRejected).message).toContain("cannot add a conflict")
   }),
 )

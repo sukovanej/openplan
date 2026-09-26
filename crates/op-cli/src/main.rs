@@ -607,7 +607,12 @@ fn get(
         }
         print!(
             "{}",
-            op_api::render_task_file(&detail.metadata, &detail.body, &detail.comments)?
+            op_api::render_task_file(
+                &detail.metadata,
+                &detail.title,
+                &detail.description,
+                &detail.comments
+            )?
         );
     }
     Ok(())

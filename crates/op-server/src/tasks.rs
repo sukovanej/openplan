@@ -7,9 +7,9 @@ use axum::response::{IntoResponse, Response};
 use op_api::{
     ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask, DocumentChange,
     DocumentChangeKind, FieldChange, Flow, FlowQuery, HistoryEntry, KeyError, Metadata,
-    ResolveConflict, RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch,
-    TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot,
-    TaskSummary, TaskTree, TaskTreeView, WriteBody, WriteTaskFile,
+    RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch, TagView,
+    TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot, TaskSummary,
+    TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
 };
 use op_backend::{Change, ChangeKind, Committed, LogEntry, RevisionId};
 use op_task::{Abbreviation, Task, layout};
@@ -286,71 +286,35 @@ pub(crate) async fn write_task_file(
 }
 
 // The web editor's save. The daemon merges the edit with what other writers changed since the
-// editor read the body, so a save never drops their lines.
+// editor read the text, so a save never drops their lines.
 #[utoipa::path(
     put,
-    path = "/api/projects/{project}/tasks/{id}/body",
+    path = "/api/projects/{project}/tasks/{id}/text",
     params(
         ("project" = String, Path, description = "Project name"),
         ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$")
     ),
-    request_body = WriteBody,
+    request_body = WriteTaskText,
     responses(
-        (status = 200, description = "The task with the body written", body = TaskDetail),
-        (status = 400, description = "The text adds a conflict or edits inside one, names a key that is not this store's, or has a second `# ` title", body = ApiErrorBody),
+        (status = 200, description = "The task with the text written", body = TaskDetail),
+        (status = 400, description = "The title is empty, holds a line break, or changes a title inside a conflict block; the description adds a conflict or edits inside one, names a key that is not this store's, or has a `# ` title", body = ApiErrorBody),
         (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
         (status = 409, description = "Another writer kept moving the tasks", body = ApiErrorBody),
         (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
-pub(crate) async fn write_body(
+pub(crate) async fn write_text(
     State(state): State<AppState>,
     Path((project, id)): Path<(String, String)>,
     headers: HeaderMap,
-    Json(body): Json<WriteBody>,
+    Json(body): Json<WriteTaskText>,
 ) -> Result<Json<TaskDetail>, ApiError> {
     let project = project_of(&state, &project)?;
     let actor = actor_of(&headers, &project);
     let detail = blocking(move || {
         let number = project.number(&id)?;
-        let (base, text) = body.into_bodies(project.abbreviation()?)?;
-        let updated = project.tracker().edit_body(&actor, number, &base, &text)?;
-        project.written(updated.committed.as_ref());
-        project.detail(&id, number)
-    })
-    .await?;
-    Ok(Json(detail))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/projects/{project}/tasks/{id}/resolve",
-    params(
-        ("project" = String, Path, description = "Project name"),
-        ("id" = String, Path, description = "Task key", pattern = "^[A-Z]{3}-(0|[1-9][0-9]*)$")
-    ),
-    request_body = ResolveConflict,
-    responses(
-        (status = 200, description = "The task with the block resolved", body = TaskDetail),
-        (status = 400, description = "The text adds a conflict", body = ApiErrorBody),
-        (status = 404, description = "No such project, or no such task", body = ApiErrorBody),
-        (status = 409, description = "The block is no longer in the task, or another writer kept moving the tasks", body = ApiErrorBody),
-        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
-    )
-)]
-pub(crate) async fn resolve_conflict(
-    State(state): State<AppState>,
-    Path((project, id)): Path<(String, String)>,
-    headers: HeaderMap,
-    Json(body): Json<ResolveConflict>,
-) -> Result<Json<TaskDetail>, ApiError> {
-    let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
-    let detail = blocking(move || {
-        let number = project.number(&id)?;
-        let updated = project
-            .tracker()
-            .resolve_block(&actor, number, &body.block, &body.text)?;
+        let (base, text) = body.into_texts(project.abbreviation()?)?;
+        let updated = project.tracker().edit_text(&actor, number, &base, &text)?;
         project.written(updated.committed.as_ref());
         project.detail(&id, number)
     })
@@ -638,7 +602,10 @@ fn snapshot(raw: &str, abbreviation: Abbreviation) -> TaskSnapshot {
         title: partial.title.clone().unwrap_or_default(),
         metadata: Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation),
         comments: op_index::comments_of(&partial.body),
-        body: op_task::comment::strip(&partial.body),
+        description: op_api::body_to_keys(
+            abbreviation,
+            &op_task::content::split(&op_task::comment::strip(&partial.body)),
+        ),
         raw: raw.to_owned(),
     }
 }

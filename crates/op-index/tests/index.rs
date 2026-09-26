@@ -34,7 +34,8 @@ fn a_detail_carries_its_neighbourhood_and_its_comments_apart() {
     assert_eq!(parent.blocks.len(), 1);
     assert_eq!(parent.refs.len(), 1);
     assert_eq!(parent.comments.len(), 1);
-    assert!(!parent.body.contains("Hello."));
+    assert_eq!(parent.title, "Parent");
+    assert_eq!(parent.description, "See [[OPP-2]].\n");
     let child = index.detail("p", 2).expect("detail");
     assert_eq!(child.parent_title.as_deref(), Some("Parent"));
     assert_eq!(child.depends_on.len(), 1);

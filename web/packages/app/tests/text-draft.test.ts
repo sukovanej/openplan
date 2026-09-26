@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest"
 
-import { BodyDraft, type Draft, type DraftStore } from "../src/lib/body-draft"
+import { type Draft, type DraftStore, type TextKind, TextDraft } from "../src/lib/text-draft"
 
-function memoryStore(initial?: Draft): DraftStore & { value: Draft | undefined } {
+const plain: TextKind<string> = {
+  same: (a, b) => a === b,
+  is: (value): value is string => typeof value === "string",
+  refuse: () => undefined,
+}
+
+function memoryStore(initial?: Draft<string>): DraftStore<string> & { value: Draft<string> | undefined } {
   const store = {
     value: initial,
     read: () => store.value,
-    write: (draft: Draft | undefined) => {
+    write: (draft: Draft<string> | undefined) => {
       store.value = draft
     },
   }
@@ -30,10 +36,10 @@ function pendingWrites() {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve))
 
-describe("BodyDraft", () => {
+describe("TextDraft", () => {
   it("sends the text with the body it was typed over", async () => {
     const writes = pendingWrites()
-    const draft = new BodyDraft("A\n", writes.write, memoryStore())
+    const draft = new TextDraft("A\n", writes.write, memoryStore(), plain)
     draft.change("B\n")
     expect(draft.getSnapshot().state.kind).toBe("unsaved")
     const saved = draft.save()
@@ -46,7 +52,7 @@ describe("BodyDraft", () => {
 
   it("sends nothing when the text is the body", async () => {
     const writes = pendingWrites()
-    const draft = new BodyDraft("A\n", writes.write, memoryStore())
+    const draft = new TextDraft("A\n", writes.write, memoryStore(), plain)
     draft.change("B\n")
     draft.change("A\n")
     await draft.save()
@@ -55,7 +61,7 @@ describe("BodyDraft", () => {
 
   it("shows the merged body a save answers with", async () => {
     const writes = pendingWrites()
-    const draft = new BodyDraft("A\n", writes.write, memoryStore())
+    const draft = new TextDraft("A\n", writes.write, memoryStore(), plain)
     draft.change("A\nmine\n")
     const saved = draft.save()
     writes.calls[0].answer("theirs\nA\nmine\n")
@@ -65,7 +71,7 @@ describe("BodyDraft", () => {
 
   it("sends what was typed during a save from the text that save wrote", async () => {
     const writes = pendingWrites()
-    const draft = new BodyDraft("A\n", writes.write, memoryStore())
+    const draft = new TextDraft("A\n", writes.write, memoryStore(), plain)
     draft.change("B\n")
     const first = draft.save()
     draft.change("C\n")
@@ -79,7 +85,7 @@ describe("BodyDraft", () => {
   })
 
   it("takes a new body in while nothing is unsaved, and keeps the reader's text otherwise", () => {
-    const draft = new BodyDraft("A\n", pendingWrites().write, memoryStore())
+    const draft = new TextDraft("A\n", pendingWrites().write, memoryStore(), plain)
     draft.received("B\n")
     expect(draft.getSnapshot().shown).toBe("B\n")
     draft.change("mine\n")
@@ -90,7 +96,7 @@ describe("BodyDraft", () => {
   it("keeps an unsaved text in the store and forgets it once saved", async () => {
     const writes = pendingWrites()
     const store = memoryStore()
-    const draft = new BodyDraft("A\n", writes.write, store)
+    const draft = new TextDraft("A\n", writes.write, store, plain)
     draft.change("B\n")
     expect(store.value).toEqual({ base: "A\n", text: "B\n" })
     const saved = draft.save()
@@ -101,7 +107,7 @@ describe("BodyDraft", () => {
 
   it("restores a stored text and saves it over the base it was typed on", async () => {
     const writes = pendingWrites()
-    const draft = new BodyDraft("A\nelse\n", writes.write, memoryStore({ base: "A\n", text: "B\n" }))
+    const draft = new TextDraft("A\nelse\n", writes.write, memoryStore({ base: "A\n", text: "B\n" }), plain)
     expect(draft.restored).toBe(true)
     expect(draft.getSnapshot()).toEqual({ shown: "B\n", state: { kind: "unsaved" } })
     void draft.save()
@@ -110,7 +116,7 @@ describe("BodyDraft", () => {
 
   it("keeps the text and says why when a save fails", async () => {
     const writes = pendingWrites()
-    const draft = new BodyDraft("A\n", writes.write, memoryStore())
+    const draft = new TextDraft("A\n", writes.write, memoryStore(), plain)
     draft.change("B\n")
     const saved = draft.save()
     writes.calls[0].fail(new Error("the daemon is down"))
@@ -125,10 +131,11 @@ describe("BodyDraft", () => {
 
   it("refuses to send a text the owner refuses", async () => {
     const writes = pendingWrites()
-    const draft = new BodyDraft("# A\n", writes.write, memoryStore(), (text) =>
-      text.startsWith("# \n") ? "A task needs a title." : undefined,
-    )
-    draft.change("# \n")
+    const draft = new TextDraft("A", writes.write, memoryStore(), {
+      ...plain,
+      refuse: (text) => (text.trim() === "" ? "A task needs a title." : undefined),
+    })
+    draft.change(" ")
     await draft.save()
     expect(writes.calls).toEqual([])
     expect(draft.getSnapshot().state).toEqual({ kind: "failed", message: "A task needs a title." })

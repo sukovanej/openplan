@@ -13,7 +13,6 @@ import type {
   TaskSnapshot,
 } from "@openplan/api-client"
 import {
-  type BodySegment,
   bodySegments,
   boardPath,
   CommentThread,
@@ -121,22 +120,20 @@ function LiveTask({ project, id }: { project: string; id: string }) {
   }
   const shown = task.data ?? null
   // The list cache already holds the header fields (title, status, tags); seed from it so the header
-  // renders instantly and only the body and hierarchy stream in.
+  // renders instantly and only the description and hierarchy stream in.
   const seed = shown ?? listItem(client, project, id)
   if (seed === undefined) return <DetailSkeleton />
-  return <TaskDetailView project={project} task={seed} detail={shown} body={shown?.body} />
+  return <TaskDetailView project={project} task={seed} detail={shown} />
 }
 
 function TaskDetailView({
   project,
   task,
   detail,
-  body,
 }: {
   project: string
   task: TaskDetail | TaskListItem
   detail: TaskDetail | null
-  body: string | undefined
 }) {
   const abbreviation = useAbbreviation(project)
   // One cursor walks the three lists in document order, so `j`, `k` and Enter reach every row on the
@@ -210,7 +207,7 @@ function TaskDetailView({
           <PanelBody className="p-6">
             <ConflictBanner project={project} id={task.id} metadata={task.metadata} count={task.conflicts} />
             <ProblemBanner problems={task.problems} />
-            {body === undefined || abbreviation === undefined ? (
+            {detail === null || abbreviation === undefined ? (
               <>
                 <TaskTitle title={task.title} />
                 {meta(null)}
@@ -220,10 +217,10 @@ function TaskDetailView({
               <TaskContent
                 project={project}
                 id={task.id}
-                body={body}
-                refs={detail?.refs}
+                title={detail.title}
+                description={detail.description}
+                refs={detail.refs}
                 abbreviation={abbreviation}
-                fallbackTitle={task.title}
                 meta={meta}
               />
             )}
@@ -409,7 +406,7 @@ function Snapshot({
         <TaskTags metadata={task.metadata} tags={tags} className={tagsBox} />
       </TimesAndTags>
       <TaskBodyWithConflicts
-        segments={untitled(bodySegments(task.body))}
+        segments={bodySegments(task.description)}
         project={project}
         refs={refs}
         abbreviation={abbreviation}
@@ -803,18 +800,3 @@ function TimesAndTags({ children }: { children: ReactNode }) {
 
 const timesLine = "h-4 shrink-0"
 const tagsBox = "min-w-0 justify-end"
-
-// The title can sit inside a conflict block, and then each version keeps its own.
-function untitled(segments: ReadonlyArray<BodySegment>): ReadonlyArray<BodySegment> {
-  const [first, ...rest] = segments
-  return first?.kind === "text" ? [{ kind: "text", text: stripTitle(first.text) }, ...rest] : segments
-}
-
-function stripTitle(body: string): string {
-  const lines = body.split("\n")
-  const first = lines.findIndex((line) => line.trim().length > 0)
-  if (first >= 0 && lines[first].startsWith("# ")) {
-    lines.splice(first, 1)
-  }
-  return lines.join("\n").trim()
-}

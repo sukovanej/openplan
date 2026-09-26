@@ -30,6 +30,16 @@ async fn detail(state: &AppState) -> TaskDetail {
     serde_json::from_value(json_of(state, "/api/projects/test/tasks/OPP-2").await).unwrap()
 }
 
+fn rendered(detail: &TaskDetail) -> String {
+    op_api::render_task_file(
+        &detail.metadata,
+        &detail.title,
+        &detail.description,
+        &detail.comments,
+    )
+    .unwrap()
+}
+
 async fn sent(state: &AppState, method: &str, path: &str, body: Value) -> (StatusCode, Value) {
     let response = send(
         state,
@@ -63,7 +73,7 @@ async fn a_conflict_reads_as_both_versions_with_the_published_one_in_force() {
     assert_eq!(task["metadata"]["parent"]["kind"], "conflict");
     assert_eq!(task["metadata"]["parent"]["value"], Value::Null);
     assert_eq!(task["metadata"]["parent"]["sides"][0]["value"], "OPP-1");
-    assert!(task["body"].as_str().unwrap().contains(BLOCK));
+    assert_eq!(task["description"], BLOCK);
     assert_eq!(task["title"], "Login");
     let rows = json_of(&state, "/api/projects/test/tasks").await;
     let row = rows
@@ -79,7 +89,7 @@ async fn a_conflict_reads_as_both_versions_with_the_published_one_in_force() {
 async fn the_file_as_get_prints_it_writes_back_with_every_conflict_kept() {
     let (_dir, state) = seeded();
     let before = detail(&state).await;
-    let text = op_api::render_task_file(&before.metadata, &before.body, &before.comments).unwrap();
+    let text = rendered(&before);
 
     let (status, written) = sent(&state, "PUT", "/file", json!({ "text": text })).await;
 
@@ -104,31 +114,10 @@ async fn setting_a_field_settles_its_conflict() {
 }
 
 #[tokio::test]
-async fn a_block_resolves_once_and_a_stale_one_is_refused() {
-    let (_dir, state) = seeded();
-    let resolve = json!({ "block": BLOCK, "text": "Use OAuth, then email login." });
-
-    let (status, resolved) = sent(&state, "POST", "/resolve", resolve.clone()).await;
-    assert_eq!(status, StatusCode::OK, "{resolved}");
-    assert_eq!(resolved["conflicts"], 2);
-    assert!(
-        resolved["body"]
-            .as_str()
-            .unwrap()
-            .ends_with("Use OAuth, then email login.\n")
-    );
-
-    let (status, stale) = sent(&state, "POST", "/resolve", resolve).await;
-    assert_eq!(status, StatusCode::CONFLICT, "{stale}");
-}
-
-#[tokio::test]
 async fn a_write_that_edits_inside_a_block_is_refused() {
     let (_dir, state) = seeded();
     let before = detail(&state).await;
-    let text = op_api::render_task_file(&before.metadata, &before.body, &before.comments)
-        .unwrap()
-        .replace("Use OAuth only.", "Use SAML only.");
+    let text = rendered(&before).replace("Use OAuth only.", "Use SAML only.");
 
     let (status, refused) = sent(&state, "PUT", "/file", json!({ "text": text })).await;
 

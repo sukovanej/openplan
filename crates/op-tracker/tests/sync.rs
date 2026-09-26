@@ -297,24 +297,18 @@ fn lines_both_changed_keep_both_versions_and_a_write_cannot_edit_inside_them() {
 
     let block = op_task::conflict::in_body(&task.body).remove(0);
     let block = &task.body[block.range];
-    let marked = bob.tracker.resolve_block(
-        &bob.actor,
-        1,
-        block,
-        "<<<<<<< me\nPlan C.\n=======\nPlan D.\n>>>>>>> you\n",
-    );
+    let resolved = |text: &str| {
+        bob.tracker.update_task(&bob.actor, 1, |task| {
+            task.body = task.body.replace(block, text);
+            Ok(())
+        })
+    };
+    let marked = resolved("<<<<<<< me\nPlan C.\n=======\nPlan D.\n>>>>>>> you\n");
     assert!(
         matches!(marked, Err(TrackerError::Invalid(_))),
         "{marked:?}"
     );
-    bob.tracker
-        .resolve_block(&bob.actor, 1, block, "\nPlan A, then plan B.")
-        .expect("resolve");
-    let stale = bob.tracker.resolve_block(&bob.actor, 1, block, "Plan B.");
-    assert!(
-        matches!(stale, Err(TrackerError::ConflictGone)),
-        "{stale:?}"
-    );
+    resolved("Plan A, then plan B.\n").expect("resolve");
     bob.sync();
     alice.sync();
     let task = alice.task(1);

@@ -15,10 +15,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `[[` inserts a reference to a task, and `e` on a task page starts the edit.
   The text saves when you leave it, and a draft that did not save comes back on
   the next visit.
-- `PUT /api/projects/{project}/tasks/{id}/body` writes the body of a task. It
-  takes the body the edit started from and merges the edit with what other
-  writers changed since. Where both changed the same lines, a conflict block
-  keeps both versions.
+- `PUT /api/projects/{project}/tasks/{id}/text` writes the title and the
+  description of a task. It takes the text the edit started from and merges the
+  edit with what other writers changed since. Where both changed the same lines,
+  a conflict block keeps both versions.
 - Canary builds. Each push to `main` replaces the prerelease `canary` with a
   new build of the CLI and the daemon, versioned `<next patch>-canary.<run>`.
   `openplan update --canary` installs it. `openplan update` goes back to the
@@ -43,6 +43,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `TaskDetail` and revision snapshots carry `description` in place of `body`:
+  the text without the `# ` title line, with task references as keys.
+  `openplan get --json` shows the same.
 - A release carries only the CLI and the daemon for now. It carries no desktop
   app. The app workflow runs only when you start it by hand.
 - `openplan update` skips `OpenPlan.app` when the release carries no app
@@ -89,6 +92,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- `POST /api/projects/{project}/tasks/{id}/resolve`. To settle a conflict
+  block, replace it in the description and write the text with
+  `PUT /api/projects/{project}/tasks/{id}/text`.
 - `d2` fenced code blocks no longer render as diagrams. They show as code. Use
   `mermaid`.
 - `GET /api/flow`. `GET /api/flow/drawing` takes the same query.

@@ -6,33 +6,40 @@ export type SaveState =
   | { readonly kind: "saving" }
   | { readonly kind: "failed"; readonly message: string }
 
-export interface Draft {
-  readonly base: string
-  readonly text: string
+export interface Draft<T> {
+  readonly base: T
+  readonly text: T
 }
 
-export interface DraftStore {
-  readonly read: () => Draft | undefined
-  readonly write: (draft: Draft | undefined) => void
+export interface DraftStore<T> {
+  readonly read: () => Draft<T> | undefined
+  readonly write: (draft: Draft<T> | undefined) => void
 }
 
-export interface DraftView {
-  readonly shown: string
+export interface DraftView<T> {
+  readonly shown: T
   readonly state: SaveState
 }
 
-// Writes `text` over `base` and answers with the body the store holds after it.
-export type WriteText = (base: string, text: string) => Promise<string>
+export interface TextKind<T> {
+  readonly same: (a: T, b: T) => boolean
+  readonly is: (value: unknown) => value is T
+  // Why the text cannot be sent as it is, if it cannot.
+  readonly refuse: (text: T) => string | undefined
+}
+
+// Writes `text` over `base` and answers with the text the store holds after it.
+export type WriteText<T> = (base: T, text: T) => Promise<T>
 
 // Storage can be full, blocked, or absent. A draft is a second chance, so its loss costs nothing more.
-export function localDraftStore(key: string): DraftStore {
+export function localDraftStore<T>(key: string, kind: TextKind<T>): DraftStore<T> {
   return {
     read: () => {
       try {
         const value: unknown = JSON.parse(localStorage.getItem(key) ?? "null")
         if (typeof value !== "object" || value === null) return undefined
-        const { base, text } = value as Partial<Draft>
-        return typeof base === "string" && typeof text === "string" ? { base, text } : undefined
+        const { base, text } = value as Partial<Draft<unknown>>
+        return kind.is(base) && kind.is(text) ? { base, text } : undefined
       } catch {
         return undefined
       }
@@ -52,25 +59,26 @@ export function localDraftStore(key: string): DraftStore {
 // edit with what another writer did since. A save that answers with a merged text puts it in place,
 // and so does a new text from the store while nothing is unsaved. `shown` changes only then: what
 // the reader types is already on the screen.
-export class BodyDraft {
+export class TextDraft<T> {
   readonly restored: boolean
-  private base: string
-  private text: string
-  private view: DraftView
+  private base: T
+  private text: T
+  private view: DraftView<T>
   private saving = false
   private again = false
   private readonly listeners = new Set<() => void>()
 
   constructor(
-    body: string,
-    private readonly write: WriteText,
-    private readonly store: DraftStore,
-    private readonly refuse: (text: string) => string | undefined = () => undefined,
+    stored: T,
+    private readonly write: WriteText<T>,
+    private readonly store: DraftStore<T>,
+    private readonly kind: TextKind<T>,
   ) {
     const draft = store.read()
-    this.restored = draft !== undefined && draft.text !== body
-    this.base = this.restored && draft !== undefined ? draft.base : body
-    this.text = this.restored && draft !== undefined ? draft.text : body
+    const restored = draft !== undefined && !kind.same(draft.text, stored) ? draft : undefined
+    this.restored = restored !== undefined
+    this.base = restored?.base ?? stored
+    this.text = restored?.text ?? stored
     this.view = { shown: this.text, state: { kind: this.restored ? "unsaved" : "saved" } }
   }
 
@@ -79,13 +87,13 @@ export class BodyDraft {
     return () => this.listeners.delete(listener)
   }
 
-  readonly getSnapshot = (): DraftView => this.view
+  readonly getSnapshot = (): DraftView<T> => this.view
 
-  received(body: string): void {
-    if (!this.saving && !this.unsaved && body !== this.base) this.adopt(body)
+  received(stored: T): void {
+    if (!this.saving && !this.unsaved && !this.kind.same(stored, this.base)) this.adopt(stored)
   }
 
-  change(text: string): void {
+  change(text: T): void {
     this.text = text
     this.keepDraft()
     if (!this.saving) this.show({ state: { kind: this.unsaved ? "unsaved" : "saved" } })
@@ -109,13 +117,13 @@ export class BodyDraft {
   }
 
   private get unsaved(): boolean {
-    return this.text !== this.base
+    return !this.kind.same(this.text, this.base)
   }
 
   private async saveOnce(): Promise<void> {
     const sent = this.text
     if (!this.unsaved) return
-    const refusal = this.refuse(sent)
+    const refusal = this.kind.refuse(sent)
     if (refusal !== undefined) {
       this.show({ state: { kind: "failed", message: refusal } })
       return
@@ -132,18 +140,18 @@ export class BodyDraft {
     }
   }
 
-  private adopt(body: string): void {
-    this.base = body
-    this.text = body
+  private adopt(stored: T): void {
+    this.base = stored
+    this.text = stored
     this.store.write(undefined)
-    this.show({ shown: body })
+    this.show({ shown: stored })
   }
 
   private keepDraft(): void {
     this.store.write(this.unsaved ? { base: this.base, text: this.text } : undefined)
   }
 
-  private show(next: Partial<DraftView>): void {
+  private show(next: Partial<DraftView<T>>): void {
     const view = { ...this.view, ...next }
     if (view.shown === this.view.shown && sameState(view.state, this.view.state)) return
     this.view = view
