@@ -145,7 +145,7 @@ const Revision = memo(function Revision({
               withWhat={task === undefined}
             />
           )
-          const target = task === undefined ? diffTarget(entry, line) : undefined
+          const target = diffTarget(entry, line)
           return target === undefined ? (
             <li key={lineKey(line)} className={LINE}>
               {content}

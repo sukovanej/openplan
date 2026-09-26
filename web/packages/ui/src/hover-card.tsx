@@ -145,6 +145,9 @@ export function HoverCard({
           // Focus lets a keyboard scroll the card, and the keys it scrolls with are not the app's.
           tabIndex={0}
           data-keys-ignore
+          // The anchor can sit in a row that opens on a click, and a click that selects or scrolls
+          // in the card is not a click on the row.
+          onClick={(event) => event.stopPropagation()}
           style={at}
           className={cn(
             "bg-popover text-foreground fixed top-0 left-0 z-40 overflow-auto rounded-md border text-sm font-normal shadow-md outline-none",

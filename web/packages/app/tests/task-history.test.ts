@@ -15,12 +15,18 @@ const served = vi.hoisted(() => ({
   // Newest first, as the daemon answers: r24 down to r0.
   revisions: Array.from({ length: 25 }, (_, at) => `r${24 - at}`),
   pages: [] as Array<{ before?: string; limit: number }>,
+  diffs: vi.fn(),
 }))
 
 vi.mock("../src/lib/api", async () => {
   const { Effect } = await import("effect")
   return {
     listTags: () => Effect.sync(() => []),
+    getRevisionDiff: (...target: Array<unknown>) =>
+      Effect.sync(() => {
+        served.diffs(...target)
+        return { kind: "text", diff: "@@ -1,1 +1,1 @@\n-old\n+new\n", truncated: false }
+      }),
     getTaskHistory: (_project: string, _id: string, page: { before?: string; limit: number }) =>
       Effect.sync(() => {
         served.pages.push(page)
@@ -70,6 +76,7 @@ afterEach(async () => {
   }
   served.revisions = Array.from({ length: 25 }, (_, at) => `r${24 - at}`)
   served.pages = []
+  served.diffs.mockClear()
   queryClient.clear()
 })
 
@@ -205,5 +212,20 @@ describe("the history of a task", () => {
     expect(served.pages).toEqual([{ before: undefined, limit: TASK_HISTORY_PAGE }])
     expect(entries(root)).toHaveLength(TASK_HISTORY_PAGE)
     expect(older(root)).toBeDefined()
+  })
+})
+
+describe("the diff of a revision of a task", () => {
+  it("shows the diff of the task's file, and a click in it opens nothing", async () => {
+    const root = await show(undefined)
+    const line = entries(root)[0].querySelector("[aria-haspopup=dialog]")!
+
+    await act(async () => void line.dispatchEvent(new Event("pointerover", { bubbles: true })))
+    await until(() => root.querySelector("[role=dialog] .grid") !== null)
+
+    expect(served.diffs).toHaveBeenCalledExactlyOnceWith("openplan", "r24", { path: "tasks/00001-first.md" })
+    const before = seen.location?.search
+    await act(async () => (root.querySelector("[role=dialog] .grid") as HTMLElement).click())
+    expect(seen.location?.search).toBe(before)
   })
 })
