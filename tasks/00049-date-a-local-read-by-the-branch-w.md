@@ -83,3 +83,9 @@ that breaks.
   that produced the bytes it printed.
 - The `PATCH` echo dates the version it echoes.
 - A test covers the three-branch shape above, and fails against the fallback.
+
+## Comments
+
+### 2026-09-26T04:56:10Z by Milan Suk via claude-code
+
+> Cancelled: the move of the tasks to refs/openplan/tasks (#161) removed the code that this task describes.
