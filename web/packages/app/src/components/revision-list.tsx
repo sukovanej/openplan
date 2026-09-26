@@ -106,7 +106,7 @@ const Revision = memo(function Revision({
         current && "bg-muted/40",
       )}
     >
-      <span className="flex shrink-0 items-center gap-3 leading-6">
+      <span className="flex min-h-6 shrink-0 items-center gap-3">
         <span className="text-muted-foreground text-xs whitespace-nowrap">
           {to === undefined ? (
             when
@@ -126,7 +126,10 @@ const Revision = memo(function Revision({
       </span>
       <ul aria-label="Changes" className="flex min-w-0 flex-1 basis-40 flex-col gap-1">
         {lines.map((line) => (
-          <li key={lineKey(line)} className="flex max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 leading-6">
+          <li
+            key={lineKey(line)}
+            className="flex min-h-6 max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 leading-6"
+          >
             <ChangeLine project={project} entry={entry} line={line} refs={refs} withWhat={task === undefined} />
           </li>
         ))}
