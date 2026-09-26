@@ -180,3 +180,28 @@ fn a_large_asset_edited_by_hand_is_recorded_and_read_back() {
         Some(second.as_str())
     );
 }
+
+// The daemon opens a new project once for each first write that races to register it.
+#[test]
+fn a_new_store_that_several_callers_open_at_the_same_time_keeps_its_files() {
+    for _ in 0..50 {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("config.toml"), "abbreviation = \"OPP\"\n").expect("write");
+        let start = std::sync::Barrier::new(4);
+        std::thread::scope(|scope| {
+            let opens: Vec<_> = (0..4)
+                .map(|_| {
+                    scope.spawn(|| {
+                        start.wait();
+                        LocalBackend::open(dir.path(), Options::default()).map(drop)
+                    })
+                })
+                .collect();
+            for open in opens {
+                open.join().expect("an open").expect("the store opens");
+            }
+        });
+        assert!(dir.path().join("config.toml").is_file());
+        assert!(head_text(&open(dir.path()), "config.toml").is_some());
+    }
+}

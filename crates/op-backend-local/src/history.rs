@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use op_backend::{
     Actor, BackendError, Change, ChangeKind, LogEntry, LogQuery, Revision, RevisionId, Timestamp,
 };
-use rusqlite::{Connection, OptionalExtension as _, TransactionBehavior, params};
+use rusqlite::{Connection, ErrorCode, OptionalExtension as _, TransactionBehavior, params};
 use sha2::{Digest as _, Sha256};
 
 use crate::snapshot::{Blobs, HELD_BYTES, LocalSnapshot, Stored};
@@ -51,8 +51,7 @@ impl History {
     pub fn open(path: &Path) -> Result<Self, BackendError> {
         let db = Connection::open(path).map_err(storage)?;
         db.busy_timeout(BUSY).map_err(storage)?;
-        db.pragma_update(None, "journal_mode", "WAL")
-            .map_err(storage)?;
+        write_ahead(&db)?;
         db.execute_batch(SCHEMA).map_err(storage)?;
         Ok(Self { db })
     }
@@ -409,6 +408,23 @@ pub(crate) fn hash(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+// A new file changes to WAL under a write lock that SQLite takes without the busy handler, so a
+// second connection that opens the file at the same time gets BUSY at once and must try again.
+fn write_ahead(db: &Connection) -> Result<(), BackendError> {
+    let deadline = Instant::now() + BUSY;
+    loop {
+        match db.pragma_update(None, "journal_mode", "WAL") {
+            Err(err)
+                if err.sqlite_error_code() == Some(ErrorCode::DatabaseBusy)
+                    && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            done => return done.map_err(storage),
+        }
+    }
 }
 
 pub(crate) fn storage(err: impl std::fmt::Display) -> BackendError {

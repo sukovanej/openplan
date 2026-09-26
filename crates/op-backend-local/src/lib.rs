@@ -75,6 +75,10 @@ impl LocalBackend {
         std::fs::create_dir_all(&root)?;
         let history = History::open(&root.join(HISTORY_FILE))?;
         let blobs = Arc::new(Blobs::open(&root.join(HISTORY_FILE))?);
+        // Another open of the same store can record a revision at any moment and settle it a moment
+        // later. The head is read after the unsettled revisions, so it holds each of them, and
+        // finishing one writes its files, not the older versions from before it.
+        let unsettled = history.unsettled()?;
         let head = Arc::new(history.snapshot(history.latest()?, &blobs)?);
         let inner = Arc::new(Inner {
             root,
@@ -87,7 +91,7 @@ impl LocalBackend {
             }),
             events: Events::default(),
         });
-        inner.finish_interrupted()?;
+        inner.finish_interrupted(&unsettled)?;
         inner.refresh()?;
         let watcher = match options.watch {
             true => inner.start_watch(),
@@ -127,9 +131,9 @@ impl Inner {
         }
     }
 
-    fn finish_interrupted(&self) -> Result<(), BackendError> {
+    fn finish_interrupted(&self, unsettled: &[i64]) -> Result<(), BackendError> {
         let state = self.lock();
-        for id in state.history.unsettled()? {
+        for &id in unsettled {
             for path in state.history.changed_paths(id)? {
                 disk::write(&self.root, &path, state.head.read(&path)?.as_deref())?;
             }
