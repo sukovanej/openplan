@@ -303,7 +303,7 @@ function TaskAtRevision({ project, id, revision }: { project: string; id: string
             <CurrentVersionLink project={project} id={id} />
           </PanelHeader>
           <PanelBody className="p-6">
-            <RevisionNotice id={id} revision={revision} entry={entry} />
+            <RevisionNotice project={project} id={id} revision={revision} entry={entry} />
             {snapshot.isPending ? (
               <BodySkeleton />
             ) : snapshot.isError ? (
@@ -345,8 +345,19 @@ function CurrentVersionLink({ project, id }: { project: string; id: string }) {
   )
 }
 
-function RevisionNotice({ id, revision, entry }: { id: string; revision: string; entry: HistoryEntry | undefined }) {
+function RevisionNotice({
+  project,
+  id,
+  revision,
+  entry,
+}: {
+  project: string
+  id: string
+  revision: string
+  entry: HistoryEntry | undefined
+}) {
   const change = entry === undefined ? undefined : taskChangeOf(entry, id)
+  const { byName: tags } = useTags(project)
   return (
     <div role="note" className="border-info/40 bg-info/5 mb-5 flex flex-col gap-1 rounded-md border px-3 py-2 text-xs">
       <p className="text-info">
@@ -355,7 +366,9 @@ function RevisionNotice({ id, revision, entry }: { id: string; revision: string;
       </p>
       {entry !== undefined && (
         <>
-          {change !== undefined && <TaskChangeView change={change} className="text-foreground/90 text-sm" />}
+          {change !== undefined && (
+            <TaskChangeView change={change} tags={tags} className="text-foreground/90 text-sm" />
+          )}
           <RevisionMeta revision={entry.revision} />
         </>
       )}

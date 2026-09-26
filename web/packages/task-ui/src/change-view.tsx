@@ -18,11 +18,17 @@ import {
 } from "lucide-react"
 import type { ReactNode } from "react"
 
-import type { DocumentChangeKind, FieldChange, TagChange, TaskChange } from "@openplan/api-client"
+import type { DocumentChangeKind, FieldChange, TagChange, TagView, TaskChange } from "@openplan/api-client"
 import { cn } from "@openplan/ui"
 
 import { StatusBadge } from "./status"
-import { documentChangeText, fieldChangeText, tagChangeText } from "./task-change"
+import { TagChip } from "./tag-chip"
+import { documentChangeText, fieldChangeText, setDifference, tagChangeText } from "./task-change"
+
+// The project's tag registry by name, or `undefined` while it is still being read. Until it arrives
+// a name the registry holds looks like one it does not, so the change keeps its words instead of
+// showing every chip as dangling.
+type Registry = ReadonlyMap<string, TagView> | undefined
 
 const fieldIcons: Record<Exclude<FieldChange["field"], "status">, LucideIcon> = {
   number: Hash,
@@ -61,8 +67,31 @@ function Marked({
   )
 }
 
+function TagSetChange({
+  change,
+  tags,
+}: {
+  change: Extract<FieldChange, { field: "tags" }>
+  tags: ReadonlyMap<string, TagView>
+}) {
+  const { added, removed } = setDifference(change.from, change.to)
+  if (added.length === 0 && removed.length === 0) return <Marked icon={Tag}>{fieldChangeText(change)}</Marked>
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+      <Tag aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+      {added.map((name) => (
+        <TagChip key={`+${name}`} name={name} tag={tags.get(name)} sign="+" />
+      ))}
+      {removed.map((name) => (
+        <TagChip key={`−${name}`} name={name} tag={tags.get(name)} sign="−" />
+      ))}
+    </span>
+  )
+}
+
 // A status change is its two badges: the words would only repeat them.
-function FieldChangeView({ change }: { change: FieldChange }) {
+function FieldChangeView({ change, tags }: { change: FieldChange; tags: Registry }) {
+  if (change.field === "tags" && tags !== undefined) return <TagSetChange change={change} tags={tags} />
   if (change.field === "status") {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">
@@ -90,7 +119,15 @@ export function DocumentChangeView({ kind, className }: { kind: DocumentChangeKi
   )
 }
 
-export function TaskChangeView({ change, className }: { change: TaskChange; className?: string }) {
+export function TaskChangeView({
+  change,
+  tags,
+  className,
+}: {
+  change: TaskChange
+  tags: Registry
+  className?: string
+}) {
   const fields = change.fields ?? []
   if (change.kind !== "modified" || fields.length === 0) {
     return <DocumentChangeView kind={change.kind} className={className} />
@@ -98,17 +135,37 @@ export function TaskChangeView({ change, className }: { change: TaskChange; clas
   return (
     <Changes className={className}>
       {fields.map((field) => (
-        <FieldChangeView key={field.field === "other" ? `other:${field.name}` : field.field} change={field} />
+        <FieldChangeView
+          key={field.field === "other" ? `other:${field.name}` : field.field}
+          change={field}
+          tags={tags}
+        />
       ))}
     </Changes>
   )
 }
 
-export function TagChangeView({ change, className }: { change: TagChange; className?: string }) {
-  if (change.renamed_from === undefined) return <DocumentChangeView kind={change.kind} className={className} />
+// A rename names the tag twice, as it was and as it is, so it is the one tag change that says which
+// tag it is about.
+export function TagChangeView({ change, tags, className }: { change: TagChange; tags: Registry; className?: string }) {
+  const { renamed_from } = change
+  if (renamed_from === undefined) return <DocumentChangeView kind={change.kind} className={className} />
+  if (tags === undefined) {
+    return (
+      <Changes className={className}>
+        <Marked icon={Type}>{tagChangeText(change)}</Marked>
+      </Changes>
+    )
+  }
   return (
     <Changes className={className}>
-      <Marked icon={Type}>{tagChangeText(change)}</Marked>
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <Type aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+        <span>Renamed</span>
+        <TagChip name={renamed_from} tag={tags.get(renamed_from)} />
+        <ArrowRight aria-label="to" className="text-muted-foreground size-3.5 shrink-0" />
+        <TagChip name={change.tag} tag={tags.get(change.tag)} />
+      </span>
     </Changes>
   )
 }

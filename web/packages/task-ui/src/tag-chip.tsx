@@ -34,11 +34,22 @@ const danglingReason = (name: string) =>
 
 // `tag` is the registry entry the name resolves to, or `undefined` for a name the registry does not
 // hold. `onRemove` turns the chip into an editable one: taking the tag off the task is the only thing
-// a chip does, and it is the only thing a dangling one can do.
-export function TagChip({ name, tag, onRemove }: { name: string; tag: TagView | undefined; onRemove?: () => void }) {
+// a chip does, and it is the only thing a dangling one can do. `sign` marks a tag that joined or left.
+export function TagChip({
+  name,
+  tag,
+  sign,
+  onRemove,
+}: {
+  name: string
+  tag: TagView | undefined
+  sign?: "+" | "−"
+  onRemove?: () => void
+}) {
   const label = tag?.display ?? name
   const chip = (
     <Tag className={cn(tag === undefined ? DANGLING : paletteChip[tag.color], WHOLE_PIXELS)} dashed={tag === undefined}>
+      {sign !== undefined && <span className="font-semibold">{sign}</span>}
       {tag === undefined && <TriangleAlert aria-hidden className="size-3 shrink-0" />}
       <span>{label}</span>
       {onRemove !== undefined && (

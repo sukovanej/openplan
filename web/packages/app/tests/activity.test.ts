@@ -26,6 +26,7 @@ vi.mock("../src/lib/api", async () => {
   const { Effect } = await import("effect")
   return {
     getProjectHistory: () => Effect.sync(() => served.entries),
+    listTags: () => Effect.sync(() => [{ name: "server", display: "Server", color: "blue" }]),
     getBoard: () =>
       Effect.sync(() => ({
         groups: [
@@ -104,7 +105,10 @@ describe("the activity", () => {
             task: "OPP-1",
             kind: "modified",
             title: "Ship it",
-            fields: [{ field: "status", from: "todo", to: "done" }],
+            fields: [
+              { field: "status", from: "todo", to: "done" },
+              { field: "tags", from: [], to: ["server"] },
+            ],
           },
           { task: "OPP-2", kind: "removed", title: "Doomed" },
         ],
@@ -119,6 +123,7 @@ describe("the activity", () => {
       },
     ]
     const root = await show()
+    await tick()
 
     const [first, second] = revisions(root)
     expect(first.textContent?.match(/Milan/g)).toHaveLength(1)
@@ -126,7 +131,7 @@ describe("the activity", () => {
     expect(first.querySelector("time")?.compareDocumentPosition(first.querySelector("ul")!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     )
-    expect(lines(first)).toEqual(["TodoDoneOPP-1Ship it", "DeletedOPP-2Doomed", "Renamed from backendserver"])
+    expect(lines(first)).toEqual(["TodoDone+ServerOPP-1Ship it", "DeletedOPP-2Doomed", "RenamedbackendServer"])
     expect(lines(second)).toEqual(["Editedconfig.toml"])
     expect(root.querySelector("table")).toBeNull()
   })

@@ -7,10 +7,16 @@ const quoted = (text: string): string => `“${text}”`
 const count = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`
 
 // Tags and dependencies are sets to a reader, so the change is what joined and what left.
+export function setDifference(
+  from: ReadonlyArray<string>,
+  to: ReadonlyArray<string>,
+): { added: ReadonlyArray<string>; removed: ReadonlyArray<string> } {
+  return { added: to.filter((item) => !from.includes(item)), removed: from.filter((item) => !to.includes(item)) }
+}
+
 function setChange(name: string, from: ReadonlyArray<string>, to: ReadonlyArray<string>): string {
-  const added = to.filter((item) => !from.includes(item)).map((item) => `+${item}`)
-  const removed = from.filter((item) => !to.includes(item)).map((item) => `−${item}`)
-  const moved = [...added, ...removed]
+  const { added, removed } = setDifference(from, to)
+  const moved = [...added.map((item) => `+${item}`), ...removed.map((item) => `−${item}`)]
   return moved.length === 0 ? `${name} reordered` : `${name}: ${moved.join(" ")}`
 }
 
