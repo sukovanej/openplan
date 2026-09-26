@@ -2,9 +2,11 @@ use std::fmt::Write;
 
 use op_diagram::{Head, Stroke};
 
+use crate::icon;
 use crate::measure::Weight;
 use crate::scene::{
-    Anchor, ClusterBox, EdgePath, GuideKind, NodeBox, Outline, Point, Rect, Scene, Text, TextRole,
+    Anchor, ClusterBox, EdgePath, GuideKind, IconBox, NodeBox, Outline, Point, Rect, Scene, Text,
+    TextRole,
 };
 
 const CORNER: f32 = 8.0;
@@ -94,10 +96,15 @@ fn safe_link(link: &Option<String>) -> Option<String> {
 
 fn write_cluster_header(out: &mut String, cluster: &ClusterBox) {
     let link = safe_link(&cluster.link);
-    out.push_str(r#"<g class="cluster-header">"#);
+    let _ = write!(
+        out,
+        r#"<g class="{}">"#,
+        classes("cluster-header", &cluster.classes)
+    );
     if let Some(href) = &link {
         let _ = write!(out, r#"<a href="{href}">"#);
     }
+    write_icon(out, cluster.icon);
     write_texts(out, &cluster.texts);
     if link.is_some() {
         out.push_str("</a>");
@@ -119,11 +126,31 @@ fn write_node(out: &mut String, node: &NodeBox) {
         )
     );
     write_outline(out, &node.outline, &node.rect);
+    write_icon(out, node.icon);
     write_texts(out, &node.texts);
     out.push_str("</g>");
     if link.is_some() {
         out.push_str("</a>");
     }
+}
+
+// The page gives the icon its color through `currentColor`; the stroke and the fill belong to the
+// icon itself.
+fn write_icon(out: &mut String, icon: Option<IconBox>) {
+    let Some(IconBox { icon, rect }) = icon else {
+        return;
+    };
+    let _ = write!(
+        out,
+        r#"<svg class="icon icon-{}" x="{}" y="{}" width="{}" height="{}" viewBox="0 0 {grid} {grid}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{}</svg>"#,
+        icon::name(icon),
+        number(rect.x),
+        number(rect.y),
+        number(rect.width),
+        number(rect.height),
+        icon::shapes(icon),
+        grid = number(icon::GRID),
+    );
 }
 
 fn shape_name(outline: &Outline) -> &'static str {

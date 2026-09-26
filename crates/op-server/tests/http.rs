@@ -1489,6 +1489,8 @@ fn the_openapi_spec_documents_every_json_api_route() {
         ("/api/board", &["get"]),
         ("/api/search", &["get"]),
         ("/api/flow", &["get"]),
+        ("/api/flow/drawing", &["get"]),
+        ("/api/diagram", &["post"]),
     ] {
         for method in methods {
             assert!(
@@ -1502,6 +1504,8 @@ fn the_openapi_spec_documents_every_json_api_route() {
     for schema in [
         "Board",
         "Flow",
+        "Drawing",
+        "DiagramSource",
         "HistoryEntry",
         "TaskAtRevision",
         "SyncView",
@@ -1542,6 +1546,11 @@ fn the_openapi_spec_documents_every_refusal_with_its_reason() {
         ("get", "/api/flow", "404"),
         ("get", "/api/flow", "422"),
         ("get", "/api/flow", "503"),
+        ("get", "/api/flow/drawing", "400"),
+        ("get", "/api/flow/drawing", "404"),
+        ("get", "/api/flow/drawing", "422"),
+        ("get", "/api/flow/drawing", "503"),
+        ("post", "/api/diagram", "422"),
         ("get", "/api/projects/{project}/board", "404"),
         ("get", "/api/projects/{project}/tasks/{id}", "400"),
         ("get", "/api/projects/{project}/tasks/{id}", "404"),

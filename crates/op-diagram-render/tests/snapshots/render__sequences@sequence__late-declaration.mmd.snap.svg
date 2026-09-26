@@ -22,4 +22,14 @@
 .op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
 .op-diagram .text-number { fill: #fff; }
 .op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
 </style><path class="lifeline" d="M26 64L26 128"/><path class="lifeline" d="M120 48L120 128"/><g class="edge stroke-solid"><path class="edge-line" d="M26 108L112 108"/><g class="head head-arrow"><path d="M120 108L111 112.5L111 103.5Z"/></g></g><g class="node shape-actor participant"><circle class="outline" cx="26" cy="15" r="6"/><path class="actor-figure" d="M26 21V32M16 25H36M26 32L18 41M26 32L34 41"/><text class="text-label" x="26" y="59.09" font-size="14" font-weight="400" text-anchor="middle">Alice</text></g><g class="node shape-actor participant"><circle class="outline" cx="26" cy="135" r="6"/><path class="actor-figure" d="M26 141V152M16 145H36M26 152L18 161M26 152L34 161"/><text class="text-label" x="26" y="179.09" font-size="14" font-weight="400" text-anchor="middle">Alice</text></g><g class="node shape-rectangle participant"><rect class="outline" x="84" y="8" width="72" height="40" rx="3"/><text class="text-label" x="120" y="33.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g><g class="node shape-rectangle participant"><rect class="outline" x="84" y="128" width="72" height="40" rx="3"/><text class="text-label" x="120" y="153.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g><g class="edge-label"><rect class="edge-label-box" x="63.58" y="84" width="18.84" height="20" rx="3"/><text class="text-edge-label" x="73" y="98.73" font-size="13" font-weight="400" text-anchor="middle">hi</text></g></svg>

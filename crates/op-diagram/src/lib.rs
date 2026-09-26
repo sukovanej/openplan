@@ -3,20 +3,20 @@ mod sequence;
 
 use serde::{Deserialize, Serialize};
 
-pub use graph::{Cluster, Edge, Graph, Node, Row, Shape};
+pub use graph::{Cluster, Edge, Graph, Icon, Node, Page, Row, Shape};
 pub use sequence::{
     Block, Message, Note, NotePlacement, Operator, Participant, ParticipantKind, Section, Sequence,
     SequenceItem,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Diagram {
     Graph(Graph),
     Sequence(Sequence),
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     #[default]
@@ -26,7 +26,7 @@ pub enum Direction {
     Left,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stroke {
     #[default]
@@ -36,7 +36,7 @@ pub enum Stroke {
     Invisible,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Head {
     #[default]

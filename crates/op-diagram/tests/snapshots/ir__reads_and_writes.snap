@@ -16,10 +16,10 @@ input_file: crates/op-diagram/tests/ir/flow.json
         "Ship the parser"
       ],
       "caption": "OPP-2",
-      "icon": "status-in_progress",
+      "icon": "circle_dot",
       "link": "/openplan/OPP-2",
       "classes": [
-        "status-in_progress"
+        "status-in-progress"
       ],
       "rank": 1,
       "parent": "OPP-1"
@@ -44,7 +44,7 @@ input_file: crates/op-diagram/tests/ir/flow.json
         "Own diagram engine"
       ],
       "caption": "OPP-1",
-      "icon": "status-todo",
+      "icon": "clock",
       "link": "/openplan/OPP-1",
       "classes": [
         "status-todo"

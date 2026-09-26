@@ -1,4 +1,5 @@
 mod graph;
+mod icon;
 mod measure;
 mod scene;
 mod sequence;
@@ -9,8 +10,8 @@ use op_diagram::Diagram;
 
 pub use measure::{LineMetrics, Weight, line_metrics, text_width};
 pub use scene::{
-    Anchor, ClusterBox, EdgeLabel, EdgePath, Guide, GuideKind, NodeBox, Outline, Point, Rect,
-    Scene, Text, TextRole,
+    Anchor, ClusterBox, EdgeLabel, EdgePath, Guide, GuideKind, IconBox, NodeBox, Outline, Point,
+    Rect, Scene, Text, TextRole,
 };
 pub use svg::svg;
 

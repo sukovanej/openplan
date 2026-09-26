@@ -1,0 +1,192 @@
+---
+source: crates/op-api/tests/flow_diagram.rs
+expression: flow.diagram()
+input_file: crates/op-api/tests/flow_diagrams/family.json
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "openplan/OPP-2",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "Parse Mermaid"
+      ],
+      "caption": "OPP-2",
+      "icon": "circle_dot",
+      "link": "/openplan/task/OPP-2",
+      "classes": [
+        "status-in-progress"
+      ],
+      "rank": 0,
+      "parent": "openplan/OPP-1"
+    },
+    {
+      "id": "openplan/OPP-3",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "Bundle a font"
+      ],
+      "caption": "OPP-3",
+      "icon": "eye",
+      "link": "/openplan/task/OPP-3",
+      "classes": [
+        "status-in-review"
+      ],
+      "rank": 0
+    },
+    {
+      "id": "openplan/OPP-11",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "Draw a posted diagram"
+      ],
+      "caption": "OPP-11",
+      "icon": "clock",
+      "link": "/openplan/task/OPP-11",
+      "classes": [
+        "status-todo"
+      ],
+      "rank": 1,
+      "parent": "openplan/OPP-10"
+    },
+    {
+      "id": "openplan/OPP-12",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "Draw the flow"
+      ],
+      "caption": "OPP-12",
+      "icon": "circle_ellipsis",
+      "link": "/openplan/task/OPP-12",
+      "classes": [
+        "status-backlog"
+      ],
+      "rank": 1,
+      "parent": "openplan/OPP-10"
+    },
+    {
+      "id": "openplan/OPP-4",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "A child of a task outside the flow"
+      ],
+      "caption": "OPP-4",
+      "icon": "circle_alert",
+      "link": "/openplan/task/OPP-4",
+      "classes": [
+        "status-unreadable"
+      ],
+      "rank": 2
+    },
+    {
+      "id": "openplan/OPP-5",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "A status in conflict"
+      ],
+      "caption": "OPP-5",
+      "icon": "circle_x",
+      "link": "/openplan/task/OPP-5",
+      "classes": [
+        "status-cancelled"
+      ],
+      "rank": 2
+    },
+    {
+      "id": "openplan/OPP-99",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "OPP-99"
+      ],
+      "icon": "circle_dashed",
+      "classes": [
+        "unresolved"
+      ]
+    }
+  ],
+  "clusters": [
+    {
+      "id": "openplan/OPP-1",
+      "label": [
+        "Draw diagrams with an own engine"
+      ],
+      "caption": "OPP-1",
+      "icon": "circle_dot",
+      "link": "/openplan/task/OPP-1",
+      "classes": [
+        "status-in-progress"
+      ]
+    },
+    {
+      "id": "openplan/OPP-10",
+      "label": [
+        "Serve the drawings"
+      ],
+      "caption": "OPP-10",
+      "icon": "clock",
+      "link": "/openplan/task/OPP-10",
+      "classes": [
+        "status-todo"
+      ],
+      "parent": "openplan/OPP-1"
+    }
+  ],
+  "edges": [
+    {
+      "from": "openplan/OPP-2",
+      "to": "openplan/OPP-11",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "openplan/OPP-3",
+      "to": "openplan/OPP-12",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "openplan/OPP-11",
+      "to": "openplan/OPP-4",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "openplan/OPP-10",
+      "to": "openplan/OPP-5",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "openplan/OPP-99",
+      "to": "openplan/OPP-5",
+      "stroke": "dotted",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

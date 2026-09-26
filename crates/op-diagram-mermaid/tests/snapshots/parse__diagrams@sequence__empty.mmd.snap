@@ -1,0 +1,10 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/sequence/empty.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [],
+  "items": []
+}

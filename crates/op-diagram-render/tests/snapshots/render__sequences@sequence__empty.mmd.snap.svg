@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 0 0" width="0" height="0" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
+.op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
+.op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
+.op-diagram .stroke-thick .edge-line { stroke-width: 2.8; }
+.op-diagram .head-arrow path, .op-diagram .head-circle circle { fill: #5f6776; }
+.op-diagram .head-open path, .op-diagram .head-cross path, .op-diagram .head-cardinality path { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .head-ring { fill: #fff; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .edge-label-box { fill: #fff; }
+.op-diagram text { fill: #1f2430; }
+.op-diagram .text-caption { fill: #6b7280; }
+.op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .text-edge-label { fill: #3a4150; }
+.op-diagram .lifeline { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 4 4; }
+.op-diagram .divider { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 5 4; }
+.op-diagram .block .cluster-box { fill: none; stroke: #9aa2b1; }
+.op-diagram .activation .outline { fill: #e6e9f2; stroke: #7b8599; }
+.op-diagram .note .outline { fill: #fdf6d8; stroke: #cbb971; }
+.op-diagram .note .outline-detail { stroke: #cbb971; }
+.op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
+.op-diagram .text-number { fill: #fff; }
+.op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
+</style></svg>

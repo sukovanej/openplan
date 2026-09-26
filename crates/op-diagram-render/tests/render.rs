@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use op_diagram::{Diagram, Direction, Graph};
-use op_diagram_render::{ClusterBox, Point, Rect, Scene, layout, svg, text_width};
+use op_diagram_render::{
+    Anchor, ClusterBox, Point, Rect, Scene, Text, layout, line_metrics, svg, text_width,
+};
 
 #[test]
 fn graphs() {
@@ -71,6 +73,7 @@ fn checked(diagram: &Diagram, path: &Path) -> String {
         Diagram::Sequence(_) => sequence_problems(&scene),
     };
     problems.extend(outside(&scene));
+    problems.extend(icons(&scene));
     problems.extend(unsafe_markup(&drawn));
     assert!(
         problems.is_empty(),
@@ -81,10 +84,12 @@ fn checked(diagram: &Diagram, path: &Path) -> String {
     drawn
 }
 
-// Each rank that the producer fixes is one row: the flow draws a wave across the whole page.
+// Each rank that the producer fixes is one row: the flow draws a wave across the whole page, or
+// across its part of the page when it packs its parts.
 fn waves(graph: &Graph, scene: &Scene) -> Vec<String> {
     let vertical = matches!(graph.direction, Direction::Down | Direction::Up);
-    let mut rows: HashMap<usize, Vec<(&str, f32)>> = HashMap::new();
+    let part = parts(graph);
+    let mut rows: HashMap<(&str, usize), Vec<(&str, f32)>> = HashMap::new();
     for node in &graph.nodes {
         let (Some(rank), Some(drawn)) = (
             node.rank,
@@ -93,12 +98,12 @@ fn waves(graph: &Graph, scene: &Scene) -> Vec<String> {
             continue;
         };
         let center = drawn.rect.center();
-        rows.entry(rank)
+        rows.entry((part[node.id.as_str()], rank))
             .or_default()
             .push((&node.id, if vertical { center.y } else { center.x }));
     }
     rows.into_iter()
-        .filter_map(|(rank, nodes)| {
+        .filter_map(|((_, rank), nodes)| {
             let first = nodes[0].1;
             nodes
                 .iter()
@@ -106,6 +111,86 @@ fn waves(graph: &Graph, scene: &Scene) -> Vec<String> {
                 .map(|(id, _)| format!("the node {id} leaves the row of rank {rank}"))
         })
         .collect()
+}
+
+// The part of each node, named by one of its members. A graph that does not pack is one part.
+fn parts(graph: &Graph) -> HashMap<&str, &str> {
+    let mut up: HashMap<&str, &str> = HashMap::new();
+    if graph.pack.is_some() {
+        let parents = graph
+            .nodes
+            .iter()
+            .filter_map(|node| Some((node.id.as_str(), node.parent.as_deref()?)));
+        let nested = graph
+            .clusters
+            .iter()
+            .filter_map(|cluster| Some((cluster.id.as_str(), cluster.parent.as_deref()?)));
+        let edges = graph
+            .edges
+            .iter()
+            .map(|edge| (edge.from.as_str(), edge.to.as_str()));
+        for (first, second) in parents.chain(nested).chain(edges) {
+            let (first, second) = (root(&up, first), root(&up, second));
+            if first != second {
+                up.insert(first, second);
+            }
+        }
+    }
+    graph
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), root(&up, &node.id)))
+        .collect()
+}
+
+fn root<'a>(up: &HashMap<&'a str, &'a str>, mut at: &'a str) -> &'a str {
+    while let Some(next) = up.get(at) {
+        at = next;
+    }
+    at
+}
+
+// An icon stays inside the box that carries it and clear of the text beside it.
+fn icons(scene: &Scene) -> Vec<String> {
+    let nodes = scene
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node.rect, node.icon, &node.texts));
+    let clusters = scene.clusters.iter().map(|cluster| {
+        (
+            cluster.id.as_str(),
+            cluster.rect,
+            cluster.icon,
+            &cluster.texts,
+        )
+    });
+    let mut problems = Vec::new();
+    for (id, rect, icon, texts) in nodes.chain(clusters) {
+        let Some(icon) = icon else { continue };
+        if !rect.contains(&icon.rect) {
+            problems.push(format!("the icon of {id} lies outside it"));
+        }
+        for text in texts {
+            if text_box(text).overlaps(&icon.rect) {
+                problems.push(format!("the icon of {id} overlaps {:?}", text.content));
+            }
+        }
+    }
+    problems
+}
+
+fn text_box(text: &Text) -> Rect {
+    let width = text_width(&text.content, text.size, text.weight);
+    let metrics = line_metrics(text.size);
+    Rect {
+        x: match text.anchor {
+            Anchor::Start => text.x,
+            Anchor::Middle => text.x - width / 2.0,
+        },
+        y: text.baseline - metrics.ascent,
+        width,
+        height: metrics.ascent + metrics.descent,
+    }
 }
 
 fn unsafe_markup(drawn: &str) -> Vec<String> {

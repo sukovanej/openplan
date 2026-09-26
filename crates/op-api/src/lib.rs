@@ -1,6 +1,7 @@
 mod board;
 mod comment;
 mod daemon;
+mod drawing;
 mod event;
 mod field;
 mod flow;
@@ -18,6 +19,7 @@ mod write;
 pub use board::*;
 pub use comment::*;
 pub use daemon::*;
+pub use drawing::*;
 pub use event::*;
 pub use field::*;
 pub use flow::*;

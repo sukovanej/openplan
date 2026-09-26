@@ -72,12 +72,31 @@ export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" |
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]).annotate({
   identifier: "Status",
 })
+export type DiagramSource = { readonly source: string }
+export const DiagramSource = Schema.Struct({ source: Schema.String }).annotate({ identifier: "DiagramSource" })
+export type Drawing = { readonly height: number; readonly svg: string; readonly width: number }
+export const Drawing = Schema.Struct({
+  height: Schema.Number.annotate({ format: "float" }).check(
+    Schema.isFinite().annotate({ expected: "a finite number" }),
+  ),
+  svg: Schema.String,
+  width: Schema.Number.annotate({ format: "float" }).check(Schema.isFinite().annotate({ expected: "a finite number" })),
+}).annotate({ identifier: "Drawing" })
+export type SourcePosition = { readonly column: number; readonly line: number }
+export const SourcePosition = Schema.Struct({
+  column: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  line: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+}).annotate({ identifier: "SourcePosition" })
+export type Refusal = "tag_referenced" | "tag_unregistered"
+export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"]).annotate({ identifier: "Refusal" })
 export type FlowEdge = { readonly from: string; readonly project: string; readonly to: string }
 export const FlowEdge = Schema.Struct({ from: Schema.String, project: Schema.String, to: Schema.String }).annotate({
   identifier: "FlowEdge",
 })
-export type Refusal = "tag_referenced" | "tag_unregistered"
-export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"]).annotate({ identifier: "Refusal" })
 export type BackendKind = "git" | "local"
 export const BackendKind = Schema.Literals(["git", "local"]).annotate({ identifier: "BackendKind" })
 export type ProjectStatus = { readonly state: "ok" } | { readonly reason: string; readonly state: "error" }
@@ -317,11 +336,13 @@ export const TaskPatch = Schema.Struct({
 export type ApiErrorBody = {
   readonly cycles?: ReadonlyArray<ReadonlyArray<string>>
   readonly message: string
+  readonly position?: SourcePosition
   readonly reason?: Refusal
 }
 export const ApiErrorBody = Schema.Struct({
   cycles: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
   message: Schema.String,
+  position: Schema.optionalKey(SourcePosition),
   reason: Schema.optionalKey(Refusal),
 }).annotate({ identifier: "ApiErrorBody" })
 export type RegisterProject = { readonly abbreviation?: string; readonly backend?: BackendKind; readonly path: string }
@@ -748,6 +769,12 @@ const __recursive_TaskTree = Schema.Struct({
 // schemas
 export type GetMergedBoard200 = Board
 export const GetMergedBoard200 = Board
+export type DrawDiagramRequestJson = DiagramSource
+export const DrawDiagramRequestJson = DiagramSource
+export type DrawDiagram200 = Drawing
+export const DrawDiagram200 = Drawing
+export type DrawDiagram422 = ApiErrorBody
+export const DrawDiagram422 = ApiErrorBody
 export type GetFlowParams = {
   readonly project?: ReadonlyArray<string>
   readonly status?: ReadonlyArray<Status>
@@ -770,6 +797,40 @@ export type GetFlow422 = ApiErrorBody
 export const GetFlow422 = ApiErrorBody
 export type GetFlow503 = ApiErrorBody
 export const GetFlow503 = ApiErrorBody
+export type DrawFlowParams = {
+  readonly project?: ReadonlyArray<string>
+  readonly status?: ReadonlyArray<Status>
+  readonly task?: ReadonlyArray<string>
+  readonly tag?: ReadonlyArray<string>
+  readonly width?: number
+  readonly height?: number
+}
+export const DrawFlowParams = Schema.Struct({
+  project: Schema.optionalKey(Schema.Array(Schema.String)),
+  status: Schema.optionalKey(Schema.Array(Status)),
+  task: Schema.optionalKey(Schema.Array(Schema.String)),
+  tag: Schema.optionalKey(Schema.Array(Schema.String)),
+  width: Schema.optionalKey(
+    Schema.Number.annotate({ format: "int32" })
+      .check(Schema.isInt().annotate({ expected: "an integer" }))
+      .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  ),
+  height: Schema.optionalKey(
+    Schema.Number.annotate({ format: "int32" })
+      .check(Schema.isInt().annotate({ expected: "an integer" }))
+      .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  ),
+})
+export type DrawFlow200 = Drawing
+export const DrawFlow200 = Drawing
+export type DrawFlow400 = ApiErrorBody
+export const DrawFlow400 = ApiErrorBody
+export type DrawFlow404 = ApiErrorBody
+export const DrawFlow404 = ApiErrorBody
+export type DrawFlow422 = ApiErrorBody
+export const DrawFlow422 = ApiErrorBody
+export type DrawFlow503 = ApiErrorBody
+export const DrawFlow503 = ApiErrorBody
 export type ListProjects200 = ReadonlyArray<ProjectView>
 export const ListProjects200 = Schema.Array(ProjectView)
 export type RegisterProjectRequestJson = RegisterProject
@@ -1207,6 +1268,17 @@ export const make = (
           }),
         ),
       ),
+    drawDiagram: (options) =>
+      HttpClientRequest.post("/api/diagram").pipe(
+        HttpClientRequest.bodyJsonUnsafe(options.payload),
+        withResponse(options.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(DrawDiagram200),
+            "422": decodeError("DrawDiagram422", DrawDiagram422),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     getFlow: (options) =>
       HttpClientRequest.get("/api/flow").pipe(
         HttpClientRequest.setUrlParams({
@@ -1222,6 +1294,27 @@ export const make = (
             "404": decodeError("GetFlow404", GetFlow404),
             "422": decodeError("GetFlow422", GetFlow422),
             "503": decodeError("GetFlow503", GetFlow503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    drawFlow: (options) =>
+      HttpClientRequest.get("/api/flow/drawing").pipe(
+        HttpClientRequest.setUrlParams({
+          project: options?.params?.["project"] as any,
+          status: options?.params?.["status"] as any,
+          task: options?.params?.["task"] as any,
+          tag: options?.params?.["tag"] as any,
+          width: options?.params?.["width"] as any,
+          height: options?.params?.["height"] as any,
+        }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(DrawFlow200),
+            "400": decodeError("DrawFlow400", DrawFlow400),
+            "404": decodeError("DrawFlow404", DrawFlow404),
+            "422": decodeError("DrawFlow422", DrawFlow422),
+            "503": decodeError("DrawFlow503", DrawFlow503),
             orElse: unexpectedStatus,
           }),
         ),
@@ -1925,6 +2018,13 @@ export interface TasksClient {
     WithOptionalResponse<typeof GetMergedBoard200.Type, Config>,
     HttpClientError.HttpClientError | SchemaError
   >
+  readonly drawDiagram: <Config extends OperationConfig>(options: {
+    readonly payload: typeof DrawDiagramRequestJson.Encoded
+    readonly config?: Config | undefined
+  }) => Effect.Effect<
+    WithOptionalResponse<typeof DrawDiagram200.Type, Config>,
+    HttpClientError.HttpClientError | SchemaError | TasksClientError<"DrawDiagram422", typeof DrawDiagram422.Type>
+  >
   readonly getFlow: <Config extends OperationConfig>(
     options:
       | { readonly params?: typeof GetFlowParams.Encoded | undefined; readonly config?: Config | undefined }
@@ -1937,6 +2037,19 @@ export interface TasksClient {
     | TasksClientError<"GetFlow404", typeof GetFlow404.Type>
     | TasksClientError<"GetFlow422", typeof GetFlow422.Type>
     | TasksClientError<"GetFlow503", typeof GetFlow503.Type>
+  >
+  readonly drawFlow: <Config extends OperationConfig>(
+    options:
+      | { readonly params?: typeof DrawFlowParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof DrawFlow200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DrawFlow400", typeof DrawFlow400.Type>
+    | TasksClientError<"DrawFlow404", typeof DrawFlow404.Type>
+    | TasksClientError<"DrawFlow422", typeof DrawFlow422.Type>
+    | TasksClientError<"DrawFlow503", typeof DrawFlow503.Type>
   >
   readonly listProjects: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,

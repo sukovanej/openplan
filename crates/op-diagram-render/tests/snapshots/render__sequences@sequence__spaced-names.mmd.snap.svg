@@ -22,4 +22,14 @@
 .op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
 .op-diagram .text-number { fill: #fff; }
 .op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
 </style><path class="lifeline" d="M59.77 48L59.77 112"/><path class="lifeline" d="M187.55 48L187.55 112"/><g class="edge stroke-solid"><path class="edge-line" d="M59.77 92L179.55 92"/><g class="head head-arrow"><path d="M187.55 92L178.55 96.5L178.55 87.5Z"/></g></g><g class="node shape-rectangle participant"><rect class="outline" x="8" y="8" width="103.55" height="40" rx="3"/><text class="text-label" x="59.77" y="33.09" font-size="14" font-weight="400" text-anchor="middle">The server</text></g><g class="node shape-rectangle participant"><rect class="outline" x="8" y="112" width="103.55" height="40" rx="3"/><text class="text-label" x="59.77" y="137.09" font-size="14" font-weight="400" text-anchor="middle">The server</text></g><g class="node shape-rectangle participant"><rect class="outline" x="151.55" y="8" width="72" height="40" rx="3"/><text class="text-label" x="187.55" y="33.09" font-size="14" font-weight="400" text-anchor="middle">db</text></g><g class="node shape-rectangle participant"><rect class="outline" x="151.55" y="112" width="72" height="40" rx="3"/><text class="text-label" x="187.55" y="137.09" font-size="14" font-weight="400" text-anchor="middle">db</text></g><g class="edge-label"><rect class="edge-label-box" x="103.96" y="68" width="39.39" height="20" rx="3"/><text class="text-edge-label" x="123.66" y="82.73" font-size="13" font-weight="400" text-anchor="middle">store</text></g></svg>

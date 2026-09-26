@@ -1,0 +1,27 @@
+{
+  "kind": "graph",
+  "direction": "down",
+  "pack": { "width": 1600, "height": 900 },
+  "nodes": [
+    { "id": "p/P-1", "shape": { "kind": "rounded" }, "label": ["Start the chain"], "caption": "P-1", "icon": "circle_dot", "link": "/p/task/P-1", "classes": ["status-in-progress"], "rank": 0 },
+    { "id": "p/P-2", "shape": { "kind": "rounded" }, "label": ["A task on its own"], "caption": "P-2", "icon": "clock", "link": "/p/task/P-2", "classes": ["status-todo"], "rank": 0 },
+    { "id": "p/P-3", "shape": { "kind": "rounded" }, "label": ["A first child of the box"], "caption": "P-3", "icon": "clock", "link": "/p/task/P-3", "classes": ["status-todo"], "rank": 0, "parent": "p/P-10" },
+    { "id": "p/P-4", "shape": { "kind": "rounded" }, "label": ["Another task on its own, with a title long enough to wrap"], "caption": "P-4", "icon": "circle_ellipsis", "link": "/p/task/P-4", "classes": ["status-backlog"], "rank": 0 },
+    { "id": "p/P-5", "shape": { "kind": "rounded" }, "label": ["Short"], "caption": "P-5", "icon": "eye", "link": "/p/task/P-5", "classes": ["status-in-review"], "rank": 0 },
+    { "id": "p/P-6", "shape": { "kind": "rounded" }, "label": ["Continue the chain"], "caption": "P-6", "icon": "clock", "link": "/p/task/P-6", "classes": ["status-todo"], "rank": 1 },
+    { "id": "p/P-7", "shape": { "kind": "rounded" }, "label": ["A second child of the box"], "caption": "P-7", "icon": "circle_ellipsis", "link": "/p/task/P-7", "classes": ["status-backlog"], "rank": 1, "parent": "p/P-10" },
+    { "id": "p/P-8", "shape": { "kind": "rounded" }, "label": ["Wait for a task that does not exist"], "caption": "P-8", "icon": "clock", "link": "/p/task/P-8", "classes": ["status-todo"], "rank": 1 },
+    { "id": "p/P-9", "shape": { "kind": "rounded" }, "label": ["End the chain"], "caption": "P-9", "icon": "circle_ellipsis", "link": "/p/task/P-9", "classes": ["status-backlog"], "rank": 2 },
+    { "id": "p/P-11", "shape": { "kind": "rounded" }, "label": ["A task on its own in the last wave"], "caption": "P-11", "icon": "clock", "link": "/p/task/P-11", "classes": ["status-todo"], "rank": 2 },
+    { "id": "p/P-99", "shape": { "kind": "rounded" }, "label": ["P-99"], "icon": "circle_dashed", "classes": ["unresolved"] }
+  ],
+  "clusters": [
+    { "id": "p/P-10", "label": ["A box with two children"], "caption": "P-10", "icon": "clock", "link": "/p/task/P-10", "classes": ["status-todo"] }
+  ],
+  "edges": [
+    { "from": "p/P-1", "to": "p/P-6", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 },
+    { "from": "p/P-6", "to": "p/P-9", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 },
+    { "from": "p/P-3", "to": "p/P-7", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 },
+    { "from": "p/P-99", "to": "p/P-8", "stroke": "dotted", "tail": "none", "head": "arrow", "min_length": 1 }
+  ]
+}

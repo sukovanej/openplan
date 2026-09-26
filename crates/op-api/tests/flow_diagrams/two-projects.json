@@ -1,0 +1,8 @@
+{
+  "nodes": [
+    { "kind": "leaf", "project": "alpha", "id": "AAA-1", "title": "First in alpha", "status": "todo", "wave": 0, "position": 0, "blocks_count": 1 },
+    { "kind": "leaf", "project": "beta", "id": "AAA-1", "title": "First in beta, with the same key", "status": "done", "wave": 0, "position": 1, "blocks_count": 0 },
+    { "kind": "leaf", "project": "alpha", "id": "AAA-2", "title": "Second in alpha", "status": "todo", "wave": 1, "position": 0, "blocks_count": 0 }
+  ],
+  "edges": [{ "project": "alpha", "from": "AAA-1", "to": "AAA-2" }]
+}

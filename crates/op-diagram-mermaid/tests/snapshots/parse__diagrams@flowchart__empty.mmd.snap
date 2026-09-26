@@ -1,0 +1,11 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/empty.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [],
+  "edges": []
+}

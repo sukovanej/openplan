@@ -6,6 +6,8 @@ const PORT_GAP: f32 = 12.0;
 const TRACK_ROOM: f32 = 8.0;
 const STRAIGHT: f32 = 0.5;
 const SNAP: f32 = 4.0;
+const FREE_PORT: f32 = 16.0;
+const CORNER_ROOM: f32 = 12.0;
 
 // An edge runs down through the ranks from its upper vertex to its lower one, whatever way its
 // arrow points. `reversed` records that the arrow points up.
@@ -19,9 +21,13 @@ pub(super) struct Chain {
     pub(super) drawn: bool,
 }
 
+// A port that is the only one on its side can move by `free` toward the line, so the line needs
+// no jog to reach it.
 pub(super) struct Ends {
     pub(super) exit: f32,
     pub(super) entry: f32,
+    pub(super) exit_free: f32,
+    pub(super) entry_free: f32,
 }
 
 // Several edges that leave one side of a node spread along that side in the order of the vertices
@@ -37,8 +43,11 @@ pub(super) fn ports(
         .map(|chain| Ends {
             exit: center[chain.vertices[0]],
             entry: center[*chain.vertices.last().expect("a chain has two vertices")],
+            exit_free: 0.0,
+            entry_free: 0.0,
         })
         .collect();
+    let free = |vertex: usize| (breadth[vertex] / 2.0 - CORNER_ROOM).clamp(0.0, FREE_PORT);
     let mut leaving: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut arriving: HashMap<usize, Vec<usize>> = HashMap::new();
     for (at, chain) in chains.iter().enumerate() {
@@ -53,6 +62,10 @@ pub(super) fn ports(
         if !spreads(vertex) {
             continue;
         }
+        if let [only] = group[..] {
+            ends[only].exit_free = free(vertex);
+            continue;
+        }
         group.sort_by(|a, b| {
             center[chains[*a].vertices[1]].total_cmp(&center[chains[*b].vertices[1]])
         });
@@ -65,6 +78,10 @@ pub(super) fn ports(
     }
     for (vertex, mut group) in arriving {
         if !spreads(vertex) {
+            continue;
+        }
+        if let [only] = group[..] {
+            ends[only].entry_free = free(vertex);
             continue;
         }
         let before = |chain: usize| {
@@ -98,15 +115,27 @@ pub(super) struct Tracks {
 // within `SNAP` of it, so a few pixels of rounding never show as a jog.
 pub(super) fn links(chain: &Chain, ends: &Ends, center: &[f32]) -> Vec<(f32, f32)> {
     let last = chain.vertices.len() - 2;
-    let mut x = ends.exit;
+    let target = |at: usize| {
+        if at == last {
+            ends.entry
+        } else {
+            center[chain.vertices[at + 1]]
+        }
+    };
+    let mut x = if (ends.exit - target(0)).abs() <= ends.exit_free {
+        target(0)
+    } else {
+        ends.exit
+    };
     (0..=last)
         .map(|at| {
-            let target = if at == last {
-                ends.entry
+            let target = target(at);
+            let snap = if at == last {
+                SNAP.max(ends.entry_free)
             } else {
-                center[chain.vertices[at + 1]]
+                SNAP
             };
-            if (x - target).abs() <= SNAP {
+            if (x - target).abs() <= snap {
                 (x, x)
             } else {
                 let link = (x, target);
