@@ -76,10 +76,9 @@ flowchart LR
 3. **Web.** `task-ui` shows a `mermaid` fence inline, and so do the full
    view and the flow page. The flow page sends the size of its page. One
    viewport component pans and zooms, and one CSS file gives the classes
-   of the SVG their theme colors. One click
-   handler on the viewport gives internal links to React Router. Remove
-   the three dependencies, and regenerate the client with
-   `mise run generate-web-client`.
+   of the SVG their theme colors. One click handler on the viewport gives
+   internal links to React Router. Remove the three dependencies, and
+   regenerate the client with `mise run generate-web-client`.
 4. **Migration.** Convert the 7 D2 blocks: OPP-115, and CQR-71, CQR-73,
    CQR-74, CQR-77, CQR-89, and CQR-90. The conversions are the fixtures of
    `op-diagram-mermaid`. Change the CQR tasks only with the consent of the
