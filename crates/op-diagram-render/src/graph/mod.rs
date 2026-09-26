@@ -178,7 +178,7 @@ fn group_parents(graph: &Graph, group_at: &HashMap<&str, usize>) -> Vec<Level> {
     parents
 }
 
-pub fn layout(graph: &Graph) -> Scene {
+pub(crate) fn layout(graph: &Graph) -> Scene {
     let direction = graph.direction;
     let orient = Frame {
         direction,
@@ -682,6 +682,7 @@ pub fn layout(graph: &Graph) -> Scene {
         clusters,
         nodes,
         edges,
+        guides: Vec::new(),
     }
 }
 

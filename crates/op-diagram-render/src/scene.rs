@@ -69,6 +69,7 @@ pub enum TextRole {
     Header,
     Cell,
     EdgeLabel,
+    Number,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +100,8 @@ pub enum Outline {
     Trapezoid,
     InvertedTrapezoid,
     Table { dividers: Vec<f32> },
+    Actor,
+    Note,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -140,6 +143,19 @@ pub struct EdgePath {
     pub label: Option<EdgeLabel>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuideKind {
+    Lifeline,
+    Divider,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Guide {
+    pub from: Point,
+    pub to: Point,
+    pub kind: GuideKind,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scene {
     pub width: f32,
@@ -147,4 +163,57 @@ pub struct Scene {
     pub clusters: Vec<ClusterBox>,
     pub nodes: Vec<NodeBox>,
     pub edges: Vec<EdgePath>,
+    pub guides: Vec<Guide>,
+}
+
+impl Point {
+    fn moved(self, dx: f32, dy: f32) -> Point {
+        Point {
+            x: self.x + dx,
+            y: self.y + dy,
+        }
+    }
+}
+
+impl Rect {
+    fn moved(self, dx: f32, dy: f32) -> Rect {
+        Rect {
+            x: self.x + dx,
+            y: self.y + dy,
+            ..self
+        }
+    }
+}
+
+fn move_texts(texts: &mut [Text], dx: f32, dy: f32) {
+    for text in texts {
+        text.x += dx;
+        text.baseline += dy;
+    }
+}
+
+impl Scene {
+    pub(crate) fn translate(&mut self, dx: f32, dy: f32) {
+        for cluster in &mut self.clusters {
+            cluster.rect = cluster.rect.moved(dx, dy);
+            move_texts(&mut cluster.texts, dx, dy);
+        }
+        for node in &mut self.nodes {
+            node.rect = node.rect.moved(dx, dy);
+            move_texts(&mut node.texts, dx, dy);
+        }
+        for edge in &mut self.edges {
+            for point in &mut edge.points {
+                *point = point.moved(dx, dy);
+            }
+            if let Some(label) = &mut edge.label {
+                label.rect = label.rect.moved(dx, dy);
+                move_texts(&mut label.texts, dx, dy);
+            }
+        }
+        for guide in &mut self.guides {
+            guide.from = guide.from.moved(dx, dy);
+            guide.to = guide.to.moved(dx, dy);
+        }
+    }
 }

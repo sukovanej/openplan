@@ -1,6 +1,6 @@
 ---
 source: crates/op-diagram-render/tests/render.rs
-expression: "reviewable(&checked(&graph, path))"
+expression: "reviewable(&checked(&diagram, path))"
 input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/opp-117.mmd
 extension: svg
 snapshot_kind: binary
