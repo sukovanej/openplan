@@ -6,7 +6,7 @@ use std::time::Duration;
 use gix::ObjectId;
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Change, Committed, Events, HeadMoved, LogEntry,
-    LogQuery, MergePolicy, Origin, Remote, RevisionId, Snapshot, SyncStatus, Write,
+    LogQuery, MergePolicy, Origin, Remote, Revision, RevisionId, Snapshot, SyncStatus, Write,
 };
 use tokio::sync::broadcast;
 
@@ -356,6 +356,15 @@ impl Backend for GitBackend {
             return Err(BackendError::UnknownRevision(revision.clone()));
         }
         Ok(self.inner.snapshot_at(id)?)
+    }
+
+    fn revision(&self, id: &RevisionId) -> Result<Revision, BackendError> {
+        let object = object_id(id)?;
+        let repo = self.inner.local();
+        if repo.find_commit(object).is_err() {
+            return Err(BackendError::UnknownRevision(id.clone()));
+        }
+        objects::read_revision(&repo, object)
     }
 
     fn read_at(&self, revision: &RevisionId, path: &str) -> Result<Option<Vec<u8>>, BackendError> {

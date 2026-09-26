@@ -41,6 +41,12 @@ export const ApiBaseUrl = Context.Reference<string>("app/ApiBaseUrl", {
   defaultValue: () => "",
 })
 
+// `from` names the document on the parent's side, where a new title moved a task to a new file.
+export interface DiffTarget {
+  readonly path: string
+  readonly from?: string
+}
+
 export interface HistoryPage {
   readonly before?: string
   readonly limit: number
@@ -338,6 +344,19 @@ export const getTaskHistory = (
       TaskHistory400: refusal,
       TaskHistory404: refusal,
       TaskHistory503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const getRevisionDiff = (
+  project: string,
+  revision: string,
+  target: DiffTarget,
+): Effect.Effect<Api.DocumentDiff, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.revisionDiff(project, revision, { params: target })).pipe(
+    Effect.catchTags({
+      RevisionDiff404: refusal,
+      RevisionDiff503: refusal,
       HttpClientError: unexpected,
     }),
   )

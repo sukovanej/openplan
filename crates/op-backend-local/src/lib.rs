@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Change, ChangeKind, Committed, Events, HeadMoved,
-    LogEntry, LogQuery, Op, Origin, Remote, RevisionId, Snapshot, Write, check_path,
+    LogEntry, LogQuery, Op, Origin, Remote, Revision, RevisionId, Snapshot, Write, check_path,
 };
 use tokio::sync::broadcast;
 
@@ -369,6 +369,15 @@ impl Backend for LocalBackend {
         Ok(Arc::new(
             state.history.snapshot(Some(id), &self.inner.blobs)?,
         ))
+    }
+
+    fn revision(&self, id: &RevisionId) -> Result<Revision, BackendError> {
+        let number = parse_id(id)?;
+        let state = self.inner.lock();
+        if !state.history.exists(number)? {
+            return Err(BackendError::UnknownRevision(id.clone()));
+        }
+        state.history.revision(number)
     }
 
     fn read_at(&self, revision: &RevisionId, path: &str) -> Result<Option<Vec<u8>>, BackendError> {

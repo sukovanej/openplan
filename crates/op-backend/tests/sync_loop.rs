@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Committed, Events, HeadMoved, LogEntry, LogQuery,
-    MemorySnapshot, Remote, RevisionId, Schedule, Snapshot, SyncLoop, SyncReport, SyncStatus,
-    Write,
+    MemorySnapshot, Remote, Revision, RevisionId, Schedule, Snapshot, SyncLoop, SyncReport,
+    SyncStatus, Write,
 };
 use tokio::sync::broadcast;
 
@@ -23,6 +23,10 @@ impl Backend for Counting {
 
     fn at(&self, revision: &RevisionId) -> Result<Arc<dyn Snapshot>, BackendError> {
         Err(BackendError::UnknownRevision(revision.clone()))
+    }
+
+    fn revision(&self, id: &RevisionId) -> Result<Revision, BackendError> {
+        Err(BackendError::UnknownRevision(id.clone()))
     }
 
     fn commit(&self, _: &Actor, _: Write<'_>) -> Result<Option<Committed>, BackendError> {
@@ -85,6 +89,9 @@ fn a_backend_without_a_remote_gets_no_loop() {
         }
         fn at(&self, revision: &RevisionId) -> Result<Arc<dyn Snapshot>, BackendError> {
             self.0.at(revision)
+        }
+        fn revision(&self, id: &RevisionId) -> Result<Revision, BackendError> {
+            self.0.revision(id)
         }
         fn commit(&self, a: &Actor, w: Write<'_>) -> Result<Option<Committed>, BackendError> {
             self.0.commit(a, w)

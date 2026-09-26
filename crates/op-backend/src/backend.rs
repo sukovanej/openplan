@@ -109,6 +109,8 @@ pub trait Backend: Send + Sync {
 
     fn at(&self, revision: &RevisionId) -> Result<Arc<dyn Snapshot>, BackendError>;
 
+    fn revision(&self, id: &RevisionId) -> Result<Revision, BackendError>;
+
     // A backend that can find one document without the rest of the revision overrides this: a
     // history page reads two versions of each document it describes.
     fn read_at(&self, revision: &RevisionId, path: &str) -> Result<Option<Vec<u8>>, BackendError> {

@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./diff-view": "./src/diff-view.tsx",
     "./styles.css": "./src/styles.css",
     "./diagram.css": "./src/diagram.css"
   },

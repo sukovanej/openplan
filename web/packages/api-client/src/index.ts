@@ -133,6 +133,16 @@ export type DocumentChangeKind = "added" | "modified" | "removed"
 export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed"]).annotate({
   identifier: "DocumentChangeKind",
 })
+export type DocumentDiff =
+  | { readonly diff: string; readonly kind: "text"; readonly truncated: boolean }
+  | { readonly kind: "binary" }
+export const DocumentDiff = Schema.Union(
+  [
+    Schema.Struct({ diff: Schema.String, kind: Schema.Literal("text"), truncated: Schema.Boolean }),
+    Schema.Struct({ kind: Schema.Literal("binary") }),
+  ],
+  { mode: "oneOf" },
+).annotate({ identifier: "DocumentDiff" })
 export type SearchMatch = "key" | "title" | "text"
 export const SearchMatch = Schema.Literals(["key", "title", "text"]).annotate({ identifier: "SearchMatch" })
 export type Color =
@@ -855,6 +865,17 @@ export type ProjectHistory404 = ApiErrorBody
 export const ProjectHistory404 = ApiErrorBody
 export type ProjectHistory503 = ApiErrorBody
 export const ProjectHistory503 = ApiErrorBody
+export type RevisionDiffParams = { readonly path: string; readonly from?: string | null }
+export const RevisionDiffParams = Schema.Struct({
+  path: Schema.String,
+  from: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+})
+export type RevisionDiff200 = DocumentDiff
+export const RevisionDiff200 = DocumentDiff
+export type RevisionDiff404 = ApiErrorBody
+export const RevisionDiff404 = ApiErrorBody
+export type RevisionDiff503 = ApiErrorBody
+export const RevisionDiff503 = ApiErrorBody
 export type SearchProjectParams = { readonly q?: string; readonly fresh?: boolean }
 export const SearchProjectParams = Schema.Struct({
   q: Schema.optionalKey(Schema.String),
@@ -1458,6 +1479,29 @@ export const make = (
                 "2xx": decodeSuccess(ProjectHistory200),
                 "404": decodeError("ProjectHistory404", ProjectHistory404),
                 "503": decodeError("ProjectHistory503", ProjectHistory503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    revisionDiff: (project, revision, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, revision],
+        () => "/api/projects/" + __encodePathParam(project) + "/revisions/" + __encodePathParam(revision) + "/diff",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              path: options.params["path"] as any,
+              from: options.params["from"] as any,
+            }),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(RevisionDiff200),
+                "404": decodeError("RevisionDiff404", RevisionDiff404),
+                "503": decodeError("RevisionDiff503", RevisionDiff503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -2078,6 +2122,17 @@ export interface TasksClient {
     | SchemaError
     | TasksClientError<"ProjectHistory404", typeof ProjectHistory404.Type>
     | TasksClientError<"ProjectHistory503", typeof ProjectHistory503.Type>
+  >
+  readonly revisionDiff: <Config extends OperationConfig>(
+    project: string,
+    revision: string,
+    options: { readonly params: typeof RevisionDiffParams.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof RevisionDiff200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"RevisionDiff404", typeof RevisionDiff404.Type>
+    | TasksClientError<"RevisionDiff503", typeof RevisionDiff503.Type>
   >
   readonly searchProject: <Config extends OperationConfig>(
     project: string,
