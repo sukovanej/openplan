@@ -156,9 +156,9 @@ pub struct TaskDetail {
     pub id: String,
     pub title: String,
     pub metadata: Metadata,
-    pub body: String,
+    pub description: String,
     // The open conflicts sync left in the task: fields in `metadata`, and blocks of both versions
-    // in `body`.
+    // in `description`.
     pub conflicts: usize,
     pub problems: Vec<Problem>,
     pub updated: Field<Rfc3339>,

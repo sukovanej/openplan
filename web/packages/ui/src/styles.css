@@ -56,6 +56,11 @@
   --prose-code-border: oklch(0.9 0.006 70);
   --prose-marker: oklch(0.72 0 0);
 
+  /* Shared by the rendered body and the editor's live preview, so the two keep one scale. */
+  --prose-h2-size: 19px;
+  --prose-h3-size: 15px;
+  --prose-h4-size: 14px;
+
   /* A surface follows its own mark, so recolouring one carries the group header with it; `todo` is
      the one status whose header wants a lighter shade than the mark it belongs to. */
   --status-backlog: oklch(0.551 0.027 264.364);

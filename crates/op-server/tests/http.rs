@@ -110,7 +110,7 @@ async fn tasks_crud_roundtrip() {
         let view = json_of(&state, &format!("/api/projects/test/tasks/{id}")).await;
         assert_eq!(view["title"], "Wire the parser");
         assert_eq!(view["metadata"]["status"], "backlog");
-        assert_eq!(view["body"], "# Wire the parser\n");
+        assert_eq!(view["description"], "");
 
         let patched = send(
             &state,
@@ -1300,11 +1300,7 @@ async fn a_comment_never_reaches_the_detail_body() {
 
     let detail = json_of(&state, &format!("/api/projects/test/tasks/{id}")).await;
 
-    assert!(
-        !detail["body"].as_str().unwrap().contains("Comments"),
-        "the body carries no log: {}",
-        detail["body"]
-    );
+    assert_eq!(detail["description"], "", "the description carries no log");
     assert_eq!(detail["comments"][0]["text"], "hello");
     assert_eq!(detail["comments"][0]["agent"], Value::Null);
 }
@@ -1331,7 +1327,7 @@ async fn a_patch_keeps_the_comment_log_out_of_the_body_it_echoes() {
     )
     .await;
 
-    assert!(!echoed["body"].as_str().unwrap().contains("Comments"));
+    assert_eq!(echoed["description"], "");
     assert_eq!(echoed["comments"][0]["text"], "hello");
 }
 

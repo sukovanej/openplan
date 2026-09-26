@@ -33,6 +33,22 @@ function link(url: string, label: string): Link {
   return { type: "link", url, title: null, children: [text(label)] }
 }
 
+export interface ReferencedTask {
+  readonly id: string
+  readonly section: string | undefined
+}
+
+// The text between `[[` and `]]`, resolved to the key it names in the store `abbreviation` names.
+export function referencedTask(inner: string, abbreviation: string): ReferencedTask | null {
+  const { id: target, section } = taskReference(inner.trim())
+  const id = refKey(target, abbreviation)
+  return id === null ? null : { id, section }
+}
+
+export function taskRefMatches(value: string): Iterable<RegExpExecArray> {
+  return value.matchAll(TASK_REF)
+}
+
 // Without the store's abbreviation nothing can be told from another store's spelling, so every
 // reference stays literal until the config arrives — and re-renders once it has.
 export function splitTaskRefs(value: string, source: TaskLinkSource): Array<Text | Link> | null {
@@ -40,11 +56,11 @@ export function splitTaskRefs(value: string, source: TaskLinkSource): Array<Text
   if (abbreviation === undefined) return null
   const nodes: Array<Text | Link> = []
   let last = 0
-  for (const match of value.matchAll(TASK_REF)) {
+  for (const match of taskRefMatches(value)) {
     const inner = match[1].trim()
-    const { id: target, section } = taskReference(inner)
-    const id = refKey(target, abbreviation)
-    if (id === null) continue
+    const task = referencedTask(inner, abbreviation)
+    if (task === null) continue
+    const { id, section } = task
     const start = match.index
     if (start > last) nodes.push(text(value.slice(last, start)))
     nodes.push(link(taskPath(project, id, section), inner))

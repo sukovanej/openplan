@@ -150,7 +150,7 @@ pub struct TaskAtRevision {
 pub struct TaskSnapshot {
     pub title: String,
     pub metadata: Metadata,
-    pub body: String,
+    pub description: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>,
     pub raw: String,

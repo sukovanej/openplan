@@ -201,7 +201,7 @@ impl Index {
             comments: comments_of(&partial.body),
             conflicts: entry.conflicts,
             problems: self.problems_of(number),
-            body: op_task::comment::strip(&partial.body),
+            description: self.description_of(&partial.body),
             updated: self.updated_of(number, entry),
             author: self.authors.get(&number).cloned(),
             parent_title: hierarchy.parent_title,
@@ -210,6 +210,16 @@ impl Index {
             depends_on: hierarchy.depends_on,
             blocks: hierarchy.blocks,
         })
+    }
+
+    // Without the store's abbreviation no reference can be spelled as a key, so they keep the
+    // spelling of the file.
+    fn description_of(&self, body: &str) -> String {
+        let description = op_task::content::split(&op_task::comment::strip(body));
+        match self.abbreviation {
+            Some(abbreviation) => op_api::body_to_keys(abbreviation, &description),
+            None => description,
+        }
     }
 
     pub fn comments(&self, number: u64) -> Option<Vec<Comment>> {

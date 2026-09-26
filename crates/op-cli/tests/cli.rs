@@ -861,10 +861,8 @@ fn create_with_body_places_content_below_title() {
     );
     let view = json(project.run(&["get", &id, "--json"]));
     assert_eq!(view["title"], "Ship login");
-    assert_eq!(
-        view["body"],
-        "# Ship login\n\nSupport OAuth and email login.\n"
-    );
+    assert_eq!(view["description"], "Support OAuth and email login.\n");
+    assert_eq!(ok(project.run(&["get", &id])), contents);
 }
 
 #[test]

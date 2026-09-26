@@ -108,6 +108,7 @@ export function useKeyboard(): Keyboard {
         editParent: () => detailActions.emit("edit-parent"),
         addSubtask: () => detailActions.emit("add-subtask"),
         editTags: () => detailActions.emit("edit-tags"),
+        editDescription: () => detailActions.emit("edit-description"),
         goToParent: () => detailActions.emit("go-parent"),
         escape: () => {
           const outcome = escapeOutcome(detailCursor.getSnapshot().index >= 0, canGoBack())

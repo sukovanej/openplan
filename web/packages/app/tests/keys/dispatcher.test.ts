@@ -26,6 +26,7 @@ interface Harness {
     editParent: number
     addSubtask: number
     editTags: number
+    editDescription: number
     goToParent: number
     escape: number
   }
@@ -48,7 +49,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
   const closed: Array<OverlayName> = []
   const opened: Array<PaletteTarget> = []
   const went: Array<"back"> = []
-  const detail = { editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 }
+  const detail = { editParent: 0, addSubtask: 0, editTags: 0, editDescription: 0, goToParent: 0, escape: 0 }
   const activeCursor = () => liveCursor(scope)
   const targetTask = () => taskAtHand(activeCursor().getSnapshot(), pathname)
   const context = (): RunContext => ({
@@ -95,6 +96,7 @@ function mount(over: ReadonlyArray<Binding> = bindings): Harness {
       editParent: () => void detail.editParent++,
       addSubtask: () => void detail.addSubtask++,
       editTags: () => void detail.editTags++,
+      editDescription: () => void detail.editDescription++,
       goToParent: () => void detail.goToParent++,
       escape: () => void detail.escape++,
     },
@@ -395,18 +397,34 @@ describe("scope resolution", () => {
     expect(h.detail.escape).toBe(0)
   })
 
-  it("triggers parent, subtask, and tag edits only on the detail route", () => {
+  it("triggers parent, subtask, tag, and description edits only on the detail route", () => {
     const h = mount()
     press("p")
     press("a")
     press("t")
-    expect(h.detail).toEqual({ editParent: 0, addSubtask: 0, editTags: 0, goToParent: 0, escape: 0 })
+    press("e")
+    expect(h.detail).toEqual({
+      editParent: 0,
+      addSubtask: 0,
+      editTags: 0,
+      editDescription: 0,
+      goToParent: 0,
+      escape: 0,
+    })
 
     h.setScope("detail")
     press("p")
     press("a")
     press("t")
-    expect(h.detail).toEqual({ editParent: 1, addSubtask: 1, editTags: 1, goToParent: 0, escape: 0 })
+    press("e")
+    expect(h.detail).toEqual({
+      editParent: 1,
+      addSubtask: 1,
+      editTags: 1,
+      editDescription: 1,
+      goToParent: 0,
+      escape: 0,
+    })
   })
 
   it("distinguishes the g-p chord (go to parent) from a bare p (edit parent)", () => {

@@ -326,7 +326,8 @@ async fn a_comment_at_a_revision_stays_out_of_the_body() {
     )
     .await;
     assert_eq!(at["task"]["comments"][0]["text"], "hello");
-    assert!(!at["task"]["body"].as_str().unwrap().contains("hello"));
+    assert_eq!(at["task"]["title"], "Talked about");
+    assert_eq!(at["task"]["description"], "");
     assert!(at["task"]["raw"].as_str().unwrap().contains("hello"));
 }
 

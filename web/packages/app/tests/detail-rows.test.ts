@@ -21,7 +21,7 @@ function detail(fields: Partial<TaskDetail>): TaskDetail {
       dependencies: [],
       tags: [],
     },
-    body: "",
+    description: "",
     updated: { kind: "missing" },
     ...fields,
   } as unknown as TaskDetail

@@ -126,7 +126,7 @@ it.effect("decodes a TaskDetail from GET /api/projects/:project/tasks/:id", () =
             dependencies: ["2"],
             tags: [],
           },
-          body: "# First",
+          description: "Text.",
           conflicts: 0,
           problems: [],
           updated: "2026-01-02T00:00:00Z",
@@ -135,7 +135,7 @@ it.effect("decodes a TaskDetail from GET /api/projects/:project/tasks/:id", () =
     )
     const detail = yield* tasks.getTask("openplan", "a-1", undefined)
     expect(detail.metadata).toMatchObject({ status: "in_progress", dependencies: ["2"] })
-    expect(detail.body).toBe("# First")
+    expect(detail.description).toBe("Text.")
   }),
 )
 

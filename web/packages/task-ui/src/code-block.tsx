@@ -28,7 +28,7 @@ function languageTag(className: unknown): string | undefined {
   return undefined
 }
 
-const DIAGRAM_TAG = "mermaid"
+export const isDiagramTag = (tag: string | undefined): boolean => tag?.trim().toLowerCase() === "mermaid"
 
 type Fence = { source: string; kind: "diagram" } | { source: string; kind: "code"; lang: CodeLanguage }
 
@@ -39,7 +39,7 @@ function fencedCode(node: Element | undefined): Fence | null {
   const text = code.children[0]
   if (text?.type !== "text") return null
   const tag = languageTag(code.properties.className)
-  if (tag?.trim().toLowerCase() === DIAGRAM_TAG) return { source: text.value, kind: "diagram" }
+  if (isDiagramTag(tag)) return { source: text.value, kind: "diagram" }
   const lang = resolveLang(tag)
   // The source keeps its trailing newline, so the highlighted block has the same line count as the
   // plain one below it and the swap moves nothing.

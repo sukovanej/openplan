@@ -283,20 +283,20 @@ export const patchTask = (
     }),
   )
 
-// `block` is the whole block as the body holds it, markers included: the daemon finds the block by
-// that text, and answers 409 once the block is no longer in the task.
-export const resolveConflict = (
+// `base` is the text the edit started from. The daemon merges the edit with any change another writer
+// made since, and answers with the task it wrote.
+export const writeTaskText = (
   project: string,
   id: string,
-  block: string,
-  text: string,
+  base: Api.TaskText,
+  text: Api.TaskText,
 ): Effect.Effect<Api.TaskDetail, ApiError, HttpClient.HttpClient> =>
-  Effect.flatMap(tasks, (client) => client.resolveConflict(project, id, { payload: { block, text } })).pipe(
+  Effect.flatMap(tasks, (client) => client.writeText(project, id, { payload: { base, text } })).pipe(
     Effect.catchTags({
-      ResolveConflict400: refusal,
-      ResolveConflict404: () => Effect.fail(new TaskNotFound({ id })),
-      ResolveConflict409: refusal,
-      ResolveConflict503: refusal,
+      WriteText400: refusal,
+      WriteText404: () => Effect.fail(new TaskNotFound({ id })),
+      WriteText409: refusal,
+      WriteText503: refusal,
       HttpClientError: unexpected,
     }),
   )

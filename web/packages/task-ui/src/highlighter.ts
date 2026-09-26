@@ -125,6 +125,39 @@ export function highlightToHast(code: string, lang: CodeLanguage, transformers?:
   }
 }
 
+export interface CodeToken {
+  readonly offset: number
+  readonly length: number
+  readonly style: string
+}
+
+// The same two palettes as `highlightToHast`, as spans an editor can lay over text it does not own.
+export function highlightTokens(code: string, lang: CodeLanguage): ReadonlyArray<CodeToken> | null {
+  if (built === null || !ready.has(lang)) return null
+  try {
+    const { tokens } = built.codeToTokens(code, {
+      lang,
+      themes: { light: LIGHT_THEME, dark: DARK_THEME },
+      defaultColor: false,
+    })
+    return tokens.flat().flatMap((token) => {
+      const style = token.htmlStyle
+      if (style === undefined) return []
+      const css = Object.entries(style)
+        .map(([name, value]) => `${name}:${value}`)
+        .join(";")
+      return [{ offset: token.offset, length: token.content.length, style: css }]
+    })
+  } catch (error) {
+    console.error(`Cannot highlight a ${lang} code block`, error)
+    return null
+  }
+}
+
+export function watchHighlighter(listener: () => void): () => void {
+  return subscribe(listener)
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
   return () => {

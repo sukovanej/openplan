@@ -176,9 +176,9 @@ export const CreateComment = Schema.Struct({
 }).annotate({ identifier: "CreateComment" })
 export type WriteTaskFile = { readonly text: string }
 export const WriteTaskFile = Schema.Struct({ text: Schema.String }).annotate({ identifier: "WriteTaskFile" })
-export type ResolveConflict = { readonly block: string; readonly text: string }
-export const ResolveConflict = Schema.Struct({ block: Schema.String, text: Schema.String }).annotate({
-  identifier: "ResolveConflict",
+export type TaskText = { readonly description: string; readonly title: string }
+export const TaskText = Schema.Struct({ description: Schema.String, title: Schema.String }).annotate({
+  identifier: "TaskText",
 })
 export type TaskTreeView = { readonly cycles?: ReadonlyArray<string>; readonly tree: TaskTree }
 export const TaskTreeView = Schema.Struct({
@@ -461,6 +461,8 @@ export const FieldConflict_String = Schema.Struct({
   sides: Schema.Array(ConflictSide_String),
   value: Schema.String,
 }).annotate({ identifier: "FieldConflict_String" })
+export type WriteTaskText = { readonly base: TaskText; readonly text: TaskText }
+export const WriteTaskText = Schema.Struct({ base: TaskText, text: TaskText }).annotate({ identifier: "WriteTaskText" })
 export type Field_Rfc3339 = string | FieldError | FieldConflict_Rfc3339
 export const Field_Rfc3339 = Schema.Union(
   [Schema.String.annotate({ format: "date-time" }), FieldError, FieldConflict_Rfc3339],
@@ -634,11 +636,11 @@ export const TaskListItem = Schema.Struct({
 export type TaskDetail = {
   readonly author?: Author
   readonly blocks?: ReadonlyArray<TaskRef>
-  readonly body: string
   readonly children?: ReadonlyArray<TaskChild>
   readonly comments?: ReadonlyArray<Comment>
   readonly conflicts: number
   readonly depends_on?: ReadonlyArray<TaskRef>
+  readonly description: string
   readonly id: string
   readonly metadata: Metadata
   readonly parent_title?: string
@@ -651,13 +653,13 @@ export type TaskDetail = {
 export const TaskDetail = Schema.Struct({
   author: Schema.optionalKey(Author),
   blocks: Schema.optionalKey(Schema.Array(TaskRef)),
-  body: Schema.String,
   children: Schema.optionalKey(Schema.Array(TaskChild)),
   comments: Schema.optionalKey(Schema.Array(Comment)),
   conflicts: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
     Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
   ),
   depends_on: Schema.optionalKey(Schema.Array(TaskRef)),
+  description: Schema.String,
   id: Schema.String,
   metadata: Metadata,
   parent_title: Schema.optionalKey(Schema.String),
@@ -668,15 +670,15 @@ export const TaskDetail = Schema.Struct({
   updated: Field_Rfc3339,
 }).annotate({ identifier: "TaskDetail" })
 export type TaskSnapshot = {
-  readonly body: string
   readonly comments?: ReadonlyArray<Comment>
+  readonly description: string
   readonly metadata: Metadata
   readonly raw: string
   readonly title: string
 }
 export const TaskSnapshot = Schema.Struct({
-  body: Schema.String,
   comments: Schema.optionalKey(Schema.Array(Comment)),
+  description: Schema.String,
   metadata: Metadata,
   raw: Schema.String,
   title: Schema.String,
@@ -1034,18 +1036,6 @@ export type TaskHistory404 = ApiErrorBody
 export const TaskHistory404 = ApiErrorBody
 export type TaskHistory503 = ApiErrorBody
 export const TaskHistory503 = ApiErrorBody
-export type ResolveConflictRequestJson = ResolveConflict
-export const ResolveConflictRequestJson = ResolveConflict
-export type ResolveConflict200 = TaskDetail
-export const ResolveConflict200 = TaskDetail
-export type ResolveConflict400 = ApiErrorBody
-export const ResolveConflict400 = ApiErrorBody
-export type ResolveConflict404 = ApiErrorBody
-export const ResolveConflict404 = ApiErrorBody
-export type ResolveConflict409 = ApiErrorBody
-export const ResolveConflict409 = ApiErrorBody
-export type ResolveConflict503 = ApiErrorBody
-export const ResolveConflict503 = ApiErrorBody
 export type TaskRevision200 = TaskAtRevision
 export const TaskRevision200 = TaskAtRevision
 export type TaskRevision400 = ApiErrorBody
@@ -1054,6 +1044,18 @@ export type TaskRevision404 = ApiErrorBody
 export const TaskRevision404 = ApiErrorBody
 export type TaskRevision503 = ApiErrorBody
 export const TaskRevision503 = ApiErrorBody
+export type WriteTextRequestJson = WriteTaskText
+export const WriteTextRequestJson = WriteTaskText
+export type WriteText200 = TaskDetail
+export const WriteText200 = TaskDetail
+export type WriteText400 = ApiErrorBody
+export const WriteText400 = ApiErrorBody
+export type WriteText404 = ApiErrorBody
+export const WriteText404 = ApiErrorBody
+export type WriteText409 = ApiErrorBody
+export const WriteText409 = ApiErrorBody
+export type WriteText503 = ApiErrorBody
+export const WriteText503 = ApiErrorBody
 export type GetTaskTreeParams = { readonly fresh?: boolean; readonly depth?: number | null }
 export const GetTaskTreeParams = Schema.Struct({
   fresh: Schema.optionalKey(Schema.Boolean),
@@ -1826,28 +1828,6 @@ export const make = (
           ),
         ),
       ),
-    resolveConflict: (project, id, options) =>
-      __makePathRequest(
-        HttpClientRequest.post,
-        [project, id],
-        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/resolve",
-      ).pipe(
-        Effect.flatMap((request) =>
-          request.pipe(
-            HttpClientRequest.bodyJsonUnsafe(options.payload),
-            withResponse(options.config)(
-              HttpClientResponse.matchStatus({
-                "2xx": decodeSuccess(ResolveConflict200),
-                "400": decodeError("ResolveConflict400", ResolveConflict400),
-                "404": decodeError("ResolveConflict404", ResolveConflict404),
-                "409": decodeError("ResolveConflict409", ResolveConflict409),
-                "503": decodeError("ResolveConflict503", ResolveConflict503),
-                orElse: unexpectedStatus,
-              }),
-            ),
-          ),
-        ),
-      ),
     taskRevision: (project, id, revision, options) =>
       __makePathRequest(
         HttpClientRequest.get,
@@ -1869,6 +1849,28 @@ export const make = (
                 "400": decodeError("TaskRevision400", TaskRevision400),
                 "404": decodeError("TaskRevision404", TaskRevision404),
                 "503": decodeError("TaskRevision503", TaskRevision503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    writeText: (project, id, options) =>
+      __makePathRequest(
+        HttpClientRequest.put,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/tasks/" + __encodePathParam(id) + "/text",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(WriteText200),
+                "400": decodeError("WriteText400", WriteText400),
+                "404": decodeError("WriteText404", WriteText404),
+                "409": decodeError("WriteText409", WriteText409),
+                "503": decodeError("WriteText503", WriteText503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -2292,19 +2294,6 @@ export interface TasksClient {
     | TasksClientError<"TaskHistory404", typeof TaskHistory404.Type>
     | TasksClientError<"TaskHistory503", typeof TaskHistory503.Type>
   >
-  readonly resolveConflict: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options: { readonly payload: typeof ResolveConflictRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ResolveConflict200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"ResolveConflict400", typeof ResolveConflict400.Type>
-    | TasksClientError<"ResolveConflict404", typeof ResolveConflict404.Type>
-    | TasksClientError<"ResolveConflict409", typeof ResolveConflict409.Type>
-    | TasksClientError<"ResolveConflict503", typeof ResolveConflict503.Type>
-  >
   readonly taskRevision: <Config extends OperationConfig>(
     project: string,
     id: string,
@@ -2317,6 +2306,19 @@ export interface TasksClient {
     | TasksClientError<"TaskRevision400", typeof TaskRevision400.Type>
     | TasksClientError<"TaskRevision404", typeof TaskRevision404.Type>
     | TasksClientError<"TaskRevision503", typeof TaskRevision503.Type>
+  >
+  readonly writeText: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: { readonly payload: typeof WriteTextRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof WriteText200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"WriteText400", typeof WriteText400.Type>
+    | TasksClientError<"WriteText404", typeof WriteText404.Type>
+    | TasksClientError<"WriteText409", typeof WriteText409.Type>
+    | TasksClientError<"WriteText503", typeof WriteText503.Type>
   >
   readonly getTaskTree: <Config extends OperationConfig>(
     project: string,

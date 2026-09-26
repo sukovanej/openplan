@@ -133,6 +133,42 @@ fn a_quoted_reference_is_prose_and_is_left_alone() {
 }
 
 #[test]
+fn a_body_reads_with_each_reference_to_a_task_here_as_its_key() {
+    let body = "see [[./00042-ship-login.md]], [[./00007-schema.md#Design]], and [[ OPP-3 ]]\n";
+
+    assert_eq!(
+        op_api::body_to_keys(abbreviation(), body),
+        "see [[OPP-42]], [[OPP-7#Design]], and [[OPP-3]]\n"
+    );
+}
+
+#[test]
+fn a_body_to_keys_leaves_what_names_no_task_here_as_written() {
+    for body in [
+        "plain prose",
+        "see [[Some Page Title]]",
+        "array[[index]]",
+        "from [[WEB-7]] and [[42]]",
+        "the file spelling is `[[./00042-ship-login.md]]`",
+        "```\nsee [[./00042-ship-login.md]]\n```\n",
+    ] {
+        assert_eq!(op_api::body_to_keys(abbreviation(), body), body);
+    }
+}
+
+#[test]
+fn a_body_to_keys_reads_back_as_the_numbers_the_store_holds() {
+    let body = "see [[./00042-ship-login.md#Design]]";
+
+    let keyed = op_api::body_to_keys(abbreviation(), body);
+
+    assert_eq!(
+        op_api::body_from_keys(abbreviation(), &keyed).unwrap(),
+        "see [[42#Design]]"
+    );
+}
+
+#[test]
 fn keys_order_by_their_number() {
     let mut keys = ["OPP-10", "OPP-2", "OPP-1", "OPP-100", "OPP-9"];
     keys.sort_by(|a, b| id_cmp(a, b));
