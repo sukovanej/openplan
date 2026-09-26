@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 56.58 152" width="56.58" height="152" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
+.op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
+.op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
+.op-diagram .stroke-thick .edge-line { stroke-width: 2.8; }
+.op-diagram .head-arrow path, .op-diagram .head-circle circle { fill: #5f6776; }
+.op-diagram .head-open path, .op-diagram .head-cross path, .op-diagram .head-cardinality path { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .head-ring { fill: #fff; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .edge-label-box { fill: #fff; }
+.op-diagram text { fill: #1f2430; }
+.op-diagram .text-caption { fill: #6b7280; }
+.op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .text-edge-label { fill: #3a4150; }
+</style><g class="edge stroke-solid"><path class="edge-line" d="M28.29 48L28.29 96"/><g class="head head-arrow"><path d="M28.29 104L23.79 95L32.79 95Z"/></g></g><g class="node shape-rectangle"><rect class="outline" x="8.35" y="8" width="39.88" height="40" rx="3"/><text class="text-label" x="28.29" y="33.09" font-size="14" font-weight="400" text-anchor="middle">a</text></g><g class="node shape-rectangle"><rect class="outline" x="8" y="104" width="40.58" height="40" rx="3"/><text class="text-label" x="28.29" y="129.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g></svg>

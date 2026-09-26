@@ -1,0 +1,45 @@
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "a",
+      "shape": { "kind": "rectangle" },
+      "label": ["</text><script>alert(1)</script>", "\"quoted\" & 'single' <b>bold</b>"],
+      "link": "javascript:alert(1)",
+      "classes": ["\" onmouseover=\"alert(1)"]
+    },
+    {
+      "id": "b",
+      "shape": { "kind": "rectangle" },
+      "label": ["b"],
+      "link": "//evil.example/steal"
+    },
+    {
+      "id": "c",
+      "shape": { "kind": "rectangle" },
+      "label": ["c"],
+      "link": "/openplan/OPP-1?q=\"><script>alert(1)</script>",
+      "parent": "g"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "g",
+      "label": ["<g onload=\"alert(1)\">"],
+      "link": "https://evil.example"
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "b",
+      "label": ["<img src=x onerror=alert(1)>"],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    { "from": "b", "to": "c", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 }
+  ]
+}

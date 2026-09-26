@@ -1,0 +1,77 @@
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "OPP-2",
+      "shape": { "kind": "rounded" },
+      "label": ["Parse Mermaid into the diagram IR"],
+      "caption": "OPP-2",
+      "link": "/openplan/OPP-2",
+      "classes": ["status-done"],
+      "rank": 0,
+      "parent": "OPP-1"
+    },
+    {
+      "id": "OPP-3",
+      "shape": { "kind": "rounded" },
+      "label": ["Bundle Inter for diagram text"],
+      "caption": "OPP-3",
+      "link": "/openplan/OPP-3",
+      "classes": ["status-in_progress"],
+      "rank": 0
+    },
+    {
+      "id": "OPP-4",
+      "shape": { "kind": "rounded" },
+      "label": ["Lay graph diagrams out and write them as SVG"],
+      "caption": "OPP-4",
+      "link": "/openplan/OPP-4",
+      "classes": ["status-todo"],
+      "rank": 1,
+      "parent": "OPP-1"
+    },
+    {
+      "id": "OPP-5",
+      "shape": { "kind": "rounded" },
+      "label": ["Lay sequence diagrams out"],
+      "caption": "OPP-5",
+      "link": "/openplan/OPP-5",
+      "classes": ["status-todo"],
+      "rank": 1,
+      "parent": "OPP-1"
+    },
+    {
+      "id": "OPP-6",
+      "shape": { "kind": "rounded" },
+      "label": ["Serve diagrams from the daemon"],
+      "caption": "OPP-6",
+      "link": "/openplan/OPP-6",
+      "classes": ["status-backlog"],
+      "rank": 2
+    },
+    {
+      "id": "OPP-99",
+      "shape": { "kind": "rounded" },
+      "label": ["OPP-99"],
+      "classes": ["unresolved"]
+    }
+  ],
+  "clusters": [
+    {
+      "id": "OPP-1",
+      "label": ["Draw diagrams with an own engine"],
+      "caption": "OPP-1",
+      "link": "/openplan/OPP-1",
+      "classes": ["status-in_progress"]
+    }
+  ],
+  "edges": [
+    { "from": "OPP-2", "to": "OPP-4", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 },
+    { "from": "OPP-3", "to": "OPP-4", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 },
+    { "from": "OPP-2", "to": "OPP-5", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 },
+    { "from": "OPP-4", "to": "OPP-6", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 },
+    { "from": "OPP-5", "to": "OPP-6", "stroke": "solid", "tail": "none", "head": "arrow", "min_length": 1 },
+    { "from": "OPP-99", "to": "OPP-6", "stroke": "dotted", "tail": "none", "head": "arrow", "min_length": 1 }
+  ]
+}
