@@ -8,19 +8,23 @@ import { type DiagramOutcome, useDiagramDrawer } from "./diagram-drawer"
 import { DiagramSvg } from "./diagram-svg"
 import { DiagramViewport } from "./diagram-viewport"
 
-function useDiagram(source: string): DiagramOutcome | null {
+function useDiagram(source: string): { outcome: DiagramOutcome | null; retry: () => void } {
   const draw = useDiagramDrawer()
-  const [outcome, setOutcome] = useState<{ source: string; outcome: DiagramOutcome } | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [outcome, setOutcome] = useState<{ source: string; attempt: number; outcome: DiagramOutcome } | null>(null)
   useEffect(() => {
     let current = true
     void draw(source).then((drawn) => {
-      if (current) setOutcome({ source, outcome: drawn })
+      if (current) setOutcome({ source, attempt, outcome: drawn })
     })
     return () => {
       current = false
     }
-  }, [draw, source])
-  return outcome?.source === source ? outcome.outcome : null
+  }, [draw, source, attempt])
+  return {
+    outcome: outcome?.source === source && outcome.attempt === attempt ? outcome.outcome : null,
+    retry: () => setAttempt((count) => count + 1),
+  }
 }
 
 const frameClass = "my-3"
@@ -85,8 +89,21 @@ function Refusal({ source, error, line }: { source: string; error: string; line?
   )
 }
 
+function DrawFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className={cn(frameClass, "flex items-center gap-1.5 text-xs")} data-diagram="failed">
+      <p role="alert" className="text-danger my-0">
+        Could not draw the diagram: {message}
+      </p>
+      <Button onClick={onRetry} className="h-5 px-1.5 text-xs">
+        Try again
+      </Button>
+    </div>
+  )
+}
+
 export function DiagramBlock({ source }: { source: string }) {
-  const outcome = useDiagram(source)
+  const { outcome, retry } = useDiagram(source)
   if (outcome === null) {
     return (
       <figure className={frameClass} data-diagram="drawing" role="status">
@@ -102,6 +119,7 @@ export function DiagramBlock({ source }: { source: string }) {
       </figure>
     )
   }
+  if ("failed" in outcome) return <DrawFailure message={outcome.failed} onRetry={retry} />
   if ("error" in outcome) {
     return <Refusal source={source.replace(/\n$/, "")} error={outcome.error} line={outcome.line} />
   }
