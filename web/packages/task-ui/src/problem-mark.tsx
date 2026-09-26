@@ -1,11 +1,17 @@
 import { CircleAlert } from "lucide-react"
 
-import type { Problem } from "@openplan/api-client"
+import type { Problem, ProblemCode } from "@openplan/api-client"
 import { cn, Tooltip } from "@openplan/ui"
 
 import { META_BADGE } from "./conflict-mark"
 
 const PROBLEM_TINT = "border-danger/40 bg-danger/10 text-danger"
+
+// The daemon finds these in the saved text, so an unsaved edit can already have fixed them.
+const TEXT_CODES: ReadonlySet<ProblemCode> = new Set(["title", "comment", "diagram"])
+
+export const withoutTextProblems = (problems: ReadonlyArray<Problem>): ReadonlyArray<Problem> =>
+  problems.filter((problem) => !TEXT_CODES.has(problem.code))
 
 export const problemCount = (count: number): string => `${count} ${count === 1 ? "problem" : "problems"}`
 

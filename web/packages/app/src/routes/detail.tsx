@@ -208,9 +208,9 @@ function TaskDetailView({
           </PanelHeader>
           <PanelBody className="p-6">
             <ConflictBanner project={project} id={task.id} metadata={task.metadata} count={task.conflicts} />
-            <ProblemBanner problems={task.problems} />
             {detail === null || abbreviation === undefined ? (
               <>
+                <ProblemBanner problems={task.problems} />
                 <TaskTitle title={task.title} />
                 {meta(null)}
                 <BodySkeleton />
@@ -222,6 +222,7 @@ function TaskDetailView({
                 title={detail.title}
                 description={detail.description}
                 refs={detail.refs}
+                problems={task.problems}
                 abbreviation={abbreviation}
                 meta={meta}
               />

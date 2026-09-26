@@ -14,9 +14,9 @@ import {
 } from "react"
 import { useNavigate } from "react-router-dom"
 
-import type { TaskDetail, TaskListItem, TaskText } from "@openplan/api-client"
+import type { Problem, TaskDetail, TaskListItem, TaskText } from "@openplan/api-client"
 import type { BodyEditorHandle, TaskOption } from "@openplan/editor"
-import { statusField } from "@openplan/task-ui"
+import { ProblemBanner, statusField, withoutTextProblems } from "@openplan/task-ui"
 import { Button } from "@openplan/ui"
 
 import { listTasks, writeTaskText } from "../lib/api"
@@ -179,6 +179,7 @@ export function TaskContent({
   title,
   description,
   refs,
+  problems,
   abbreviation,
   meta,
 }: {
@@ -187,6 +188,7 @@ export function TaskContent({
   title: string
   description: string
   refs: TaskDetail["refs"]
+  problems: ReadonlyArray<Problem>
   abbreviation: string
   meta: (saveNote: ReactNode) => ReactNode
 }) {
@@ -220,6 +222,7 @@ export function TaskContent({
 
   return (
     <div ref={box} onFocus={() => setSearching(true)} onBlur={leave}>
+      <ProblemBanner problems={state.kind === "saved" ? problems : withoutTextProblems(problems)} />
       <TitleField
         value={text.title}
         onChange={(next) => edit({ ...text, title: next })}
