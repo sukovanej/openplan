@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_progress
 created: 2026-09-26T02:02:39Z
 tags:
 - daemon
