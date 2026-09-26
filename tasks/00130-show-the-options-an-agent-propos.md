@@ -42,7 +42,7 @@ A choice has two or more options. The person can pick more than one option, beca
 
 This section and the open questions use the heading form below, so the web UI can draw them when this work is done.
 
-### [ ] Headings with a check mark (recommended)
+### [x] Headings with a check mark (recommended)
 
 The question is a heading. Each option is a heading one level lower that starts with `[ ]` or `[x]`. The text under an option heading is the body of the option, and deeper headings are part of it. `(recommended)` at the end of a label marks the recommendation of the agent. A pick changes `[ ]` to `[x]`.
 
@@ -101,13 +101,13 @@ Later, the agent page (OPP-114) can draw the same cards when the agent proposes 
 
 ### Can a choice limit the person to one pick?
 
-#### [ ] No, every choice takes more than one pick (recommended)
+#### [x] No, every choice takes more than one pick (recommended)
 
 #### [ ] Yes, "(pick one)" at the end of the question draws radio buttons
 
 ### Is the task list form allowed for short options with no body?
 
-#### [ ] No, headings only: one form for the reader, the lint, and the skill (recommended)
+#### [x] No, headings only: one form for the reader, the lint, and the skill (recommended)
 
 #### [ ] Yes, a task list directly under a question heading is a choice too
 
@@ -115,10 +115,10 @@ Later, the agent page (OPP-114) can draw the same cards when the agent proposes 
 
 #### [ ] The agent that writes the plan removes them, and the history keeps them (recommended)
 
-#### [ ] They stay in the task, folded in the web UI
+#### [x] They stay in the task, folded in the web UI
 
 ### Does the task list show a task with an open choice?
 
-#### [ ] Yes, a "Needs a decision" mark on the row (recommended)
+#### [x] Yes, a "Needs a decision" mark on the row (recommended)
 
 #### [ ] No, the `draft` tag is enough
