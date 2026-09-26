@@ -58,7 +58,7 @@ fn a_write_in_any_other_spelling_is_refused() {
     for spelling in ["7", "opp-7", "OPP-007", "WEB-7", "epic-1"] {
         let parent = create(Some(spelling), &[], None).into_task(stamp(), abbreviation());
         assert!(
-            matches!(&parent, Err(KeyError { got, .. }) if got == spelling),
+            matches!(&parent, Err(err) if err.got() == spelling),
             "parent {spelling:?} must be refused: {parent:?}"
         );
         let dependency = create(None, &[spelling], None).into_task(stamp(), abbreviation());
@@ -77,6 +77,22 @@ fn a_write_in_any_other_spelling_is_refused() {
             "patching a dependency to {spelling:?} must be refused"
         );
     }
+}
+
+#[test]
+fn a_refused_key_of_another_project_says_so() {
+    assert_eq!(
+        KeyError::new(abbreviation(), "CQR-97").to_string(),
+        "CQR-97 is in another project; this project's keys start with OPP-"
+    );
+    assert_eq!(
+        KeyError::new(abbreviation(), "CQR-97#Design").to_string(),
+        "CQR-97#Design is in another project; this project's keys start with OPP-"
+    );
+    assert_eq!(
+        KeyError::new(abbreviation(), "opp-7").to_string(),
+        "not a task key: \"opp-7\"; expected OPP-42"
+    );
 }
 
 #[test]

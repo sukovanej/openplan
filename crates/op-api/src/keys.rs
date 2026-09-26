@@ -4,17 +4,32 @@ use op_task::reference::Target;
 // A spelling of an id the store has no id for. One key spelling is accepted and nothing else is, so
 // a refusal names the form that would have worked rather than guessing at what was meant.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("not a task key: {got:?}; expected {expected}")]
-pub struct KeyError {
-    pub got: String,
-    pub expected: String,
+pub enum KeyError {
+    #[error("{got} is in another project; this project's keys start with {abbreviation}-")]
+    OtherProject {
+        got: String,
+        abbreviation: Abbreviation,
+    },
+    #[error("not a task key: {got:?}; expected {expected}")]
+    NotAKey { got: String, expected: String },
 }
 
 impl KeyError {
     pub fn new(abbreviation: Abbreviation, got: &str) -> Self {
-        Self {
-            got: got.to_owned(),
-            expected: abbreviation.format_key(42),
+        let got = got.to_owned();
+        if op_task::is_key_shaped(op_task::ref_target(&got)) {
+            Self::OtherProject { got, abbreviation }
+        } else {
+            Self::NotAKey {
+                got,
+                expected: abbreviation.format_key(42),
+            }
+        }
+    }
+
+    pub fn got(&self) -> &str {
+        match self {
+            Self::OtherProject { got, .. } | Self::NotAKey { got, .. } => got,
         }
     }
 }
