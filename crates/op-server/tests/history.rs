@@ -147,6 +147,108 @@ async fn the_history_says_what_each_revision_changed() {
     }
 }
 
+async fn write_doc(state: &AppState, method: &str, uri: &str, body: Option<Value>) {
+    let response = send(state, method, uri, body).await;
+    assert!(response.status().is_success(), "{method} {uri}");
+}
+
+fn changed_docs(entry: &Value) -> Vec<(String, String)> {
+    entry["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|change| {
+            let doc = change["doc"].as_str()?;
+            Some((doc.to_owned(), change["kind"].as_str().unwrap().to_owned()))
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn the_history_names_each_doc_that_a_revision_changed() {
+    for (_dir, state) in [local_state(), git_state()] {
+        let docs = "/api/projects/test/docs";
+        write_doc(
+            &state,
+            "POST",
+            docs,
+            Some(json!({ "name": "Architecture" })),
+        )
+        .await;
+        write_doc(
+            &state,
+            "POST",
+            docs,
+            Some(json!({ "name": "Storage", "parent": "architecture" })),
+        )
+        .await;
+        write_doc(
+            &state,
+            "PATCH",
+            &format!("{docs}/architecture"),
+            Some(json!({ "body": "new prose" })),
+        )
+        .await;
+        write_doc(
+            &state,
+            "PATCH",
+            &format!("{docs}/architecture"),
+            Some(json!({ "name": "The Design" })),
+        )
+        .await;
+        write_doc(&state, "DELETE", &format!("{docs}/storage"), None).await;
+
+        let entries = history(&state, "").await;
+        let [deleted, renamed, edited, nested, created] = &entries[..5] else {
+            unreachable!()
+        };
+        assert_eq!(
+            created["docs"],
+            json!([{ "doc": "architecture", "kind": "added" }])
+        );
+        assert_eq!(
+            changed_docs(created),
+            vec![("architecture".to_owned(), "added".to_owned())]
+        );
+        assert_eq!(
+            nested["docs"],
+            json!([{ "doc": "storage", "kind": "added" }])
+        );
+        assert_eq!(
+            edited["docs"],
+            json!([{ "doc": "architecture", "kind": "modified" }])
+        );
+        assert_eq!(edited["summary"], json!(["doc architecture: edit"]));
+        assert_eq!(
+            renamed["docs"],
+            json!([
+                { "doc": "the-design", "kind": "modified", "renamed_from": "architecture" },
+                { "doc": "storage", "kind": "modified" },
+            ])
+        );
+        let mut paths = changed_docs(renamed);
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                ("architecture".to_owned(), "removed".to_owned()),
+                ("storage".to_owned(), "modified".to_owned()),
+                ("the-design".to_owned(), "added".to_owned()),
+            ]
+        );
+        assert_eq!(
+            deleted["docs"],
+            json!([{ "doc": "storage", "kind": "removed" }])
+        );
+        assert_eq!(
+            deleted["changes"],
+            json!([{ "path": "docs/storage.md", "kind": "removed", "doc": "storage" }])
+        );
+        assert_eq!(deleted["tasks"], json!([]));
+        assert_eq!(deleted["tags"], json!([]));
+    }
+}
+
 #[tokio::test]
 async fn the_history_pages_with_before_and_limit() {
     for (_dir, state) in [local_state(), git_state()] {

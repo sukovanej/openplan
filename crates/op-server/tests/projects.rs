@@ -667,6 +667,29 @@ async fn removing_an_entry_the_daemon_could_not_open_clears_it_from_the_registry
 }
 
 #[tokio::test]
+async fn a_project_cannot_take_the_name_of_a_page_of_the_web_ui() {
+    let home = tempfile::tempdir().unwrap();
+    let alpha = tempfile::tempdir().unwrap();
+    let state = with_registry(home.path(), [local_project("alpha", alpha.path(), "AAA")]);
+
+    let refused = send(
+        &state,
+        "PATCH",
+        "/api/projects/alpha",
+        Some(json!({ "name": "docs" })),
+    )
+    .await;
+
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        body_json(refused).await["message"]
+            .as_str()
+            .unwrap()
+            .contains("page of the web UI")
+    );
+}
+
+#[tokio::test]
 async fn renaming_a_project_moves_its_routes() {
     let home = tempfile::tempdir().unwrap();
     let alpha = tempfile::tempdir().unwrap();

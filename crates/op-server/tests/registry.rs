@@ -44,6 +44,18 @@ fn a_repeated_directory_name_gets_a_distinct_project_name() {
     assert_eq!(names, vec!["openplan", "openplan-2", "openplan-3"]);
 }
 
+// The web UI's own pages and the API sit where a board would, so a project takes another name.
+#[test]
+fn a_directory_named_like_a_page_of_the_web_ui_gets_another_project_name() {
+    let mut registry = ProjectRegistry::default();
+    for name in ["docs", "flow", "api"] {
+        assert_eq!(
+            add(&mut registry, PathBuf::from("/repos").join(name)).name,
+            format!("{name}-2")
+        );
+    }
+}
+
 #[test]
 fn a_directory_name_with_no_letters_falls_back_to_a_usable_name() {
     let mut registry = ProjectRegistry::default();

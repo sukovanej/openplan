@@ -6,8 +6,10 @@ use op_backend::{
 };
 use op_task::config::Config;
 use op_task::conflict::{self, Labels};
+use op_task::doc::Doc;
 use op_task::layout::{self, Document};
-use op_task::{Task, merge, parse_partial, three_way};
+use op_task::reference::relative;
+use op_task::{Abbreviation, Task, merge, parse_partial, three_way};
 
 // Sync runs unattended, so every conflict gets an answer and nothing a person wrote is lost. A field
 // or lines that both sides changed differently keep both versions in the task, with the published
@@ -23,15 +25,6 @@ impl MergePolicy for TaskMergePolicy {
     fn resolve(&self, input: &MergeInput<'_>) -> Result<Resolution, BackendError> {
         let labels = labels(input.tips);
         let mut state = Overlay::new(input.merged);
-        for path in input.conflicts {
-            if matches!(Document::of(path), Document::Task(_)) {
-                continue;
-            }
-            // An edit outlives a removal; otherwise the published version stays.
-            if let (Some(ours), None) = (input.ours.read(path)?, input.theirs.read(path)?) {
-                state.set(path.clone(), Some(ours));
-            }
-        }
         let touched: BTreeSet<u64> = input
             .ours_changed
             .iter()
@@ -63,10 +56,61 @@ impl MergePolicy for TaskMergePolicy {
             };
             settle(&mut state, &mut held, number, settled);
         }
-        let notes = renumber(input, &mut state, displaced)?;
+        let (notes, relink) = renumber(input, &mut state, displaced)?;
+        // Our version of a doc both sides changed is relinked before the merge, so a link in their
+        // version keeps the task it names.
+        let mut merged_docs = BTreeSet::new();
+        for path in input.conflicts {
+            let document = Document::of(path);
+            if matches!(document, Document::Task(_)) {
+                continue;
+            }
+            match (input.ours.read(path)?, input.theirs.read(path)?) {
+                // An edit outlives a removal.
+                (Some(ours), None) => state.set(path.clone(), Some(ours)),
+                (Some(ours), Some(theirs)) if let Document::Doc(name) = &document => {
+                    let base = input.base.read(path)?;
+                    let ours = relink.text(layout::DOCS, &String::from_utf8_lossy(&ours));
+                    let merged =
+                        merged_doc(name, base.as_deref(), ours.as_bytes(), &theirs, &labels);
+                    state.set(path.clone(), Some(merged.into_bytes()));
+                    merged_docs.insert(path);
+                }
+                // Otherwise the published version stays.
+                _ => {}
+            }
+        }
+        for change in input.ours_changed {
+            if change.kind == ChangeKind::Removed
+                || merged_docs.contains(&change.path)
+                || !matches!(Document::of(&change.path), Document::Doc(_))
+            {
+                continue;
+            }
+            let Some(text) = state.read_text(&change.path)? else {
+                continue;
+            };
+            let relinked = relink.text(layout::DOCS, &text);
+            if relinked != text {
+                state.set(change.path.clone(), Some(relinked.into_bytes()));
+            }
+        }
         Ok(Resolution {
             ops: state.into_ops(),
             notes,
+        })
+    }
+}
+
+// Each moved task's old file and its new one. Our own documents name a moved task by its old file;
+// only ours can, because the other side never saw it.
+#[derive(Default)]
+struct Relink(BTreeMap<String, String>);
+
+impl Relink {
+    fn text(&self, dir: &str, text: &str) -> String {
+        self.0.iter().fold(text.to_owned(), |text, (old, new)| {
+            text.replace(&relative(dir, old), &relative(dir, new))
         })
     }
 }
@@ -81,6 +125,33 @@ fn labels(tips: Tips<'_>) -> Labels {
 pub(crate) fn label(revision: &Revision) -> String {
     let id = revision.id.as_str();
     format!("{} ({})", revision.author.name, &id[..id.len().min(7)])
+}
+
+// A doc merges the way a task does: field by field, and its body line by line. A version that does
+// not parse as a doc still merges line by line, frontmatter included.
+fn merged_doc(
+    name: &str,
+    base: Option<&[u8]>,
+    ours: &[u8],
+    theirs: &[u8],
+    labels: &Labels,
+) -> String {
+    let [base, ours, theirs] =
+        [base.unwrap_or_default(), ours, theirs].map(|text| String::from_utf8_lossy(text));
+    let parse = |text: &str| Doc::from_file_string(name.to_owned(), text).ok();
+    let base_doc = match base.is_empty() {
+        true => Some(None),
+        false => parse(&base).map(Some),
+    };
+    match (base_doc, parse(&ours), parse(&theirs)) {
+        (Some(base_doc), Some(ours), Some(theirs)) => {
+            merge::doc(base_doc.as_ref(), &ours, &theirs, labels)
+                .to_file_string()
+                .ok()
+        }
+        _ => None,
+    }
+    .unwrap_or_else(|| conflict::merge(&base, &ours, &theirs, labels))
 }
 
 // A task that only one side renamed keeps the new name.
@@ -139,13 +210,14 @@ fn settle(state: &mut Overlay<'_>, held: &mut TaskPaths, number: u64, settled: O
     }
 }
 
+// The notes for the merge message, and the files the moved tasks left.
 fn renumber(
     input: &MergeInput<'_>,
     state: &mut Overlay<'_>,
     displaced: Vec<File>,
-) -> Result<Vec<String>, BackendError> {
+) -> Result<(Vec<String>, Relink), BackendError> {
     if displaced.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Relink::default()));
     }
     let key = keys(state)?;
     let mut next = task_numbers(state)?
@@ -173,17 +245,17 @@ fn renumber(
         state.set(new_path.clone(), Some(content));
         renamed.insert(path, new_path);
     }
-    rewrite_references(input, state, &renamed)?;
-    Ok(notes)
+    let relink = Relink(renamed);
+    rewrite_references(input, state, &relink)?;
+    Ok((notes, relink))
 }
 
-// Our own documents name a moved task by its old file; only ours can, because the other side
-// never saw it.
 fn rewrite_references(
     input: &MergeInput<'_>,
     state: &mut Overlay<'_>,
-    renamed: &BTreeMap<String, String>,
+    relink: &Relink,
 ) -> Result<(), BackendError> {
+    let renamed = &relink.0;
     let mut ours: BTreeSet<String> = input
         .ours_changed
         .iter()
@@ -198,13 +270,7 @@ fn rewrite_references(
         let Some(text) = state.read_text(&path)? else {
             continue;
         };
-        let mut rewritten = text.clone();
-        for (old, new) in renamed {
-            rewritten = rewritten.replace(
-                &op_task::task_ref(layout::file_name(old)),
-                &op_task::task_ref(layout::file_name(new)),
-            );
-        }
+        let rewritten = relink.text(layout::TASKS, &text);
         if rewritten != text {
             state.set(path, Some(rewritten.into_bytes()));
         }
@@ -220,11 +286,15 @@ fn task_numbers(snapshot: &dyn Snapshot) -> Result<BTreeMap<u64, String>, Backen
         .collect())
 }
 
-fn keys(snapshot: &dyn Snapshot) -> Result<impl Fn(u64) -> String + use<>, BackendError> {
-    let abbreviation = snapshot
+fn abbreviation(snapshot: &dyn Snapshot) -> Result<Option<Abbreviation>, BackendError> {
+    Ok(snapshot
         .read_text(layout::CONFIG)?
         .and_then(|text| Config::parse(&text).ok())
-        .map(|config| config.abbreviation);
+        .map(|config| config.abbreviation))
+}
+
+fn keys(snapshot: &dyn Snapshot) -> Result<impl Fn(u64) -> String + use<>, BackendError> {
+    let abbreviation = abbreviation(snapshot)?;
     Ok(move |number: u64| match abbreviation {
         Some(abbreviation) => abbreviation.format_key(number),
         None => number.to_string(),

@@ -13,6 +13,7 @@ pub struct Described {
     pub config: Option<ChangeKind>,
     pub tags: Vec<TagChange>,
     pub tasks: Vec<TaskChange>,
+    pub docs: Vec<DocChange>,
     pub others: Vec<Change>,
 }
 
@@ -22,6 +23,14 @@ pub struct TagChange {
     pub kind: ChangeKind,
     // A rename moves the file, so the revision removes one tag file and adds another. A pair that
     // differs only in the heading is one tag, and it is `Modified`.
+    pub renamed_from: Option<String>,
+}
+
+// A rename moves the file too, and the doc keeps the time it was created, which pairs the two files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocChange {
+    pub name: String,
+    pub kind: ChangeKind,
     pub renamed_from: Option<String>,
 }
 
@@ -91,11 +100,13 @@ pub(crate) fn describe(
     let mut described = Described::default();
     let mut tasks: BTreeMap<u64, Vec<&Change>> = BTreeMap::new();
     let mut tags = Vec::new();
+    let mut docs = Vec::new();
     for change in changes {
         match Document::of(&change.path) {
             Document::Config => described.config = Some(change.kind),
             Document::Task(number) => tasks.entry(number).or_default().push(change),
             Document::Tag(name) => tags.push((name, change.kind)),
+            Document::Doc(name) => docs.push((name, change.kind)),
             Document::Asset(_) | Document::Other(_) => described.others.push(change.clone()),
         }
     }
@@ -105,6 +116,7 @@ pub(crate) fn describe(
             .extend(task_change(number, &files, before, after, moved_from)?);
     }
     described.tags = tag_changes(tags, before, after)?;
+    described.docs = doc_changes(docs, before, after)?;
     Ok(described)
 }
 
@@ -352,6 +364,56 @@ fn tag_changes(
     Ok(changes)
 }
 
+// The doc a revision renamed, created, or deleted leads, so it names the revision; the docs whose
+// `parent:` a rename or a delete moved follow it.
+fn doc_changes(
+    docs: Vec<(String, ChangeKind)>,
+    before: Read<'_>,
+    after: Read<'_>,
+) -> Result<Vec<DocChange>, BackendError> {
+    let created = |read: Read<'_>, name: &str| -> Result<Option<String>, BackendError> {
+        Ok(read(&layout::doc_path(name))?.and_then(|bytes| {
+            let partial = op_task::doc::parse_partial(&String::from_utf8_lossy(&bytes));
+            partial.created().ok().map(|at| at.to_string())
+        }))
+    };
+    let (removed, rest): (Vec<_>, Vec<_>) = docs
+        .into_iter()
+        .partition(|(_, kind)| *kind == ChangeKind::Removed);
+    let mut gone = Vec::new();
+    for (name, _) in removed {
+        let at = created(before, &name)?;
+        gone.push((name, at));
+    }
+    let mut changes = Vec::new();
+    for (name, kind) in rest {
+        let mut renamed_from = None;
+        if kind == ChangeKind::Added
+            && let Some(at) = created(after, &name)?
+            && let Some(found) = gone.iter().position(|(_, old)| old.as_ref() == Some(&at))
+        {
+            renamed_from = Some(gone.remove(found).0);
+        }
+        changes.push(DocChange {
+            kind: match renamed_from {
+                Some(_) => ChangeKind::Modified,
+                None => kind,
+            },
+            name,
+            renamed_from,
+        });
+    }
+    changes.extend(gone.into_iter().map(|(name, _)| DocChange {
+        name,
+        kind: ChangeKind::Removed,
+        renamed_from: None,
+    }));
+    let led =
+        |change: &DocChange| change.kind == ChangeKind::Modified && change.renamed_from.is_none();
+    changes.sort_by(|a, b| led(a).cmp(&led(b)).then_with(|| a.name.cmp(&b.name)));
+    Ok(changes)
+}
+
 fn tag_content(read: Read<'_>, name: &str) -> Result<Option<String>, BackendError> {
     Ok(read(&layout::tag_path(name))?.map(|bytes| {
         without_title(&String::from_utf8_lossy(&bytes))
@@ -385,6 +447,12 @@ impl Described {
         }
         for task in &self.tasks {
             lines.push(format!("{}: {}", key(task.number), task_words(task, &key)));
+        }
+        for doc in &self.docs {
+            lines.push(match &doc.renamed_from {
+                Some(from) => format!("doc {from}: rename to {}", doc.name),
+                None => format!("doc {}: {}", doc.name, verb(doc.kind)),
+            });
         }
         for other in &self.others {
             lines.push(format!("{}: {}", other.path, verb(other.kind)));

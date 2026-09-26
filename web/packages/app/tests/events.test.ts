@@ -8,10 +8,12 @@ function spy() {
     projects: number
     lists: Array<string>
     tasks: Array<string>
+    docs: Array<string>
+    pages: Array<string>
     history: Array<string>
     sync: Array<string>
     visible: Array<string | undefined>
-  } = { projects: 0, lists: [], tasks: [], history: [], sync: [], visible: [] }
+  } = { projects: 0, lists: [], tasks: [], docs: [], pages: [], history: [], sync: [], visible: [] }
   const inv: Invalidator = {
     refreshProjects: () => {
       calls.projects += 1
@@ -21,6 +23,12 @@ function spy() {
     },
     refreshTask: (project, id) => {
       calls.tasks.push(`${project}/${id}`)
+    },
+    refreshDoc: (project, name) => {
+      calls.docs.push(`${project}/${name}`)
+    },
+    refreshPages: (project) => {
+      calls.pages.push(project)
     },
     refreshHistory: (project) => {
       calls.history.push(project)
@@ -35,7 +43,7 @@ function spy() {
   return { inv, calls }
 }
 
-const quiet = { projects: 0, lists: [], tasks: [], history: [], sync: [], visible: [] }
+const quiet = { projects: 0, lists: [], tasks: [], docs: [], pages: [], history: [], sync: [], visible: [] }
 const decode = Schema.decodeUnknownSync(ChangeEvent)
 
 it("decodes a task_changed event mirroring the Rust ChangeEvent JSON", () => {
@@ -48,10 +56,40 @@ it("decodes a task_changed event mirroring the Rust ChangeEvent JSON", () => {
 
 // A change in one project must leave every other project's reads alone, so each of these carries
 // the project it happened in.
-it("task_changed refreshes that task, that project's list, and that project's activity", () => {
+it("task_changed refreshes that task, that project's pages, list, and activity", () => {
   const { inv, calls } = spy()
   applyChange(inv, { kind: "task_changed", project: "openplan", id: "OPP-1" })
-  expect(calls).toEqual({ ...quiet, lists: ["openplan"], tasks: ["openplan/OPP-1"], history: ["openplan"] })
+  expect(calls).toEqual({
+    ...quiet,
+    lists: ["openplan"],
+    tasks: ["openplan/OPP-1"],
+    pages: ["openplan"],
+    history: ["openplan"],
+  })
+})
+
+it("decodes a doc_changed event mirroring the Rust ChangeEvent JSON", () => {
+  expect(decode({ kind: "doc_changed", project: "openplan", name: "architecture" })).toEqual({
+    kind: "doc_changed",
+    project: "openplan",
+    name: "architecture",
+  })
+})
+
+it("doc_changed refreshes that doc, that project's pages and activity, and no task list", () => {
+  const { inv, calls } = spy()
+  applyChange(inv, { kind: "doc_changed", project: "openplan", name: "architecture" })
+  expect(calls).toEqual({ ...quiet, docs: ["openplan/architecture"], pages: ["openplan"], history: ["openplan"] })
+})
+
+it("refreshes a doc once for a burst of changes to it", () => {
+  const { coalescing, calls, flush } = held()
+  for (const name of ["architecture", "storage", "architecture"]) {
+    applyChange(coalescing, { kind: "doc_changed", project: "openplan", name })
+  }
+  applyChange(coalescing, { kind: "doc_changed", project: "notes", name: "architecture" })
+  flush()
+  expect(calls.docs).toEqual(["openplan/architecture", "openplan/storage", "notes/architecture"])
 })
 
 it("decodes a tags_changed event mirroring the Rust ChangeEvent JSON", () => {
@@ -130,6 +168,7 @@ it("refreshes a list once for a burst of task changes, and each changed task onc
     ...quiet,
     lists: ["openplan", "notes"],
     tasks: ["openplan/OPP-1", "openplan/OPP-2", "notes/NTS-1"],
+    pages: ["openplan", "notes"],
     history: ["openplan", "notes"],
   })
 })
@@ -157,6 +196,7 @@ it("lets a refresh of a project's screen cover the narrower refreshes in that pr
     visible: ["openplan"],
     lists: ["notes"],
     tasks: ["notes/NTS-1"],
+    pages: ["notes"],
     history: ["notes"],
   })
 })
@@ -168,4 +208,27 @@ it("lets a refresh of every screen cover every other refresh but the projects", 
   applyChange(coalescing, { kind: "resync" })
   flush()
   expect(calls).toEqual({ ...quiet, projects: 1, visible: [undefined] })
+})
+
+// A page the flush reads again by name needs no second read from the refresh of every page.
+it("names to the pages every task and doc the flush refreshes in that project", () => {
+  const { inv } = spy()
+  const refreshed: Array<{ project: string; tasks: Array<string>; docs: Array<string> }> = []
+  const target: Invalidator = {
+    ...inv,
+    refreshPages: (project, pages) => {
+      refreshed.push({ project, tasks: [...pages.tasks], docs: [...pages.docs] })
+    },
+  }
+  const flushes: Array<() => void> = []
+  const coalescing = coalesced(target, (flush) => flushes.push(flush))
+  applyChange(coalescing, { kind: "task_changed", project: "openplan", id: "OPP-1" })
+  applyChange(coalescing, { kind: "doc_changed", project: "openplan", name: "architecture" })
+  applyChange(coalescing, { kind: "task_changed", project: "notes", id: "NTS-1" })
+  for (const flush of flushes.splice(0)) flush()
+
+  expect(refreshed).toEqual([
+    { project: "openplan", tasks: ["OPP-1"], docs: ["architecture"] },
+    { project: "notes", tasks: ["NTS-1"], docs: [] },
+  ])
 })

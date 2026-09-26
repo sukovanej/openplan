@@ -1,11 +1,13 @@
-import { Bot, Tag as TagIcon } from "lucide-react"
+import { Bot, FileText, Tag as TagIcon } from "lucide-react"
 import { memo, type MouseEvent, useMemo } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 
-import type { HistoryEntry, RevisionView, TagChange, TagView, TaskRef } from "@openplan/api-client"
+import type { DocChange, HistoryEntry, RevisionView, TagChange, TagView, TaskRef } from "@openplan/api-client"
 import {
   AgentTag,
+  DocChangeView,
   DocumentChangeView,
+  docRevisionPath,
   revisionPath,
   TagChangeView,
   TagChip,
@@ -15,25 +17,31 @@ import {
 } from "@openplan/task-ui"
 import { cn, HoverCard, TimeAgo, Tooltip } from "@openplan/ui"
 
-import { type ActivityRow, activityRows, changePath, diffTarget, taskChangeOf } from "../lib/history"
+import { type ActivityRow, activityRows, changePath, diffTarget, docChangePath, taskChangeOf } from "../lib/history"
 import { type RevisionNavigation, revisionNavigation } from "../lib/revision-navigation"
 import { useTags } from "../lib/tags"
 import { ChangeDiff } from "./change-diff"
 
-// With `task`, the list is the history of that one task: a line needs not name the task, and each
-// revision opens the task as that revision left it.
+// With `task` or `doc`, the list is the history of that one task or doc: a line needs not name it,
+// and each revision opens it as that revision left it.
 export function RevisionList({
   project,
   entries,
   refs,
+  docTitles,
   task,
+  doc,
   selected,
 }: {
   project: string
   entries: ReadonlyArray<HistoryEntry>
   // `undefined` until the board is read, and until then every task counts as one that exists.
   refs?: ReadonlyMap<string, TaskRef>
+  // The title of each doc by its name. `undefined` until the docs are read, and until then every doc
+  // counts as one that exists.
+  docTitles?: ReadonlyMap<string, string>
   task?: string
+  doc?: string
   selected?: string
 }) {
   const { state } = useLocation()
@@ -48,8 +56,10 @@ export function RevisionList({
           project={project}
           entry={entry}
           refs={refs}
+          docTitles={docTitles}
           tags={tags}
           task={task}
+          doc={doc}
           current={entry.revision.id === selected}
           navigation={navigation}
         />
@@ -66,6 +76,8 @@ const lineKey = (line: ActivityRow): string => {
       return `task:${line.change.task}`
     case "tag":
       return `tag:${line.change.tag}`
+    case "doc":
+      return `doc:${line.change.doc}`
     case "document":
       return `document:${line.change.path}`
     case "more":
@@ -74,30 +86,44 @@ const lineKey = (line: ActivityRow): string => {
 }
 
 // When and who lead the revision once, and its changes stand beside them one to a line. A revision
-// never changes, so it renders again only when the titles on the board or the tag registry do.
+// never changes, so it renders again only when the titles on the board, the doc titles, or the tag
+// registry do.
 const Revision = memo(function Revision({
   project,
   entry,
   refs,
+  docTitles,
   tags,
   task,
+  doc,
   current,
   navigation,
 }: {
   project: string
   entry: HistoryEntry
   refs: ReadonlyMap<string, TaskRef> | undefined
+  docTitles: ReadonlyMap<string, string> | undefined
   tags: ReadonlyMap<string, TagView> | undefined
   task: string | undefined
+  doc: string | undefined
   current: boolean
   navigation: RevisionNavigation
 }) {
   const navigate = useNavigate()
+  const one = task !== undefined || doc !== undefined
   const lines: ReadonlyArray<ActivityRow> =
-    task === undefined
-      ? activityRows(entry)
-      : [{ kind: "task", change: taskChangeOf(entry, task) ?? { task, kind: "modified" } }]
-  const to = task === undefined ? undefined : revisionPath(project, task, entry.revision.id)
+    task !== undefined
+      ? [{ kind: "task", change: taskChangeOf(entry, task) ?? { task, kind: "modified" } }]
+      : doc !== undefined
+        ? // The daemon keeps the one change of the doc, under the name it had at that revision.
+          [{ kind: "doc", change: entry.docs[0] ?? { doc, kind: "modified" } }]
+        : activityRows(entry)
+  const to =
+    task !== undefined
+      ? revisionPath(project, task, entry.revision.id)
+      : doc !== undefined
+        ? docRevisionPath(project, doc, entry.revision.id)
+        : undefined
   // The revision opens from its own click, as a board row opens its task; a link in it answers its
   // own click, and a modified click is the browser's.
   const open = (event: MouseEvent<HTMLLIElement>) => {
@@ -131,7 +157,7 @@ const Revision = memo(function Revision({
             </Link>
           )}
         </span>
-        <Who revision={entry.revision} compact={task !== undefined} />
+        <Who revision={entry.revision} compact={one} />
       </span>
       <ul aria-label="Changes" className="flex min-w-0 flex-1 basis-40 flex-col gap-1">
         {lines.map((line) => {
@@ -141,8 +167,9 @@ const Revision = memo(function Revision({
               entry={entry}
               line={line}
               refs={refs}
+              docTitles={docTitles}
               tags={tags}
-              withWhat={task === undefined}
+              withWhat={!one}
             />
           )
           const target = diffTarget(entry, line)
@@ -173,6 +200,7 @@ function ChangeLine({
   entry,
   line,
   refs,
+  docTitles,
   tags,
   withWhat,
 }: {
@@ -180,6 +208,7 @@ function ChangeLine({
   entry: HistoryEntry
   line: ActivityRow
   refs: ReadonlyMap<string, TaskRef> | undefined
+  docTitles: ReadonlyMap<string, string> | undefined
   tags: ReadonlyMap<string, TagView> | undefined
   withWhat: boolean
 }) {
@@ -197,6 +226,13 @@ function ChangeLine({
         <>
           <TagChangeView change={line.change} tags={tags} className={change} />
           {withWhat && <TagName change={line.change} tags={tags} />}
+        </>
+      )
+    case "doc":
+      return (
+        <>
+          <DocChangeView change={line.change} className={change} />
+          {withWhat && <DocName project={project} entry={entry} change={line.change} titles={docTitles} />}
         </>
       )
     case "document":
@@ -224,6 +260,34 @@ function TagName({ change, tags }: { change: TagChange; tags: ReadonlyMap<string
     )
   }
   return change.renamed_from === undefined ? <TagChip name={change.tag} tag={tags.get(change.tag)} /> : null
+}
+
+function DocName({
+  project,
+  entry,
+  change,
+  titles,
+}: {
+  project: string
+  entry: HistoryEntry
+  change: DocChange
+  titles: ReadonlyMap<string, string> | undefined
+}) {
+  const title = change.kind === "removed" ? undefined : titles?.get(change.doc)
+  const to = docChangePath(project, entry, change, titles === undefined || titles.has(change.doc))
+  const name = (
+    <span className="flex min-w-0 items-center gap-2">
+      <FileText aria-hidden className="text-muted-foreground size-4 shrink-0" />
+      <span className="truncate">{title ?? change.doc}</span>
+    </span>
+  )
+  return to === undefined ? (
+    name
+  ) : (
+    <Link to={to} className="text-foreground/90 hover:text-foreground max-w-full min-w-0">
+      {name}
+    </Link>
+  )
 }
 
 // A task that is gone, or that the board does not hold yet, has no status to wear.

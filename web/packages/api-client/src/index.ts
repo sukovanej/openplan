@@ -61,6 +61,7 @@ export type ProblemCode =
   | "comment"
   | "diagram"
   | "reference"
+  | "reference_path"
   | "tag"
   | "parent_cycle"
   | "dependency_cycle"
@@ -71,6 +72,7 @@ export const ProblemCode = Schema.Literals([
   "comment",
   "diagram",
   "reference",
+  "reference_path",
   "tag",
   "parent_cycle",
   "dependency_cycle",
@@ -129,10 +131,30 @@ export const Decision = Schema.Record(Schema.String, Schema.Json.annotate({ expe
 })
 export type Say = { readonly text: string }
 export const Say = Schema.Struct({ text: Schema.String }).annotate({ identifier: "Say" })
+export type CreateDoc = { readonly body?: string | null; readonly name: string; readonly parent?: string | null }
+export const CreateDoc = Schema.Struct({
+  body: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  name: Schema.String,
+  parent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+}).annotate({ identifier: "CreateDoc" })
+export type DocChild = { readonly name: string; readonly title: string }
+export const DocChild = Schema.Struct({ name: Schema.String, title: Schema.String }).annotate({
+  identifier: "DocChild",
+})
+export type DocRef = { readonly name: string; readonly title: string }
+export const DocRef = Schema.Struct({ name: Schema.String, title: Schema.String }).annotate({ identifier: "DocRef" })
+export type DocPatch = { readonly body?: string; readonly name?: string; readonly parent?: string | null }
+export const DocPatch = Schema.Struct({
+  body: Schema.optionalKey(Schema.String),
+  name: Schema.optionalKey(Schema.String),
+  parent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+}).annotate({ identifier: "DocPatch" })
 export type DocumentChangeKind = "added" | "modified" | "removed"
 export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed"]).annotate({
   identifier: "DocumentChangeKind",
 })
+export type DocText = { readonly body: string; readonly title: string }
+export const DocText = Schema.Struct({ body: Schema.String, title: Schema.String }).annotate({ identifier: "DocText" })
 export type DocumentDiff =
   | { readonly diff: string; readonly kind: "text"; readonly truncated: boolean }
   | { readonly kind: "binary" }
@@ -420,23 +442,33 @@ export const RevisionView = Schema.Struct({
   parents: Schema.Array(Schema.String),
 }).annotate({ identifier: "RevisionView" })
 export type DocumentChange = {
+  readonly doc?: string
   readonly kind: DocumentChangeKind
   readonly path: string
   readonly tag?: string
   readonly task?: string
 }
 export const DocumentChange = Schema.Struct({
+  doc: Schema.optionalKey(Schema.String),
   kind: DocumentChangeKind,
   path: Schema.String,
   tag: Schema.optionalKey(Schema.String),
   task: Schema.optionalKey(Schema.String),
 }).annotate({ identifier: "DocumentChange" })
+export type DocChange = { readonly doc: string; readonly kind: DocumentChangeKind; readonly renamed_from?: string }
+export const DocChange = Schema.Struct({
+  doc: Schema.String,
+  kind: DocumentChangeKind,
+  renamed_from: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "DocChange" })
 export type TagChange = { readonly kind: DocumentChangeKind; readonly renamed_from?: string; readonly tag: string }
 export const TagChange = Schema.Struct({
   kind: DocumentChangeKind,
   renamed_from: Schema.optionalKey(Schema.String),
   tag: Schema.String,
 }).annotate({ identifier: "TagChange" })
+export type WriteDocText = { readonly base: DocText; readonly text: DocText }
+export const WriteDocText = Schema.Struct({ base: DocText, text: DocText }).annotate({ identifier: "WriteDocText" })
 export type TagView = {
   readonly color: Color
   readonly description?: string
@@ -554,6 +586,10 @@ export type Field_String = string | FieldError | FieldConflict_String
 export const Field_String = Schema.Union([Schema.String, FieldError, FieldConflict_String], { mode: "oneOf" }).annotate(
   { identifier: "Field_String" },
 )
+export type DocFields = { readonly created: Field_Rfc3339; readonly parent: Field_Option_String }
+export const DocFields = Schema.Struct({ created: Field_Rfc3339, parent: Field_Option_String }).annotate({
+  identifier: "DocFields",
+})
 export type FrontmatterFields = {
   readonly created: Field_Rfc3339
   readonly dependencies: Field_Vec_String
@@ -588,6 +624,7 @@ export const TaskChild = Schema.Struct({
 }).annotate({ identifier: "TaskChild" })
 export type HistoryEntry = {
   readonly changes: ReadonlyArray<DocumentChange>
+  readonly docs: ReadonlyArray<DocChange>
   readonly revision: RevisionView
   readonly summary: ReadonlyArray<string>
   readonly tags: ReadonlyArray<TagChange>
@@ -595,6 +632,7 @@ export type HistoryEntry = {
 }
 export const HistoryEntry = Schema.Struct({
   changes: Schema.Array(DocumentChange),
+  docs: Schema.Array(DocChange),
   revision: RevisionView,
   summary: Schema.Array(Schema.String),
   tags: Schema.Array(TagChange),
@@ -612,11 +650,82 @@ export const Comment = Schema.Struct({
   author: Field_String,
   text: Schema.String,
 }).annotate({ identifier: "Comment" })
+export type DocMetadata = { readonly kind: MetadataErrorTag; readonly message: string } | DocFields
+export const DocMetadata = Schema.Union(
+  [Schema.Struct({ kind: MetadataErrorTag, message: Schema.String }), DocFields],
+  { mode: "oneOf" },
+).annotate({ identifier: "DocMetadata" })
 export type Metadata = { readonly kind: MetadataErrorTag; readonly message: string } | FrontmatterFields
 export const Metadata = Schema.Union(
   [Schema.Struct({ kind: MetadataErrorTag, message: Schema.String }), FrontmatterFields],
   { mode: "oneOf" },
 ).annotate({ identifier: "Metadata" })
+export type DocListItem = {
+  readonly author?: Author
+  readonly conflicts: number
+  readonly metadata: DocMetadata
+  readonly name: string
+  readonly problems: ReadonlyArray<Problem>
+  readonly project: string
+  readonly title: string
+  readonly updated: Field_Rfc3339
+}
+export const DocListItem = Schema.Struct({
+  author: Schema.optionalKey(Author),
+  conflicts: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  metadata: DocMetadata,
+  name: Schema.String,
+  problems: Schema.Array(Problem),
+  project: Schema.String,
+  title: Schema.String,
+  updated: Field_Rfc3339,
+}).annotate({ identifier: "DocListItem" })
+export type DocDetail = {
+  readonly author?: Author
+  readonly body: string
+  readonly children?: ReadonlyArray<DocChild>
+  readonly conflicts: number
+  readonly doc_refs?: ReadonlyArray<DocRef>
+  readonly metadata: DocMetadata
+  readonly name: string
+  readonly parent_title?: string
+  readonly problems: ReadonlyArray<Problem>
+  readonly project: string
+  readonly refs?: ReadonlyArray<TaskRef>
+  readonly title: string
+  readonly updated: Field_Rfc3339
+}
+export const DocDetail = Schema.Struct({
+  author: Schema.optionalKey(Author),
+  body: Schema.String,
+  children: Schema.optionalKey(Schema.Array(DocChild)),
+  conflicts: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  doc_refs: Schema.optionalKey(Schema.Array(DocRef)),
+  metadata: DocMetadata,
+  name: Schema.String,
+  parent_title: Schema.optionalKey(Schema.String),
+  problems: Schema.Array(Problem),
+  project: Schema.String,
+  refs: Schema.optionalKey(Schema.Array(TaskRef)),
+  title: Schema.String,
+  updated: Field_Rfc3339,
+}).annotate({ identifier: "DocDetail" })
+export type DocSnapshot = {
+  readonly body: string
+  readonly metadata: DocMetadata
+  readonly raw: string
+  readonly title: string
+}
+export const DocSnapshot = Schema.Struct({
+  body: Schema.String,
+  metadata: DocMetadata,
+  raw: Schema.String,
+  title: Schema.String,
+}).annotate({ identifier: "DocSnapshot" })
 export type TaskListItem = {
   readonly author?: Author
   readonly comment_count: number
@@ -651,6 +760,7 @@ export type TaskDetail = {
   readonly conflicts: number
   readonly depends_on?: ReadonlyArray<TaskRef>
   readonly description: string
+  readonly doc_refs?: ReadonlyArray<DocRef>
   readonly id: string
   readonly metadata: Metadata
   readonly parent_title?: string
@@ -670,6 +780,7 @@ export const TaskDetail = Schema.Struct({
   ),
   depends_on: Schema.optionalKey(Schema.Array(TaskRef)),
   description: Schema.String,
+  doc_refs: Schema.optionalKey(Schema.Array(DocRef)),
   id: Schema.String,
   metadata: Metadata,
   parent_title: Schema.optionalKey(Schema.String),
@@ -693,6 +804,12 @@ export const TaskSnapshot = Schema.Struct({
   raw: Schema.String,
   title: Schema.String,
 }).annotate({ identifier: "TaskSnapshot" })
+export type DocAtRevision = { readonly doc?: DocSnapshot; readonly name: string; readonly revision: string }
+export const DocAtRevision = Schema.Struct({
+  doc: Schema.optionalKey(DocSnapshot),
+  name: Schema.String,
+  revision: Schema.String,
+}).annotate({ identifier: "DocAtRevision" })
 export type BoardRow = {
   readonly depth: number
   readonly has_children: boolean
@@ -739,6 +856,16 @@ export type DrawDiagram200 = Drawing
 export const DrawDiagram200 = Drawing
 export type DrawDiagram422 = ApiErrorBody
 export const DrawDiagram422 = ApiErrorBody
+export type ListAllDocsParams = { readonly project?: ReadonlyArray<string> }
+export const ListAllDocsParams = Schema.Struct({ project: Schema.optionalKey(Schema.Array(Schema.String)) })
+export type ListAllDocs200 = ReadonlyArray<DocListItem>
+export const ListAllDocs200 = Schema.Array(DocListItem)
+export type ListAllDocs400 = ApiErrorBody
+export const ListAllDocs400 = ApiErrorBody
+export type ListAllDocs404 = ApiErrorBody
+export const ListAllDocs404 = ApiErrorBody
+export type ListAllDocs503 = ApiErrorBody
+export const ListAllDocs503 = ApiErrorBody
 export type DrawFlowParams = {
   readonly project?: ReadonlyArray<string>
   readonly status?: ReadonlyArray<Status>
@@ -847,6 +974,94 @@ export type GetBoard404 = ApiErrorBody
 export const GetBoard404 = ApiErrorBody
 export type GetBoard503 = ApiErrorBody
 export const GetBoard503 = ApiErrorBody
+export type ListDocsParams = { readonly fresh?: boolean }
+export const ListDocsParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
+export type ListDocs200 = ReadonlyArray<DocListItem>
+export const ListDocs200 = Schema.Array(DocListItem)
+export type ListDocs404 = ApiErrorBody
+export const ListDocs404 = ApiErrorBody
+export type ListDocs503 = ApiErrorBody
+export const ListDocs503 = ApiErrorBody
+export type CreateDocRequestJson = CreateDoc
+export const CreateDocRequestJson = CreateDoc
+export type CreateDoc201 = DocDetail
+export const CreateDoc201 = DocDetail
+export type CreateDoc400 = ApiErrorBody
+export const CreateDoc400 = ApiErrorBody
+export type CreateDoc404 = ApiErrorBody
+export const CreateDoc404 = ApiErrorBody
+export type CreateDoc409 = ApiErrorBody
+export const CreateDoc409 = ApiErrorBody
+export type CreateDoc503 = ApiErrorBody
+export const CreateDoc503 = ApiErrorBody
+export type GetDocParams = { readonly fresh?: boolean }
+export const GetDocParams = Schema.Struct({ fresh: Schema.optionalKey(Schema.Boolean) })
+export type GetDoc200 = DocDetail
+export const GetDoc200 = DocDetail
+export type GetDoc404 = ApiErrorBody
+export const GetDoc404 = ApiErrorBody
+export type GetDoc503 = ApiErrorBody
+export const GetDoc503 = ApiErrorBody
+export type DeleteDoc404 = ApiErrorBody
+export const DeleteDoc404 = ApiErrorBody
+export type DeleteDoc409 = ApiErrorBody
+export const DeleteDoc409 = ApiErrorBody
+export type DeleteDoc503 = ApiErrorBody
+export const DeleteDoc503 = ApiErrorBody
+export type PatchDocRequestJson = DocPatch
+export const PatchDocRequestJson = DocPatch
+export type PatchDoc200 = DocDetail
+export const PatchDoc200 = DocDetail
+export type PatchDoc400 = ApiErrorBody
+export const PatchDoc400 = ApiErrorBody
+export type PatchDoc404 = ApiErrorBody
+export const PatchDoc404 = ApiErrorBody
+export type PatchDoc409 = ApiErrorBody
+export const PatchDoc409 = ApiErrorBody
+export type PatchDoc422 = ApiErrorBody
+export const PatchDoc422 = ApiErrorBody
+export type PatchDoc503 = ApiErrorBody
+export const PatchDoc503 = ApiErrorBody
+export type DocHistoryParams = { readonly before?: string | null; readonly limit?: number | null }
+export const DocHistoryParams = Schema.Struct({
+  before: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  limit: Schema.optionalKey(
+    Schema.Union([
+      Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+      Schema.Null,
+    ]),
+  ),
+})
+export type DocHistory200 = ReadonlyArray<HistoryEntry>
+export const DocHistory200 = Schema.Array(HistoryEntry)
+export type DocHistory400 = ApiErrorBody
+export const DocHistory400 = ApiErrorBody
+export type DocHistory404 = ApiErrorBody
+export const DocHistory404 = ApiErrorBody
+export type DocHistory503 = ApiErrorBody
+export const DocHistory503 = ApiErrorBody
+export type DocRevision200 = DocAtRevision
+export const DocRevision200 = DocAtRevision
+export type DocRevision400 = ApiErrorBody
+export const DocRevision400 = ApiErrorBody
+export type DocRevision404 = ApiErrorBody
+export const DocRevision404 = ApiErrorBody
+export type DocRevision503 = ApiErrorBody
+export const DocRevision503 = ApiErrorBody
+export type WriteDocTextRequestJson = WriteDocText
+export const WriteDocTextRequestJson = WriteDocText
+export type WriteDocText200 = DocDetail
+export const WriteDocText200 = DocDetail
+export type WriteDocText400 = ApiErrorBody
+export const WriteDocText400 = ApiErrorBody
+export type WriteDocText404 = ApiErrorBody
+export const WriteDocText404 = ApiErrorBody
+export type WriteDocText409 = ApiErrorBody
+export const WriteDocText409 = ApiErrorBody
+export type WriteDocText503 = ApiErrorBody
+export const WriteDocText503 = ApiErrorBody
 export type ProjectHistoryParams = { readonly before?: string | null; readonly limit?: number | null }
 export const ProjectHistoryParams = Schema.Struct({
   before: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
@@ -1232,6 +1447,19 @@ export const make = (
           }),
         ),
       ),
+    listAllDocs: (options) =>
+      HttpClientRequest.get("/api/docs").pipe(
+        HttpClientRequest.setUrlParams({ project: options?.params?.["project"] as any }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(ListAllDocs200),
+            "400": decodeError("ListAllDocs400", ListAllDocs400),
+            "404": decodeError("ListAllDocs404", ListAllDocs404),
+            "503": decodeError("ListAllDocs503", ListAllDocs503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     drawFlow: (options) =>
       HttpClientRequest.get("/api/flow/drawing").pipe(
         HttpClientRequest.setUrlParams({
@@ -1456,6 +1684,184 @@ export const make = (
                 "2xx": decodeSuccess(GetBoard200),
                 "404": decodeError("GetBoard404", GetBoard404),
                 "503": decodeError("GetBoard503", GetBoard503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    listDocs: (project, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/docs",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(ListDocs200),
+                "404": decodeError("ListDocs404", ListDocs404),
+                "503": decodeError("ListDocs503", ListDocs503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    createDoc: (project, options) =>
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/docs",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(CreateDoc201),
+                "400": decodeError("CreateDoc400", CreateDoc400),
+                "404": decodeError("CreateDoc404", CreateDoc404),
+                "409": decodeError("CreateDoc409", CreateDoc409),
+                "503": decodeError("CreateDoc503", CreateDoc503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    getDoc: (project, name, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, name],
+        () => "/api/projects/" + __encodePathParam(project) + "/docs/" + __encodePathParam(name) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({ fresh: options?.params?.["fresh"] as any }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(GetDoc200),
+                "404": decodeError("GetDoc404", GetDoc404),
+                "503": decodeError("GetDoc503", GetDoc503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    deleteDoc: (project, name, options) =>
+      __makePathRequest(
+        HttpClientRequest.delete,
+        [project, name],
+        () => "/api/projects/" + __encodePathParam(project) + "/docs/" + __encodePathParam(name) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "404": decodeError("DeleteDoc404", DeleteDoc404),
+                "409": decodeError("DeleteDoc409", DeleteDoc409),
+                "503": decodeError("DeleteDoc503", DeleteDoc503),
+                "204": () => Effect.void,
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    patchDoc: (project, name, options) =>
+      __makePathRequest(
+        HttpClientRequest.patch,
+        [project, name],
+        () => "/api/projects/" + __encodePathParam(project) + "/docs/" + __encodePathParam(name) + "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(PatchDoc200),
+                "400": decodeError("PatchDoc400", PatchDoc400),
+                "404": decodeError("PatchDoc404", PatchDoc404),
+                "409": decodeError("PatchDoc409", PatchDoc409),
+                "422": decodeError("PatchDoc422", PatchDoc422),
+                "503": decodeError("PatchDoc503", PatchDoc503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    docHistory: (project, name, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, name],
+        () => "/api/projects/" + __encodePathParam(project) + "/docs/" + __encodePathParam(name) + "/history",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.setUrlParams({
+              before: options?.params?.["before"] as any,
+              limit: options?.params?.["limit"] as any,
+            }),
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(DocHistory200),
+                "400": decodeError("DocHistory400", DocHistory400),
+                "404": decodeError("DocHistory404", DocHistory404),
+                "503": decodeError("DocHistory503", DocHistory503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    docRevision: (project, name, revision, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, name, revision],
+        () =>
+          "/api/projects/" +
+          __encodePathParam(project) +
+          "/docs/" +
+          __encodePathParam(name) +
+          "/revisions/" +
+          __encodePathParam(revision) +
+          "",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(DocRevision200),
+                "400": decodeError("DocRevision400", DocRevision400),
+                "404": decodeError("DocRevision404", DocRevision404),
+                "503": decodeError("DocRevision503", DocRevision503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    writeDocText: (project, name, options) =>
+      __makePathRequest(
+        HttpClientRequest.put,
+        [project, name],
+        () => "/api/projects/" + __encodePathParam(project) + "/docs/" + __encodePathParam(name) + "/text",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(WriteDocText200),
+                "400": decodeError("WriteDocText400", WriteDocText400),
+                "404": decodeError("WriteDocText404", WriteDocText404),
+                "409": decodeError("WriteDocText409", WriteDocText409),
+                "503": decodeError("WriteDocText503", WriteDocText503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -1982,6 +2388,18 @@ export interface TasksClient {
     WithOptionalResponse<typeof DrawDiagram200.Type, Config>,
     HttpClientError.HttpClientError | SchemaError | TasksClientError<"DrawDiagram422", typeof DrawDiagram422.Type>
   >
+  readonly listAllDocs: <Config extends OperationConfig>(
+    options:
+      | { readonly params?: typeof ListAllDocsParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListAllDocs200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"ListAllDocs400", typeof ListAllDocs400.Type>
+    | TasksClientError<"ListAllDocs404", typeof ListAllDocs404.Type>
+    | TasksClientError<"ListAllDocs503", typeof ListAllDocs503.Type>
+  >
   readonly drawFlow: <Config extends OperationConfig>(
     options:
       | { readonly params?: typeof DrawFlowParams.Encoded | undefined; readonly config?: Config | undefined }
@@ -2110,6 +2528,109 @@ export interface TasksClient {
     | SchemaError
     | TasksClientError<"GetBoard404", typeof GetBoard404.Type>
     | TasksClientError<"GetBoard503", typeof GetBoard503.Type>
+  >
+  readonly listDocs: <Config extends OperationConfig>(
+    project: string,
+    options:
+      | { readonly params?: typeof ListDocsParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListDocs200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"ListDocs404", typeof ListDocs404.Type>
+    | TasksClientError<"ListDocs503", typeof ListDocs503.Type>
+  >
+  readonly createDoc: <Config extends OperationConfig>(
+    project: string,
+    options: { readonly payload: typeof CreateDocRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof CreateDoc201.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"CreateDoc400", typeof CreateDoc400.Type>
+    | TasksClientError<"CreateDoc404", typeof CreateDoc404.Type>
+    | TasksClientError<"CreateDoc409", typeof CreateDoc409.Type>
+    | TasksClientError<"CreateDoc503", typeof CreateDoc503.Type>
+  >
+  readonly getDoc: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    options:
+      | { readonly params?: typeof GetDocParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof GetDoc200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"GetDoc404", typeof GetDoc404.Type>
+    | TasksClientError<"GetDoc503", typeof GetDoc503.Type>
+  >
+  readonly deleteDoc: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DeleteDoc404", typeof DeleteDoc404.Type>
+    | TasksClientError<"DeleteDoc409", typeof DeleteDoc409.Type>
+    | TasksClientError<"DeleteDoc503", typeof DeleteDoc503.Type>
+  >
+  readonly patchDoc: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    options: { readonly payload: typeof PatchDocRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof PatchDoc200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"PatchDoc400", typeof PatchDoc400.Type>
+    | TasksClientError<"PatchDoc404", typeof PatchDoc404.Type>
+    | TasksClientError<"PatchDoc409", typeof PatchDoc409.Type>
+    | TasksClientError<"PatchDoc422", typeof PatchDoc422.Type>
+    | TasksClientError<"PatchDoc503", typeof PatchDoc503.Type>
+  >
+  readonly docHistory: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    options:
+      | { readonly params?: typeof DocHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof DocHistory200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DocHistory400", typeof DocHistory400.Type>
+    | TasksClientError<"DocHistory404", typeof DocHistory404.Type>
+    | TasksClientError<"DocHistory503", typeof DocHistory503.Type>
+  >
+  readonly docRevision: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    revision: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof DocRevision200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"DocRevision400", typeof DocRevision400.Type>
+    | TasksClientError<"DocRevision404", typeof DocRevision404.Type>
+    | TasksClientError<"DocRevision503", typeof DocRevision503.Type>
+  >
+  readonly writeDocText: <Config extends OperationConfig>(
+    project: string,
+    name: string,
+    options: { readonly payload: typeof WriteDocTextRequestJson.Encoded; readonly config?: Config | undefined },
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof WriteDocText200.Type, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"WriteDocText400", typeof WriteDocText400.Type>
+    | TasksClientError<"WriteDocText404", typeof WriteDocText404.Type>
+    | TasksClientError<"WriteDocText409", typeof WriteDocText409.Type>
+    | TasksClientError<"WriteDocText503", typeof WriteDocText503.Type>
   >
   readonly projectHistory: <Config extends OperationConfig>(
     project: string,

@@ -327,6 +327,23 @@ fn url_prints_the_web_ui_page_of_each_task() {
 }
 
 #[test]
+fn url_prints_the_web_ui_page_of_a_doc() {
+    let project = Project::local();
+    ok(project.run(&["doc", "create", "Storage Layout"]));
+    let name = ok(project.run(&["project", "list"]))
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_owned();
+    let base = format!("http://127.0.0.1:{}", project.home.port().unwrap());
+
+    let printed = ok(project.run(&["url", "storage-layout"]));
+
+    assert_eq!(printed, format!("{base}/{name}/doc/storage-layout\n"));
+    assert!(!project.run(&["url", "no-such-doc"]).status.success());
+}
+
+#[test]
 fn url_refuses_a_key_with_no_task() {
     let project = Project::local();
 
@@ -1774,7 +1791,7 @@ fn lint_clean_project_exits_zero() {
 
     assert!(out.status.success(), "{}", combined(&out));
     assert!(
-        stdout(&out).contains("checked 2 tasks and 0 skill files, found 0 problems"),
+        stdout(&out).contains("checked 2 tasks, 0 docs and 0 skill files, found 0 problems"),
         "{}",
         stdout(&out)
     );
@@ -1840,7 +1857,7 @@ fn lint_keys_filter_the_report_and_an_unknown_key_fails() {
     );
     assert!(!stdout(&out).contains("OPP-2"), "{}", stdout(&out));
     assert!(
-        stdout(&out).contains("checked 1 task and"),
+        stdout(&out).contains("checked 1 task, 0 docs and"),
         "{}",
         stdout(&out)
     );
@@ -1870,6 +1887,53 @@ fn lint_reports_a_conflict_left_by_a_sync() {
         "{}",
         stdout(&out)
     );
+}
+
+#[test]
+fn lint_reports_a_doc_conflict_left_by_a_sync() {
+    let store = LintStore::new();
+    store.put(
+        "docs/storage.md",
+        "---\ncreated: 2026-01-01T00:00:00Z\n---\n# Storage\n\n<<<<<<< Ann (1111111)\nIn memory.\n=======\nIn SQLite.\n>>>>>>> Ben (2222222)\n",
+    );
+
+    let out = store.lint(&[]);
+
+    assert!(!out.status.success());
+    assert!(
+        stdout(&out).contains("doc storage: error[conflict]: 1 unresolved conflict from a sync"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn lint_reports_a_reference_a_file_names_by_its_key_or_its_name() {
+    let store = LintStore::new();
+    store.put("tasks/00001-clean.md", VALID);
+    store.put(
+        "tasks/00002-notes.md",
+        "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Notes\n\nAfter [[OPP-1]], read [[storage]].\n",
+    );
+    store.put(
+        "docs/storage.md",
+        "---\ncreated: 2026-01-01T00:00:00Z\n---\n# Storage\n\nBuilt by [[../tasks/00001-clean.md]].\n",
+    );
+
+    let out = store.lint(&[]);
+
+    let printed = stdout(&out);
+    assert!(!out.status.success(), "{printed}");
+    assert!(
+        printed.contains("OPP-2: error[reference_path]: `OPP-1` names OPP-1"),
+        "{printed}"
+    );
+    assert!(
+        printed.contains("OPP-2: error[reference_path]: `storage` names the doc storage"),
+        "{printed}"
+    );
+    assert!(printed.contains("checked 2 tasks, 1 doc and"), "{printed}");
+    assert!(printed.contains("found 2 problems"), "{printed}");
 }
 
 // CI checks a code change, and the tasks are not part of one: `--skills` needs no tasks at all.
@@ -2062,4 +2126,86 @@ fn help_lists_every_tag_color() {
         Color::ALL.map(|c| c.as_str()).join(", ")
     );
     assert!(help.contains(&expected), "{help}");
+}
+
+#[test]
+fn a_doc_round_trips_through_the_doc_commands() {
+    let project = Project::local();
+
+    let name = ok(project.run(&[
+        "doc",
+        "create",
+        "Doc Store",
+        "--body",
+        "Docs sit beside tasks.",
+    ]));
+    assert_eq!(name.trim(), "doc-store");
+    let child = ok(project.run(&["doc", "create", "Branching", "--parent", "doc-store"]));
+    assert_eq!(child.trim(), "branching");
+    assert!(
+        project.store().join("docs/doc-store.md").is_file(),
+        "a local project keeps the doc as a file"
+    );
+
+    let listed = ok(project.run(&["doc", "list"]));
+    assert_eq!(listed, "doc-store    Doc Store\n  branching  Branching\n");
+
+    ok(project.run(&["doc", "set", "doc-store", "New words."]));
+    let printed = ok(project.run(&["doc", "get", "doc-store"]));
+    assert_eq!(printed, "# Doc Store\n\nNew words.\n");
+
+    let renamed = ok(project.run(&["doc", "rename", "doc-store", "Storage"]));
+    assert_eq!(renamed.trim(), "storage");
+    let child = json(project.run(&["doc", "get", "branching", "--json"]));
+    assert_eq!(child["metadata"]["parent"], "storage");
+
+    ok(project.run(&["doc", "nest", "branching", "-"]));
+    let child = json(project.run(&["doc", "get", "branching", "--json"]));
+    assert_eq!(child["metadata"]["parent"], serde_json::Value::Null);
+
+    ok(project.run(&["doc", "delete", "branching", "--yes"]));
+    let listed = ok(project.run(&["doc", "list"]));
+    assert_eq!(listed, "storage  Storage\n");
+}
+
+#[test]
+fn a_hand_written_doc_of_a_local_project_is_read() {
+    let project = Project::local();
+    project.edit(
+        "docs/runbook.md",
+        "---\ncreated: 2026-01-01T00:00:00Z\n---\n# Runbook\n\nRestart the daemon.\n",
+    );
+
+    let printed = ok(project.run(&["doc", "get", "runbook"]));
+
+    assert_eq!(printed, "# Runbook\n\nRestart the daemon.\n");
+}
+
+// Two edits can close a cycle through a sync, and the list is where a reader sees it to break it.
+#[test]
+fn docs_in_a_parent_cycle_are_listed() {
+    let project = Project::local();
+    let doc = |title: &str, parent: &str| {
+        format!("---\ncreated: 2026-01-01T00:00:00Z\nparent: ./{parent}.md\n---\n# {title}\n")
+    };
+    project.edit("docs/alpha.md", &doc("Alpha", "beta"));
+    project.edit("docs/beta.md", &doc("Beta", "alpha"));
+
+    let listed = ok(project.run(&["doc", "list"]));
+
+    assert_eq!(listed, "alpha   Alpha\n  beta  Beta\n");
+}
+
+#[test]
+fn a_doc_name_the_normalizer_cannot_spell_is_refused() {
+    let project = Project::git();
+
+    let out = project.run(&["doc", "create", "C++"]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("lowercase letters"),
+        "the refusal carries the naming rule: {}",
+        stderr(&out)
+    );
 }

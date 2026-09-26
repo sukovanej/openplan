@@ -169,6 +169,7 @@ it.effect("decodes the revisions of a task, and pages with `before`", () =>
                   },
                 ],
                 tags: [],
+                docs: [],
               },
             ]),
           ),

@@ -48,6 +48,7 @@ vi.mock("../src/lib/api", async () => {
               : { task: "OPP-1", kind: "modified", title: "First", fields: [{ field: "other", name: id }] },
           ],
           tags: [],
+          docs: [],
         }))
       }),
   }

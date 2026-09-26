@@ -2,8 +2,9 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 use op_api::{
-    Comment, CreateComment, CreateTag, HistoryEntry, ProjectView, Refusal, SearchHit, SyncResult,
-    SyncView, TagPatch, TagView, TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    Comment, CreateComment, CreateDoc, CreateTag, DocDetail, DocListItem, DocPatch, HistoryEntry,
+    ProjectView, Refusal, SearchHit, SyncResult, SyncView, TagPatch, TagView, TaskAtRevision,
+    TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use op_client::Client;
 use op_server::Location;
@@ -47,6 +48,12 @@ impl Plan {
     // name and a key hold only characters that need no escape in a path.
     pub fn task_page(&self, id: &str) -> String {
         format!("{}/{}/task/{id}", self.base_url, self.project)
+    }
+
+    // The web UI owns this route too: `docPath` in `web/packages/task-ui/src/task-path.ts`. A doc
+    // name holds only characters that need no escape in a path.
+    pub fn doc_page(&self, name: &str) -> String {
+        format!("{}/{}/doc/{name}", self.base_url, self.project)
     }
 
     pub fn tree(&self, id: &str, depth: Option<usize>) -> Result<TaskTreeView> {
@@ -118,6 +125,29 @@ impl Plan {
 
     pub fn sync_status(&self) -> Result<SyncView> {
         served(self.client.sync_status(&self.base_url, &self.project))
+    }
+
+    pub fn docs(&self) -> Result<Vec<DocListItem>> {
+        served(self.client.docs(&self.base_url, &self.project))
+    }
+
+    pub fn doc(&self, name: &str) -> Result<DocDetail> {
+        served(self.client.doc(&self.base_url, &self.project, name))
+    }
+
+    pub fn create_doc(&self, doc: &CreateDoc) -> Result<DocDetail> {
+        served(self.client.create_doc(&self.base_url, &self.project, doc))
+    }
+
+    pub fn patch_doc(&self, name: &str, patch: &DocPatch) -> Result<DocDetail> {
+        served(
+            self.client
+                .patch_doc(&self.base_url, &self.project, name, patch),
+        )
+    }
+
+    pub fn delete_doc(&self, name: &str) -> Result<()> {
+        served(self.client.delete_doc(&self.base_url, &self.project, name))
     }
 
     pub fn tags(&self) -> Result<Vec<TagView>> {

@@ -1,16 +1,23 @@
-import { taskPath, taskReference } from "./task-path"
+import { docPath, taskPath, taskReference } from "./task-path"
 
 type Text = { type: "text"; value: string }
 type Link = { type: "link"; url: string; title: null; children: Text[] }
 type Node = { type: string; value?: string; children?: Node[] }
 
-// A task file names another by its path, whose leading digits are the number the store allocated,
-// and a human may write this store's key instead (`op_task::body_ref_id`). Nothing else is a
-// reference — so ordinary `[[...]]` bracket text, a bare number, and another store's key all stay
-// literal. Either spelling resolves to the key, which is the id above the store.
+// The API names a task by its key. A task file names it by its path, whose leading digits are the
+// number the store allocated (`op_task::reference`). Nothing else is a task reference, so ordinary
+// `[[...]]` bracket text, a bare number, and another store's key all stay literal.
 const TASK_REF = /\[\[([^[\]\n]+)\]\]/g
-const TASK_FILE = /^(?:.*\/)?([0-9]+)(?:-[^/]*)?\.md$/
+const TASK_FILE = /^(?:\.\/|\.\.\/tasks\/)?([0-9]+)(?:-[^/]*)?\.md$/
 const NUMBER = /^(?:0|[1-9][0-9]*)$/
+// A doc is named by its file stem, which is the whole id. A `[[…]]` this store does not spell as a
+// task and that reads as a doc name is a doc reference; anything else stays literal. A doc name is
+// what the daemon's normalizer leaves as it is, so two hyphens in a row name no doc. Bare digits name
+// neither: the store refuses to write a body that spells a task that way.
+const DOC_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*-?$/
+const DIGITS = /^[0-9]+$/
+// A comment keeps the file form, where a task file names a doc by its path.
+const DOC_FILE = /^\.\.\/docs\/([^/]+)\.md$/
 
 // A body's references name tasks of the store the body lives in, so they resolve in that project.
 export interface TaskLinkSource {
@@ -33,16 +40,24 @@ function link(url: string, label: string): Link {
   return { type: "link", url, title: null, children: [text(label)] }
 }
 
-export interface ReferencedTask {
-  readonly id: string
-  readonly section: string | undefined
-}
+export type Referenced =
+  | { readonly kind: "task"; readonly id: string; readonly section: string | undefined }
+  | { readonly kind: "doc"; readonly name: string; readonly section: string | undefined }
 
-// The text between `[[` and `]]`, resolved to the key it names in the store `abbreviation` names.
-export function referencedTask(inner: string, abbreviation: string): ReferencedTask | null {
+// The text between `[[` and `]]`, resolved in the store `abbreviation` names: this store's key names
+// a task, and a doc name names a doc.
+export function referenced(inner: string, abbreviation: string): Referenced | null {
   const { id: target, section } = taskReference(inner.trim())
   const id = refKey(target, abbreviation)
-  return id === null ? null : { id, section }
+  if (id !== null) return { kind: "task", id, section }
+  const name = DOC_FILE.exec(target)?.[1] ?? target
+  return DOC_NAME.test(name) && !DIGITS.test(name) ? { kind: "doc", name, section } : null
+}
+
+export function referencePath(project: string, reference: Referenced): string {
+  return reference.kind === "task"
+    ? taskPath(project, reference.id, reference.section)
+    : docPath(project, reference.name, reference.section)
 }
 
 export function taskRefMatches(value: string): Iterable<RegExpExecArray> {
@@ -58,12 +73,12 @@ export function splitTaskRefs(value: string, source: TaskLinkSource): Array<Text
   let last = 0
   for (const match of taskRefMatches(value)) {
     const inner = match[1].trim()
-    const task = referencedTask(inner, abbreviation)
-    if (task === null) continue
-    const { id, section } = task
+    const reference = referenced(inner, abbreviation)
+    if (reference === null) continue
+    const url = referencePath(project, reference)
     const start = match.index
     if (start > last) nodes.push(text(value.slice(last, start)))
-    nodes.push(link(taskPath(project, id, section), inner))
+    nodes.push(link(url, inner))
     last = start + match[0].length
   }
   if (nodes.length === 0) return null

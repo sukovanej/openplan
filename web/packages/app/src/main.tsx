@@ -3,13 +3,23 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 
-import { ACTIVITY_ROUTE, BOARD_ROUTE, FLOW_ROUTE, TAGS_ROUTE, TASK_ROUTE } from "@openplan/task-ui"
+import {
+  ACTIVITY_ROUTE,
+  BOARD_ROUTE,
+  DOC_ROUTE,
+  DOCS_ROUTE,
+  FLOW_ROUTE,
+  TAGS_ROUTE,
+  TASK_ROUTE,
+} from "@openplan/task-ui"
 
 import { App } from "./App"
 import { queryClient } from "./lib/query-client"
 import { startRealtime } from "./lib/realtime"
 import { ActivityRoute } from "./routes/activity"
 import { DetailRoute } from "./routes/detail"
+import { DocRoute } from "./routes/doc"
+import { DocsRoute } from "./routes/docs"
 import { FlowRoute } from "./routes/flow"
 import { ListRoute } from "./routes/list"
 import { TagsRoute } from "./routes/tags"
@@ -24,8 +34,10 @@ const router = createBrowserRouter([
       { path: "/", element: <ListRoute /> },
       { path: FLOW_ROUTE, element: <FlowRoute /> },
       { path: BOARD_ROUTE, element: <ListRoute /> },
+      { path: DOCS_ROUTE, element: <DocsRoute /> },
       { path: TAGS_ROUTE, element: <TagsRoute /> },
       { path: ACTIVITY_ROUTE, element: <ActivityRoute /> },
+      { path: DOC_ROUTE, element: <DocRoute /> },
       { path: TASK_ROUTE, element: <DetailRoute /> },
     ],
   },

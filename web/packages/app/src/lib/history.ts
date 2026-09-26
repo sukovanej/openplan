@@ -2,19 +2,21 @@ import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-q
 import type { Effect } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 
-import type { DocumentChange, HistoryEntry, TagChange, TaskChange } from "@openplan/api-client"
-import { revisionPath, taskPath } from "@openplan/task-ui"
+import type { DocChange, DocumentChange, HistoryEntry, TagChange, TaskChange } from "@openplan/api-client"
+import { docPath, docRevisionPath, revisionPath, taskPath } from "@openplan/task-ui"
 
 import {
   type ApiError,
   type DiffTarget,
   getProjectHistory,
   getRevisionDiff,
+  getDocHistory,
+  getDocRevision,
   getTaskHistory,
   getTaskRevision,
   type HistoryPage,
 } from "./api"
-import { diffKey, historyKey, revisionKey, taskHistoryKey } from "./query-client"
+import { diffKey, docHistoryKey, docRevisionKey, historyKey, revisionKey, taskHistoryKey } from "./query-client"
 import { abortable, runtime } from "./runtime"
 
 export const PROJECT_HISTORY_PAGE = 50
@@ -48,6 +50,17 @@ export function useTaskHistory(project: string, id: string) {
   return usePagedHistory(taskHistoryKey(project, id), (page) => getTaskHistory(project, id, page), TASK_HISTORY_PAGE)
 }
 
+export function useDocHistory(project: string, name: string) {
+  return usePagedHistory(docHistoryKey(project, name), (page) => getDocHistory(project, name, page), TASK_HISTORY_PAGE)
+}
+
+export function useDocRevision(project: string, name: string, revision: string) {
+  return useQuery({
+    queryKey: docRevisionKey(project, name, revision),
+    queryFn: abortable(getDocRevision(project, name, revision)),
+  })
+}
+
 export function useTaskRevision(project: string, id: string, revision: string) {
   return useQuery({
     queryKey: revisionKey(project, id, revision),
@@ -62,10 +75,10 @@ export function useChangeDiff(project: string, revision: string, target: DiffTar
   })
 }
 
-// The daemon reads the tasks and the tags into changes of their own, and this is the rest, such as
-// the config and the assets.
+// The daemon reads the tasks, the tags, and the docs into changes of their own, and this is the rest,
+// such as the config and the assets.
 export const otherChanges = (entry: HistoryEntry): ReadonlyArray<DocumentChange> =>
-  entry.changes.filter((change) => change.task === undefined && change.tag === undefined)
+  entry.changes.filter((change) => change.task === undefined && change.tag === undefined && change.doc === undefined)
 
 export const taskChangeOf = (entry: HistoryEntry, id: string): TaskChange | undefined =>
   entry.tasks.find((change) => change.task === id)
@@ -73,6 +86,7 @@ export const taskChangeOf = (entry: HistoryEntry, id: string): TaskChange | unde
 export type ActivityRow =
   | { readonly kind: "task"; readonly change: TaskChange }
   | { readonly kind: "tag"; readonly change: TagChange }
+  | { readonly kind: "doc"; readonly change: DocChange }
   | { readonly kind: "document"; readonly change: DocumentChange }
   | { readonly kind: "more"; readonly count: number }
 
@@ -83,6 +97,7 @@ export function activityRows(entry: HistoryEntry): ReadonlyArray<ActivityRow> {
   const rows: ReadonlyArray<ActivityRow> = [
     ...entry.tasks.map((change) => ({ kind: "task", change }) as const),
     ...entry.tags.map((change) => ({ kind: "tag", change }) as const),
+    ...entry.docs.map((change) => ({ kind: "doc", change }) as const),
     ...otherChanges(entry).map((change) => ({ kind: "document", change }) as const),
   ]
   return rows.length <= SHOWN_CHANGES
@@ -105,8 +120,24 @@ export function changePath(
   return before === undefined ? undefined : revisionPath(project, change.task, before)
 }
 
-// A task or a tag that moved to a file with a new name lists two documents: the one it left, and the
-// one it moved to. A sync merge that gave a task a new number moved it from a file of its old key.
+// No page shows a doc as a revision left it, so only a doc that still exists has a link.
+// As `changePath` does for a task: a doc that is gone opens as the revision before the delete left it.
+export function docChangePath(
+  project: string,
+  entry: HistoryEntry,
+  change: DocChange,
+  exists: boolean,
+): string | undefined {
+  if (change.kind !== "removed") {
+    return exists ? docPath(project, change.doc) : docRevisionPath(project, change.doc, entry.revision.id)
+  }
+  const before = entry.revision.parents[0]
+  return before === undefined ? undefined : docRevisionPath(project, change.doc, before)
+}
+
+// A task, a tag, or a doc that moved to a file with a new name lists two documents: the one it left,
+// and the one it moved to. A sync merge that gave a task a new number moved it from a file of its old
+// key.
 export function diffTarget(entry: HistoryEntry, row: ActivityRow): DiffTarget | undefined {
   switch (row.kind) {
     case "task": {
@@ -120,6 +151,11 @@ export function diffTarget(entry: HistoryEntry, row: ActivityRow): DiffTarget | 
       return moved(
         entry.changes.filter((change) => change.tag === row.change.tag),
         entry.changes.filter((change) => change.tag === (row.change.renamed_from ?? row.change.tag)),
+      )
+    case "doc":
+      return moved(
+        entry.changes.filter((change) => change.doc === row.change.doc),
+        entry.changes.filter((change) => change.doc === (row.change.renamed_from ?? row.change.doc)),
       )
     case "document":
       return { path: row.change.path }

@@ -1635,6 +1635,9 @@ fn optional_response_fields_are_absent_rather_than_nullable() {
         ("RevisionView", "email"),
         ("RevisionView", "agent"),
         ("DocumentChange", "task"),
+        ("DocumentChange", "tag"),
+        ("DocumentChange", "doc"),
+        ("DocChange", "renamed_from"),
         ("SyncView", "error"),
         ("ProjectView", "git_common_dir"),
     ] {

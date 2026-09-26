@@ -86,18 +86,21 @@ fn key_shaped_text_is_told_apart_from_prose() {
 #[test]
 fn a_body_reference_resolves_from_a_file_or_a_key_and_nothing_else() {
     assert_eq!(
-        op_task::body_ref_id(opp(), "./00042-ship-login-page.md"),
+        op_task::body_ref_id(opp(), "tasks", "./00042-ship-login-page.md"),
         Some(42)
     );
     assert_eq!(
-        op_task::body_ref_id(opp(), "./00042-a-stale-title.md#Design"),
+        op_task::body_ref_id(opp(), "tasks", "./00042-a-stale-title.md#Design"),
         Some(42)
     );
-    assert_eq!(op_task::body_ref_id(opp(), "OPP-42"), Some(42));
-    assert_eq!(op_task::body_ref_id(opp(), "OPP-42#Design"), Some(42));
+    assert_eq!(op_task::body_ref_id(opp(), "tasks", "OPP-42"), Some(42));
+    assert_eq!(
+        op_task::body_ref_id(opp(), "tasks", "OPP-42#Design"),
+        Some(42)
+    );
     for refused in ["42", "WEB-7", "opp-42", "Some Page Title", "./notes.md"] {
         assert_eq!(
-            op_task::body_ref_id(opp(), refused),
+            op_task::body_ref_id(opp(), "tasks", refused),
             None,
             "{refused:?} names no task in a body"
         );

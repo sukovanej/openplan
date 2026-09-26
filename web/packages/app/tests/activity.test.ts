@@ -35,6 +35,17 @@ vi.mock("../src/lib/api", async () => {
           truncated: false,
         }
       }),
+    listAllDocs: () =>
+      Effect.sync(() => [
+        {
+          project: "openplan",
+          name: "the-design",
+          title: "The Design",
+          metadata: { created: "2026-01-01T00:00:00Z" },
+          updated: "2026-01-02T00:00:00Z",
+          conflicts: 0,
+        },
+      ]),
     listTags: () => Effect.sync(() => [{ name: "server", display: "Server", color: "blue" }]),
     getBoard: () =>
       Effect.sync(() => ({
@@ -123,6 +134,7 @@ describe("the activity", () => {
           { task: "OPP-2", kind: "removed", title: "Doomed" },
         ],
         tags: [{ tag: "server", kind: "modified", renamed_from: "backend" }],
+        docs: [],
       },
       {
         revision: revision("beef000011112222"),
@@ -130,6 +142,7 @@ describe("the activity", () => {
         summary: [],
         tasks: [],
         tags: [],
+        docs: [],
       },
     ]
     const root = await show()
@@ -154,6 +167,7 @@ describe("the activity", () => {
         summary: [],
         tasks: [{ task: "OPP-1", kind: "added", title: "Ship it" }],
         tags: [],
+        docs: [],
       },
     ]
     const root = await show()
@@ -171,12 +185,60 @@ describe("the activity", () => {
         summary: [],
         tasks: [{ task: "OPP-1", kind: "added", title: "Ship it" }],
         tags: [],
+        docs: [],
       },
     ]
     const root = await show()
     await tick()
 
     expect(revisions(root)[0].querySelector("a")?.getAttribute("href")).toBe("/openplan/task/OPP-1")
+  })
+})
+
+describe("the doc changes in the activity", () => {
+  const docs = (): HistoryEntry => ({
+    revision: revision("d0c5000011112222"),
+    changes: [
+      { path: "docs/architecture.md", kind: "removed", doc: "architecture" },
+      { path: "docs/the-design.md", kind: "added", doc: "the-design" },
+      { path: "docs/storage.md", kind: "removed", doc: "storage" },
+    ],
+    summary: [],
+    tasks: [],
+    tags: [],
+    docs: [
+      { doc: "the-design", kind: "modified", renamed_from: "architecture" },
+      { doc: "storage", kind: "removed" },
+    ],
+  })
+
+  it("gives each doc one line with its title, what happened, and a link to it or to the revision before it went", async () => {
+    served.entries = [docs()]
+    const root = await show()
+    await tick()
+
+    const [revision] = revisions(root)
+    expect(lines(revision)).toEqual(["Renamed from architectureThe Design", "Deletedstorage"])
+    const [renamed, deleted] = Array.from(revision.querySelectorAll("ul[aria-label='Changes'] > li"))
+    expect(renamed.querySelector("a")?.getAttribute("href")).toBe("/openplan/doc/the-design")
+    expect(deleted.querySelector("a")?.getAttribute("href")).toBe(
+      "/openplan/doc/storage?revision=0000000000000000000000000000000000000000",
+    )
+    expect(root.textContent).not.toContain("docs/")
+  })
+
+  it("diffs a renamed doc from its old file to its new one", async () => {
+    served.entries = [docs()]
+    const root = await show()
+    const line = revisions(root)[0].querySelector("[aria-haspopup=dialog]")!
+
+    await act(async () => void line.dispatchEvent(new Event("pointerover", { bubbles: true })))
+    for (let attempt = 0; attempt < 20 && served.diffs.mock.calls.length === 0; attempt++) await tick()
+
+    expect(served.diffs).toHaveBeenCalledExactlyOnceWith("openplan", "d0c5000011112222", {
+      path: "docs/the-design.md",
+      from: "docs/architecture.md",
+    })
   })
 })
 
@@ -187,6 +249,7 @@ describe("the diff of a change", () => {
     summary: [],
     tasks: [],
     tags: [],
+    docs: [],
   })
 
   it("reads the diff of a line the moment the pointer enters it", async () => {

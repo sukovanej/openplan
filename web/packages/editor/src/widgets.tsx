@@ -7,10 +7,11 @@ import {
   bodySegments,
   type ConflictBlock,
   DiagramBlock,
-  referencedTask,
+  DocRefChip,
+  referenced,
+  referencePath,
   TaskBody,
   TaskRefChip,
-  taskPath,
 } from "@openplan/task-ui"
 import { Button } from "@openplan/ui"
 
@@ -39,15 +40,14 @@ abstract class ReactWidget extends WidgetType {
 }
 
 function TaskRefView({ reference }: { reference: string }) {
-  const { project, abbreviation, refs } = useEditorScope()
-  const task = referencedTask(reference, abbreviation)
-  if (task === null) return <span>[[{reference}]]</span>
-  return (
-    <TaskRefChip
-      to={taskPath(project, task.id, task.section)}
-      id={task.id}
-      task={refs.find((ref) => ref.id === task.id)}
-    />
+  const { project, abbreviation, refs, docRefs } = useEditorScope()
+  const target = referenced(reference, abbreviation)
+  if (target === null) return <span>[[{reference}]]</span>
+  const to = referencePath(project, target)
+  return target.kind === "task" ? (
+    <TaskRefChip to={to} id={target.id} task={refs.find((ref) => ref.id === target.id)} />
+  ) : (
+    <DocRefChip to={to} name={target.name} doc={docRefs.find((ref) => ref.name === target.name)} />
   )
 }
 
@@ -88,10 +88,10 @@ function EditButton({ onEdit }: { onEdit: () => void }) {
 }
 
 function MarkdownBlockView({ source, onEdit }: { source: string; onEdit: () => void }) {
-  const { project, abbreviation, refs } = useEditorScope()
+  const { project, abbreviation, refs, docRefs } = useEditorScope()
   return (
     <div className="cursor-text" onMouseDown={onEdit}>
-      <TaskBody project={project} abbreviation={abbreviation} refs={refs} markdown={source} />
+      <TaskBody project={project} abbreviation={abbreviation} refs={refs} docRefs={docRefs} markdown={source} />
     </div>
   )
 }
@@ -159,13 +159,14 @@ export class ConflictWidget extends ReactWidget {
 }
 
 function ConflictView({ conflict, onResolve }: { conflict: ConflictBlock; onResolve: (text: string) => void }) {
-  const { project, abbreviation, refs } = useEditorScope()
+  const { project, abbreviation, refs, docRefs } = useEditorScope()
   return (
     <div data-keys-ignore>
       <BodyConflict
         project={project}
         abbreviation={abbreviation}
         refs={refs}
+        docRefs={docRefs}
         conflict={conflict}
         onResolve={onResolve}
       />

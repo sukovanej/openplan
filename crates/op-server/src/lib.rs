@@ -37,6 +37,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
 pub mod agent;
+mod docs;
 mod drawing;
 mod project;
 mod registry;
@@ -76,6 +77,8 @@ pub enum ProjectsError {
     NameTaken(String),
     #[error("not a usable project name: {0:?}; use lowercase letters, digits, and dashes")]
     BadName(String),
+    #[error("the project name {0:?} is the address of a page of the web UI; use another name")]
+    ReservedName(String),
     // The daemon runs in its own home directory, so a relative path would resolve there rather than
     // where the caller stands.
     #[error("a project path must be absolute, and {0} is not")]
@@ -381,6 +384,9 @@ impl AppState {
         if !registry::is_usable_name(to) {
             return Err(ProjectsError::BadName(to.to_owned()));
         }
+        if registry::is_reserved(to) {
+            return Err(ProjectsError::ReservedName(to.to_owned()));
+        }
         let project = {
             let mut projects = self.write_projects();
             if !projects.contains_key(from) {
@@ -589,6 +595,12 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(tasks::project_history))
         .routes(routes!(revision_diff::revision_diff))
         .routes(routes!(tasks::get_sync, tasks::run_sync))
+        .routes(routes!(docs::list_all_docs))
+        .routes(routes!(docs::list_docs, docs::create_doc))
+        .routes(routes!(docs::get_doc, docs::patch_doc, docs::delete_doc))
+        .routes(routes!(docs::write_doc_text))
+        .routes(routes!(docs::doc_history))
+        .routes(routes!(docs::doc_revision))
         .routes(routes!(tasks::list_tags, tasks::create_tag))
         .routes(routes!(tasks::get_tag, tasks::patch_tag, tasks::delete_tag))
 }
@@ -1033,14 +1045,15 @@ impl ApiError {
 impl From<TrackerError> for ApiError {
     fn from(err: TrackerError) -> Self {
         let status = match &err {
-            TrackerError::NotFound { .. } | TrackerError::TagNotFound { .. } => {
-                StatusCode::NOT_FOUND
-            }
+            TrackerError::NotFound { .. }
+            | TrackerError::TagNotFound { .. }
+            | TrackerError::DocNotFound { .. } => StatusCode::NOT_FOUND,
             TrackerError::Invalid(_)
             | TrackerError::InvalidRef { .. }
             | TrackerError::TagUnregistered { .. }
             | TrackerError::InvalidColor(_) => StatusCode::BAD_REQUEST,
             TrackerError::TagExists { .. }
+            | TrackerError::DocExists { .. }
             | TrackerError::TagReferenced { .. }
             | TrackerError::AlreadyInitialized(_)
             | TrackerError::NotInitialized
@@ -1110,6 +1123,7 @@ impl From<ProjectsError> for ApiError {
             ProjectsError::Tracker(_) => return tracker_refusal(err),
             ProjectsError::Open(_)
             | ProjectsError::BadName(_)
+            | ProjectsError::ReservedName(_)
             | ProjectsError::RelativePath(_)
             | ProjectsError::BadAbbreviation(_) => StatusCode::BAD_REQUEST,
             ProjectsError::NoSuchProject(_) => StatusCode::NOT_FOUND,

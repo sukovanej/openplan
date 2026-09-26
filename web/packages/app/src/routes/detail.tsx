@@ -42,7 +42,6 @@ import {
   Combobox,
   EmptyState,
   MetaLine,
-  Panel,
   PanelBody,
   PanelHeader,
   PanelTitle,
@@ -50,6 +49,7 @@ import {
   Section,
 } from "@openplan/ui"
 
+import { DetailColumns } from "../components/detail-columns"
 import { ConflictBanner, FieldConflictControl } from "../components/field-conflict"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
@@ -223,6 +223,7 @@ function TaskDetailView({
                 description={detail.description}
                 refs={detail.refs}
                 problems={task.problems}
+                docRefs={detail.doc_refs}
                 abbreviation={abbreviation}
                 meta={meta}
               />
@@ -255,6 +256,7 @@ function TaskDetailView({
               project={project}
               comments={detail.comments ?? NO_COMMENTS}
               refs={detail.refs}
+              docRefs={detail.doc_refs}
               abbreviation={abbreviation}
             />
           )}
@@ -262,24 +264,6 @@ function TaskDetailView({
         </>
       }
     />
-  )
-}
-
-// Each column scrolls on its own, so the box keeps its frame and its header stays where it is while
-// the body runs. Stacked, the two are one page and the page scrolls instead. The aside holds what
-// stands beside the task and shares the width it leaves; narrow enough and it drops under it instead.
-// No section in it wears a frame: a section leads with the rule that separates it from the one above,
-// and the first has nothing above it to separate from.
-function DetailColumns({ main, aside }: { main: ReactNode; aside: ReactNode }) {
-  return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
-      <Panel className="dark:[--surface:color-mix(in_srgb,var(--muted)_25%,var(--background))] h-auto min-w-0 lg:h-full lg:w-[59rem]">
-        {main}
-      </Panel>
-      <aside className="min-w-0 lg:min-w-80 lg:flex-1 lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
-        {aside}
-      </aside>
-    </div>
   )
 }
 
@@ -396,7 +380,9 @@ function Snapshot({
   const { byName: tags } = useTags(project)
   // The revision names tasks by key alone. The live task has them resolved to a title and a status,
   // which is the best a chip can show; a key it no longer holds reads as unresolved.
-  const refs = useQueryClient().getQueryData<TaskDetail>(taskKey(project, id))?.refs
+  const live = useQueryClient().getQueryData<TaskDetail>(taskKey(project, id))
+  const refs = live?.refs
+  const docRefs = live?.doc_refs
   return (
     <>
       <TaskTitle title={task.title} />
@@ -414,12 +400,19 @@ function Snapshot({
         segments={bodySegments(task.description)}
         project={project}
         refs={refs}
+        docRefs={docRefs}
         abbreviation={abbreviation}
         proseClassName={PROSE}
         data-keys-ignore
       />
       {task.comments !== undefined && (
-        <CommentThread project={project} comments={task.comments} refs={refs} abbreviation={abbreviation} />
+        <CommentThread
+          project={project}
+          comments={task.comments}
+          refs={refs}
+          docRefs={docRefs}
+          abbreviation={abbreviation}
+        />
       )}
     </>
   )

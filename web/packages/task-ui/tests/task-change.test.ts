@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { FieldChange } from "@openplan/api-client"
 
-import { documentChangeText, fieldChangeText, tagChangeText } from "../src/task-change"
+import { documentChangeText, fieldChangeText, renameText } from "../src/task-change"
 
 describe("fieldChangeText", () => {
   it("says what a field was and what it is now", () => {
@@ -42,10 +42,14 @@ describe("fieldChangeText", () => {
   })
 })
 
-describe("tagChangeText", () => {
-  it("says what happened to the tag, and the old name of a renamed one", () => {
-    expect(tagChangeText({ tag: "bug", kind: "added" })).toBe("Created")
-    expect(tagChangeText({ tag: "server", kind: "modified", renamed_from: "backend" })).toBe("Renamed from backend")
+describe("renameText", () => {
+  it("says what happened to a tag or a doc, and the old name of a renamed one", () => {
+    expect(renameText({ tag: "bug", kind: "added" })).toBe("Created")
+    expect(renameText({ tag: "server", kind: "modified", renamed_from: "backend" })).toBe("Renamed from backend")
+    expect(renameText({ doc: "storage", kind: "removed" })).toBe("Deleted")
+    expect(renameText({ doc: "the-design", kind: "modified", renamed_from: "architecture" })).toBe(
+      "Renamed from architecture",
+    )
   })
 })
 

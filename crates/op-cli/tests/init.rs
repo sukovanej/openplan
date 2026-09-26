@@ -421,3 +421,21 @@ fn migrate_refuses_a_project_with_nothing_to_migrate() {
         stderr(&out)
     );
 }
+
+#[test]
+fn migrate_brings_the_docs_of_the_plan_directory() {
+    let home = Home::new();
+    let repo = tempfile::tempdir().unwrap();
+    let root = repo.path();
+    repository_with_plan(root);
+    write(
+        &root.join(".plan/docs/doc-store.md"),
+        "---\ncreated: 2001-01-01T00:00:00Z\n---\n# Doc Store\n\nDocs sit beside tasks.\n",
+    );
+    commit_at(root, 1_200_000_000, "Write the doc store doc");
+
+    ok(home.run(root, &["migrate"]));
+
+    let printed = ok(home.run(root, &["doc", "get", "doc-store"]));
+    assert_eq!(printed, "# Doc Store\n\nDocs sit beside tasks.\n");
+}

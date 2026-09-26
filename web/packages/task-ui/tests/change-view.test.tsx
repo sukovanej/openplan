@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { TagView } from "@openplan/api-client"
 
-import { DocumentChangeView, TagChangeView, TaskChangeView } from "../src/change-view"
+import { DocChangeView, DocumentChangeView, TagChangeView, TaskChangeView } from "../src/change-view"
 import { render } from "./render"
 
 describe("TaskChangeView", () => {
@@ -51,6 +51,17 @@ describe("TagChangeView and DocumentChangeView", () => {
     const edited = render(<DocumentChangeView kind="modified" />)
     expect(edited.textContent).toBe("Edited")
     expect(edited.querySelector("svg")).not.toBeNull()
+  })
+})
+
+describe("DocChangeView", () => {
+  it("says what happened to the doc, and names the old name of a renamed one", () => {
+    expect(render(<DocChangeView change={{ doc: "storage", kind: "added" }} />).textContent).toBe("Created")
+    const renamed = render(
+      <DocChangeView change={{ doc: "the-design", kind: "modified", renamed_from: "architecture" }} />,
+    )
+    expect(renamed.textContent).toBe("Renamed from architecture")
+    expect(renamed.querySelector("svg")).not.toBeNull()
   })
 })
 

@@ -13,13 +13,15 @@ use op_task::tag::Tag;
 use op_task::{Abbreviation, PartialMetadata, Task, parse_partial};
 
 mod describe;
+mod docs;
 mod error;
 mod files;
 mod message;
 mod plan;
 mod policy;
 
-pub use describe::{Described, FieldChange, TagChange, TaskChange};
+pub use describe::{Described, DocChange, FieldChange, TagChange, TaskChange};
+pub use docs::{DocMoves, doc_moves};
 pub use error::TrackerError;
 pub use plan::Plan;
 pub use policy::TaskMergePolicy;
@@ -71,7 +73,7 @@ impl Tracker {
         Plan::read(self.backend.at(revision)?)
     }
 
-    fn write<T>(
+    pub(crate) fn write<T>(
         &self,
         actor: &Actor,
         mut write: impl FnMut(&Plan) -> Result<(Vec<Op>, T), TrackerError>,
@@ -414,6 +416,18 @@ impl Tracker {
         })?)
     }
 
+    pub fn doc_history(
+        &self,
+        name: &str,
+        query: &HistoryQuery,
+    ) -> Result<Vec<LogEntry>, TrackerError> {
+        Ok(self.backend.log(&LogQuery {
+            prefix: layout::doc_path(&plan::doc_normalized(name)?),
+            before: query.before.clone(),
+            limit: query.limit,
+        })?)
+    }
+
     pub fn task_history(
         &self,
         number: u64,
@@ -499,26 +513,23 @@ fn absent_when_unknown(
     }
 }
 
-const PUBLISHED: &str = "published";
+pub(crate) const PUBLISHED: &str = "published";
 
 fn current_body(plan: &Plan, task: &Task) -> String {
-    with_final_newline(&files::body_in_file_form(plan, &comment::strip(&task.body)))
+    files::line_ended(&files::body_in_file_form(
+        plan,
+        layout::TASKS,
+        &comment::strip(&task.body),
+    ))
 }
 
 // The body the text makes in the layout of the current one, so the parts the text does not carry
 // (the title line's markup, the blank lines around it) are no change.
 fn joined(plan: &Plan, current: &str, text: &Text) -> Result<String, TrackerError> {
-    let description = files::body_in_file_form(plan, &text.description);
+    let description = files::body_in_file_form(plan, layout::TASKS, &text.description);
     content::join(current, &text.title, &description)
-        .map(|body| with_final_newline(&body))
+        .map(|body| files::line_ended(&body))
         .map_err(|err| TrackerError::Invalid(err.to_string()))
-}
-
-fn with_final_newline(text: &str) -> String {
-    match text.is_empty() || text.ends_with('\n') {
-        true => text.to_owned(),
-        false => format!("{text}\n"),
-    }
 }
 
 fn tag_text(tag: &Tag) -> Result<String, TrackerError> {

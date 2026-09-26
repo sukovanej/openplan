@@ -1,7 +1,7 @@
-import { Waypoints } from "lucide-react"
+import { FileText, Waypoints } from "lucide-react"
 import { Link, Outlet } from "react-router-dom"
 
-import { DiagramDrawer, FLOW_ROUTE } from "@openplan/task-ui"
+import { DiagramDrawer, DOCS_ROUTE, FLOW_ROUTE } from "@openplan/task-ui"
 
 import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"
@@ -26,8 +26,15 @@ export function App() {
           <ProjectSwitcher />
           <ConnectionStatus />
           <Link
-            to={FLOW_ROUTE}
+            to={DOCS_ROUTE}
             className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
+          >
+            <FileText className="size-3.5" />
+            Docs
+          </Link>
+          <Link
+            to={FLOW_ROUTE}
+            className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1.5 text-xs"
           >
             <Waypoints className="size-3.5" />
             Flow

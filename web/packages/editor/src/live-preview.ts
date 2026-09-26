@@ -8,7 +8,7 @@ import {
   ensureHighlighter,
   highlightTokens,
   isDiagramTag,
-  referencedTask,
+  referenced,
   resolveLang,
   taskRefMatches,
   watchHighlighter,
@@ -196,7 +196,7 @@ function taskRefs(builder: Builder, state: EditorState, abbreviation: string): v
   for (const match of taskRefMatches(state.doc.toString())) {
     const from = match.index
     const to = from + match[0].length
-    if (referencedTask(match[1], abbreviation) === null || isInCode(state, from, 1)) continue
+    if (referenced(match[1], abbreviation) === null || isInCode(state, from, 1)) continue
     if (builder.touches(from, to)) builder.add(from, to, mark("cm-ref-source"))
     else builder.replace(from, to, Decoration.replace({ widget: new TaskRefWidget(match[1]) }))
   }

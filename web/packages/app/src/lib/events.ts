@@ -7,6 +7,11 @@ export const ChangeEvent = Schema.Union([
     id: Schema.String,
   }),
   Schema.Struct({
+    kind: Schema.Literal("doc_changed"),
+    project: Schema.String,
+    name: Schema.String,
+  }),
+  Schema.Struct({
     kind: Schema.Literal("tags_changed"),
     project: Schema.String,
   }),
@@ -31,6 +36,11 @@ export interface Invalidator {
   readonly refreshProjects: () => void
   readonly refreshList: (project: string) => void
   readonly refreshTask: (project: string, id: string) => void
+  readonly refreshDoc: (project: string, name: string) => void
+  // Every task page and doc page of `project`. A page lists the tasks and docs around it (its parent,
+  // its children, what it waits for, what it names), and an event names only the one that changed.
+  // `refreshed` names the pages a refresh of their own reads again already.
+  readonly refreshPages: (project: string, refreshed: Refreshed) => void
   readonly refreshHistory: (project: string) => void
   readonly refreshSync: (project: string) => void
   // Everything on screen that a change in `project` can have changed, or — with no project — every
@@ -38,13 +48,29 @@ export interface Invalidator {
   readonly refreshVisible: (project?: string) => void
 }
 
+export interface Refreshed {
+  readonly tasks: ReadonlySet<string>
+  readonly docs: ReadonlySet<string>
+}
+
+const NONE: ReadonlySet<string> = new Set()
+
 export function applyChange(inv: Invalidator, event: ChangeEvent): void {
   switch (event.kind) {
     // Created, edited, commented on, renumbered, or deleted — by this daemon, or by a sync that
     // brought the change in. Every change is a new revision, so the project's activity moves too.
     case "task_changed": {
       inv.refreshTask(event.project, event.id)
+      inv.refreshPages(event.project, { tasks: new Set([event.id]), docs: NONE })
       inv.refreshList(event.project)
+      inv.refreshHistory(event.project)
+      return
+    }
+    // Created, edited, renamed, or deleted. The list carries its title and the page carries its
+    // body, so both are read again.
+    case "doc_changed": {
+      inv.refreshDoc(event.project, event.name)
+      inv.refreshPages(event.project, { tasks: NONE, docs: new Set([event.name]) })
       inv.refreshHistory(event.project)
       return
     }
@@ -87,6 +113,8 @@ interface Held {
   readonly screens: Set<string>
   readonly lists: Set<string>
   readonly tasks: Map<string, Set<string>>
+  readonly docs: Map<string, Set<string>>
+  readonly pages: Set<string>
   readonly histories: Set<string>
   readonly syncs: Set<string>
 }
@@ -97,6 +125,8 @@ const nothingHeld = (): Held => ({
   screens: new Set(),
   lists: new Set(),
   tasks: new Map(),
+  docs: new Map(),
+  pages: new Set(),
   histories: new Set(),
   syncs: new Set(),
 })
@@ -114,6 +144,12 @@ function release(target: Invalidator, held: Held): void {
   for (const project of [...held.lists].filter(uncovered)) target.refreshList(project)
   for (const [project, ids] of held.tasks) {
     if (uncovered(project)) for (const id of ids) target.refreshTask(project, id)
+  }
+  for (const [project, names] of held.docs) {
+    if (uncovered(project)) for (const name of names) target.refreshDoc(project, name)
+  }
+  for (const project of [...held.pages].filter(uncovered)) {
+    target.refreshPages(project, { tasks: held.tasks.get(project) ?? NONE, docs: held.docs.get(project) ?? NONE })
   }
   for (const project of [...held.histories].filter(uncovered)) target.refreshHistory(project)
   for (const project of [...held.syncs].filter(uncovered)) target.refreshSync(project)
@@ -148,6 +184,14 @@ export function coalesced(target: Invalidator, schedule: (flush: () => void) => 
         ids.add(id)
         due.tasks.set(project, ids)
       }),
+    refreshDoc: (project, name) =>
+      hold((due) => {
+        const names = due.docs.get(project) ?? new Set<string>()
+        names.add(name)
+        due.docs.set(project, names)
+      }),
+    // The flush knows every task and doc it refreshes by name, so it names them to the pages itself.
+    refreshPages: (project) => hold((due) => due.pages.add(project)),
     refreshHistory: (project) => hold((due) => due.histories.add(project)),
     refreshSync: (project) => hold((due) => due.syncs.add(project)),
     refreshVisible: (project) =>

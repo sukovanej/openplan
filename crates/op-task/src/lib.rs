@@ -7,9 +7,12 @@ pub mod comment;
 pub mod config;
 pub mod conflict;
 pub mod content;
+pub mod doc;
 pub mod layout;
 pub mod merge;
+pub mod name;
 pub mod rank;
+pub mod reference;
 pub mod tag;
 
 const SLUG_MAX: usize = 32;
@@ -198,7 +201,7 @@ impl Abbreviation {
     }
 }
 
-fn with_section(target: &str, reference: &str) -> String {
+pub(crate) fn with_section(target: &str, reference: &str) -> String {
     match section_of(reference) {
         Some(section) => format!("{target}#{section}"),
         None => target.to_owned(),
@@ -290,13 +293,12 @@ pub fn ref_id(reference: &str) -> Option<u64> {
     }
 }
 
-// The task a `[[…]]` in a body names, in the spellings a body may carry: the target's file, or this
-// store's key. A bare number is not one of them — above the store the key is the whole id.
-pub fn body_ref_id(abbreviation: Abbreviation, reference: &str) -> Option<u64> {
-    let target = ref_target(reference);
-    match file_stem(target) {
-        Some(stem) => file_id(stem),
-        None => abbreviation.parse_key(target),
+// The task a `[[…]]` in a body under `dir` names: a path to its file, or this store's key. A bare
+// number is not one of them, because above the store the key is the whole id.
+pub fn body_ref_id(abbreviation: Abbreviation, dir: &str, reference: &str) -> Option<u64> {
+    match reference::body_target(Some(abbreviation), dir, reference)? {
+        reference::Target::Task(number) => Some(number),
+        reference::Target::Doc(_) => None,
     }
 }
 
@@ -622,7 +624,7 @@ pub fn parse_partial(input: &str) -> PartialTask {
 
 // Each block in the frontmatter read once with its other version in place: every field that then
 // reads differently from the published version is in conflict.
-fn field_conflicts(frontmatter: &str) -> Result<Vec<FieldConflict>, String> {
+pub(crate) fn field_conflicts(frontmatter: &str) -> Result<Vec<FieldConflict>, String> {
     let blocks = conflict::blocks(frontmatter);
     if blocks.is_empty() {
         return Ok(Vec::new());

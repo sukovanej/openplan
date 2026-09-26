@@ -4,13 +4,14 @@ use std::sync::Arc;
 
 use op_backend::{RevisionId, Snapshot};
 use op_task::config::{Config, ConfigError};
+use op_task::doc::Doc;
 use op_task::layout::{self, Document};
 use op_task::tag::{Tag, normalize_name};
 use op_task::{Abbreviation, Task};
 
 use crate::TrackerError;
 
-// The tasks and tags of one revision, typed. Cheap to hold: the documents stay in the snapshot
+// The tasks, tags, and docs of one revision, typed. Cheap to hold: the documents stay in the snapshot
 // until a caller reads one.
 #[derive(Clone)]
 pub struct Plan {
@@ -20,6 +21,7 @@ pub struct Plan {
     // The other files of a number that two files claim; readers see only the one in `tasks`.
     shadowed: BTreeMap<u64, Vec<String>>,
     tags: BTreeSet<String>,
+    docs: BTreeSet<String>,
 }
 
 impl Plan {
@@ -30,6 +32,7 @@ impl Plan {
         let mut tasks: BTreeMap<u64, String> = BTreeMap::new();
         let mut shadowed: BTreeMap<u64, Vec<String>> = BTreeMap::new();
         let mut tags = BTreeSet::new();
+        let mut docs = BTreeSet::new();
         for path in snapshot.files()? {
             match Document::of(&path) {
                 // Two files of one number resolve to the lowest path every time.
@@ -50,6 +53,9 @@ impl Plan {
                 {
                     tags.insert(name);
                 }
+                Document::Doc(name) => {
+                    docs.insert(name);
+                }
                 _ => {}
             }
         }
@@ -59,6 +65,7 @@ impl Plan {
             tasks,
             shadowed,
             tags,
+            docs,
         })
     }
 
@@ -189,6 +196,40 @@ impl Plan {
         })
     }
 
+    pub fn doc_names(&self) -> &BTreeSet<String> {
+        &self.docs
+    }
+
+    pub fn raw_doc(&self, name: &str) -> Result<String, TrackerError> {
+        self.snapshot
+            .read_text(&layout::doc_path(name))?
+            .ok_or_else(|| TrackerError::DocNotFound {
+                name: name.to_owned(),
+            })
+    }
+
+    pub fn raw_docs(&self) -> Result<BTreeMap<String, String>, TrackerError> {
+        self.docs
+            .iter()
+            .filter_map(
+                |name| match self.snapshot.read_text(&layout::doc_path(name)) {
+                    Ok(Some(text)) => Some(Ok((name.clone(), text))),
+                    Ok(None) => None,
+                    Err(err) => Some(Err(err.into())),
+                },
+            )
+            .collect()
+    }
+
+    pub fn doc(&self, name: &str) -> Result<Doc, TrackerError> {
+        let name = doc_normalized(name)?;
+        let text = self.raw_doc(&name)?;
+        Doc::from_file_string(name.clone(), &text).map_err(|err| TrackerError::Unreadable {
+            path: layout::doc_path(&name),
+            reason: err.to_string(),
+        })
+    }
+
     fn task_path(&self, number: u64) -> Result<&str, TrackerError> {
         self.path_of(number).ok_or_else(|| self.not_found(number))
     }
@@ -202,4 +243,8 @@ impl Plan {
 
 pub(crate) fn normalized(name: &str) -> Result<String, TrackerError> {
     normalize_name(name).map_err(|err| TrackerError::Invalid(err.to_string()))
+}
+
+pub(crate) fn doc_normalized(name: &str) -> Result<String, TrackerError> {
+    op_task::doc::normalize_name(name).map_err(|err| TrackerError::Invalid(err.to_string()))
 }

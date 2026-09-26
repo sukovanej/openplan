@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 
-import { splitTaskRefs, taskLinkPlugins } from "../src/task-links"
+import { referenced, splitTaskRefs, taskLinkPlugins } from "../src/task-links"
 
 const split = (value: string) => splitTaskRefs(value, { project: "openplan", abbreviation: "OPP" })
 
@@ -60,12 +60,28 @@ it("reads the id out of the leading digits, whatever the slug says", () => {
   expect(nodes?.[0].type === "link" && nodes[0].url).toBe("/openplan/task/OPP-42")
 })
 
-it("leaves text that names no task untouched", () => {
+it("leaves text that names neither a task nor a doc untouched", () => {
   expect(split("[[Some Page Title]]")).toBeNull()
-  expect(split("array[[index]]")).toBeNull()
-  expect(split("[[task-crud-6e8b]]")).toBeNull()
   expect(split("[[./notes.md]]")).toBeNull()
   expect(split("[[./00042-ship.txt]]")).toBeNull()
+})
+
+// A doc is named by its file stem, so a reference that reads as one links to the doc page. Nothing
+// distinguishes it from bracketed prose that happens to be spelled that way, which is the cost of
+// naming docs rather than numbering them.
+it("links a reference that reads as a doc name", () => {
+  expect(split("see [[architecture]] first")).toEqual([
+    { type: "text", value: "see " },
+    {
+      type: "link",
+      url: "/openplan/doc/architecture",
+      title: null,
+      children: [{ type: "text", value: "architecture" }],
+    },
+    { type: "text", value: " first" },
+  ])
+  const nodes = split("[[architecture#Storage]]")
+  expect(nodes?.[0].type === "link" && nodes[0].url).toBe("/openplan/doc/architecture#Storage")
 })
 
 // The key is the whole id above the store (§3.1), so the spellings it replaced name nothing — and
@@ -74,7 +90,6 @@ it("leaves a bare number, a padded key, and a foreign key as plain text", () => 
   expect(split("[[42]]")).toBeNull()
   expect(split("[[042]]")).toBeNull()
   expect(split("[[OPP-042]]")).toBeNull()
-  expect(split("[[opp-42]]")).toBeNull()
   expect(split("[[WEB-7]]")).toBeNull()
   expect(split("[[OPPX-42]]")).toBeNull()
 })
@@ -101,4 +116,24 @@ it("attaches as a remark plugin that rewrites the tree in place", () => {
     { type: "text", value: "see " },
     { type: "link", url: "/openplan/task/OPP-42", title: null, children: [{ type: "text", value: "OPP-42" }] },
   ])
+})
+
+// The daemon's normalizer turns two hyphens into one, so such a reference names no doc it would read.
+it("leaves a reference with two hyphens in a row as text, and links one with a hyphen at the end", () => {
+  expect(split("see [[release--notes]]")).toBeNull()
+  expect(split("see [[release-notes-]]")?.[1]).toMatchObject({ type: "link", url: "/openplan/doc/release-notes-" })
+})
+
+it("reads this store's key as a task and a doc name as a doc", () => {
+  expect(referenced("OPP-42#Plan", "OPP")).toEqual({ kind: "task", id: "OPP-42", section: "Plan" })
+  expect(referenced("storage#Layout", "OPP")).toEqual({ kind: "doc", name: "storage", section: "Layout" })
+  expect(referenced("42", "OPP")).toBeNull()
+  expect(referenced("WEB-7", "OPP")).toBeNull()
+  expect(referenced("two--hyphens", "OPP")).toBeNull()
+})
+
+it("reads a path from a task file as the task or the doc it points into", () => {
+  expect(referenced("./00042-x.md", "OPP")).toMatchObject({ kind: "task", id: "OPP-42" })
+  expect(referenced("../tasks/00042-x.md", "OPP")).toMatchObject({ kind: "task", id: "OPP-42" })
+  expect(referenced("../docs/42-notes.md", "OPP")).toEqual({ kind: "doc", name: "42-notes", section: undefined })
 })

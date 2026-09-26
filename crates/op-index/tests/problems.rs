@@ -52,7 +52,7 @@ fn problems(files: &[(String, String)]) -> BTreeMap<String, Vec<(ProblemCode, St
 #[test]
 fn a_sound_set_of_tasks_has_no_problems() {
     let found = problems(&[
-        task(1, "tags: [bug]\n", "# One\n\nSee [[OPP-2]].\n"),
+        task(1, "tags: [bug]\n", "# One\n\nSee [[./00002-t.md]].\n"),
         task(
             2,
             "parent: ./00001-t.md\ndependencies: [./00001-t.md]\n",
@@ -61,6 +61,32 @@ fn a_sound_set_of_tasks_has_no_problems() {
     ]);
 
     assert!(found.is_empty(), "{found:?}");
+}
+
+#[test]
+fn a_reference_a_file_spells_as_a_key_or_a_number_is_a_problem() {
+    let found = problems(&[
+        task(1, "parent: 2\n", "# One\n\nSee [[OPP-2]] and [[OPP-9]].\n"),
+        task(2, "", "# Two\n"),
+    ]);
+
+    assert_eq!(
+        found["OPP-1"],
+        vec![
+            (
+                ProblemCode::Reference,
+                "the text names OPP-9, which does not exist".to_owned()
+            ),
+            (
+                ProblemCode::ReferencePath,
+                "`2` names OPP-2; a file names it by the path to the task file".to_owned()
+            ),
+            (
+                ProblemCode::ReferencePath,
+                "`OPP-2` names OPP-2; a file names it by the path to the task file".to_owned()
+            ),
+        ]
+    );
 }
 
 #[test]

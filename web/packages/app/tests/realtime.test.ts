@@ -8,6 +8,8 @@ vi.mock("../src/lib/query-client", () => ({
     refreshProjects: () => refreshed.calls.push("projects"),
     refreshList: (project: string) => refreshed.calls.push(`list ${project}`),
     refreshTask: (project: string, id: string) => refreshed.calls.push(`task ${project}/${id}`),
+    refreshDoc: (project: string, name: string) => refreshed.calls.push(`doc ${project}/${name}`),
+    refreshPages: (project: string) => refreshed.calls.push(`pages ${project}`),
     refreshHistory: (project: string) => refreshed.calls.push(`history ${project}`),
     refreshSync: (project: string) => refreshed.calls.push(`sync ${project}`),
     refreshVisible: (project?: string) => refreshed.calls.push(`screen ${project ?? "every"}`),
@@ -109,6 +111,7 @@ describe("the event stream", () => {
       "task openplan/OPP-1",
       "task openplan/OPP-2",
       "task openplan/OPP-3",
+      "pages openplan",
       "history openplan",
     ])
   })

@@ -1,17 +1,17 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
 
-import type { Board, FieldError, TaskRef } from "@openplan/api-client"
+import type { Board, DocListItem, FieldError, TaskRef } from "@openplan/api-client"
 import { boardPath, statusField } from "@openplan/task-ui"
 import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, SkeletonList } from "@openplan/ui"
 
 import { OlderRevisions } from "../components/older-revisions"
 import { RevisionList } from "../components/revision-list"
-import { getBoard } from "../lib/api"
+import { getBoard, listAllDocs } from "../lib/api"
 import { errorText } from "../lib/format"
 import { useProjectHistory } from "../lib/history"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
-import { boardKey } from "../lib/query-client"
+import { allDocsKey, boardKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
 
@@ -30,6 +30,9 @@ const refsOf = (board: Board): ReadonlyMap<string, TaskRef> =>
       ]),
     ),
   )
+
+const titlesOf = (docs: ReadonlyArray<DocListItem>): ReadonlyMap<string, string> =>
+  new Map(docs.map((doc) => [doc.name, doc.title]))
 
 export function ActivityRoute() {
   const { project = "" } = useParams()
@@ -56,6 +59,11 @@ export function Activity({ project }: { project: string }) {
     queryFn: abortable(getBoard(project)),
     select: refsOf,
   }).data
+  const docTitles = useQuery({
+    queryKey: allDocsKey(project),
+    queryFn: abortable(listAllDocs([project])),
+    select: titlesOf,
+  }).data
   return (
     <Panel>
       <PanelHeader className="gap-3">
@@ -73,7 +81,7 @@ export function Activity({ project }: { project: string }) {
           <p className="text-muted-foreground text-sm">No revisions yet.</p>
         ) : (
           <>
-            <RevisionList project={project} entries={history.data} refs={refs} />
+            <RevisionList project={project} entries={history.data} refs={refs} docTitles={docTitles} />
             <OlderRevisions history={history} className="mt-3" />
           </>
         )}
