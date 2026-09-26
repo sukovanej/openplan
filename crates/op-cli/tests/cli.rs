@@ -307,6 +307,36 @@ fn a_linked_worktree_reaches_the_tasks_of_its_repository() {
 }
 
 #[test]
+fn url_prints_the_web_ui_page_of_each_task() {
+    let project = Project::local();
+    let first = project.create("First");
+    let second = project.create("Second");
+    let name = ok(project.run(&["project", "list"]))
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_owned();
+    let base = format!("http://127.0.0.1:{}", project.home.port().unwrap());
+
+    let printed = ok(project.run(&["url", &first, &second]));
+
+    assert_eq!(
+        printed,
+        format!("{base}/{name}/task/{first}\n{base}/{name}/task/{second}\n")
+    );
+}
+
+#[test]
+fn url_refuses_a_key_with_no_task() {
+    let project = Project::local();
+
+    let missing = project.run(&["url", "OPP-99"]);
+
+    assert!(!missing.status.success());
+    assert!(stdout(&missing).is_empty(), "{}", stdout(&missing));
+}
+
+#[test]
 fn a_write_with_no_reachable_daemon_fails_explicitly() {
     let project = Project::local();
 
