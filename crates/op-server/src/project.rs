@@ -353,22 +353,29 @@ impl Project {
         };
         match moved {
             None => {
-                let log = self.tracker.backend().log(&LogQuery {
-                    prefix: format!("{}/", layout::TASKS),
-                    before: None,
-                    limit: Some(DATING_BUDGET),
-                })?;
                 index.load(&plan)?;
-                index.date(&log);
-                index.credit(&log);
+                for directory in [layout::TASKS, layout::DOCS] {
+                    let log = self.tracker.backend().log(&LogQuery {
+                        prefix: format!("{directory}/"),
+                        before: None,
+                        limit: Some(DATING_BUDGET),
+                    })?;
+                    index.date(&log);
+                    index.credit(&log);
+                }
             }
             Some(changes) if changes.is_empty() => {}
             Some(changes) => {
                 let numbers = task_numbers(&changes);
+                let names = doc_names(&changes);
                 let dated = self.last_changed(&numbers)?;
+                let docs_dated = self.docs_last_changed(&names)?;
                 match changes.iter().any(|change| change.path == layout::CONFIG) {
                     true => index.load(&plan)?,
-                    false => index.update(&plan, &numbers)?,
+                    false => {
+                        index.update(&plan, &numbers)?;
+                        index.update_docs(&plan, &names)?;
+                    }
                 }
                 for (number, at) in dated {
                     index.touch(number, at);
@@ -381,6 +388,16 @@ impl Project {
                         let history = self
                             .tracker
                             .task_history(number, &HistoryQuery::default())?;
+                        index.credit(&history);
+                    }
+                }
+                for (name, at) in docs_dated {
+                    index.touch_doc(&name, at);
+                }
+                index.carry_doc_authors(&changes);
+                for name in op_tracker::doc_moves(&changes).created {
+                    if index.doc_exists(&name) && !index.doc_credited(&name) {
+                        let history = self.tracker.doc_history(&name, &HistoryQuery::default())?;
                         index.credit(&history);
                     }
                 }
@@ -405,6 +422,26 @@ impl Project {
             )?;
             if let Some(entry) = last.first() {
                 dated.push((number, entry.revision.at));
+            }
+        }
+        Ok(dated)
+    }
+
+    fn docs_last_changed(
+        &self,
+        names: &BTreeSet<String>,
+    ) -> Result<Vec<(String, op_backend::Timestamp)>, TrackerError> {
+        let mut dated = Vec::new();
+        for name in names {
+            let last = self.tracker.doc_history(
+                name,
+                &HistoryQuery {
+                    before: None,
+                    limit: Some(1),
+                },
+            )?;
+            if let Some(entry) = last.first() {
+                dated.push((name.clone(), entry.revision.at));
             }
         }
         Ok(dated)
@@ -435,6 +472,13 @@ impl Project {
             match Document::of(&change.path) {
                 Document::Tag(_) => tags = true,
                 Document::Config => config = true,
+                Document::Doc(name) => publisher.publish(
+                    ChangeEvent::DocChanged {
+                        project: project.clone(),
+                        name,
+                    },
+                    via.clone(),
+                ),
                 _ => {}
             }
         }
@@ -527,6 +571,13 @@ fn task_numbers(changes: &[Change]) -> BTreeSet<u64> {
     changes
         .iter()
         .filter_map(|change| layout::task_number(&change.path))
+        .collect()
+}
+
+fn doc_names(changes: &[Change]) -> BTreeSet<String> {
+    changes
+        .iter()
+        .filter_map(|change| layout::doc_name(&change.path).map(str::to_owned))
         .collect()
 }
 

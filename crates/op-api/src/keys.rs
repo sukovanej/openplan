@@ -1,4 +1,5 @@
 use op_task::Abbreviation;
+use op_task::reference::Target;
 
 // A spelling of an id the store has no id for. One key spelling is accepted and nothing else is, so
 // a refusal names the form that would have worked rather than guessing at what was meant.
@@ -66,16 +67,20 @@ pub(crate) fn body_from_keys_keeping(
     Ok(out)
 }
 
-pub fn body_to_keys(abbreviation: Abbreviation, body: &str) -> String {
+// A body as the API carries it: a task is named by this store's key and a doc by its name. `dir` is
+// the directory of the file the body comes from, which every path in it is relative to.
+pub fn body_to_keys(abbreviation: Abbreviation, dir: &str, body: &str) -> String {
     let mut out = String::new();
     let mut last = 0;
     for (span, inner) in op_task::body_ref_spans(body) {
-        let Some(number) = op_task::body_ref_id(abbreviation, inner) else {
-            continue;
+        let target = match op_task::reference::body_target(Some(abbreviation), dir, inner) {
+            Some(Target::Task(number)) => abbreviation.format_key(number),
+            Some(Target::Doc(name)) => name,
+            None => continue,
         };
         out.push_str(&body[last..span.start]);
         out.push_str("[[");
-        out.push_str(&abbreviation.format_key(number));
+        out.push_str(&target);
         if let Some((_, section)) = inner.split_once('#') {
             out.push('#');
             out.push_str(section);

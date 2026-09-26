@@ -256,3 +256,37 @@ fn a_tag_removed_and_another_added_stay_two_changes() {
         ]
     );
 }
+
+fn doc(tracker: &Tracker, title: &str, parent: Option<&str>) {
+    let mut doc = op_task::doc::Doc::new(title, stamp()).expect("name");
+    doc.set_parent(parent).expect("parent");
+    tracker.create_doc(&actor(), &doc).expect("create doc");
+}
+
+// The doc that the revision renamed or deleted leads it, and the docs whose parent moved follow.
+#[test]
+fn a_doc_rename_and_a_doc_delete_lead_the_revisions_that_move_the_nested_docs() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    doc(tracker, "Architecture", None);
+    let (message, _) = newest(tracker);
+    assert_eq!(message, "doc architecture: create");
+    doc(tracker, "Storage", Some("architecture"));
+
+    tracker
+        .rename_doc(&actor(), "architecture", "Design")
+        .expect("rename");
+    let (message, described) = newest(tracker);
+    assert_eq!(
+        message,
+        "doc architecture: rename to design\n\ndoc storage: edit"
+    );
+    assert_eq!(
+        described.docs[0].renamed_from.as_deref(),
+        Some("architecture")
+    );
+
+    tracker.delete_doc(&actor(), "design").expect("delete");
+    let (message, _) = newest(tracker);
+    assert_eq!(message, "doc design: delete\n\ndoc storage: edit");
+}

@@ -11,9 +11,11 @@ daemon syncs with the remote for the whole team, or in a local `.plan/`
 directory. Read and write them only with the CLI. Never run git on the tasks
 ref, and never commit a task.
 
-A task's key is `OPP-42`. The CLI takes and prints that spelling only. In a task
-file, one task names another by its file: `parent: ./00042-ship-login-page.md`,
-and `[[./00042-ship-login-page.md]]` in prose.
+A task's key is `OPP-42`. The CLI takes and prints that spelling only. A file
+names another file by its path, relative to its own directory:
+`parent: ./00042-ship-login-page.md` and `[[./00042-ship-login-page.md]]` in a
+task, `[[../docs/storage.md]]` from a task to a doc. Write `[[OPP-42]]` or
+`[[storage]]` in text you give the CLI; the write stores the path.
 
 In a reply to the user, write each task key as a link to the task page in the
 web UI: `[OPP-42](<address>)`. Get the addresses from `openplan url <key>...`.
@@ -38,7 +40,7 @@ openplan get  <key>                 # the whole task file
 openplan get  <key> --json          # {id,title,metadata,description,comments}
 openplan history <key>              # the revisions of the task, newest first
 openplan get  <key> --revision <id> # the task file as it stood at a revision
-openplan url  <key>...              # the web UI address of each task
+openplan url  <key>...              # the web UI address of each task or doc
 ```
 
 ## Create
@@ -237,6 +239,21 @@ flowchart LR
   daemon -->|reads| tasks[(tasks ref)]
 ```
 ````
+
+## Docs
+
+A doc is a markdown page beside the tasks, named by its title: `Storage Layout`
+is `storage-layout`. Keep design notes that outlive one task in a doc.
+
+```sh
+openplan doc list
+openplan doc get storage-layout
+openplan doc create "Storage Layout" --body "Tasks live in git." --parent architecture
+openplan doc set storage-layout "New markdown below the title."
+openplan doc nest storage-layout architecture   # "" or - moves it to the top
+openplan doc rename storage-layout "Storage"
+openplan doc delete storage-layout --yes
+```
 
 ## Delete
 

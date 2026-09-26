@@ -5,7 +5,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use op_api::{
-    ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask, DocumentChange,
+    ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask, DocChange, DocumentChange,
     DocumentChangeKind, FieldChange, Flow, FlowQuery, HistoryEntry, KeyError, Metadata,
     RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch, TagView,
     TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot, TaskSummary,
@@ -26,7 +26,7 @@ const HISTORY_PAGE: usize = 100;
 #[derive(Deserialize, utoipa::IntoParams)]
 pub(crate) struct ReadQuery {
     #[serde(default)]
-    fresh: bool,
+    pub(crate) fresh: bool,
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]
@@ -80,7 +80,7 @@ impl Project {
         }
     }
 
-    fn abbreviation(&self) -> Result<Abbreviation, ApiError> {
+    pub(crate) fn abbreviation(&self) -> Result<Abbreviation, ApiError> {
         self.index()
             .abbreviation()
             .ok_or_else(|| ApiError::from(TrackerError::NotInitialized))
@@ -604,13 +604,14 @@ fn snapshot(raw: &str, abbreviation: Abbreviation) -> TaskSnapshot {
         comments: op_index::comments_of(&partial.body),
         description: op_api::body_to_keys(
             abbreviation,
+            op_task::layout::TASKS,
             &op_task::content::split(&op_task::comment::strip(&partial.body)),
         ),
         raw: raw.to_owned(),
     }
 }
 
-fn history_query(page: PageQuery) -> HistoryQuery {
+pub(crate) fn history_query(page: PageQuery) -> HistoryQuery {
     HistoryQuery {
         before: page.before.map(RevisionId::new),
         limit: Some(page.limit.unwrap_or(HISTORY_PAGE)),
@@ -618,7 +619,10 @@ fn history_query(page: PageQuery) -> HistoryQuery {
 }
 
 // The index lock is not held while the revisions are read.
-fn history(project: &Project, log: Vec<LogEntry>) -> Result<Vec<HistoryEntry>, ApiError> {
+pub(crate) fn history(
+    project: &Project,
+    log: Vec<LogEntry>,
+) -> Result<Vec<HistoryEntry>, ApiError> {
     let abbreviation = project.index().abbreviation();
     let key = |number: u64| match abbreviation {
         Some(abbreviation) => abbreviation.format_key(number),
@@ -636,6 +640,7 @@ fn history(project: &Project, log: Vec<LogEntry>) -> Result<Vec<HistoryEntry>, A
                     .map(|task| task_change(task, &key))
                     .collect(),
                 tags: described.tags.into_iter().map(tag_change).collect(),
+                docs: described.docs.into_iter().map(doc_change).collect(),
                 changes: entry
                     .changes
                     .into_iter()
@@ -662,6 +667,7 @@ fn document_change(change: Change, key: &dyn Fn(u64) -> String) -> DocumentChang
     DocumentChange {
         task: layout::task_number(&change.path).map(key),
         tag: layout::tag_name(&change.path).map(str::to_owned),
+        doc: layout::doc_name(&change.path).map(str::to_owned),
         kind: change_kind(change.kind),
         path: change.path,
     }
@@ -721,6 +727,14 @@ fn tag_change(tag: op_tracker::TagChange) -> TagChange {
         tag: tag.name,
         kind: change_kind(tag.kind),
         renamed_from: tag.renamed_from,
+    }
+}
+
+fn doc_change(doc: op_tracker::DocChange) -> DocChange {
+    DocChange {
+        doc: doc.name,
+        kind: change_kind(doc.kind),
+        renamed_from: doc.renamed_from,
     }
 }
 

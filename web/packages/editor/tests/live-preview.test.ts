@@ -77,6 +77,12 @@ describe("the live preview", () => {
     expect([chip.from, chip.to]).toEqual([4, 13])
   })
 
+  it("renders a reference to a doc as a chip", () => {
+    const [chip] = widgets("See [[storage#Layout]].\n")
+    expect(chip.widget).toBeInstanceOf(TaskRefWidget)
+    expect([chip.from, chip.to]).toEqual([4, 22])
+  })
+
   it("keeps the source of a reference the caret touches, one in code, and one to another store", () => {
     expect(widgets("See [[DEM-1]].\n", 13)).toEqual([])
     expect(widgets("Use `[[DEM-1]]`.\n")).toEqual([])

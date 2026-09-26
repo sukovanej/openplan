@@ -1,12 +1,24 @@
 import { TriangleAlert } from "lucide-react"
 import type { ReactNode } from "react"
 
-import type { FrontmatterFields, Metadata, Status, TagView, TaskPatch } from "@openplan/api-client"
+import type {
+  DocFields,
+  DocMetadata,
+  DocPatch,
+  FrontmatterFields,
+  Metadata,
+  Status,
+  TagView,
+  TaskPatch,
+} from "@openplan/api-client"
 import {
   CONFLICT_TINT,
   type ConflictChoice,
   conflictCount,
   conflictedFields,
+  docConflictedFields,
+  type DocFieldName,
+  docFields,
   FieldConflict,
   fieldConflict,
   type FieldName,
@@ -17,7 +29,7 @@ import {
 } from "@openplan/task-ui"
 import { absoluteTime, cn } from "@openplan/ui"
 
-import { patchTask } from "../lib/api"
+import { patchDoc, patchTask } from "../lib/api"
 import { useProjectMutation } from "../lib/query-client"
 import { useTags } from "../lib/tags"
 
@@ -57,16 +69,21 @@ function TagList({ names, tags }: { names: ReadonlyArray<string>; tags: Readonly
   )
 }
 
+const createdValue = (at: string) => <time dateTime={at}>{absoluteTime(at)}</time>
+
+const parentValue = (parent: string | null) =>
+  parent === null ? <Nothing>No parent</Nothing> : <Keys keys={[parent]} />
+
 interface Versions<T> {
   readonly sides: ReadonlyArray<{ readonly label: string; readonly value: T }>
 }
 
 // `patch` is how a version writes back; a version it has no patch for offers no button.
-function choicesOf<T>(
+function choicesOf<T, P>(
   conflict: Versions<T> | undefined,
   show: (value: T) => ReactNode,
-  keep: (patch: TaskPatch) => void,
-  patch: (value: T) => TaskPatch | undefined = () => undefined,
+  keep: (patch: P) => void,
+  patch: (value: T) => P | undefined = () => undefined,
 ): ReadonlyArray<ConflictChoice> | undefined {
   return conflict?.sides.map((side) => {
     const write = patch(side.value)
@@ -90,14 +107,9 @@ function fieldChoices(
       )
     // The daemon writes `created` once and takes no patch for it.
     case "created":
-      return choicesOf(fieldConflict(fields.created), (at) => <time dateTime={at}>{absoluteTime(at)}</time>, keep)
+      return choicesOf(fieldConflict(fields.created), createdValue, keep)
     case "parent":
-      return choicesOf(
-        fieldConflict(fields.parent),
-        (parent) => (parent === null ? <Nothing>No parent</Nothing> : <Keys keys={[parent]} />),
-        keep,
-        (parent) => ({ parent }),
-      )
+      return choicesOf(fieldConflict(fields.parent), parentValue, keep, (parent) => ({ parent }))
     // A patch can set a rank but not clear one.
     case "rank":
       return choicesOf(
@@ -159,8 +171,45 @@ export function FieldConflictControl({
   )
 }
 
-// A count the daemon took from the fields and the body together, so what the fields do not account
-// for is in the text.
+// A doc takes no patch for `created` either, so only its parent writes back.
+function docFieldChoices(
+  fields: DocFields,
+  field: DocFieldName,
+  keep: (patch: DocPatch) => void,
+): ReadonlyArray<ConflictChoice> | undefined {
+  switch (field) {
+    case "created":
+      return choicesOf(fieldConflict(fields.created), createdValue, keep)
+    case "parent":
+      return choicesOf(fieldConflict(fields.parent), parentValue, keep, (parent) => ({ parent }))
+  }
+}
+
+export function DocFieldConflictControl({
+  project,
+  name,
+  metadata,
+  field,
+  trigger,
+  align,
+}: {
+  project: string
+  name: string
+  metadata: DocMetadata
+  field: DocFieldName
+  trigger?: ReactNode
+  align?: "start" | "end"
+}) {
+  const { mutate, isPending } = useProjectMutation(project)
+  const fields = docFields(metadata)
+  const choices =
+    fields === undefined ? undefined : docFieldChoices(fields, field, (patch) => mutate(patchDoc(project, name, patch)))
+  if (choices === undefined) return null
+  return (
+    <FieldConflict field={FIELD_LABELS[field]} choices={choices} pending={isPending} trigger={trigger} align={align} />
+  )
+}
+
 export function ConflictBanner({
   project,
   id,
@@ -172,27 +221,57 @@ export function ConflictBanner({
   metadata: Metadata
   count: number
 }) {
+  const controls = conflictedFields(metadata).map((field) => (
+    <FieldConflictControl
+      key={field}
+      project={project}
+      id={id}
+      metadata={metadata}
+      field={field}
+      trigger={FIELD_LABELS[field]}
+    />
+  ))
+  return <Banner count={count} controls={controls} />
+}
+
+export function DocConflictBanner({
+  project,
+  name,
+  metadata,
+  count,
+}: {
+  project: string
+  name: string
+  metadata: DocMetadata
+  count: number
+}) {
+  const controls = docConflictedFields(metadata).map((field) => (
+    <DocFieldConflictControl
+      key={field}
+      project={project}
+      name={name}
+      metadata={metadata}
+      field={field}
+      trigger={FIELD_LABELS[field]}
+    />
+  ))
+  return <Banner count={count} controls={controls} />
+}
+
+// A count the daemon took from the fields and the body together, so what the fields do not account
+// for is in the text.
+function Banner({ count, controls }: { count: number; controls: ReadonlyArray<ReactNode> }) {
   if (count === 0) return null
-  const fields = conflictedFields(metadata)
-  const passages = count - fields.length
+  const passages = count - controls.length
   return (
     <div role="note" className={cn("mb-5 flex flex-col gap-2 rounded-md border px-3 py-2 text-xs", CONFLICT_TINT)}>
       <p className="flex items-center gap-1.5 font-medium">
         <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
         {conflictCount(count)} from a sync. Pick a version of each.
       </p>
-      {(fields.length > 0 || passages > 0) && (
+      {(controls.length > 0 || passages > 0) && (
         <div className="text-muted-foreground flex flex-wrap items-center gap-1.5">
-          {fields.map((field) => (
-            <FieldConflictControl
-              key={field}
-              project={project}
-              id={id}
-              metadata={metadata}
-              field={field}
-              trigger={FIELD_LABELS[field]}
-            />
-          ))}
+          {controls}
           {passages > 0 && <span>{passages === 1 ? "1 passage" : `${passages} passages`} in the text below.</span>}
         </div>
       )}

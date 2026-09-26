@@ -10,12 +10,14 @@ import { MutationError } from "../src/components/mutation-error"
 import { connectionStore } from "../src/lib/connection"
 import {
   boardKey,
+  docKey,
   flowKey,
   historyKey,
   mergedBoardKey,
   queryClient,
   queryInvalidator,
   revisionKey,
+  taskHistoryKey,
   taskKey,
   useProjectMutation,
 } from "../src/lib/query-client"
@@ -75,6 +77,22 @@ afterEach(() => {
 
 const settled = () => new Promise((resume) => setTimeout(resume, 20))
 
+const NOTHING_REFRESHED = { tasks: new Set<string>(), docs: new Set<string>() }
+
+function slowPage() {
+  let reads = 0
+  const observer = new QueryObserver(queryClient, {
+    queryKey: taskKey("alpha", "ALP-1"),
+    queryFn: async () => {
+      reads += 1
+      await settled()
+      return reads
+    },
+  })
+  subscriptions.push(observer.subscribe(() => {}))
+  return { observer, reads: () => reads }
+}
+
 describe("invalidation", () => {
   it("reloads a changed task when its detail opens again", async () => {
     const project = "deferred"
@@ -100,6 +118,49 @@ describe("invalidation", () => {
     queryInvalidator.refreshTask(project, id)
     await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(3))
     second()
+  })
+
+  // A new subtask changes the page of its parent, and the event names only the subtask.
+  it("re-reads the task and doc pages of the changed project, and nothing else", async () => {
+    const parent = observe(taskKey("alpha", "ALP-1"))
+    const doc = observe(docKey("alpha", "guide"))
+    const history = observe(taskHistoryKey("alpha", "ALP-1"))
+    const board = observe(boardKey("alpha"))
+    const other = observe(taskKey("beta", "BET-1"))
+    await settled()
+
+    queryInvalidator.refreshPages("alpha", NOTHING_REFRESHED)
+    await settled()
+
+    expect(parent.getCurrentResult().data).toBe(2)
+    expect(doc.getCurrentResult().data).toBe(2)
+    expect(history.getCurrentResult().data).toBe(1)
+    expect(board.getCurrentResult().data).toBe(1)
+    expect(other.getCurrentResult().data).toBe(1)
+  })
+
+  it("reads a changed task once when its own refresh and the refresh of the pages come together", async () => {
+    const { observer, reads } = slowPage()
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(1))
+
+    queryInvalidator.refreshTask("alpha", "ALP-1")
+    queryInvalidator.refreshPages("alpha", { tasks: new Set(["ALP-1"]), docs: new Set() })
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(2))
+    await settled()
+
+    expect(reads()).toBe(2)
+  })
+
+  // The read on its way started before the second change, so it can miss it.
+  it("reads a page again when a change comes while an earlier read of it is on its way", async () => {
+    const { observer, reads } = slowPage()
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(1))
+
+    queryInvalidator.refreshTask("alpha", "ALP-1")
+    queryInvalidator.refreshPages("alpha", NOTHING_REFRESHED)
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(3))
+
+    expect(reads()).toBe(3)
   })
 
   // A flow that names no project spans them all.

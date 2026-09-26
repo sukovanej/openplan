@@ -18,12 +18,12 @@ import {
 } from "lucide-react"
 import type { ReactNode } from "react"
 
-import type { DocumentChangeKind, FieldChange, TagChange, TagView, TaskChange } from "@openplan/api-client"
+import type { DocChange, DocumentChangeKind, FieldChange, TagChange, TagView, TaskChange } from "@openplan/api-client"
 import { cn } from "@openplan/ui"
 
 import { StatusBadge } from "./status"
 import { TagChip } from "./tag-chip"
-import { documentChangeText, fieldChangeText, setDifference, tagChangeText } from "./task-change"
+import { documentChangeText, fieldChangeText, renameText, setDifference } from "./task-change"
 
 // The project's tag registry by name, or `undefined` while it is still being read. Until it arrives
 // a name the registry holds looks like one it does not, so the change keeps its words instead of
@@ -155,7 +155,7 @@ export function TagChangeView({ change, tags, className }: { change: TagChange; 
   if (tags === undefined) {
     return (
       <Changes className={className}>
-        <Marked icon={Type}>{tagChangeText(change)}</Marked>
+        <Marked icon={Type}>{renameText(change)}</Marked>
       </Changes>
     )
   }
@@ -168,6 +168,15 @@ export function TagChangeView({ change, tags, className }: { change: TagChange; 
         <ArrowRight aria-label="to" className="text-muted-foreground size-3.5 shrink-0" />
         <TagChip name={change.tag} tag={tags.get(change.tag)} />
       </span>
+    </Changes>
+  )
+}
+
+export function DocChangeView({ change, className }: { change: DocChange; className?: string }) {
+  if (change.renamed_from === undefined) return <DocumentChangeView kind={change.kind} className={className} />
+  return (
+    <Changes className={className}>
+      <Marked icon={Type}>{renameText(change)}</Marked>
     </Changes>
   )
 }

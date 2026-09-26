@@ -3,6 +3,7 @@ use crate::{file_id, task_filename};
 pub const CONFIG: &str = "config.toml";
 pub const TASKS: &str = "tasks";
 pub const TAGS: &str = "tags";
+pub const DOCS: &str = "docs";
 pub const ASSETS: &str = "assets";
 
 const MARKDOWN: &str = ".md";
@@ -12,6 +13,7 @@ pub enum Document {
     Config,
     Task(u64),
     Tag(String),
+    Doc(String),
     Asset(String),
     Other(String),
 }
@@ -26,6 +28,9 @@ impl Document {
         }
         if let Some(name) = tag_name(path) {
             return Self::Tag(name.to_owned());
+        }
+        if let Some(name) = doc_name(path) {
+            return Self::Doc(name.to_owned());
         }
         if let Some(name) = path
             .strip_prefix(ASSETS)
@@ -75,4 +80,18 @@ pub fn tag_name(path: &str) -> Option<&str> {
         .strip_prefix('/')?
         .strip_suffix(MARKDOWN)?;
     (!name.contains('/')).then_some(name)
+}
+
+pub fn doc_path(name: &str) -> String {
+    format!("{DOCS}/{name}{MARKDOWN}")
+}
+
+// A stem the normalizer would spell differently names no doc: the file is the identity, so a read
+// and a write must land on the same one.
+pub fn doc_name(path: &str) -> Option<&str> {
+    let name = path
+        .strip_prefix(DOCS)?
+        .strip_prefix('/')?
+        .strip_suffix(MARKDOWN)?;
+    (crate::name::normalize(name).as_deref() == Some(name)).then_some(name)
 }

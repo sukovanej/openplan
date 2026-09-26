@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use op_api::{Problem, ProblemCode};
 
+use op_task::reference::Target;
+
 use crate::Index;
 
 type Found = HashMap<u64, Vec<Problem>>;
@@ -66,6 +68,23 @@ impl Index {
                     format!("the text names {}, which does not exist", self.key(target)),
                 );
             }
+            let docs: BTreeSet<&String> = entry.doc_refs.iter().collect();
+            for name in docs
+                .into_iter()
+                .filter(|name| !self.docs.contains_key(*name))
+            {
+                push(
+                    &mut found,
+                    number,
+                    ProblemCode::Reference,
+                    format!("the text names the doc {name}, which does not exist"),
+                );
+            }
+            for (spelled, target) in &entry.unpathed {
+                if let Some(message) = self.unpathed_message(spelled, target) {
+                    push(&mut found, number, ProblemCode::ReferencePath, message);
+                }
+            }
             for tag in entry.metadata.tags() {
                 if !tags.contains(tag) {
                     push(
@@ -94,6 +113,24 @@ impl Index {
             problems.sort_by(|a, b| (a.code, &a.message).cmp(&(b.code, &b.message)));
         }
         found
+    }
+
+    // A reference to a task or a doc that does not exist is a problem of its own, and its fix is not
+    // a path.
+    pub(crate) fn unpathed_message(&self, spelled: &str, target: &Target) -> Option<String> {
+        let (what, path) = match target {
+            Target::Task(number) if self.tasks.contains_key(number) => {
+                (self.key(*number), "the task file")
+            }
+            Target::Task(_) => return None,
+            Target::Doc(name) if self.docs.contains_key(name) => {
+                (format!("the doc {name}"), "the doc file")
+            }
+            Target::Doc(_) => return None,
+        };
+        Some(format!(
+            "`{spelled}` names {what}; a file names it by the path to {path}"
+        ))
     }
 
     fn existing(&self, key: &str) -> Option<u64> {

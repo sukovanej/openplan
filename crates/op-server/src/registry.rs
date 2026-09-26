@@ -102,6 +102,15 @@ impl ProjectRegistry {
     }
 }
 
+// The web UI's own top-level pages, and the prefix of the API. A project under one of these names
+// would have no board, or no task pages, so no new name takes one. A project registered under one
+// before keeps it, and can be renamed.
+const RESERVED: [&str; 3] = ["api", "docs", "flow"];
+
+pub fn is_reserved(name: &str) -> bool {
+    RESERVED.contains(&name)
+}
+
 // The registry file and the daemon's live map are two namespaces the name has to be free in: the
 // file holds entries this daemon skipped, and the map holds projects a test set up without a file.
 pub fn unique_name(path: &Path, taken: impl Fn(&str) -> bool) -> String {
@@ -109,7 +118,7 @@ pub fn unique_name(path: &Path, taken: impl Fn(&str) -> bool) -> String {
         &path.file_name().unwrap_or_default().to_string_lossy(),
         NAME_FALLBACK,
     );
-    if !taken(&base) {
+    if !taken(&base) && !is_reserved(&base) {
         return base;
     }
     (2u32..)

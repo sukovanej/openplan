@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::name::{h1, one_line, retitle};
 use crate::{FieldError, FieldResult, split_frontmatter, with_paragraph};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -122,40 +123,18 @@ pub fn defaults() -> Vec<Tag> {
         .collect()
 }
 
-pub const NAME_RULE: &str = "a tag name is lowercase letters, digits, and hyphens, and starts with a letter or a digit; spaces and underscores become hyphens";
+pub const NAME_RULE: &str = crate::name::RULE;
 
 #[derive(Debug, thiserror::Error)]
-#[error("invalid tag name {got:?}; {NAME_RULE}")]
+#[error("invalid tag name {got:?}; a tag name is {NAME_RULE}")]
 pub struct ParseNameError {
     got: String,
 }
 
-// Unlike `slug`, which drops whatever it cannot spell, this refuses it: a tag name is an identity a
-// human typed, so `C++` must come back as an error rather than as a silently different tag.
 pub fn normalize_name(name: &str) -> Result<String, ParseNameError> {
-    let mut normalized = String::with_capacity(name.len());
-    for ch in name.trim().chars() {
-        let ch = if ch.is_whitespace() || ch == '_' {
-            '-'
-        } else {
-            ch.to_ascii_lowercase()
-        };
-        if ch == '-' && normalized.ends_with('-') {
-            continue;
-        }
-        normalized.push(ch);
-    }
-    is_normalized(&normalized)
-        .then_some(normalized)
-        .ok_or_else(|| ParseNameError {
-            got: name.to_owned(),
-        })
-}
-
-fn is_normalized(name: &str) -> bool {
-    let mut chars = name.chars();
-    matches!(chars.next(), Some(ch) if ch.is_ascii_lowercase() || ch.is_ascii_digit())
-        && chars.all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
+    crate::name::normalize(name).ok_or_else(|| ParseNameError {
+        got: name.to_owned(),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -293,20 +272,4 @@ fn extract_color(map: &serde_yaml::Mapping) -> FieldResult<Color> {
             FieldError::Invalid(ParseColorError { got }.to_string())
         }),
     }
-}
-
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn retitle(body: &str, display_name: &str) -> String {
-    let heading = format!("# {display_name}\n");
-    match h1(body) {
-        Some(h1) => format!("{}{heading}{}", &body[..h1.start], &body[h1.end..]),
-        None => format!("{heading}{body}"),
-    }
-}
-
-fn h1(body: &str) -> Option<op_md::Heading> {
-    op_md::headings(body).into_iter().find(|h| h.level == 1)
 }

@@ -6,6 +6,8 @@ pub enum ChangeEvent {
     // Created, edited, commented on, renumbered, or deleted. A client reads the task again and
     // learns which.
     TaskChanged { project: String, id: String },
+    // A doc was created, edited, renamed, or deleted. A client reads the doc again and learns which.
+    DocChanged { project: String, name: String },
     // A tag was registered, recolored, re-described, renamed, or deleted.
     TagsChanged { project: String },
     // Membership, a rename, a status change, or a new abbreviation.

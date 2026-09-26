@@ -1,5 +1,6 @@
 mod author;
 mod daemon;
+mod doc;
 mod history;
 mod lint;
 mod open;
@@ -188,12 +189,12 @@ enum Command {
     },
     /// Open the realtime web UI in the default browser
     Open,
-    /// Print the web UI address of each task
+    /// Print the web UI address of each task (by key) or doc (by name)
     Url {
         #[arg(required = true)]
         keys: Vec<String>,
     },
-    /// Report task problems (fields, references, cycles, tags, conflicts, Mermaid diagrams) and stale agent skills; never starts a daemon
+    /// Report task problems (fields, references, cycles, tags, conflicts, Mermaid diagrams), doc conflicts, and stale agent skills; never starts a daemon
     Lint {
         /// Report only these tasks; every task is checked all the same
         keys: Vec<String>,
@@ -202,6 +203,11 @@ enum Command {
         /// Check only the agent skill files of this checkout, not the tasks
         #[arg(long, conflicts_with = "keys")]
         skills: bool,
+    },
+    /// Manage the project documents
+    Doc {
+        #[command(subcommand)]
+        command: DocCommand,
     },
     /// Manage the tags tasks can carry
     Tag {
@@ -264,6 +270,43 @@ enum Toggle {
 enum Agent {
     Claude,
     Codex,
+}
+
+#[derive(Subcommand)]
+enum DocCommand {
+    /// Write a new doc and print the name it normalizes to
+    Create {
+        name: String,
+        /// Markdown content placed below the title heading
+        #[arg(long)]
+        body: Option<String>,
+        /// Name of the doc to nest this one under
+        #[arg(long)]
+        parent: Option<String>,
+    },
+    /// List the docs of this project
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print a doc as markdown, or its metadata as JSON
+    Get {
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Replace the markdown below the title heading
+    Set { name: String, body: String },
+    /// Nest a doc under another one; "" or "-" moves it to the top level
+    Nest { name: String, parent: String },
+    /// Rename a doc; its title heading and the docs nested under it follow the name
+    Rename { from: String, to: String },
+    /// Delete a doc
+    Delete {
+        name: String,
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -469,8 +512,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         .map(|()| ExitCode::SUCCESS),
         Command::Sync { status, json } => history::sync(root, daemon_url, status, json),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
-        Command::Url { keys } => task_urls(root, daemon_url, &keys).map(|()| ExitCode::SUCCESS),
+        Command::Url { keys } => page_urls(root, daemon_url, &keys).map(|()| ExitCode::SUCCESS),
         Command::Lint { keys, json, skills } => lint::run(root, &keys, json, skills),
+        Command::Doc { command } => doc::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Tag { command } => tag::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
@@ -705,12 +749,21 @@ fn shown<T: std::fmt::Display>(field: &Field<T>) -> String {
     }
 }
 
-fn task_urls(root: &Path, daemon_url: Option<&str>, keys: &[String]) -> Result<()> {
+// A link to a task or a doc that does not exist opens an empty page, so a mistyped one fails here.
+fn page_urls(root: &Path, daemon_url: Option<&str>, keys: &[String]) -> Result<()> {
     let plan = Plan::resolve(root, daemon_url)?;
     for key in keys {
-        // A link to a task that does not exist opens an empty page, so a mistyped key fails here.
-        plan.get(key)?;
-        println!("{}", plan.task_page(key));
+        match op_task::is_key_shaped(key) {
+            true => {
+                plan.get(key)?;
+                println!("{}", plan.task_page(key));
+            }
+            false => {
+                let name = doc::identity(key)?;
+                plan.doc(&name)?;
+                println!("{}", plan.doc_page(&name));
+            }
+        }
     }
     Ok(())
 }

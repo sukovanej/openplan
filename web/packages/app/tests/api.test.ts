@@ -432,6 +432,7 @@ const entry = (id: string, parents: ReadonlyArray<string>) => ({
   summary: ["OPP-1: description"],
   tasks: [{ task: "OPP-1", kind: "modified", title: "First", fields: [{ field: "description" }] }],
   tags: [],
+  docs: [],
 })
 
 it.effect("reads a page of the project's history older than a revision", () =>

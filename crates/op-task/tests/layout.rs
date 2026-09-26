@@ -11,6 +11,14 @@ fn paths_name_their_documents() {
     assert_eq!(Document::of("tasks/123456-big.md"), Document::Task(123_456));
     assert_eq!(Document::of("tags/bug.md"), Document::Tag("bug".to_owned()));
     assert_eq!(
+        Document::of("docs/doc-store.md"),
+        Document::Doc("doc-store".to_owned())
+    );
+    assert_eq!(
+        Document::of("docs/Doc Store.md"),
+        Document::Other("docs/Doc Store.md".to_owned())
+    );
+    assert_eq!(
         Document::of("assets/a/b.png"),
         Document::Asset("a/b.png".to_owned())
     );
@@ -35,6 +43,9 @@ fn a_task_path_carries_its_number_and_title() {
     assert!(!layout::task_path(420, "x").starts_with(&layout::task_prefix(42)));
     assert_eq!(layout::tag_path("bug"), "tags/bug.md");
     assert_eq!(layout::tag_name("tags/bug.md"), Some("bug"));
+    assert_eq!(layout::doc_path("doc-store"), "docs/doc-store.md");
+    assert_eq!(layout::doc_name("docs/doc-store.md"), Some("doc-store"));
+    assert_eq!(layout::doc_name("docs/a/b.md"), None);
 }
 
 #[test]

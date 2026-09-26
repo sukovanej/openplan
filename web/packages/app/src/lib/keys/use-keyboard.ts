@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { activityProjectOf, boardPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
+import { activityProjectOf, boardPath, docRouteOf, docsPath, FLOW_ROUTE, taskRouteOf } from "@openplan/task-ui"
 
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
@@ -17,11 +17,15 @@ import type { OverlayName, PaletteTarget, RouteScope, RunContext } from "./types
 function routeScope(pathname: string): RouteScope {
   if (pathname === FLOW_ROUTE) return "flow"
   if (activityProjectOf(pathname) !== undefined) return "activity"
+  if (docRouteOf(pathname) !== undefined) return "detail"
   return taskRouteOf(pathname) === undefined ? "list" : "detail"
 }
 
-// A task and the activity belong to a board, which is the page they would have been opened from.
+// A task and the activity belong to a board, and a doc belongs to the docs list: the page each would
+// have been opened from.
 function pageAbove(pathname: string): string {
+  const doc = docRouteOf(pathname)
+  if (doc !== undefined) return docsPath(doc.project)
   const project = taskRouteOf(pathname)?.project ?? activityProjectOf(pathname)
   return project === undefined ? "/" : boardPath(project)
 }
@@ -46,6 +50,14 @@ export function useKeyboard(): Keyboard {
   // route would stay the task at hand on the next one.
   useEffect(() => {
     hoveredRow.clear()
+  }, [pathname])
+
+  // A link that navigated here keeps the focus, and Enter belongs to a focused control — so Enter on
+  // the page it opened would walk back through that link instead of opening the row at hand. The
+  // link did its work; the new page is not its page.
+  useEffect(() => {
+    const held = document.activeElement
+    if (held instanceof HTMLAnchorElement) held.blur()
   }, [pathname])
 
   // How many entries Esc can pop before leaving the stack we arrived on. Read from the router's own

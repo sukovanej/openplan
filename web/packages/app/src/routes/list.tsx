@@ -1,7 +1,7 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 import { Activity, MessageSquare, Tags } from "lucide-react"
-import { memo, useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
+import { memo, useMemo, type ReactNode } from "react"
+import { Link, useParams } from "react-router-dom"
 
 import type { Board, BoardRow } from "@openplan/api-client"
 import {
@@ -21,19 +21,17 @@ import {
   TaskTags,
   TaskTimes,
 } from "@openplan/task-ui"
-import { cn, EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@openplan/ui"
+import { EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle } from "@openplan/ui"
 
+import { ChildGuide, GridRow, RowGrid, type RowSlot, TreeGuides } from "../components/row-grid"
 import { ListSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { getBoard, getMergedBoard } from "../lib/api"
 import { errorText } from "../lib/format"
 import { demotedReason, useProject, useProjects } from "../lib/projects"
 import { boardKey, mergedBoardKey } from "../lib/query-client"
-import { rowCursor, useRowCursor } from "../lib/row-cursor"
-import { hoveredRow } from "../lib/row-target"
 import { abortable } from "../lib/runtime"
 import { type TagsByName, useTagRegistries } from "../lib/tags"
-import { treeGuides, type RowGuides } from "../lib/tree-guides"
 
 // `/` is every project at once and `/:project` is one of them. They differ only in which board they
 // read; everything below the read is the same view.
@@ -116,8 +114,6 @@ function BoardState({ board, title, action }: { board: UseQueryResult<Board>; ti
   )
 }
 
-const rowDomId = (path: string) => `task-row-${path}`
-
 // The keys the id column is sized by, laid under the real one so every cell is as wide as the
 // widest. Characters are not width — an abbreviation is proportional, and only the digits are
 // tabular — and a merged board carries a key from every project. Within one project the count does
@@ -132,173 +128,58 @@ function sizingKeys(rows: ReadonlyArray<BoardRow>): ReadonlyArray<string> {
   return [...widest.values()]
 }
 
+const boardPathOf = (row: BoardRow) => taskPath(row.task.project, row.task.id)
+const boardDepthOf = (row: BoardRow) => row.depth
+
 function TaskGrid({ board, title, action }: { board: Board; title: string; action?: ReactNode }) {
-  // The board arrives already grouped, ordered, and flattened; the cursor walks the concatenation of
-  // every group's rows in that same visible order.
   const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
-  const paths = useMemo(() => rows.map((row) => taskPath(row.task.project, row.task.id)), [rows])
-  const { index } = useRowCursor(paths)
   const sizers = useMemo(() => sizingKeys(rows), [rows])
-  const activeId = index >= 0 && index < paths.length ? rowDomId(paths[index]) : undefined
-
-  const activeRow = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    activeRow.current?.scrollIntoView({ block: "nearest" })
-  }, [index])
-
-  // A task and its subtasks part ways when their statuses differ, so the tree the guides draw is the
-  // one visible inside a group, not the whole parentage.
-  const guides = useMemo(() => board.groups.map((group) => treeGuides(group.rows)), [board])
   const projects = useMemo(() => [...new Set(rows.map((row) => row.task.project))], [rows])
   const tags = useTagRegistries(projects)
-
-  let base = 0
-  return (
-    <Panel
-      role="grid"
-      aria-label="Tasks"
-      aria-activedescendant={activeId}
-      tabIndex={0}
-      className="text-sm focus:outline-none"
-    >
-      <PanelHeader className="gap-3">
-        <PanelTitle>{title}</PanelTitle>
-        {action !== undefined && <div className="ml-auto">{action}</div>}
-      </PanelHeader>
-      {/* The pointer only marks a row while the keyboard cursor is idle, so the two never claim one
-          at once. The rows read that from this attribute, and a cursor that starts or stops draws
-          none of them again. */}
-      <PanelBody onMouseLeave={hoveredRow.clear} data-pointer={index === -1 ? "free" : "held"}>
-        {board.groups.map((group, groupIndex) => {
-          const lastGroup = groupIndex === board.groups.length - 1
-          return (
-            <div key={group.status ?? "unreadable"} role="rowgroup" aria-label={statusGroupLabel(group.status)}>
-              <StatusGroupHeader status={group.status} />
-              {group.rows.map((row, j) => {
-                const i = base++
-                return (
-                  <TaskRow
-                    key={paths[i]}
-                    ref={i === index ? activeRow : undefined}
-                    row={row}
-                    path={paths[i]}
-                    at={i}
-                    sizers={sizers}
-                    guides={guides[groupIndex][j]}
-                    tags={tags[row.task.project]}
-                    active={i === index}
-                    tableLast={lastGroup && j === group.rows.length - 1}
-                  />
-                )
-              })}
-            </div>
-          )
-        })}
-      </PanelBody>
-    </Panel>
+  // A task and its subtasks part ways when their statuses differ, so the tree the guides draw is the
+  // one visible inside a group, not the whole parentage.
+  const groups = useMemo(
+    () =>
+      board.groups.map((group) => ({
+        key: group.status ?? "unreadable",
+        label: statusGroupLabel(group.status),
+        header: <StatusGroupHeader status={group.status} />,
+        rows: group.rows,
+      })),
+    [board],
   )
-}
-
-// Tree lines run down the middle of the status icon they hang from — half an icon in from the indent
-// that column occupies — and turn in at the row's own middle, where the icon they point at sits.
-// Guides stretch to the row's content box, so each segment overhangs it by the row's padding to meet
-// the segment in the row above or below: 12px up, and 12px plus the separator down.
-const GUIDE_ROW_TOP = "-top-3"
-const GUIDE_ROW_BOTTOM = "-bottom-[13px]"
-const GUIDE_TO_MIDDLE = "h-[calc(50%+0.75rem)]"
-
-function Guide({ className }: { className: string }) {
-  return <span aria-hidden className={cn("border-muted-foreground/30 absolute left-[0.625rem]", className)} />
-}
-
-function TreeGuides({ columns }: { columns: ReadonlyArray<boolean> }) {
   return (
-    <div aria-hidden className="flex shrink-0 self-stretch pl-4">
-      {columns.map((continues, column) =>
-        column === columns.length - 1 ? (
-          <div key={column} className="relative w-6">
-            <Guide className={cn(GUIDE_ROW_TOP, GUIDE_TO_MIDDLE, "right-0 border-b border-l")} />
-            {continues && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-1/2 border-l")} />}
-          </div>
-        ) : (
-          <div key={column} className="relative w-6">
-            {continues && <Guide className={cn(GUIDE_ROW_TOP, GUIDE_ROW_BOTTOM, "border-l")} />}
-          </div>
-        ),
-      )}
-    </div>
+    <RowGrid label="Tasks" title={title} action={action} groups={groups} pathOf={boardPathOf} depthOf={boardDepthOf}>
+      {(row, slot) => <TaskRow {...slot} row={row} sizers={sizers} tags={tags[row.task.project]} />}
+    </RowGrid>
   )
 }
 
 // Every prop keeps its identity while its row stays as it was, so a move of the cursor renders only
 // the row it leaves and the row it reaches.
 const TaskRow = memo(function TaskRow({
-  ref,
   row,
-  path,
-  at,
   sizers,
-  guides,
   tags,
-  active,
-  tableLast,
-}: {
-  ref?: Ref<HTMLDivElement>
+  guides,
+  ...slot
+}: RowSlot & {
   row: BoardRow
-  path: string
-  at: number
   sizers: ReadonlyArray<string>
-  guides: RowGuides
   tags: TagsByName | undefined
-  active: boolean
-  tableLast: boolean
 }) {
+  const { path, at } = slot
   const { task, parent_title } = row
   const parent = parentOf(task.metadata)
   const created = createdOf(task.metadata)
   const broken = problems(task.metadata)
-  const navigate = useNavigate()
-
-  // The row opens its task from its own click rather than from a link stretched over it: an overlay
-  // that size takes every hover in the row with it, leaving the tooltips underneath unreachable. The
-  // links the row does contain answer their own clicks, and a modified click is the browser's.
-  const open = (event: MouseEvent<HTMLDivElement>) => {
-    rowCursor.focus(at)
-    const link = event.target instanceof Element && event.target.closest("a") !== null
-    if (link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    navigate(path)
-  }
 
   return (
-    <Row
-      ref={ref}
-      id={rowDomId(path)}
-      role="row"
-      aria-selected={active}
-      active={active}
-      hoverable="while-free"
-      last={tableLast}
-      onClick={open}
-      // Scrolling a list under a still pointer moves `:hover` to another row without a mousemove,
-      // so the row the pointer marks is only in step with the store if entering counts too. It must
-      // not count while the keyboard drives, or walking with `j` would hand rows it scrolls past
-      // back to the pointer.
-      onMouseEnter={() => {
-        if (rowCursor.getSnapshot().index === -1) hoveredRow.enter(path, at)
-      }}
-      // Moving the pointer is what hands the current row back to it — and only over a row, so a
-      // nudge across a group header or the scrollbar leaves the keyboard's row where it was.
-      onMouseMove={() => {
-        hoveredRow.enter(path, at)
-        rowCursor.clear()
-      }}
-      onMouseLeave={() => hoveredRow.leave(path, at)}
-      className="flex cursor-pointer items-start py-3"
-    >
+    <GridRow slot={slot}>
       <TreeGuides columns={guides.columns} />
       <div role="gridcell" className="relative flex shrink-0 items-center self-stretch">
         <StatusControl project={task.project} id={task.id} at={at} status={statusField(task.metadata)} />
-        {guides.opensChildren && <Guide className={cn(GUIDE_ROW_BOTTOM, "top-[calc(50%+0.625rem)] border-l")} />}
+        {guides.opensChildren && <ChildGuide />}
       </div>
       <div role="gridcell" className="text-muted-foreground grid shrink-0 self-center pl-3 text-xs tabular-nums">
         {/* Laying the board's sizing keys under this one, in the same grid cell, makes every such
@@ -338,6 +219,6 @@ const TaskRow = memo(function TaskRow({
           <TaskTags metadata={task.metadata} tags={tags} />
         </MetaLine>
       </div>
-    </Row>
+    </GridRow>
   )
 })

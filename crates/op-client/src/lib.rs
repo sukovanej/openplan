@@ -2,10 +2,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use op_api::{
-    ApiErrorBody, BackendKind, Comment, CreateComment, CreateTag, CreateTask, DaemonInfo,
-    HistoryEntry, ProjectView, Refusal, RegisterProject, RenameProject, SearchHit, SyncResult,
-    SyncView, TagPatch, TagView, TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
-    WriteTaskFile,
+    ApiErrorBody, BackendKind, Comment, CreateComment, CreateDoc, CreateTag, CreateTask,
+    DaemonInfo, DocDetail, DocListItem, DocPatch, HistoryEntry, ProjectView, Refusal,
+    RegisterProject, RenameProject, SearchHit, SyncResult, SyncView, TagPatch, TagView,
+    TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView, WriteTaskFile,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -412,6 +412,40 @@ impl Client {
         accepted(send(self.write(self.http.delete(url)))?).map(drop)
     }
 
+    pub fn docs(&self, base_url: &str, project: &str) -> Result<Vec<DocListItem>, ClientError> {
+        self.read(fresh(docs_url(base_url, project, None)?))
+    }
+
+    pub fn doc(&self, base_url: &str, project: &str, name: &str) -> Result<DocDetail, ClientError> {
+        self.read(fresh(docs_url(base_url, project, Some(name))?))
+    }
+
+    pub fn create_doc(
+        &self,
+        base_url: &str,
+        project: &str,
+        doc: &CreateDoc,
+    ) -> Result<DocDetail, ClientError> {
+        let url = docs_url(base_url, project, None)?;
+        self.json(self.write(self.http.post(url)).json(doc))
+    }
+
+    pub fn patch_doc(
+        &self,
+        base_url: &str,
+        project: &str,
+        name: &str,
+        patch: &DocPatch,
+    ) -> Result<DocDetail, ClientError> {
+        let url = docs_url(base_url, project, Some(name))?;
+        self.json(self.write(self.http.patch(url)).json(patch))
+    }
+
+    pub fn delete_doc(&self, base_url: &str, project: &str, name: &str) -> Result<(), ClientError> {
+        let url = docs_url(base_url, project, Some(name))?;
+        accepted(send(self.write(self.http.delete(url)))?).map(drop)
+    }
+
     fn write(&self, mut request: RequestBuilder) -> RequestBuilder {
         let headers = [
             (op_api::AUTHOR_HEADER, &self.identity.name),
@@ -504,6 +538,18 @@ fn tags_url(base_url: &str, project: &str, name: Option<&str>) -> Result<Url, Cl
     {
         let mut segments = url.path_segments_mut().map_err(|_| unusable(base_url))?;
         segments.push("tags");
+        if let Some(name) = name {
+            segments.push(name);
+        }
+    }
+    Ok(url)
+}
+
+fn docs_url(base_url: &str, project: &str, name: Option<&str>) -> Result<Url, ClientError> {
+    let mut url = projects_url(base_url, project)?;
+    {
+        let mut segments = url.path_segments_mut().map_err(|_| unusable(base_url))?;
+        segments.push("docs");
         if let Some(name) = name {
             segments.push(name);
         }

@@ -8,25 +8,29 @@ import {
 import { EditorSelection, type Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 
-import type { TaskRef } from "@openplan/api-client"
+import type { DocRef, TaskRef } from "@openplan/api-client"
 
 import { isInCode } from "./syntax"
 
-export interface TaskOption {
-  readonly task: TaskRef
-  readonly indices: ReadonlyArray<number>
+export type RefOption =
+  | { readonly kind: "task"; readonly task: TaskRef; readonly indices: ReadonlyArray<number> }
+  | { readonly kind: "doc"; readonly doc: DocRef; readonly indices: ReadonlyArray<number> }
+
+export interface RefSearch {
+  readonly search: (query: string) => ReadonlyArray<RefOption>
+  readonly picked: (option: RefOption) => void
 }
 
-export interface TaskSearch {
-  readonly search: (query: string) => ReadonlyArray<TaskOption>
-  readonly picked: (task: TaskRef) => void
-}
+const spelled = (option: RefOption) =>
+  option.kind === "task"
+    ? { label: option.task.title, detail: option.task.id, target: option.task.id }
+    : { label: option.doc.title, detail: "doc", target: option.doc.name }
 
 // `[[` anywhere, or `@` where a word starts: an `@` inside a word is an address.
 const TASK_TRIGGER = /(?:\[\[|(?<=^|[\s(])@)[^\]\n@]*$/
 
-const taskReferences =
-  (search: TaskSearch) =>
+const references =
+  (search: RefSearch) =>
   (context: CompletionContext): CompletionResult | null => {
     const typed = context.matchBefore(TASK_TRIGGER)
     if (typed === null || isInCode(context.state, context.pos, -1)) return null
@@ -34,20 +38,23 @@ const taskReferences =
     return {
       from: typed.from,
       filter: false,
-      options: search.search(query).map(({ task }) => ({
-        label: task.title,
-        detail: task.id,
-        type: "task",
-        apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
-          search.picked(task)
-          const closing = view.state.sliceDoc(to, to + 2) === "]]" ? 2 : 0
-          const insert = `[[${task.id}]] `
-          view.dispatch({
-            changes: { from, to: to + closing, insert },
-            selection: { anchor: from + insert.length },
-          })
-        },
-      })),
+      options: search.search(query).map((option) => {
+        const { label, detail, target } = spelled(option)
+        return {
+          label,
+          detail,
+          type: option.kind,
+          apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
+            search.picked(option)
+            const closing = view.state.sliceDoc(to, to + 2) === "]]" ? 2 : 0
+            const insert = `[[${target}]] `
+            view.dispatch({
+              changes: { from, to: to + closing, insert },
+              selection: { anchor: from + insert.length },
+            })
+          },
+        }
+      }),
     }
   }
 
@@ -91,7 +98,7 @@ const SLASH_COMMANDS: ReadonlyArray<SlashCommand> = [
   { label: "Table", detail: "|", run: insertBlock("| Column | Column |\n| --- | --- |\n|  |  |", 36) },
   { label: "Divider", detail: "---", run: insertBlock("---\n", 4) },
   {
-    label: "Task reference",
+    label: "Reference",
     detail: "[[",
     run: (view, from, to) => {
       insertBlock("[[", 2)(view, from, to)
@@ -116,9 +123,9 @@ function slashCommands(context: CompletionContext): CompletionResult | null {
   }
 }
 
-export function completions(search: TaskSearch): Extension {
+export function completions(search: RefSearch): Extension {
   return autocompletion({
-    override: [taskReferences(search), slashCommands],
+    override: [references(search), slashCommands],
     icons: false,
     activateOnTyping: true,
   })

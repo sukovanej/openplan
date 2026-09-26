@@ -3,7 +3,17 @@ export { BodyConflict, TaskBodyWithConflicts } from "./body-conflict"
 export { type BodySegment, bodySegments, type ConflictBlock } from "./body-segments"
 export { ChangeMark } from "./change-mark"
 export { isDiagramTag } from "./code-block"
-export { DocumentChangeView, TagChangeView, TaskChangeView } from "./change-view"
+export { DocChangeView, DocumentChangeView, TagChangeView, TaskChangeView } from "./change-view"
+export { DocRefChip } from "./doc-ref-chip"
+export {
+  docConflictedFields,
+  docCreatedOf,
+  type DocFieldName,
+  docFields,
+  docMetadataFailure,
+  docParentOf,
+  docProblems,
+} from "./doc-metadata"
 export { CommentThread } from "./comment-thread"
 export { CONFLICT_TINT, ConflictBadge, conflictCount } from "./conflict-mark"
 export { type DiagramOutcome, DiagramDrawer, type DrawDiagram } from "./diagram-drawer"
@@ -25,7 +35,7 @@ export {
   statusField,
   tagsOf,
 } from "./metadata"
-export { ParentLink } from "./parent-link"
+export { DocParentLink, ParentLink } from "./parent-link"
 export { ProblemBadge, ProblemBanner, withoutTextProblems } from "./problem-mark"
 export { RevisionMeta, shortRevision } from "./revision-meta"
 export { StatusMenu } from "./status-menu"
@@ -49,7 +59,7 @@ export {
 export { TagChip } from "./tag-chip"
 export { ColorDot, ColorPicker } from "./tag-palette"
 export { TaskBody } from "./task-body"
-export { referencedTask, type ReferencedTask, taskRefMatches } from "./task-links"
+export { type Referenced, referenced, referencePath, taskRefMatches } from "./task-links"
 export { ensureHighlighter, highlightTokens, resolveLang, watchHighlighter } from "./highlighter"
 export { DiagramBlock } from "./diagram-block"
 export {
@@ -58,6 +68,12 @@ export {
   activityProjectOf,
   BOARD_ROUTE,
   boardPath,
+  DOC_ROUTE,
+  docPath,
+  docRevisionPath,
+  docRouteOf,
+  DOCS_ROUTE,
+  docsPath,
   FLOW_ROUTE,
   REVISION_PARAM,
   revisionPath,

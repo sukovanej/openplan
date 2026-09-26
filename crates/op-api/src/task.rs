@@ -123,6 +123,7 @@ pub enum ProblemCode {
     Comment,
     Diagram,
     Reference,
+    ReferencePath,
     Tag,
     ParentCycle,
     DependencyCycle,
@@ -137,6 +138,7 @@ impl ProblemCode {
             ProblemCode::Comment => "comment",
             ProblemCode::Diagram => "diagram",
             ProblemCode::Reference => "reference",
+            ProblemCode::ReferencePath => "reference_path",
             ProblemCode::Tag => "tag",
             ProblemCode::ParentCycle => "parent_cycle",
             ProblemCode::DependencyCycle => "dependency_cycle",
@@ -172,6 +174,9 @@ pub struct TaskDetail {
     pub children: Vec<TaskChild>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<TaskRef>,
+    // The docs the body names, resolved the same way `refs` resolves the tasks it names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub doc_refs: Vec<crate::doc::DocRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<TaskRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

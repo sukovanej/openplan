@@ -27,6 +27,38 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   new build of the CLI and the daemon, versioned `<next patch>-canary.<run>`.
   `openplan update --canary` installs it. `openplan update` goes back to the
   newest stable release, also when that release is older.
+- Docs: markdown pages that live with the tasks, in `docs/<name>.md` of the
+  same git ref or local directory. A doc has a title, a body, and an optional
+  parent doc. `openplan doc` creates, lists, prints, edits, nests, renames, and
+  deletes them. The web UI has a docs page across projects (`g d`) and a page
+  for each doc. `[[name]]` links to a doc and `[[OPP-42]]` to a task, from a
+  task or a doc. Renaming a doc moves every link to it and the docs nested
+  under it. Deleting a doc moves the docs nested under it up to its parent. `openplan migrate` brings the docs in `.plan/docs/` along with the
+  tasks.
+- A file names every other file by its path, relative to its own directory:
+  `[[../docs/storage.md]]` from a task, `[[../tasks/00042-ship-login.md]]` from
+  a doc, and `parent: ./architecture.md` in a doc. A write turns a key or a doc
+  name into that path, and the API and the CLI show the key or the name again.
+  `openplan lint` reports a reference that a file spells in another way.
+- The doc page edits the title and the body in place with the editor of the
+  task page. `PUT /api/projects/{project}/docs/{name}/text` merges the edit
+  with what other writers changed since. A new title renames the doc. The `[[`
+  menu of the editor offers docs as well as tasks.
+- A doc page shows its parent in the header, its nested docs and its history
+  in a side column, and the person who created it, as a task page does. "Add
+  doc" nests an existing doc or writes a new one, as "Add subtask" does for
+  tasks. A revision of a doc opens as that revision left it. The activity view
+  shows each doc change with its title and a link to the doc.
+- Sync merges a doc as it merges a task: the parent by field, and the body by
+  line. When two people change the parent or the same lines differently, the
+  doc keeps both versions, and the published version is in force until
+  someone picks. `openplan doc get` warns about conflicts, `openplan doc list`
+  marks them, and `openplan lint` reports them. When sync gives a task a new
+  number because another task took its number first, the links to it in your
+  docs follow it.
+- `openplan lint` checks docs too: Mermaid diagrams, references to a task or a
+  doc that does not exist, and parent cycles. `openplan url` prints the page of
+  a doc.
 - `GET /api/events` takes the cursor of the last event a client saw in the
   query too (`?last_event_id=<id>`), because a new EventSource cannot set the
   `Last-Event-ID` header. The web UI uses it to resume after a reconnect.
@@ -81,7 +113,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   for every revision, also for a revision that plain git or an import wrote.
   Examples: `OPP-114: status → in_review, description`, a new title, tags
   added or removed, new comments, a task that a sync moved to a new number, and
-  a renamed tag. The history API gives each entry a `summary` (one line for each
+  a renamed tag or doc. The history API gives each entry a `summary` (one line for each
   document), `tasks` (the changed fields of each task), and `tags`. openplan
   writes its commit messages from the same description, so `git log
   openplan/tasks` agrees with `openplan history`.
@@ -137,6 +169,15 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   work. Before, a command could fail with "database is locked". A command could
   also delete a file of the project from the disk, such as `.plan/config.toml`,
   when another command recorded that file at the same time.
+- An open task page did not show a change to a task around it, such as a new
+  subtask from the CLI or from a sync, until a reload. A task page and a doc
+  page now read again after each change to a task or a doc in their project.
+- Enter in a search box, such as "Add subtask" or "Change parent", right after
+  typing picked an option for the text before the last keys. It now picks the
+  first option for the text in the box.
+- A project named `flow` had no board, because the flow page has that
+  address. A new project does not take the name `api`, `docs`, or `flow`: it
+  takes `docs-2`, for example. A rename to one of these names is refused.
 
 ## [0.0.3](https://github.com/sukovanej/openplan/compare/v0.0.2...v0.0.3) - 2026-09-25
 

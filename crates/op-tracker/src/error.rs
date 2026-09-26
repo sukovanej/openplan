@@ -15,6 +15,10 @@ pub enum TrackerError {
     TagExists { name: String },
     #[error("tag {name} is used by {count} task(s)")]
     TagReferenced { name: String, count: usize },
+    #[error("no such doc: {name}")]
+    DocNotFound { name: String },
+    #[error("doc already exists: {name}")]
+    DocExists { name: String },
     #[error("tag {name} is not registered")]
     TagUnregistered { name: String },
     #[error("not a task reference: {reference:?}; {}", op_task::REFERENCE_EXPECTED)]

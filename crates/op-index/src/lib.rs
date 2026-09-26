@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+mod docs;
 mod problems;
 
 use op_api::{
@@ -7,8 +8,9 @@ use op_api::{
     TaskListItem, TaskRef, hit_cmp, list_item_cmp, updated_field,
 };
 use op_backend::{Actor, Change, ChangeKind, LogEntry, Timestamp};
+use op_task::reference::{self, Target};
 use op_task::{Abbreviation, FieldError, layout};
-use op_tracker::{Plan, TrackerError};
+use op_tracker::{Plan, TrackerError, doc_moves};
 
 #[derive(Debug, Default)]
 pub struct Index {
@@ -17,6 +19,9 @@ pub struct Index {
     updated: HashMap<u64, Timestamp>,
     authors: HashMap<u64, Author>,
     problems: HashMap<u64, Vec<Problem>>,
+    docs: BTreeMap<String, docs::DocEntry>,
+    doc_updated: HashMap<String, Timestamp>,
+    doc_authors: HashMap<String, Author>,
 }
 
 #[derive(Debug, Clone)]
@@ -28,8 +33,11 @@ struct Entry {
     conflicts: usize,
     // `# ` headings in the published version of the text, outside the comment log.
     titles: usize,
-    // The tasks the text names with `[[…]]`, found or not.
+    // The tasks and the docs the text names with `[[…]]`, found or not.
     body_refs: Vec<u64>,
+    doc_refs: Vec<String>,
+    // References the file spells as a key, a number, or a name rather than as a path.
+    unpathed: Vec<(String, Target)>,
     comment_problems: Vec<String>,
     diagram_problems: Vec<String>,
     haystack: Haystack,
@@ -61,13 +69,16 @@ impl Index {
         let abbreviation = plan.abbreviation().ok();
         if abbreviation != self.abbreviation {
             self.tasks.clear();
+            self.docs.clear();
             self.abbreviation = abbreviation;
         }
         let Some(abbreviation) = abbreviation else {
             self.tasks.clear();
             self.problems.clear();
+            self.docs.clear();
             return Ok(());
         };
+        self.load_docs(plan)?;
         let raw = plan.raw_all()?;
         self.tasks.retain(|number, _| raw.contains_key(number));
         for (number, text) in raw {
@@ -124,6 +135,11 @@ impl Index {
                 if let Some(number) = layout::task_number(&change.path) {
                     self.updated.entry(number).or_insert(entry.revision.at);
                 }
+                if let Some(name) = layout::doc_name(&change.path) {
+                    self.doc_updated
+                        .entry(name.to_owned())
+                        .or_insert(entry.revision.at);
+                }
             }
         }
     }
@@ -133,7 +149,8 @@ impl Index {
     }
 
     // A log lists the newest revision first, so the first entry to create a task names its author:
-    // a task deleted and created again under the same number is a new task.
+    // a task deleted and created again under the same number is a new task. A doc is read oldest
+    // first, because a rename moves the author of the old name to the new one.
     pub fn credit(&mut self, log: &[LogEntry]) {
         let mut found = HashMap::new();
         for entry in log {
@@ -144,6 +161,39 @@ impl Index {
             }
         }
         self.authors.extend(found);
+        let mut docs: HashMap<String, Author> = HashMap::new();
+        for entry in log.iter().rev() {
+            let moves = doc_moves(&entry.changes);
+            for (old, new) in moves.renamed {
+                let author = docs
+                    .remove(&old)
+                    .or_else(|| self.doc_authors.get(&old).cloned());
+                if let Some(author) = author {
+                    docs.insert(new, author);
+                }
+            }
+            for name in moves.created {
+                docs.insert(name, author_of(&entry.revision.author));
+            }
+        }
+        self.doc_authors.extend(docs);
+    }
+
+    // A rename between two loads keeps the author the old name had.
+    pub fn carry_doc_authors(&mut self, changes: &[Change]) {
+        for (old, new) in doc_moves(changes).renamed {
+            if let Some(author) = self.doc_authors.remove(&old) {
+                self.doc_authors.insert(new, author);
+            }
+        }
+    }
+
+    pub fn doc_exists(&self, name: &str) -> bool {
+        self.docs.contains_key(name)
+    }
+
+    pub fn doc_credited(&self, name: &str) -> bool {
+        self.doc_authors.contains_key(name)
     }
 
     pub fn credited(&self, number: u64) -> bool {
@@ -207,6 +257,7 @@ impl Index {
             parent_title: hierarchy.parent_title,
             children: hierarchy.children,
             refs: hierarchy.refs,
+            doc_refs: self.doc_refs_in(layout::TASKS, &partial.body),
             depends_on: hierarchy.depends_on,
             blocks: hierarchy.blocks,
         })
@@ -217,7 +268,7 @@ impl Index {
     fn description_of(&self, body: &str) -> String {
         let description = op_task::content::split(&op_task::comment::strip(body));
         match self.abbreviation {
-            Some(abbreviation) => op_api::body_to_keys(abbreviation, &description),
+            Some(abbreviation) => op_api::body_to_keys(abbreviation, layout::TASKS, &description),
             None => description,
         }
     }
@@ -303,7 +354,7 @@ impl Index {
             parent_title,
             children,
             refs: match self.abbreviation {
-                Some(abbreviation) => body_refs(abbreviation, body, &by_id),
+                Some(abbreviation) => body_refs(abbreviation, layout::TASKS, body, &by_id),
                 None => Vec::new(),
             },
             depends_on,
@@ -348,12 +399,24 @@ impl Entry {
             .count();
         let body_refs = op_task::body_ref_spans(&text)
             .into_iter()
-            .filter_map(|(_, inner)| op_task::body_ref_id(abbreviation, inner))
+            .filter_map(|(_, inner)| op_task::body_ref_id(abbreviation, layout::TASKS, inner))
             .collect();
+        let mut unpathed = reference::unpathed(Some(abbreviation), layout::TASKS, &text);
+        unpathed.extend(
+            reference::frontmatter_spellings(&raw)
+                .into_iter()
+                .filter(|spelled| !reference::is_path(layout::TASKS, spelled))
+                .filter_map(|spelled| {
+                    let number = op_task::ref_id(&spelled)?;
+                    Some((spelled, Target::Task(number)))
+                }),
+        );
         let metadata = Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation);
         Self {
             titles,
             body_refs,
+            doc_refs: op_task::doc::body_doc_names(Some(abbreviation), layout::TASKS, &text),
+            unpathed,
             comment_problems: op_task::comment::problems(&partial.body),
             diagram_problems: diagram_problems(&raw),
             haystack: haystack(&title, &partial.body, &metadata),
@@ -426,13 +489,14 @@ fn depends_on_id(row: &TaskListItem, id: &str) -> bool {
 // Every `[[…]]` in `body` that resolves to a known task, once each, in first-seen order.
 fn body_refs(
     abbreviation: Abbreviation,
+    dir: &str,
     body: &str,
     by_id: &HashMap<&str, &TaskListItem>,
 ) -> Vec<TaskRef> {
     let mut refs = Vec::new();
     let mut seen = HashSet::new();
     for (_, inner) in op_task::body_ref_spans(body) {
-        let Some(number) = op_task::body_ref_id(abbreviation, inner) else {
+        let Some(number) = op_task::body_ref_id(abbreviation, dir, inner) else {
             continue;
         };
         let key = abbreviation.format_key(number);
@@ -455,7 +519,7 @@ pub fn comments_of(body: &str) -> Vec<Comment> {
 // The place counts from the top of the task file, the text that `openplan get` prints and an agent
 // edits. A fence in a comment sits in a blockquote, so its lines in the file carry a `> ` that the
 // parser never saw.
-fn diagram_problems(raw: &str) -> Vec<String> {
+pub(crate) fn diagram_problems(raw: &str) -> Vec<String> {
     op_md::fences(raw)
         .into_iter()
         .filter(|fence| fence.language.eq_ignore_ascii_case("mermaid"))

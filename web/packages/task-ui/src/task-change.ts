@@ -1,4 +1,4 @@
-import type { DocumentChangeKind, FieldChange, TagChange } from "@openplan/api-client"
+import type { DocChange, DocumentChangeKind, FieldChange, TagChange } from "@openplan/api-client"
 
 import { statusLabel } from "./status"
 
@@ -62,6 +62,6 @@ const kindText: Record<DocumentChangeKind, string> = { added: "Created", modifie
 
 export const documentChangeText = (kind: DocumentChangeKind): string => kindText[kind]
 
-export function tagChangeText(change: TagChange): string {
+export function renameText(change: TagChange | DocChange): string {
   return change.renamed_from === undefined ? documentChangeText(change.kind) : `Renamed from ${change.renamed_from}`
 }

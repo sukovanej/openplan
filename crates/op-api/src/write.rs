@@ -113,28 +113,39 @@ pub struct WriteTaskText {
 }
 
 impl WriteTaskText {
-    // A file can hold a reference in a spelling a write may not add, such as another store's key.
-    // The text may keep each one that `base` holds, so an edit elsewhere is not refused for it.
     pub fn into_texts(self, abbreviation: Abbreviation) -> Result<(Text, Text), KeyError> {
-        let held: Vec<&str> = op_task::body_ref_spans(&self.base.description)
-            .into_iter()
-            .map(|(_, inner)| op_task::ref_target(inner))
-            .collect();
-        let base = body_from_keys_keeping(abbreviation, &self.base.description, |_| true)?;
-        let text = body_from_keys_keeping(abbreviation, &self.text.description, |target| {
-            held.contains(&target)
-        })?;
-        Ok((
-            Text {
-                title: self.base.title,
-                description: base,
-            },
-            Text {
-                title: self.text.title,
-                description: text,
-            },
-        ))
+        texts(
+            abbreviation,
+            (self.base.title, &self.base.description),
+            (self.text.title, &self.text.description),
+        )
     }
+}
+
+// A file can hold a reference in a spelling a write may not add, such as another store's key. The
+// text may keep each one that `base` holds, so an edit elsewhere is not refused for it.
+pub(crate) fn texts(
+    abbreviation: Abbreviation,
+    base: (String, &str),
+    text: (String, &str),
+) -> Result<(Text, Text), KeyError> {
+    let held: Vec<&str> = op_task::body_ref_spans(base.1)
+        .into_iter()
+        .map(|(_, inner)| op_task::ref_target(inner))
+        .collect();
+    let base_description = body_from_keys_keeping(abbreviation, base.1, |_| true)?;
+    let description =
+        body_from_keys_keeping(abbreviation, text.1, |target| held.contains(&target))?;
+    Ok((
+        Text {
+            title: base.0,
+            description: base_description,
+        },
+        Text {
+            title: text.0,
+            description,
+        },
+    ))
 }
 
 // A whole task file, as `openplan get` prints one, to write back over the task. The comment log is

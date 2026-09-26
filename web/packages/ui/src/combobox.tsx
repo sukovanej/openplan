@@ -63,8 +63,7 @@ export function Combobox({
   }, [inline, options])
   useDismissOnOutsideClick(rootRef, onClose)
 
-  const choose = (index: number) => {
-    const option = options[index]
+  const choose = (option: ComboOption | undefined) => {
     if (option === undefined) return
     option.onSelect()
     onClose?.()
@@ -80,9 +79,11 @@ export function Combobox({
         event.preventDefault()
         if (options.length > 0) setActive((a) => (a - 1 + options.length) % options.length)
         break
+      // Before the debounce settles, the list still shows an older query, and its options act on
+      // things the reader no longer typed. Enter then takes the first option for the text on screen.
       case "Enter":
         event.preventDefault()
-        choose(active)
+        choose(text === query ? options[active] : buildOptions(text.trim())[0])
         break
       case "Escape":
         event.preventDefault()
@@ -133,7 +134,7 @@ export function Combobox({
               aria-selected={index === active}
               onMouseDown={(event) => {
                 event.preventDefault()
-                choose(index)
+                choose(option)
               }}
               onMouseMove={() => setActive(index)}
               className="cursor-pointer"

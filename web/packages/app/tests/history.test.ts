@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import type { DocumentChange, HistoryEntry, TaskChange } from "@openplan/api-client"
+import type { DocChange, DocumentChange, HistoryEntry, TaskChange } from "@openplan/api-client"
 
 import {
   activityRows,
   changePath,
   diffTarget,
+  docChangePath,
   olderThan,
   otherChanges,
   SHOWN_CHANGES,
@@ -23,6 +24,7 @@ const entry = (
   summary: [],
   tasks,
   tags: [],
+  docs: [],
 })
 
 describe("paging", () => {
@@ -37,11 +39,12 @@ describe("paging", () => {
 })
 
 describe("what a revision changed", () => {
-  it("keeps apart the documents that are neither a task nor a tag", () => {
+  it("keeps apart the documents that are neither a task, a tag, nor a doc", () => {
     const others = otherChanges(
       entry("r", [
         { path: "tasks/00001-first.md", kind: "added", task: "OPP-1" },
         { path: "tags/backend.md", kind: "modified", tag: "backend" },
+        { path: "docs/architecture.md", kind: "modified", doc: "architecture" },
         { path: "config.toml", kind: "modified" },
       ]),
     )
@@ -61,16 +64,18 @@ describe("what a revision changed", () => {
 })
 
 describe("the rows of a revision in the activity", () => {
-  it("lists the tasks, then the tags, then the other documents", () => {
+  it("lists the tasks, then the tags, then the docs, then the other documents", () => {
     const rows = activityRows({
       ...entry("r", [
         { path: "tags/bug.md", kind: "added", tag: "bug" },
+        { path: "docs/architecture.md", kind: "added", doc: "architecture" },
         { path: "config.toml", kind: "added" },
       ]),
       tasks: [{ task: "OPP-1", kind: "added", title: "First" }],
       tags: [{ tag: "bug", kind: "added" }],
+      docs: [{ doc: "architecture", kind: "added" }],
     })
-    expect(rows.map((row) => row.kind)).toEqual(["task", "tag", "document"])
+    expect(rows.map((row) => row.kind)).toEqual(["task", "tag", "doc", "document"])
   })
 
   it("stops at a limit, and counts the rest", () => {
@@ -104,6 +109,25 @@ describe("where a change leads", () => {
 
   it("has nowhere to open a task that a first revision removed", () => {
     expect(changePath("openplan", entry("r", [], []), { task: "OPP-2", kind: "removed" }, false)).toBeUndefined()
+  })
+})
+
+describe("where a doc change leads", () => {
+  const change = (kind: DocChange["kind"]): DocChange => ({ doc: "architecture", kind })
+
+  it("opens a doc that still exists", () => {
+    expect(docChangePath("openplan", entry("r", [], []), change("added"), true)).toBe("/openplan/doc/architecture")
+    expect(docChangePath("openplan", entry("r", [], []), change("modified"), true)).toBe("/openplan/doc/architecture")
+  })
+
+  it("opens a doc that is gone as a revision left it", () => {
+    expect(docChangePath("openplan", entry("r", [], []), change("modified"), false)).toBe(
+      "/openplan/doc/architecture?revision=r",
+    )
+    expect(docChangePath("openplan", entry("r", [], ["before"]), change("removed"), true)).toBe(
+      "/openplan/doc/architecture?revision=before",
+    )
+    expect(docChangePath("openplan", entry("r", [], []), change("removed"), true)).toBeUndefined()
   })
 })
 
@@ -157,6 +181,26 @@ describe("the document a change line diffs", () => {
     expect(
       diffTarget(renamed, { kind: "tag", change: { tag: "defect", kind: "modified", renamed_from: "bug" } }),
     ).toEqual({ path: "tags/defect.toml", from: "tags/bug.toml" })
+  })
+
+  it("diffs an edited doc in its one file", () => {
+    const edited = entry("r", [{ path: "docs/architecture.md", kind: "modified", doc: "architecture" }])
+    expect(diffTarget(edited, { kind: "doc", change: { doc: "architecture", kind: "modified" } })).toEqual({
+      path: "docs/architecture.md",
+    })
+  })
+
+  it("diffs a renamed doc from its old file to its new one", () => {
+    const renamed = entry("r", [
+      { path: "docs/architecture.md", kind: "removed", doc: "architecture" },
+      { path: "docs/the-design.md", kind: "added", doc: "the-design" },
+    ])
+    expect(
+      diffTarget(renamed, {
+        kind: "doc",
+        change: { doc: "the-design", kind: "modified", renamed_from: "architecture" },
+      }),
+    ).toEqual({ path: "docs/the-design.md", from: "docs/architecture.md" })
   })
 
   it("diffs another document at its own path, and nothing for the rest", () => {

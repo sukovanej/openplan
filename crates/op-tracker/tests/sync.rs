@@ -5,6 +5,7 @@ use std::sync::Arc;
 use op_backend::{Actor, Backend};
 use op_backend_git::{GitBackend, Options};
 use op_task::comment::NewComment;
+use op_task::content::Text;
 use op_task::{Status, Task, Timestamp};
 use op_tracker::{HistoryQuery, TaskMergePolicy, Tracker, TrackerError};
 
@@ -360,4 +361,293 @@ fn an_edit_wins_over_a_delete() {
     alice.sync();
     bob.sync();
     assert_eq!(bob.task(1).frontmatter.status, Status::Done);
+}
+
+#[test]
+fn edits_to_one_doc_on_both_sides_both_survive() {
+    let team = Team::new();
+    let (alice, bob) = started(&team);
+    let mut doc = op_task::doc::Doc::new(
+        "Architecture",
+        "2026-01-01T00:00:00Z".parse().expect("time"),
+    )
+    .expect("name");
+    doc.set_content("line one\n\nline two");
+    alice
+        .tracker
+        .create_doc(&alice.actor, &doc)
+        .expect("create");
+    alice.sync();
+    bob.sync();
+    let edit = |member: &Member, content: &'static str| {
+        member
+            .tracker
+            .update_doc(&member.actor, "architecture", |doc| {
+                doc.set_content(content);
+                Ok(())
+            })
+            .expect("update");
+    };
+    edit(&alice, "line one from alice\n\nline two");
+    edit(&bob, "line one\n\nline two from bob");
+    alice.sync();
+    bob.sync();
+    let text = bob
+        .tracker
+        .plan()
+        .expect("plan")
+        .raw_doc("architecture")
+        .expect("raw");
+    assert!(text.contains("line one from alice"), "{text}");
+    assert!(text.contains("line two from bob"), "{text}");
+}
+
+fn docs(member: &Member, names: &[&str]) {
+    for name in names {
+        let doc = op_task::doc::Doc::new(name, "2026-01-01T00:00:00Z".parse().expect("time"))
+            .expect("name");
+        member
+            .tracker
+            .create_doc(&member.actor, &doc)
+            .expect("create");
+    }
+}
+
+fn nest(member: &Member, name: &str, parent: &str) {
+    member
+        .tracker
+        .update_doc(&member.actor, name, |doc| {
+            doc.set_parent(Some(parent)).expect("parent");
+            Ok(())
+        })
+        .expect("nest");
+}
+
+#[test]
+fn a_parent_both_sides_changed_keeps_the_doc_readable_until_one_is_picked() {
+    let team = Team::new();
+    let (alice, bob) = started(&team);
+    docs(&alice, &["Guides", "Reference", "Storage"]);
+    alice.sync();
+    bob.sync();
+    nest(&alice, "storage", "guides");
+    nest(&bob, "storage", "reference");
+    alice.sync();
+    bob.sync();
+
+    let storage = bob
+        .tracker
+        .plan()
+        .expect("plan")
+        .doc("storage")
+        .expect("readable");
+    assert_eq!(storage.frontmatter.parent.as_deref(), Some("guides"));
+    assert_eq!(storage.conflicts.len(), 1);
+    assert_eq!(storage.conflicts[0].other, Some("reference".into()));
+
+    nest(&bob, "storage", "reference");
+    let storage = bob
+        .tracker
+        .plan()
+        .expect("plan")
+        .doc("storage")
+        .expect("readable");
+    assert_eq!(storage.frontmatter.parent.as_deref(), Some("reference"));
+    assert!(storage.conflicts.is_empty());
+}
+
+#[test]
+fn a_doc_both_sides_created_merges_into_one_readable_doc() {
+    let team = Team::new();
+    let (alice, bob) = started(&team);
+    docs(&alice, &["Storage"]);
+    docs(&bob, &["Storage"]);
+    alice.sync();
+    bob.sync();
+
+    let storage = bob
+        .tracker
+        .plan()
+        .expect("plan")
+        .doc("storage")
+        .expect("readable");
+    assert_eq!(storage.title().as_deref(), Some("Storage"));
+    assert!(storage.conflicts.is_empty());
+}
+
+#[test]
+fn a_block_in_a_doc_resolves_and_an_edit_inside_it_is_refused() {
+    let team = Team::new();
+    let (alice, bob) = started(&team);
+    docs(&alice, &["Storage"]);
+    alice.sync();
+    bob.sync();
+    let edit = |member: &Member, content: &str| {
+        member.tracker.update_doc(&member.actor, "storage", |doc| {
+            doc.set_content(content);
+            Ok(())
+        })
+    };
+    edit(&alice, "Keep the index in memory.").expect("edit");
+    edit(&bob, "Keep the index in SQLite.").expect("edit");
+    alice.sync();
+    bob.sync();
+    let storage = bob
+        .tracker
+        .plan()
+        .expect("plan")
+        .doc("storage")
+        .expect("readable");
+    let block = op_task::conflict::blocks(&storage.body)
+        .into_iter()
+        .map(|block| storage.body[block.range].to_owned())
+        .next()
+        .expect("a block");
+
+    let inside = storage.content().replace("in memory", "on disk");
+    assert!(edit(&bob, &inside).is_err());
+    let read = Text {
+        title: "Storage".to_owned(),
+        description: storage.content(),
+    };
+    let edited = |description: String| Text {
+        title: "Storage".to_owned(),
+        description,
+    };
+    assert!(
+        bob.tracker
+            .edit_doc_text(&bob.actor, "storage", &read, &edited(inside))
+            .is_err()
+    );
+
+    let resolved = bob
+        .tracker
+        .edit_doc_text(
+            &bob.actor,
+            "storage",
+            &read,
+            &edited(
+                storage
+                    .content()
+                    .replace(&block, "Keep the index in SQLite.\n"),
+            ),
+        )
+        .expect("resolve");
+    assert_eq!(resolved.value.conflict_count(), 0);
+    assert_eq!(resolved.value.content(), "Keep the index in SQLite.\n");
+}
+
+#[test]
+fn a_doc_text_merges_with_a_write_made_since_it_was_read() {
+    let team = Team::new();
+    let (alice, _) = started(&team);
+    docs(&alice, &["Storage"]);
+    write_doc(
+        &alice,
+        "storage",
+        "Keep the index in memory.\n\nSync it by hand.",
+    );
+    let read = Text {
+        title: "Storage".to_owned(),
+        description: "Keep the index in memory.\n\nSync it by hand.\n".to_owned(),
+    };
+    write_doc(
+        &alice,
+        "storage",
+        "Keep the index in memory.\n\nSync it on every write.",
+    );
+
+    let written = alice
+        .tracker
+        .edit_doc_text(
+            &alice.actor,
+            "storage",
+            &read,
+            &Text {
+                title: "Storage".to_owned(),
+                description: "Keep the index in SQLite.\n\nSync it by hand.\n".to_owned(),
+            },
+        )
+        .expect("write");
+
+    assert_eq!(
+        written.value.content(),
+        "Keep the index in SQLite.\n\nSync it on every write.\n"
+    );
+}
+
+#[test]
+fn a_new_title_in_a_doc_text_renames_the_doc() {
+    let team = Team::new();
+    let (alice, _) = started(&team);
+    docs(&alice, &["Storage"]);
+    let read = Text {
+        title: "Storage".to_owned(),
+        description: String::new(),
+    };
+
+    let written = alice
+        .tracker
+        .edit_doc_text(
+            &alice.actor,
+            "storage",
+            &read,
+            &Text {
+                title: "Storage Layout".to_owned(),
+                description: String::new(),
+            },
+        )
+        .expect("write");
+
+    assert_eq!(written.value.name, "storage-layout");
+    let plan = alice.tracker.plan().expect("plan");
+    assert!(plan.doc_names().contains("storage-layout"));
+    assert!(!plan.doc_names().contains("storage"));
+}
+
+fn write_doc(member: &Member, name: &str, content: &str) {
+    member
+        .tracker
+        .update_doc(&member.actor, name, |doc| {
+            doc.set_content(content);
+            Ok(())
+        })
+        .expect("write");
+}
+
+#[test]
+fn a_doc_link_to_a_renumbered_task_follows_it_and_a_link_to_the_other_task_stays() {
+    let team = Team::new();
+    let (alice, bob) = started(&team);
+    docs(&alice, &["Roadmap"]);
+    write_doc(&alice, "roadmap", "Alice's part.\n\nBob's part.");
+    alice.sync();
+    bob.sync();
+    assert_eq!(alice.create("From Alice"), 2);
+    assert_eq!(bob.create("From Bob"), 2);
+    write_doc(&alice, "roadmap", "Alice's part: [[OPP-2]].\n\nBob's part.");
+    write_doc(
+        &bob,
+        "roadmap",
+        "Alice's part.\n\nBob's part: [[OPP-2#Plan]].",
+    );
+    docs(&bob, &["Plan"]);
+    write_doc(&bob, "plan", "Start with [[OPP-2]].");
+
+    alice.sync();
+    bob.sync();
+
+    let plan = bob.tracker.plan().expect("plan");
+    assert_eq!(
+        plan.task(3).expect("task").title().as_deref(),
+        Some("From Bob")
+    );
+    assert_eq!(
+        plan.doc("plan").expect("doc").content(),
+        "Start with [[../tasks/00003-from-bob.md]].\n"
+    );
+    assert_eq!(
+        plan.doc("roadmap").expect("doc").content(),
+        "Alice's part: [[../tasks/00002-from-alice.md]].\n\nBob's part: [[../tasks/00003-from-bob.md#Plan]].\n"
+    );
 }

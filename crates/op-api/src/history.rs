@@ -34,14 +34,18 @@ pub enum DocumentChangeKind {
 pub struct DocumentChange {
     pub path: String,
     pub kind: DocumentChangeKind,
-    // The key of the task the document holds; absent for a tag, the config, or an asset.
+    // The key of the task the document holds; absent for a tag, a doc, the config, or an asset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub task: Option<String>,
-    // The name of the tag the document holds; absent for a task, the config, or an asset.
+    // The name of the tag the document holds; absent for a task, a doc, the config, or an asset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub tag: Option<String>,
+    // The name of the doc the document holds; absent for a task, a tag, the config, or an asset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub doc: Option<String>,
 }
 
 // The history reads what changed from the documents, never from the message, so a revision that
@@ -54,6 +58,7 @@ pub struct HistoryEntry {
     pub summary: Vec<String>,
     pub tasks: Vec<TaskChange>,
     pub tags: Vec<TagChange>,
+    pub docs: Vec<DocChange>,
 }
 
 // One task, even where a new title moved it to a file with a new name.
@@ -130,6 +135,17 @@ pub enum FieldChange {
 pub struct TagChange {
     pub tag: String,
     // A renamed tag is `modified`, and `renamed_from` holds its old name.
+    pub kind: DocumentChangeKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub renamed_from: Option<String>,
+}
+
+// A rename is `modified`, and `renamed_from` holds the old name. A rename or a delete also moves
+// the `parent:` of each nested doc, and each of those docs is `modified` too.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DocChange {
+    pub doc: String,
     pub kind: DocumentChangeKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]

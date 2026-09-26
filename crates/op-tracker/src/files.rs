@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use op_task::{Frontmatter, Task, conflict, parse_id, rank, ref_id, ref_target};
+use op_task::doc::Doc;
+use op_task::layout;
+use op_task::reference::{self, Target};
+use op_task::{FieldConflict, Frontmatter, Task, conflict, parse_id, rank, ref_id, ref_target};
 
 use crate::{Plan, TrackerError};
 
@@ -21,38 +24,71 @@ pub(crate) fn single_title(body: &str) -> Result<String, TrackerError> {
 // Only sync writes a conflict. A write may keep one exactly as it is, or resolve all of it, so no
 // write adds a conflict or edits inside one.
 pub(crate) fn keeps_conflicts(old: Option<&Task>, new: &Task) -> Result<(), TrackerError> {
-    let fields = old.map_or(&[][..], |old| old.conflicts.as_slice());
-    if new
-        .conflicts
-        .iter()
-        .any(|conflict| !fields.contains(conflict))
-    {
-        return Err(conflict_edited());
-    }
-    keeps_blocks(old.map_or("", |old| &old.body), &new.body)
-}
-
-pub(crate) fn keeps_blocks(old: &str, new: &str) -> Result<(), TrackerError> {
-    let blocks = block_texts(old);
-    match block_texts(new).iter().all(|block| blocks.contains(block)) {
-        true => Ok(()),
-        false => Err(conflict_edited()),
-    }
-}
-
-fn conflict_edited() -> TrackerError {
-    TrackerError::Invalid(
-        "a write cannot add a conflict or edit inside one; keep each conflict block as it is, or \
-         replace the whole block with the text you want"
-            .to_owned(),
+    keeps(
+        old.map_or(&[][..], |old| old.conflicts.as_slice()),
+        &new.conflicts,
+        &old.map(|old| task_blocks(&old.body)).unwrap_or_default(),
+        &task_blocks(&new.body),
     )
 }
 
-fn block_texts(body: &str) -> Vec<String> {
-    conflict::in_body(body)
+pub(crate) fn keeps_blocks(old: &str, new: &str) -> Result<(), TrackerError> {
+    keeps(&[], &[], &task_blocks(old), &task_blocks(new))
+}
+
+pub(crate) fn doc_keeps_blocks(old: &str, new: &str) -> Result<(), TrackerError> {
+    keeps(&[], &[], &doc_blocks(old), &doc_blocks(new))
+}
+
+// A doc has no comment log, so every block in its body counts.
+pub(crate) fn doc_keeps_conflicts(old: Option<&Doc>, new: &Doc) -> Result<(), TrackerError> {
+    keeps(
+        old.map_or(&[][..], |old| old.conflicts.as_slice()),
+        &new.conflicts,
+        &old.map(|old| doc_blocks(&old.body)).unwrap_or_default(),
+        &doc_blocks(&new.body),
+    )
+}
+
+fn keeps(
+    old_fields: &[FieldConflict],
+    new_fields: &[FieldConflict],
+    old_blocks: &[String],
+    new_blocks: &[String],
+) -> Result<(), TrackerError> {
+    let added_field = new_fields.iter().any(|field| !old_fields.contains(field));
+    let added_block = new_blocks.iter().any(|block| !old_blocks.contains(block));
+    match added_field || added_block {
+        true => Err(TrackerError::Invalid(
+            "a write cannot add a conflict or edit inside one; keep each conflict block as it \
+             is, or replace the whole block with the text you want"
+                .to_owned(),
+        )),
+        false => Ok(()),
+    }
+}
+
+fn task_blocks(body: &str) -> Vec<String> {
+    block_texts(body, conflict::in_body(body))
+}
+
+fn doc_blocks(body: &str) -> Vec<String> {
+    block_texts(body, conflict::blocks(body))
+}
+
+fn block_texts(body: &str, blocks: Vec<conflict::Block>) -> Vec<String> {
+    blocks
         .into_iter()
         .map(|block| body[block.range].to_owned())
         .collect()
+}
+
+// The text that takes a block's place ends its last line, as the block did.
+pub(crate) fn line_ended(text: &str) -> String {
+    match text.is_empty() || text.ends_with('\n') {
+        true => text.to_owned(),
+        false => format!("{text}\n"),
+    }
 }
 
 // Only the references a write adds are checked: a parent or dependency deleted since it was set
@@ -175,30 +211,60 @@ pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
         .iter()
         .map(|reference| named(reference))
         .collect();
-    task.body = body_in_file_form(plan, &task.body);
+    task.body = body_in_file_form(plan, layout::TASKS, &task.body);
     task
 }
 
-pub(crate) fn body_in_file_form(plan: &Plan, body: &str) -> String {
+// A body as a file under `dir` carries it: every reference is the path of its target. A task that
+// no file holds keeps the key, so the reference resolves once that task exists.
+pub(crate) fn body_in_file_form(plan: &Plan, dir: &str, body: &str) -> String {
+    let abbreviation = plan.abbreviation().ok();
     renamed_body_refs(body, |reference| {
-        let renamed = named(plan, reference);
-        if renamed != reference {
-            return renamed;
-        }
-        match parse_id(ref_target(reference)) {
-            Some(number) => with_section(&plan.key(number), reference),
-            None => renamed,
+        let number = match parse_id(ref_target(reference)) {
+            Some(number) => Some(number),
+            None => match reference::body_target(abbreviation, dir, reference) {
+                Some(Target::Task(number)) => Some(number),
+                Some(Target::Doc(name)) => return reference::doc_ref(dir, &name, reference),
+                None => None,
+            },
+        };
+        let Some(number) = number else {
+            return reference.to_owned();
+        };
+        match plan.path_of(number) {
+            Some(path) => reference::task_file_ref(dir, path, reference),
+            None if reference::is_path(dir, reference) => reference.to_owned(),
+            None => with_section(&plan.key(number), reference),
         }
     })
+}
+
+// `text`, from a file under `dir`, with each link to the doc `from` pointing at the doc `to`.
+pub(crate) fn relinked_doc(
+    abbreviation: Option<op_task::Abbreviation>,
+    dir: &str,
+    text: &str,
+    from: &str,
+    to: &str,
+) -> String {
+    renamed_body_refs(text, |inner| {
+        match reference::body_target(abbreviation, dir, inner) {
+            Some(Target::Doc(name)) if name == from => reference::doc_ref(dir, to, inner),
+            _ => inner.to_owned(),
+        }
+    })
+}
+
+pub(crate) fn doc_in_file_form(plan: &Plan, doc: &Doc) -> Doc {
+    let mut doc = doc.clone();
+    doc.body = body_in_file_form(plan, layout::DOCS, &doc.body);
+    doc
 }
 
 fn named(plan: &Plan, reference: &str) -> String {
     match ref_id(reference).and_then(|number| plan.path_of(number)) {
         None => reference.to_owned(),
-        Some(path) => with_section(
-            &op_task::task_ref(op_task::layout::file_name(path)),
-            reference,
-        ),
+        Some(path) => with_section(&op_task::task_ref(layout::file_name(path)), reference),
     }
 }
 

@@ -137,7 +137,7 @@ fn a_body_reads_with_each_reference_to_a_task_here_as_its_key() {
     let body = "see [[./00042-ship-login.md]], [[./00007-schema.md#Design]], and [[ OPP-3 ]]\n";
 
     assert_eq!(
-        op_api::body_to_keys(abbreviation(), body),
+        op_api::body_to_keys(abbreviation(), "tasks", body),
         "see [[OPP-42]], [[OPP-7#Design]], and [[OPP-3]]\n"
     );
 }
@@ -152,7 +152,7 @@ fn a_body_to_keys_leaves_what_names_no_task_here_as_written() {
         "the file spelling is `[[./00042-ship-login.md]]`",
         "```\nsee [[./00042-ship-login.md]]\n```\n",
     ] {
-        assert_eq!(op_api::body_to_keys(abbreviation(), body), body);
+        assert_eq!(op_api::body_to_keys(abbreviation(), "tasks", body), body);
     }
 }
 
@@ -160,7 +160,7 @@ fn a_body_to_keys_leaves_what_names_no_task_here_as_written() {
 fn a_body_to_keys_reads_back_as_the_numbers_the_store_holds() {
     let body = "see [[./00042-ship-login.md#Design]]";
 
-    let keyed = op_api::body_to_keys(abbreviation(), body);
+    let keyed = op_api::body_to_keys(abbreviation(), "tasks", body);
 
     assert_eq!(
         op_api::body_from_keys(abbreviation(), &keyed).unwrap(),
@@ -186,4 +186,14 @@ fn a_header_carries_any_name_and_reads_back_the_same() {
         assert_eq!(op_api::decode_header(&encoded).as_deref(), Some(text));
     }
     assert_eq!(op_api::decode_header("%zz"), None);
+}
+
+#[test]
+fn a_doc_body_reads_with_a_key_for_each_task_and_a_name_for_each_doc() {
+    let body = "see [[../tasks/00042-ship-login.md]] and [[./storage.md#Layout]]\n";
+
+    assert_eq!(
+        op_api::body_to_keys(abbreviation(), "docs", body),
+        "see [[OPP-42]] and [[storage#Layout]]\n"
+    );
 }

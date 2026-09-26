@@ -375,6 +375,34 @@ export const getTaskRevision = (
     }),
   )
 
+export const getDocHistory = (
+  project: string,
+  name: string,
+  page: HistoryPage,
+): Effect.Effect<ReadonlyArray<Api.HistoryEntry>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.docHistory(project, encodeURIComponent(name), { params: page })).pipe(
+    Effect.catchTags({
+      DocHistory400: refusal,
+      DocHistory404: refusal,
+      DocHistory503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const getDocRevision = (
+  project: string,
+  name: string,
+  revision: string,
+): Effect.Effect<Api.DocAtRevision, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.docRevision(project, encodeURIComponent(name), revision, undefined)).pipe(
+    Effect.catchTags({
+      DocRevision400: refusal,
+      DocRevision404: refusal,
+      DocRevision503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
 export const getSync = (project: string): Effect.Effect<Api.SyncView, ApiError, HttpClient.HttpClient> =>
   Effect.flatMap(tasks, (client) => client.getSync(project, undefined)).pipe(
     Effect.catchTags({
@@ -390,6 +418,90 @@ export const runSync = (project: string): Effect.Effect<Api.SyncResult, ApiError
       RunSync404: refusal,
       RunSync502: refusal,
       RunSync503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// Every servable project's docs in one read, or only the projects named. It is the docs page's own
+// read: that page spans projects, the way the merged board does.
+export const listAllDocs = (
+  projects: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<Api.DocListItem>, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.listAllDocs({ params: { project: projects } })).pipe(
+    Effect.catchTags({
+      ListAllDocs400: refusal,
+      ListAllDocs404: refusal,
+      ListAllDocs503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const getDoc = (project: string, name: string): Effect.Effect<Api.DocDetail, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.getDoc(project, encodeURIComponent(name), undefined)).pipe(
+    Effect.catchTags({
+      GetDoc404: () => Effect.fail(new TaskNotFound({ id: name })),
+      GetDoc503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const createDoc = (
+  project: string,
+  input: Api.CreateDoc,
+): Effect.Effect<Api.DocDetail, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.createDoc(project, { payload: input })).pipe(
+    Effect.catchTags({
+      CreateDoc400: refusal,
+      CreateDoc404: refusal,
+      CreateDoc409: refusal,
+      CreateDoc503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// `name` renames the doc, which moves it and rewrites its title heading; `body` replaces the markdown
+// below that heading.
+export const patchDoc = (
+  project: string,
+  name: string,
+  patch: Api.DocPatch,
+): Effect.Effect<Api.DocDetail, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.patchDoc(project, encodeURIComponent(name), { payload: patch })).pipe(
+    Effect.catchTags({
+      PatchDoc400: refusal,
+      PatchDoc404: () => Effect.fail(new TaskNotFound({ id: name })),
+      PatchDoc409: refusal,
+      PatchDoc422: refusal,
+      PatchDoc503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+// As `writeTaskText` is for a task. A new title renames the doc, so the detail may carry a new name.
+export const writeDocText = (
+  project: string,
+  name: string,
+  base: Api.DocText,
+  text: Api.DocText,
+): Effect.Effect<Api.DocDetail, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) =>
+    client.writeDocText(project, encodeURIComponent(name), { payload: { base, text } }),
+  ).pipe(
+    Effect.catchTags({
+      WriteDocText400: refusal,
+      WriteDocText404: () => Effect.fail(new TaskNotFound({ id: name })),
+      WriteDocText409: refusal,
+      WriteDocText503: refusal,
+      HttpClientError: unexpected,
+    }),
+  )
+
+export const deleteDoc = (project: string, name: string): Effect.Effect<void, ApiError, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.deleteDoc(project, encodeURIComponent(name), undefined)).pipe(
+    Effect.catchTags({
+      DeleteDoc404: refusal,
+      DeleteDoc409: refusal,
+      DeleteDoc503: refusal,
       HttpClientError: unexpected,
     }),
   )
