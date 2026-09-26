@@ -2,12 +2,13 @@ import { Bot, Tag as TagIcon } from "lucide-react"
 import { memo, type MouseEvent, useMemo } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 
-import type { HistoryEntry, RevisionView, TaskRef } from "@openplan/api-client"
+import type { HistoryEntry, RevisionView, TagChange, TagView, TaskRef } from "@openplan/api-client"
 import {
   AgentTag,
   DocumentChangeView,
   revisionPath,
   TagChangeView,
+  TagChip,
   TaskChangeView,
   TaskIdentity,
   UnresolvedMark,
@@ -16,6 +17,7 @@ import { cn, TimeAgo, Tooltip } from "@openplan/ui"
 
 import { type ActivityRow, activityRows, changePath, taskChangeOf } from "../lib/history"
 import { type RevisionNavigation, revisionNavigation } from "../lib/revision-navigation"
+import { useTags } from "../lib/tags"
 
 // With `task`, the list is the history of that one task: a line needs not name the task, and each
 // revision opens the task as that revision left it.
@@ -36,6 +38,7 @@ export function RevisionList({
   const { state } = useLocation()
   const onRevision = selected !== undefined
   const navigation = useMemo(() => revisionNavigation(onRevision, state), [onRevision, state])
+  const { byName: tags } = useTags(project)
   return (
     <ol aria-label="Revisions" className="text-sm">
       {entries.map((entry) => (
@@ -44,6 +47,7 @@ export function RevisionList({
           project={project}
           entry={entry}
           refs={refs}
+          tags={tags}
           task={task}
           current={entry.revision.id === selected}
           navigation={navigation}
@@ -67,11 +71,12 @@ const lineKey = (line: ActivityRow): string => {
 }
 
 // When and who lead the revision once, and its changes stand beside them one to a line. A revision
-// never changes, so it renders again only when the titles on the board do.
+// never changes, so it renders again only when the titles on the board or the tag registry do.
 const Revision = memo(function Revision({
   project,
   entry,
   refs,
+  tags,
   task,
   current,
   navigation,
@@ -79,6 +84,7 @@ const Revision = memo(function Revision({
   project: string
   entry: HistoryEntry
   refs: ReadonlyMap<string, TaskRef> | undefined
+  tags: ReadonlyMap<string, TagView> | undefined
   task: string | undefined
   current: boolean
   navigation: RevisionNavigation
@@ -130,7 +136,14 @@ const Revision = memo(function Revision({
             key={lineKey(line)}
             className="flex min-h-6 max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 leading-6"
           >
-            <ChangeLine project={project} entry={entry} line={line} refs={refs} withWhat={task === undefined} />
+            <ChangeLine
+              project={project}
+              entry={entry}
+              line={line}
+              refs={refs}
+              tags={tags}
+              withWhat={task === undefined}
+            />
           </li>
         ))}
       </ul>
@@ -143,12 +156,14 @@ function ChangeLine({
   entry,
   line,
   refs,
+  tags,
   withWhat,
 }: {
   project: string
   entry: HistoryEntry
   line: ActivityRow
   refs: ReadonlyMap<string, TaskRef> | undefined
+  tags: ReadonlyMap<string, TagView> | undefined
   withWhat: boolean
 }) {
   const change = "text-foreground/80"
@@ -156,20 +171,15 @@ function ChangeLine({
     case "task":
       return (
         <>
-          <TaskChangeView change={line.change} className={change} />
+          <TaskChangeView change={line.change} tags={tags} className={change} />
           {withWhat && <TaskName project={project} entry={entry} line={line} refs={refs} />}
         </>
       )
     case "tag":
       return (
         <>
-          <TagChangeView change={line.change} className={change} />
-          {withWhat && (
-            <span className="flex min-w-0 items-center gap-2">
-              <TagIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
-              <span className="truncate">{line.change.tag}</span>
-            </span>
-          )}
+          <TagChangeView change={line.change} tags={tags} className={change} />
+          {withWhat && <TagName change={line.change} tags={tags} />}
         </>
       )
     case "document":
@@ -184,6 +194,19 @@ function ChangeLine({
     case "more":
       return <span className="text-muted-foreground text-xs">and {line.count} more</span>
   }
+}
+
+// A rename already shows the tag under both of its names.
+function TagName({ change, tags }: { change: TagChange; tags: ReadonlyMap<string, TagView> | undefined }) {
+  if (tags === undefined) {
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        <TagIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
+        <span className="truncate">{change.tag}</span>
+      </span>
+    )
+  }
+  return change.renamed_from === undefined ? <TagChip name={change.tag} tag={tags.get(change.tag)} /> : null
 }
 
 // A task that is gone, or that the board does not hold yet, has no status to wear.

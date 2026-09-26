@@ -20,6 +20,7 @@ const served = vi.hoisted(() => ({
 vi.mock("../src/lib/api", async () => {
   const { Effect } = await import("effect")
   return {
+    listTags: () => Effect.sync(() => []),
     getTaskHistory: (_project: string, _id: string, page: { before?: string; limit: number }) =>
       Effect.sync(() => {
         served.pages.push(page)
