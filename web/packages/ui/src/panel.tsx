@@ -6,9 +6,10 @@ export function Panel({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       // The outline is an inset ring rather than a border, so a current row's own ring lands on the
-      // same pixels and reads as one line instead of doubling up against the frame.
+      // same pixels and reads as one line instead of doubling up against the frame. It lies over the
+      // content, because Chrome on Windows paints a scrollbar over anything under it.
       className={cn(
-        "bg-muted/10 flex h-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-border",
+        "bg-muted/10 relative flex h-full flex-col overflow-hidden rounded-lg after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-border after:content-['']",
         className,
       )}
       {...props}

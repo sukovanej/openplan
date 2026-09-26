@@ -6,19 +6,20 @@ import { cn } from "./cn"
 // an absolutely-positioned overlay, so neither participates in flow and the row keeps its height
 // whether or not it is current. The overlay is positioned against the row's padding box, which stops
 // 1px short of each separator, so both offsets are -1px: the top edge lands on the separator above,
-// the bottom edge on the row's own, exactly where the neighbouring rows draw theirs.
+// the bottom edge on the row's own, exactly where the neighbouring rows draw theirs. It is raised over
+// the panel's frame, which would otherwise hide its two sides.
 const DIVIDED_ACTIVE =
-  "border-transparent bg-muted/30 after:pointer-events-none after:absolute after:inset-x-0 after:-top-px after:-bottom-px after:border after:border-accent-line/40 after:content-['']"
+  "border-transparent bg-muted/30 after:pointer-events-none after:absolute after:z-[1] after:inset-x-0 after:-top-px after:-bottom-px after:border after:border-accent-line/40 after:content-['']"
 
 // The same treatment under the pointer, spelled out because Tailwind only emits classes it can read
 // literally in the source.
 const DIVIDED_HOVER =
-  "hover:border-transparent hover:bg-muted/30 hover:after:pointer-events-none hover:after:absolute hover:after:inset-x-0 hover:after:-top-px hover:after:-bottom-px hover:after:border hover:after:border-accent-line/40 hover:after:content-['']"
+  "hover:border-transparent hover:bg-muted/30 hover:after:pointer-events-none hover:after:absolute hover:after:z-[1] hover:after:inset-x-0 hover:after:-top-px hover:after:-bottom-px hover:after:border hover:after:border-accent-line/40 hover:after:content-['']"
 
 // The same again, only inside an ancestor marked `data-pointer="free"`. A list that hands its rows
 // between the keyboard and the pointer then changes one attribute, and renders none of its rows again.
 const DIVIDED_FREE_HOVER =
-  "in-data-[pointer=free]:hover:border-transparent in-data-[pointer=free]:hover:bg-muted/30 in-data-[pointer=free]:hover:after:pointer-events-none in-data-[pointer=free]:hover:after:absolute in-data-[pointer=free]:hover:after:inset-x-0 in-data-[pointer=free]:hover:after:-top-px in-data-[pointer=free]:hover:after:-bottom-px in-data-[pointer=free]:hover:after:border in-data-[pointer=free]:hover:after:border-accent-line/40 in-data-[pointer=free]:hover:after:content-['']"
+  "in-data-[pointer=free]:hover:border-transparent in-data-[pointer=free]:hover:bg-muted/30 in-data-[pointer=free]:hover:after:pointer-events-none in-data-[pointer=free]:hover:after:absolute hover:after:z-[1] in-data-[pointer=free]:hover:after:inset-x-0 in-data-[pointer=free]:hover:after:-top-px in-data-[pointer=free]:hover:after:-bottom-px in-data-[pointer=free]:hover:after:border in-data-[pointer=free]:hover:after:border-accent-line/40 in-data-[pointer=free]:hover:after:content-['']"
 
 const VARIANTS = {
   // Separated by a rule from the row below, and outlined in place when current. Callers own the

@@ -12,8 +12,28 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--color-muted-foreground) 40%, transparent) transparent;
+  }
   body {
     @apply bg-background text-foreground font-sans;
+  }
+}
+
+/* The desktop app runs in WebKit on Linux and macOS, which ignores `scrollbar-color`. */
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background: color-mix(in oklch, var(--color-muted-foreground) 40%, transparent);
   }
 }
 
