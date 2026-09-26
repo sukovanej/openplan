@@ -4046,6 +4046,7 @@ version = "0.0.3"
 dependencies = [
  "axum",
  "getrandom 0.4.3",
+ "gix-imara-diff",
  "http-body-util",
  "op-agent",
  "op-agent-claude",

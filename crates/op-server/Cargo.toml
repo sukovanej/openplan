@@ -24,6 +24,7 @@ op-task.workspace = true
 op-tracker.workspace = true
 axum.workspace = true
 getrandom.workspace = true
+gix-imara-diff.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tower-http.workspace = true

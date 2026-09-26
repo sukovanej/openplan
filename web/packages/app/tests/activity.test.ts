@@ -20,12 +20,21 @@ const revision = (id: string, agent?: string): HistoryEntry["revision"] => ({
   message: `Set it to done in ${id}`,
 })
 
-const served = vi.hoisted(() => ({ entries: [] as Array<unknown> }))
+const served = vi.hoisted(() => ({ entries: [] as Array<unknown>, diffs: vi.fn() }))
 
 vi.mock("../src/lib/api", async () => {
   const { Effect } = await import("effect")
   return {
     getProjectHistory: () => Effect.sync(() => served.entries),
+    getRevisionDiff: (...target: Array<unknown>) =>
+      Effect.sync(() => {
+        served.diffs(...target)
+        return {
+          kind: "text",
+          diff: "--- a/config.toml\n+++ b/config.toml\n@@ -1,1 +1,1 @@\n-old = 1\n+new = 1\n",
+          truncated: false,
+        }
+      }),
     listTags: () => Effect.sync(() => [{ name: "server", display: "Server", color: "blue" }]),
     getBoard: () =>
       Effect.sync(() => ({
@@ -60,6 +69,7 @@ afterEach(async () => {
     held.container.remove()
   }
   served.entries = []
+  served.diffs.mockClear()
   queryClient.clear()
 })
 
@@ -167,5 +177,49 @@ describe("the activity", () => {
     await tick()
 
     expect(revisions(root)[0].querySelector("a")?.getAttribute("href")).toBe("/openplan/task/OPP-1")
+  })
+})
+
+describe("the diff of a change", () => {
+  const config = (count: number): HistoryEntry => ({
+    revision: revision("beef000011112222"),
+    changes: Array.from({ length: count }, (_, at) => ({ path: `assets/${at}.txt`, kind: "modified" as const })),
+    summary: [],
+    tasks: [],
+    tags: [],
+  })
+
+  const wait = (ms: number) =>
+    act(async () => {
+      await new Promise((resume) => setTimeout(resume, ms))
+    })
+
+  it("reads the diff of a line only once the pointer rests on it", async () => {
+    served.entries = [config(1)]
+    const root = await show()
+    const line = revisions(root)[0].querySelector("[aria-haspopup=dialog]")!
+
+    await act(async () => void line.dispatchEvent(new Event("pointerover", { bubbles: true })))
+    expect(served.diffs).not.toHaveBeenCalled()
+    await wait(350)
+    for (let attempt = 0; attempt < 20 && !root.querySelector("[role=dialog] mark, [role=dialog] .grid"); attempt++) {
+      await tick()
+    }
+
+    expect(served.diffs).toHaveBeenCalledExactlyOnceWith("openplan", "beef000011112222", { path: "assets/0.txt" })
+    const card = root.querySelector("[role=dialog]")!
+    expect(card.getAttribute("aria-label")).toBe("Diff of assets/0.txt")
+    expect(card.textContent).toContain("-old = 1")
+    expect(card.textContent).toContain("+new = 1")
+  })
+
+  it("gives the line that counts the rest no diff", async () => {
+    served.entries = [config(13)]
+    const root = await show()
+    const changes = Array.from(revisions(root)[0].querySelectorAll("ul[aria-label='Changes'] > li"))
+
+    expect(changes.at(-1)?.textContent).toBe("and 1 more")
+    expect(changes.at(-1)?.querySelector("[aria-haspopup]")).toBeNull()
+    expect(changes[0].querySelector("[aria-haspopup]")).not.toBeNull()
   })
 })

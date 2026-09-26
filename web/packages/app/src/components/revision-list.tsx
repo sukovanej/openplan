@@ -13,11 +13,12 @@ import {
   TaskIdentity,
   UnresolvedMark,
 } from "@openplan/task-ui"
-import { cn, TimeAgo, Tooltip } from "@openplan/ui"
+import { cn, HoverCard, TimeAgo, Tooltip } from "@openplan/ui"
 
-import { type ActivityRow, activityRows, changePath, taskChangeOf } from "../lib/history"
+import { type ActivityRow, activityRows, changePath, diffTarget, taskChangeOf } from "../lib/history"
 import { type RevisionNavigation, revisionNavigation } from "../lib/revision-navigation"
 import { useTags } from "../lib/tags"
+import { ChangeDiff } from "./change-diff"
 
 // With `task`, the list is the history of that one task: a line needs not name the task, and each
 // revision opens the task as that revision left it.
@@ -56,6 +57,8 @@ export function RevisionList({
     </ol>
   )
 }
+
+const LINE = "flex min-h-6 max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 leading-6"
 
 const lineKey = (line: ActivityRow): string => {
   switch (line.kind) {
@@ -131,11 +134,8 @@ const Revision = memo(function Revision({
         <Who revision={entry.revision} compact={task !== undefined} />
       </span>
       <ul aria-label="Changes" className="flex min-w-0 flex-1 basis-40 flex-col gap-1">
-        {lines.map((line) => (
-          <li
-            key={lineKey(line)}
-            className="flex min-h-6 max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 leading-6"
-          >
+        {lines.map((line) => {
+          const content = (
             <ChangeLine
               project={project}
               entry={entry}
@@ -144,8 +144,25 @@ const Revision = memo(function Revision({
               tags={tags}
               withWhat={task === undefined}
             />
-          </li>
-        ))}
+          )
+          const target = task === undefined ? diffTarget(entry, line) : undefined
+          return target === undefined ? (
+            <li key={lineKey(line)} className={LINE}>
+              {content}
+            </li>
+          ) : (
+            <li key={lineKey(line)}>
+              <HoverCard
+                label={`Diff of ${target.path}`}
+                content={<ChangeDiff project={project} revision={entry.revision.id} target={target} />}
+                className={LINE}
+                cardClassName="max-h-80 w-[40rem] max-w-[calc(100vw-12px)]"
+              >
+                {content}
+              </HoverCard>
+            </li>
+          )
+        })}
       </ul>
     </li>
   )

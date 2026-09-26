@@ -156,6 +156,16 @@ pub struct TaskSnapshot {
     pub raw: String,
 }
 
+// One document across one revision, against the revision's first parent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DocumentDiff {
+    // `diff` is unified, and `truncated` says that it stops at a fixed number of lines.
+    Text { diff: String, truncated: bool },
+    // One side is not text, so no line of it can be compared.
+    Binary,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SyncView {
     pub remote: String,

@@ -40,6 +40,7 @@ pub mod agent;
 mod drawing;
 mod project;
 mod registry;
+mod revision_diff;
 mod tasks;
 use agent::AgentSessions;
 pub use drawing::DrawingCache;
@@ -586,6 +587,7 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(tasks::task_history))
         .routes(routes!(tasks::task_revision))
         .routes(routes!(tasks::project_history))
+        .routes(routes!(revision_diff::revision_diff))
         .routes(routes!(tasks::get_sync, tasks::run_sync))
         .routes(routes!(tasks::list_tags, tasks::create_tag))
         .routes(routes!(tasks::get_tag, tasks::patch_tag, tasks::delete_tag))

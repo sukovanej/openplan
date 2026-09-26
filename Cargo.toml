@@ -47,6 +47,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 pulldown-cmark = { version = "0.13", default-features = false }
 
 gix = "0.87" # default features provide the sha1 object hash
+# The diff crate that gix already builds, with the unified format turned on.
+gix-imara-diff = { version = "0.2", features = ["unified_diff"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] } # UTC only, so no tzdb
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs", "process", "io-util", "time"] }

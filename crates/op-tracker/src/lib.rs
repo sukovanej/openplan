@@ -39,6 +39,13 @@ pub struct Updated<T> {
     pub committed: Option<Committed>,
 }
 
+// A side that does not hold the document is `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Versions {
+    pub before: Option<Vec<u8>>,
+    pub after: Option<Vec<u8>>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HistoryQuery {
     pub before: Option<RevisionId>,
@@ -361,12 +368,6 @@ impl Tracker {
     // parent.
     pub fn describe(&self, entry: &LogEntry) -> Result<Described, TrackerError> {
         let revision = &entry.revision;
-        // A shallow clone holds its oldest revisions without their parents, and a missing parent
-        // reads as empty rather than fail the whole page.
-        let absent_when_unknown = |read| match read {
-            Err(BackendError::UnknownRevision(_)) => Ok(None),
-            read => read,
-        };
         let before = |path: &str| match revision.parents.first() {
             Some(parent) => absent_when_unknown(self.backend.read_at(parent, path)),
             None => Ok(None),
@@ -390,6 +391,26 @@ impl Tracker {
         )?)
     }
 
+    // `None` where the revision leaves the document as its first parent had it. `before` names the
+    // document on the parent's side, where a new title moved a task to a file with a new name.
+    pub fn versions(
+        &self,
+        revision: &RevisionId,
+        before: &str,
+        after: &str,
+    ) -> Result<Option<Versions>, TrackerError> {
+        let revision = self.backend.revision(revision)?;
+        let old = match revision.parents.first() {
+            Some(parent) => absent_when_unknown(self.backend.read_at(parent, before))?,
+            None => None,
+        };
+        let new = self.backend.read_at(&revision.id, after)?;
+        Ok((old != new).then_some(Versions {
+            before: old,
+            after: new,
+        }))
+    }
+
     // The task's file as it stood at `revision`; `None` where the task did not exist then.
     pub fn task_at(
         &self,
@@ -401,6 +422,17 @@ impl Tracker {
             true => plan.raw(number).map(Some),
             false => Ok(None),
         }
+    }
+}
+
+// A shallow clone holds its oldest revisions without their parents, and a missing parent reads as
+// empty rather than fail the whole page.
+fn absent_when_unknown(
+    read: Result<Option<Vec<u8>>, BackendError>,
+) -> Result<Option<Vec<u8>>, BackendError> {
+    match read {
+        Err(BackendError::UnknownRevision(_)) => Ok(None),
+        read => read,
     }
 }
 

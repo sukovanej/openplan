@@ -40,6 +40,8 @@ export const taskHistoryKey = (project: string, id: string) => [...taskKey(proje
 // Apart from the task, because a revision never changes: a change to the task leaves it as it was.
 export const revisionKey = (project: string, id: string, revision: string) =>
   [...projectKey(project), REVISION, id, revision] as const
+export const diffKey = (project: string, revision: string, from: string | undefined, path: string) =>
+  [...projectKey(project), REVISION, revision, "diff", from, path] as const
 
 export const queryClient = new QueryClient({
   defaultOptions: {
