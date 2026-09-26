@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use op_diagram::{Diagram, Direction, Graph};
 use op_diagram_render::{ClusterBox, Point, Rect, Scene, layout, svg, text_width};
@@ -9,11 +10,24 @@ fn graphs() {
         "../../op-diagram-mermaid/tests/diagrams",
         "**/*.mmd",
         |path| {
-            let source = std::fs::read_to_string(path).unwrap();
-            let Diagram::Graph(graph) = op_diagram_mermaid::parse(&source).unwrap() else {
-                return;
-            };
-            insta::assert_binary_snapshot!(".svg", reviewable(&checked(&graph, path)));
+            let diagram = parse(path);
+            if matches!(diagram, Diagram::Graph(_)) {
+                insta::assert_binary_snapshot!(".svg", reviewable(&checked(&diagram, path)));
+            }
+        }
+    );
+}
+
+#[test]
+fn sequences() {
+    insta::glob!(
+        "../../op-diagram-mermaid/tests/diagrams",
+        "**/*.mmd",
+        |path| {
+            let diagram = parse(path);
+            if matches!(diagram, Diagram::Sequence(_)) {
+                insta::assert_binary_snapshot!(".svg", reviewable(&checked(&diagram, path)));
+            }
         }
     );
 }
@@ -22,11 +36,14 @@ fn graphs() {
 fn ir() {
     insta::glob!("ir/*.json", |path| {
         let json = std::fs::read_to_string(path).unwrap();
-        let Diagram::Graph(graph) = serde_json::from_str(&json).unwrap() else {
-            panic!("{} holds no graph", path.display());
-        };
-        insta::assert_binary_snapshot!(".svg", reviewable(&checked(&graph, path)));
+        let diagram: Diagram = serde_json::from_str(&json).unwrap();
+        insta::assert_binary_snapshot!(".svg", reviewable(&checked(&diagram, path)));
     });
+}
+
+fn parse(path: &Path) -> Diagram {
+    let source = std::fs::read_to_string(path).unwrap();
+    op_diagram_mermaid::parse(&source).unwrap()
 }
 
 // GitHub shows an SVG file of a diff as an image. The SVG leaves its colors to the page, so the
@@ -42,11 +59,18 @@ fn reviewable(drawn: &str) -> Vec<u8> {
     .into_bytes()
 }
 
-fn checked(graph: &Graph, path: &std::path::Path) -> String {
-    let scene = layout(graph);
+fn checked(diagram: &Diagram, path: &Path) -> String {
+    let scene = layout(diagram);
     let drawn = svg(&scene);
-    let mut problems = problems(&scene);
-    problems.extend(waves(graph, &scene));
+    let mut problems = match diagram {
+        Diagram::Graph(graph) => {
+            let mut problems = problems(&scene);
+            problems.extend(waves(graph, &scene));
+            problems
+        }
+        Diagram::Sequence(_) => sequence_problems(&scene),
+    };
+    problems.extend(outside(&scene));
     problems.extend(unsafe_markup(&drawn));
     assert!(
         problems.is_empty(),
@@ -240,4 +264,116 @@ fn crosses(a: Point, b: Point, rect: &Rect) -> bool {
         }
     }
     low < high
+}
+
+fn outside(scene: &Scene) -> Vec<String> {
+    let page = Rect {
+        x: -0.5,
+        y: -0.5,
+        width: scene.width + 1.0,
+        height: scene.height + 1.0,
+    };
+    let rects = scene
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node.rect))
+        .chain(
+            scene
+                .clusters
+                .iter()
+                .map(|cluster| (cluster.id.as_str(), cluster.rect)),
+        )
+        .chain(scene.edges.iter().filter_map(|edge| {
+            edge.label
+                .as_ref()
+                .map(|label| (edge.to.as_str(), label.rect))
+        }));
+    rects
+        .filter(|(_, rect)| !page.contains(rect))
+        .map(|(id, _)| format!("{id} lies outside the drawing"))
+        .collect()
+}
+
+// The timeline runs down: each message sits below the one before, and no two things of the
+// timeline, a message label or a note, share any space.
+fn sequence_problems(scene: &Scene) -> Vec<String> {
+    let mut problems = Vec::new();
+    let heads: Vec<&op_diagram_render::NodeBox> = scene
+        .nodes
+        .iter()
+        .filter(|node| node.classes.iter().any(|class| class == "participant"))
+        .collect();
+    for (at, first) in heads.iter().enumerate() {
+        for second in &heads[at + 1..] {
+            if first.rect.inset(0.5).overlaps(&second.rect) {
+                problems.push(format!(
+                    "the heads of {} and {} overlap",
+                    first.id, second.id
+                ));
+            }
+        }
+    }
+    let mut last = f32::NEG_INFINITY;
+    for edge in &scene.edges {
+        let top = edge
+            .points
+            .iter()
+            .map(|point| point.y)
+            .fold(f32::INFINITY, f32::min);
+        if top <= last {
+            problems.push(format!(
+                "the message {} -> {} does not run below the one before",
+                edge.from, edge.to
+            ));
+        }
+        last = edge.points.iter().map(|point| point.y).fold(last, f32::max);
+    }
+    let rows: Vec<(String, Rect)> = scene
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            edge.label.as_ref().map(|label| {
+                (
+                    format!("the label of {} -> {}", edge.from, edge.to),
+                    label.rect,
+                )
+            })
+        })
+        .chain(
+            scene
+                .nodes
+                .iter()
+                .filter(|node| node.classes.iter().any(|class| class == "note"))
+                .map(|node| (node.id.clone(), node.rect)),
+        )
+        .collect();
+    for (at, (first, a)) in rows.iter().enumerate() {
+        for (second, b) in &rows[at + 1..] {
+            if a.inset(0.5).overlaps(b) {
+                problems.push(format!("{first} and {second} overlap"));
+            }
+        }
+        for head in &heads {
+            if a.inset(0.5).overlaps(&head.rect) {
+                problems.push(format!("{first} overlaps the head of {}", head.id));
+            }
+        }
+    }
+    let cluster_at: HashMap<&str, &ClusterBox> = scene
+        .clusters
+        .iter()
+        .map(|cluster| (cluster.id.as_str(), cluster))
+        .collect();
+    for cluster in &scene.clusters {
+        if let Some(parent) = &cluster.parent {
+            if !cluster_at[parent.as_str()]
+                .rect
+                .inset(-0.5)
+                .contains(&cluster.rect)
+            {
+                problems.push(format!("{} lies outside {parent}", cluster.id));
+            }
+        }
+    }
+    problems
 }

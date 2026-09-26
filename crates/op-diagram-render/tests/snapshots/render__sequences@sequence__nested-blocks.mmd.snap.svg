@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 200 320" width="200" height="320" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
+.op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
+.op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
+.op-diagram .stroke-thick .edge-line { stroke-width: 2.8; }
+.op-diagram .head-arrow path, .op-diagram .head-circle circle { fill: #5f6776; }
+.op-diagram .head-open path, .op-diagram .head-cross path, .op-diagram .head-cardinality path { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .head-ring { fill: #fff; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .edge-label-box { fill: #fff; }
+.op-diagram text { fill: #1f2430; }
+.op-diagram .text-caption { fill: #6b7280; }
+.op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .text-edge-label { fill: #3a4150; }
+.op-diagram .lifeline { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 4 4; }
+.op-diagram .divider { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 5 4; }
+.op-diagram .block .cluster-box { fill: none; stroke: #9aa2b1; }
+.op-diagram .activation .outline { fill: #e6e9f2; stroke: #7b8599; }
+.op-diagram .note .outline { fill: #fdf6d8; stroke: #cbb971; }
+.op-diagram .note .outline-detail { stroke: #cbb971; }
+.op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
+.op-diagram .text-number { fill: #fff; }
+.op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+</style><g class="cluster block block-loop"><rect class="cluster-box" x="20" y="68" width="160" height="184" rx="6"/></g><g class="cluster block block-opt"><rect class="cluster-box" x="32" y="98" width="136" height="66" rx="6"/></g><path class="lifeline" d="M44 48L44 272"/><path class="lifeline" d="M156 48L156 272"/><g class="edge stroke-solid"><path class="edge-line" d="M44 152L148 152"/><g class="head head-arrow"><path d="M156 152L147 156.5L147 147.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M44 202L148 202"/><g class="head head-arrow"><path d="M156 202L147 206.5L147 197.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M44 240L148 240"/><g class="head head-arrow"><path d="M156 240L147 244.5L147 235.5Z"/></g></g><g class="node shape-rectangle participant"><rect class="outline" x="8" y="8" width="72" height="40" rx="3"/><text class="text-label" x="44" y="33.09" font-size="14" font-weight="400" text-anchor="middle">a</text></g><g class="node shape-rectangle participant"><rect class="outline" x="8" y="272" width="72" height="40" rx="3"/><text class="text-label" x="44" y="297.09" font-size="14" font-weight="400" text-anchor="middle">a</text></g><g class="node shape-rectangle participant"><rect class="outline" x="120" y="8" width="72" height="40" rx="3"/><text class="text-label" x="156" y="33.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g><g class="node shape-rectangle participant"><rect class="outline" x="120" y="272" width="72" height="40" rx="3"/><text class="text-label" x="156" y="297.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g><g class="cluster-header"><text class="text-header" x="32" y="87.73" font-size="13" font-weight="600" text-anchor="start">loop</text><text class="text-caption" x="71.36" y="86.87" font-size="12" font-weight="400" text-anchor="start">[daily]</text></g><g class="cluster-header"><text class="text-header" x="44" y="117.73" font-size="13" font-weight="600" text-anchor="start">opt</text><text class="text-caption" x="76.63" y="116.87" font-size="12" font-weight="400" text-anchor="start">[if new]</text></g><g class="edge-label"><rect class="edge-label-box" x="81.36" y="128" width="37.28" height="20" rx="3"/><text class="text-edge-label" x="100" y="142.73" font-size="13" font-weight="400" text-anchor="middle">sync</text></g><g class="edge-label"><rect class="edge-label-box" x="61.88" y="178" width="76.25" height="20" rx="3"/><text class="text-edge-label" x="100" y="192.73" font-size="13" font-weight="400" text-anchor="middle">highlighted</text></g><g class="edge-label"><rect class="edge-label-box" x="81.58" y="216" width="36.84" height="20" rx="3"/><text class="text-edge-label" x="100" y="230.73" font-size="13" font-weight="400" text-anchor="middle">after</text></g></svg>

@@ -4,7 +4,7 @@ use op_diagram::{Head, Stroke};
 
 use crate::measure::Weight;
 use crate::scene::{
-    Anchor, ClusterBox, EdgePath, NodeBox, Outline, Point, Rect, Scene, Text, TextRole,
+    Anchor, ClusterBox, EdgePath, GuideKind, NodeBox, Outline, Point, Rect, Scene, Text, TextRole,
 };
 
 const CORNER: f32 = 8.0;
@@ -17,6 +17,7 @@ const SQUARE: f32 = 3.0;
 const CYLINDER_CAP: f32 = 7.0;
 const DOUBLE_RING: f32 = 5.0;
 const SUBROUTINE_BAR: f32 = 8.0;
+const NOTE_FOLD: f32 = 8.0;
 
 // The SVG carries classes and no colors, so the page styles it in its own theme. Every text and
 // attribute value passes through `escape`, and a link that is not a path on this site is left out:
@@ -38,6 +39,20 @@ pub fn svg(scene: &Scene) -> String {
         );
         write_rect(&mut out, "cluster-box", &cluster.rect, 6.0);
         out.push_str("</g>");
+    }
+    for guide in &scene.guides {
+        let class = match guide.kind {
+            GuideKind::Lifeline => "lifeline",
+            GuideKind::Divider => "divider",
+        };
+        let _ = write!(
+            out,
+            r#"<path class="{class}" d="M{} {}L{} {}"/>"#,
+            number(guide.from.x),
+            number(guide.from.y),
+            number(guide.to.x),
+            number(guide.to.y)
+        );
     }
     for edge in &scene.edges {
         write_edge(&mut out, edge);
@@ -128,6 +143,8 @@ fn shape_name(outline: &Outline) -> &'static str {
         Outline::Trapezoid => "trapezoid",
         Outline::InvertedTrapezoid => "inverted-trapezoid",
         Outline::Table { .. } => "table",
+        Outline::Actor => "actor",
+        Outline::Note => "note",
     }
 }
 
@@ -291,6 +308,45 @@ fn write_outline(out: &mut String, outline: &Outline, rect: &Rect) {
                 ],
             );
         }
+        Outline::Actor => {
+            let center = x + w / 2.0;
+            let _ = write!(
+                out,
+                r#"<circle class="outline" cx="{}" cy="{}" r="6"/><path class="actor-figure" d="M{c} {neck}V{hip}M{left} {arms}H{right}M{c} {hip}L{left_foot} {foot}M{c} {hip}L{right_foot} {foot}"/>"#,
+                number(center),
+                number(y + 7.0),
+                c = number(center),
+                neck = number(y + 13.0),
+                hip = number(y + 24.0),
+                arms = number(y + 17.0),
+                left = number(center - 10.0),
+                right = number(center + 10.0),
+                left_foot = number(center - 8.0),
+                right_foot = number(center + 8.0),
+                foot = number(y + 33.0),
+            );
+        }
+        Outline::Note => {
+            let fold = NOTE_FOLD.min(h / 2.0);
+            write_polygon(
+                out,
+                &[
+                    (x, y),
+                    (x + w - fold, y),
+                    (x + w, y + fold),
+                    (x + w, y + h),
+                    (x, y + h),
+                ],
+            );
+            let _ = write!(
+                out,
+                r#"<path class="outline-detail" d="M{} {}V{}H{}"/>"#,
+                number(x + w - fold),
+                number(y),
+                number(y + fold),
+                number(x + w)
+            );
+        }
         Outline::Table { dividers } => {
             write_rect(out, "outline", rect, SQUARE);
             for divider in dividers {
@@ -313,6 +369,7 @@ fn role_class(role: TextRole) -> &'static str {
         TextRole::Header => "text-header",
         TextRole::Cell => "text-cell",
         TextRole::EdgeLabel => "text-edge-label",
+        TextRole::Number => "text-number",
     }
 }
 

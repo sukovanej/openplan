@@ -33,6 +33,26 @@ pub(crate) const CELL: Style = Style {
     weight: Weight::Regular,
     role: TextRole::Cell,
 };
+pub(crate) const MESSAGE: Style = Style {
+    size: 13.0,
+    weight: Weight::Regular,
+    role: TextRole::EdgeLabel,
+};
+pub(crate) const NOTE: Style = Style {
+    size: 13.0,
+    weight: Weight::Regular,
+    role: TextRole::Label,
+};
+pub(crate) const BLOCK_LABEL: Style = Style {
+    size: 12.0,
+    weight: Weight::Regular,
+    role: TextRole::Caption,
+};
+pub(crate) const NUMBER: Style = Style {
+    size: 11.0,
+    weight: Weight::SemiBold,
+    role: TextRole::Number,
+};
 pub(crate) const EDGE_LABEL: Style = Style {
     size: 12.0,
     weight: Weight::Regular,
