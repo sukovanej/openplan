@@ -77,6 +77,11 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm -r build
           test -s packages/app/dist/index.html
+      # The matrix jobs share one job id, so the target keeps their caches apart. The cache holds the
+      # dependencies only: the canary version changes each run, so the workspace crates build again.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ join(matrix.targets, '_') }}
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       - name: Install dependencies
