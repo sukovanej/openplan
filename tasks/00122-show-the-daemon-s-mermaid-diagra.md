@@ -98,3 +98,7 @@ and the rules for the SVG are in
 ### 2026-09-26T03:09:36Z by Milan Suk via claude-code
 
 > Wheel: two-finger scroll pans, pinch and Ctrl+wheel zoom. The user chose it; the CQR migration has the user's consent.
+
+### 2026-09-26T03:37:42Z by Milan Suk via claude-code
+
+> The renderer drops the label of a self-loop edge and of an edge between two nodes of one rank (op-diagram-render graph/mod.rs builds both paths with no label). OPP-126 draws its restart as a node for this reason.
