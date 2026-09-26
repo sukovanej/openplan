@@ -42,25 +42,25 @@ git config openplan.store ~/plans/acme    # keep the tasks in another repository
 
 The CLI and the daemon find the tasks of a working directory in this order.
 
-```d2
-direction: down
-root: "--root given?"
-store: "openplan.store set?"
-ref: "refs/openplan/tasks in this repository?"
-local: ".plan/ with a history file above?"
-use_root: "the path of the flag"
-use_store: "the store"
-use_ref: "this repository; sync with openplan.remote, else origin"
-use_local: "the local directory"
-none: "no tasks"
-root -> use_root: yes
-root -> store: no
-store -> use_store: yes
-store -> ref: no
-ref -> use_ref: yes
-ref -> local: no
-local -> use_local: yes
-local -> none: no
+```mermaid
+flowchart TD
+  root{"--root given?"}
+  store{"openplan.store set?"}
+  ref{"refs/openplan/tasks in this repository?"}
+  local{".plan/ with a history file above?"}
+  use_root["the path of the flag"]
+  use_store["the store"]
+  use_ref["this repository; sync with openplan.remote, else origin"]
+  use_local["the local directory"]
+  none["no tasks"]
+  root -->|yes| use_root
+  root -->|no| store
+  store -->|yes| use_store
+  store -->|no| ref
+  ref -->|yes| use_ref
+  ref -->|no| local
+  local -->|yes| use_local
+  local -->|no| none
 ```
 
 ## openplan.remote
