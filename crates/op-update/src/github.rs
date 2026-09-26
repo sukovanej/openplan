@@ -15,10 +15,24 @@ pub struct Github {
     http: reqwest::blocking::Client,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Channel {
+    Stable,
+    Canary,
+}
+
 pub struct Release {
     pub version: Version,
     pub tag: String,
+    pub channel: Channel,
     assets: Vec<Asset>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Step {
+    UpToDate,
+    Install,
+    BackToStable,
 }
 
 #[derive(Deserialize)]
@@ -31,6 +45,7 @@ pub struct Asset {
 #[derive(Deserialize)]
 struct ReleaseResponse {
     tag_name: String,
+    name: Option<String>,
     assets: Vec<Asset>,
 }
 
@@ -54,8 +69,12 @@ impl Github {
         }
     }
 
-    pub fn latest_release(&self) -> Result<Release> {
-        let url = format!("{}/repos/{}/releases/latest", self.api_base, self.repo);
+    pub fn release(&self, channel: Channel) -> Result<Release> {
+        let path = match channel {
+            Channel::Stable => "releases/latest",
+            Channel::Canary => "releases/tags/canary",
+        };
+        let url = format!("{}/repos/{}/{path}", self.api_base, self.repo);
         let response: ReleaseResponse = self
             .http
             .get(&url)
@@ -65,11 +84,23 @@ impl Github {
             .with_context(|| format!("reading {url}"))?
             .json()
             .with_context(|| format!("parsing the release at {url}"))?;
-        let version = Version::parse(response.tag_name.trim_start_matches('v'))
-            .with_context(|| format!("the release tag {:?} is not a version", response.tag_name))?;
+        // The tag `canary` moves with each build, so only the release title holds its version.
+        let version = match channel {
+            Channel::Stable => Version::parse(response.tag_name.trim_start_matches('v'))
+                .with_context(|| {
+                    format!("the release tag {:?} is not a version", response.tag_name)
+                })?,
+            Channel::Canary => {
+                let title = response.name.unwrap_or_default();
+                Version::parse(&title).with_context(|| {
+                    format!("the canary release title {title:?} is not a version")
+                })?
+            }
+        };
         Ok(Release {
             version,
             tag: response.tag_name,
+            channel,
             assets: response.assets,
         })
     }
@@ -98,6 +129,18 @@ impl Github {
 }
 
 impl Release {
+    pub fn step_from(&self, installed: &Version) -> Step {
+        match self.channel {
+            Channel::Canary if self.version == *installed => Step::UpToDate,
+            Channel::Canary => Step::Install,
+            Channel::Stable if self.version > *installed => Step::Install,
+            Channel::Stable if self.version < *installed && !installed.pre.is_empty() => {
+                Step::BackToStable
+            }
+            Channel::Stable => Step::UpToDate,
+        }
+    }
+
     pub fn publishes(&self, name: &str) -> bool {
         self.assets.iter().any(|asset| asset.name == name)
     }

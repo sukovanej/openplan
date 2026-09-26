@@ -4,7 +4,7 @@ mod install;
 mod owner;
 
 pub use digest::verify_sha256;
-pub use github::{Asset, Github, Release};
+pub use github::{Asset, Channel, Github, Release, Step};
 pub use install::{replace_bundle, replace_executable};
 pub use owner::{Environment, Owner, owner_of};
 

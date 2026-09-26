@@ -1,0 +1,121 @@
+name: Canary
+
+# Each push to `main` replaces the one prerelease `canary`. `openplan update --canary` reads it.
+# `release.yml` starts only on a version tag, and the tag `canary` does not match its pattern.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: canary
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # `0.4.1-canary.57` after `0.4.0`: SemVer puts it after the last stable release and before the
+      # next one, and the run number makes each canary newer than the one before it.
+      - id: version
+        run: |
+          stable=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "openplan") | .version')
+          IFS=. read -r major minor patch <<< "${stable%%-*}"
+          echo "version=$major.$minor.$((patch + 1))-canary.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+      - name: Install dist
+        shell: bash
+        run: |
+          dist_version=$(sed -n 's/^cargo-dist-version = "\(.*\)"$/\1/p' Cargo.toml)
+          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v$dist_version/cargo-dist-installer.sh" | sh
+      - id: plan
+        run: |
+          dist plan --output-format=json > plan-dist-manifest.json
+          echo "matrix=$(jq -c '.ci.github.artifacts_matrix' plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ join(matrix.targets, ', ') }})
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container && matrix.container.image || null }}
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust non-interactively if not already installed
+        if: ${{ matrix.container }}
+        run: |
+          if ! command -v cargo > /dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          fi
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      # `op-server` embeds `web/packages/app/dist` at compile time. Without this build the binary
+      # links, but it serves no web UI.
+      - name: Build the web SPA
+        run: |
+          cd web
+          pnpm install --frozen-lockfile
+          pnpm -r build
+          test -s packages/app/dist/index.html
+      - name: Install dist
+        run: ${{ matrix.install_dist.run }}
+      - name: Install dependencies
+        run: |
+          ${{ matrix.packages_install }}
+      # The version changes only in this build. The workflow commits nothing.
+      - name: Set the canary version
+        run: perl -pi -e 's/^version = ".*"/version = "$ENV{VERSION}"/' Cargo.toml
+      - name: Build artifacts
+        run: dist build --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: canary-${{ join(matrix.targets, '_') }}
+          path: |
+            target/distrib/openplan-*.tar.gz
+            target/distrib/openplan-*.tar.gz.sha256
+
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: canary-*
+          path: artifacts
+          merge-multiple: true
+      # A new release, not new assets on the old one: `gh release create` uploads to a draft and
+      # publishes it after the last asset, so a reader never gets a title and assets of two builds.
+      - name: Replace the canary release
+        run: |
+          if gh release view canary > /dev/null 2>&1; then
+            gh release delete canary --cleanup-tag --yes
+          fi
+          gh release create canary artifacts/* \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --notes "The canary build of $GITHUB_SHA. Install it with \`openplan update --canary\`."

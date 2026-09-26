@@ -24,6 +24,7 @@ use op_task::tag::Color;
 use op_task::{Status, rank};
 
 use op_daemon::Home;
+use op_update::Channel;
 use plan::Plan;
 
 #[derive(Parser)]
@@ -208,7 +209,12 @@ enum Command {
         command: ProjectCommand,
     },
     /// Replace this CLI and the desktop app with the newest release
-    Update,
+    Update {
+        /// Install the newest canary build of `main` instead. A later `openplan update` goes
+        /// back to the stable release
+        #[arg(long)]
+        canary: bool,
+    },
     /// Manage the background daemon and web UI
     Server {
         #[command(subcommand)]
@@ -453,7 +459,14 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Project { command } => {
             project::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
-        Command::Update => update::run().map(|()| ExitCode::SUCCESS),
+        Command::Update { canary } => {
+            let channel = if canary {
+                Channel::Canary
+            } else {
+                Channel::Stable
+            };
+            update::run(channel).map(|()| ExitCode::SUCCESS)
+        }
         Command::Server { command } => server(command, daemon_url),
     }
 }

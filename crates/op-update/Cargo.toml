@@ -1,6 +1,6 @@
 [package]
 name = "op-update"
-description = "Fetch the newest GitHub release, verify its digests, and replace the installed CLI and desktop app"
+description = "Fetch the newest GitHub release or canary build, verify its digests, and replace the installed CLI and desktop app"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -9,6 +9,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Canary builds. Each push to `main` replaces the prerelease `canary` with a
+  new build of the CLI and the daemon, versioned `<next patch>-canary.<run>`.
+  `openplan update --canary` installs it. `openplan update` goes back to the
+  newest stable release, also when that release is older.
 - `GET /api/events` takes the cursor of the last event a client saw in the
   query too (`?last_event_id=<id>`), because a new EventSource cannot set the
   `Last-Event-ID` header. The web UI uses it to resume after a reconnect.
