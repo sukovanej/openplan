@@ -397,6 +397,13 @@ async fn a_reference_is_written_in_this_stores_key_and_nothing_else() {
         let (status, refused) = put(&state, &id, PLAN, ("Plan", &text)).await;
         match reference {
             "opp-1" => assert_eq!(status, StatusCode::OK, "{refused}"),
+            "WEB-7" => {
+                assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+                assert!(
+                    message_of(&refused).contains("WEB-7 is in another project"),
+                    "{refused}"
+                );
+            }
             _ => {
                 assert_eq!(status, StatusCode::BAD_REQUEST, "{reference}: {refused}");
                 assert!(message_of(&refused).contains("OPP-42"), "{refused}");
