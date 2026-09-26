@@ -35,7 +35,7 @@ describe("DiffView", () => {
 
   it("marks the words that changed inside the pair", () => {
     const container = render(<DiffView diff={diff} />)
-    expect(Array.from(container.querySelectorAll("mark")).map((word) => word.textContent)).toEqual(["old ", "new "])
+    expect(Array.from(container.querySelectorAll("mark")).map((word) => word.textContent)).toEqual(["old", "new"])
   })
 
   it("separates the hunks with their ranges", () => {
