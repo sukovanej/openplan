@@ -17,11 +17,11 @@ const proseHeadings =
 const proseSpacing =
   "prose-p:my-[14px] prose-ul:my-[14px] prose-ol:my-[14px] prose-li:my-1 prose-pre:my-3 prose-pre:bg-muted prose-pre:font-mono prose-pre:text-foreground"
 
-// Inline code is a muted chip with the Typography backtick pseudo-elements removed.
+// Inline code is a red, bordered chip with the Typography backtick pseudo-elements removed.
 // The [&_pre_code] reset keeps these chip styles from leaking into fenced blocks,
-// which already carry their own background and padding via prose-pre.
+// which already carry their own colour, background, and padding via prose-pre.
 const proseCode =
-  "prose-code:font-mono prose-code:font-normal prose-code:text-[0.82em] prose-code:bg-prose-code-surface prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:before:content-none prose-code:after:content-none [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[1em]"
+  "prose-code:font-mono prose-code:font-normal prose-code:text-[0.82em] prose-code:bg-prose-code-surface prose-code:border prose-code:border-prose-code-border prose-code:rounded prose-code:px-1 prose-code:py-0.5 prose-code:before:content-none prose-code:after:content-none [&_pre_code]:border-0 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[1em]"
 
 // GFM task-list items carry the `task-list-item` class; drop their bullet and keep the checkbox
 // inline so code chips and text stay in normal inline flow instead of becoming flex items.
