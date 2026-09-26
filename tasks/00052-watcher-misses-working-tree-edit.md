@@ -42,3 +42,9 @@ with `watch disabled` for its whole life. With `.plan` present on every branch h
 occurs during a checkout, which the retry heals on its own — so this does not explain the report
 above, but the blast radius is worth removing: make an unreadable worktree a per-branch condition,
 carrying that branch's cells over from the previous snapshot and letting the others diff normally.
+
+## Comments
+
+### 2026-09-26T04:56:10Z by Milan Suk via claude-code
+
+> Cancelled: the move of the tasks to refs/openplan/tasks (#161) removed the code that this task describes.
