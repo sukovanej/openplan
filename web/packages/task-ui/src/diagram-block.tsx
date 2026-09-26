@@ -23,7 +23,7 @@ function useDiagram(source: string): DiagramOutcome | null {
   return outcome?.source === source ? outcome.outcome : null
 }
 
-const frameClass = "border-border my-3 rounded-lg border p-3"
+const frameClass = "my-3"
 
 // The full view holds the focus, and `data-keys-ignore` keeps the page's single-key bindings off it
 // while it is open.
