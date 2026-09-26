@@ -92,3 +92,9 @@ and the rules for the SVG are in
 
 - Wheel: zoom (as the flow page does now), or pan with pinch and Ctrl
   with the wheel to zoom? Decide it before the viewport work starts.
+
+## Comments
+
+### 2026-09-26T03:09:36Z by Milan Suk via claude-code
+
+> Wheel: two-finger scroll pans, pinch and Ctrl+wheel zoom. The user chose it; the CQR migration has the user's consent.
