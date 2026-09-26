@@ -2,7 +2,7 @@
 status: done
 created: 2026-07-14T16:10:14Z
 ---
-# Clickable links for [[task-id]] references in markdown
+# Clickable links for `[[task-id]]` references in markdown
 
 ## Goal
 Render `[[task-id]]` references in task-body markdown as clickable links to the
