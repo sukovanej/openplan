@@ -21,8 +21,8 @@ pub(super) struct Chain {
     pub(super) drawn: bool,
 }
 
-// A port that is the only one on its side can move by `free` toward the line, so the line needs
-// no jog to reach it.
+// Where an edge leaves and enters, as offsets from the centers of its ends. A port that is the only
+// one on its side can move by `free` toward the line, so the line needs no jog to reach it.
 pub(super) struct Ends {
     pub(super) exit: f32,
     pub(super) entry: f32,
@@ -34,15 +34,15 @@ pub(super) struct Ends {
 // they go to, so they do not share one line. A pointed side takes them all at its point.
 pub(super) fn ports(
     chains: &[Chain],
-    center: &[f32],
+    order: &[usize],
     breadth: &[f32],
     spreads: &dyn Fn(usize) -> bool,
 ) -> Vec<Ends> {
     let mut ends: Vec<Ends> = chains
         .iter()
-        .map(|chain| Ends {
-            exit: center[chain.vertices[0]],
-            entry: center[*chain.vertices.last().expect("a chain has two vertices")],
+        .map(|_| Ends {
+            exit: 0.0,
+            entry: 0.0,
             exit_free: 0.0,
             entry_free: 0.0,
         })
@@ -66,14 +66,9 @@ pub(super) fn ports(
             ends[only].exit_free = free(vertex);
             continue;
         }
-        group.sort_by(|a, b| {
-            center[chains[*a].vertices[1]].total_cmp(&center[chains[*b].vertices[1]])
-        });
-        for (slot, x) in spread(center[vertex], breadth[vertex], group.len())
-            .into_iter()
-            .enumerate()
-        {
-            ends[group[slot]].exit = x;
+        group.sort_by_key(|chain| order[chains[*chain].vertices[1]]);
+        for (slot, offset) in spread(breadth[vertex], group.len()).into_iter().enumerate() {
+            ends[group[slot]].exit = offset;
         }
     }
     for (vertex, mut group) in arriving {
@@ -84,25 +79,21 @@ pub(super) fn ports(
             ends[only].entry_free = free(vertex);
             continue;
         }
-        let before = |chain: usize| {
-            let vertices = &chains[chain].vertices;
-            center[vertices[vertices.len() - 2]]
-        };
-        group.sort_by(|a, b| before(*a).total_cmp(&before(*b)));
-        for (slot, x) in spread(center[vertex], breadth[vertex], group.len())
-            .into_iter()
-            .enumerate()
-        {
-            ends[group[slot]].entry = x;
+        group.sort_by_key(|chain| {
+            let vertices = &chains[*chain].vertices;
+            order[vertices[vertices.len() - 2]]
+        });
+        for (slot, offset) in spread(breadth[vertex], group.len()).into_iter().enumerate() {
+            ends[group[slot]].entry = offset;
         }
     }
     ends
 }
 
-fn spread(center: f32, breadth: f32, count: usize) -> Vec<f32> {
+fn spread(breadth: f32, count: usize) -> Vec<f32> {
     let gap = PORT_GAP.min(breadth * 0.6 / count as f32);
     (0..count)
-        .map(|slot| center + (slot as f32 - (count as f32 - 1.0) / 2.0) * gap)
+        .map(|slot| (slot as f32 - (count as f32 - 1.0) / 2.0) * gap)
         .collect()
 }
 
@@ -115,17 +106,19 @@ pub(super) struct Tracks {
 // within `SNAP` of it, so a few pixels of rounding never show as a jog.
 pub(super) fn links(chain: &Chain, ends: &Ends, center: &[f32]) -> Vec<(f32, f32)> {
     let last = chain.vertices.len() - 2;
+    let exit = center[chain.vertices[0]] + ends.exit;
+    let entry = center[chain.vertices[last + 1]] + ends.entry;
     let target = |at: usize| {
         if at == last {
-            ends.entry
+            entry
         } else {
             center[chain.vertices[at + 1]]
         }
     };
-    let mut x = if (ends.exit - target(0)).abs() <= ends.exit_free {
+    let mut x = if (exit - target(0)).abs() <= ends.exit_free {
         target(0)
     } else {
-        ends.exit
+        exit
     };
     (0..=last)
         .map(|at| {

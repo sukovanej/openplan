@@ -95,7 +95,7 @@ it("resync re-reads the projects and everything on screen", () => {
 
 it("daemon_stopping changes no read", () => {
   const { inv, calls } = spy()
-  applyChange(inv, { kind: "daemon_stopping" })
+  applyChange(inv, { kind: "daemon_stopping", reason: "stop" })
   expect(calls).toEqual(quiet)
 })
 

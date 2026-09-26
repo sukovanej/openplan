@@ -7,9 +7,10 @@ export function Panel({ className, ...props }: React.ComponentProps<"div">) {
     <div
       // The outline is an inset ring rather than a border, so a current row's own ring lands on the
       // same pixels and reads as one line instead of doubling up against the frame. It lies over the
-      // content, because Chrome on Windows paints a scrollbar over anything under it.
+      // content, because Chrome on Windows paints a scrollbar over anything under it. The surface is a
+      // solid mix rather than a see-through tint, so a diagram's label boxes can paint the same color.
       className={cn(
-        "bg-muted/10 relative flex h-full flex-col overflow-hidden rounded-lg after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-border after:content-['']",
+        "bg-(--surface) [--surface:color-mix(in_srgb,var(--muted)_10%,var(--background))] relative flex h-full flex-col overflow-hidden rounded-lg after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-border after:content-['']",
         className,
       )}
       {...props}

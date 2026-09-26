@@ -36,6 +36,7 @@ pub enum Owner {
     Nix,
     SystemPackage,
     DrvFs,
+    BuildCache,
 }
 
 impl Owner {
@@ -51,6 +52,9 @@ impl Owner {
             Owner::Nix => format!("Nix owns {exe}; update it through your Nix configuration"),
             Owner::SystemPackage => {
                 format!("a system package owns {exe}; update it through your package manager")
+            }
+            Owner::BuildCache => {
+                format!("{exe} is a build in a cache directory; build it again to update it")
             }
             Owner::DrvFs => format!(
                 "{exe} is on a Windows drive (DrvFs), which cannot replace a binary atomically; install openplan under the Linux file system"
@@ -83,6 +87,14 @@ pub fn owner_of(exe: &Path, env: &Environment) -> Option<Owner> {
     }
     if env.wsl && under(Path::new("/mnt")) {
         return Some(Owner::DrvFs);
+    }
+    // Cargo marks its target directory with this tag, so it catches `cargo build` and `cargo run`.
+    if exe
+        .ancestors()
+        .skip(1)
+        .any(|dir| dir.join("CACHEDIR.TAG").is_file())
+    {
+        return Some(Owner::BuildCache);
     }
     None
 }

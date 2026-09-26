@@ -241,3 +241,14 @@ fn a_stable_install_stays_on_the_newest_stable_release() {
     assert_eq!(release.step_from(&installed("0.4.0")), Step::UpToDate);
     assert_eq!(release.step_from(&installed("0.3.9")), Step::Install);
 }
+
+#[test]
+fn a_canary_build_follows_the_canary_channel() {
+    assert_eq!(Channel::of(&installed("0.4.1-canary.57")), Channel::Canary);
+}
+
+#[test]
+fn a_release_or_a_local_build_follows_the_stable_channel() {
+    assert_eq!(Channel::of(&installed("0.4.0")), Channel::Stable);
+    assert_eq!(Channel::of(&installed("0.4.0-rc.1")), Channel::Stable);
+}

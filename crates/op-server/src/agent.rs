@@ -16,7 +16,7 @@ use op_agent::{
 };
 use op_agent_claude::{ClaudeCode, Skills, Tools};
 use op_agent_codex::Codex;
-use op_api::{ApiErrorBody, ChangeEvent, Rfc3339};
+use op_api::{ApiErrorBody, ChangeEvent, Rfc3339, StopReason};
 use op_task::Timestamp;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -157,6 +157,15 @@ impl AgentSession {
         let _ = self.events.send(SessionEvent::Task { id: id.clone() });
     }
 
+    // The agent process runs until its pump ends. A session whose pump is not stored yet is starting.
+    pub(crate) fn live(&self) -> bool {
+        self.pump
+            .lock()
+            .expect("pump lock poisoned")
+            .as_ref()
+            .is_none_or(|pump| !pump.is_finished())
+    }
+
     fn view(&self, live: &Live) -> SessionView {
         SessionView {
             id: self.id.clone(),
@@ -201,7 +210,7 @@ impl AgentSessions {
         }
     }
 
-    fn held(&self) -> MutexGuard<'_, BTreeMap<String, Arc<AgentSession>>> {
+    pub(crate) fn held(&self) -> MutexGuard<'_, BTreeMap<String, Arc<AgentSession>>> {
         self.sessions.lock().expect("agent sessions lock poisoned")
     }
 
@@ -434,8 +443,20 @@ pub(crate) async fn create_session(
         pump: Mutex::new(None),
     });
     // Registered before the pump runs, so a pump that ends at once — a daemon already stopping —
-    // cannot try to remove an entry that is not there yet and leave it behind.
-    state.agents.held().insert(id.clone(), Arc::clone(&session));
+    // cannot try to remove an entry that is not there yet and leave it behind. The check for a stop
+    // shares the lock with `update_if_idle`, so an update never stops a session that started here.
+    let stopping = {
+        let mut sessions = state.agents.held();
+        let stopping = state.stop_reason().is_some();
+        if !stopping {
+            sessions.insert(id.clone(), Arc::clone(&session));
+        }
+        stopping
+    };
+    if stopping {
+        let _ = handle.shutdown().await;
+        return Err(ApiError::unavailable("the daemon is stopping"));
+    }
     let pump = tokio::spawn(pump(
         Arc::clone(&state.agents),
         Arc::clone(&session),
@@ -589,7 +610,7 @@ pub(crate) async fn session_events(
         loop {
             let event = tokio::select! {
                 _ = tx.closed() => return,
-                _ = stopping.wait_for(|&stopping| stopping) => return,
+                _ = stopping.wait_for(Option::is_some) => return,
                 message = events.recv() => match message {
                     Ok(event) => event,
                     // The reader missed events, so its transcript no longer matches this session.
@@ -604,7 +625,7 @@ pub(crate) async fn session_events(
                         return;
                     }
                 }
-                _ = stopping.wait_for(|&stopping| stopping) => return,
+                _ = stopping.wait_for(Option::is_some) => return,
             }
         }
     });
@@ -634,7 +655,7 @@ async fn pump(
     session: Arc<AgentSession>,
     mut events: mpsc::Receiver<AgentEvent>,
     mut changes: broadcast::Receiver<Published>,
-    mut stopping: watch::Receiver<bool>,
+    mut stopping: watch::Receiver<Option<StopReason>>,
 ) {
     let mut asked = false;
     loop {
@@ -648,7 +669,7 @@ async fn pump(
                     session.bind(&change);
                 }
             }
-            _ = async { let _ = stopping.wait_for(|&stopping| stopping).await; }, if !asked => {
+            _ = async { let _ = stopping.wait_for(Option::is_some).await; }, if !asked => {
                 asked = true;
                 session.closing.store(true, Ordering::Relaxed);
                 let _ = session.handle.shutdown().await;

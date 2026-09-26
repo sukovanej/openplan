@@ -421,21 +421,9 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
         .map(|vertex| vertex.rank)
         .max()
         .map_or(1, |last| last + 1);
-    let links: Vec<(usize, usize, f32)> = chains
+    let unit_links: Vec<(usize, usize)> = chains
         .iter()
         .flat_map(|chain| chain.vertices.windows(2).map(|pair| (pair[0], pair[1])))
-        .map(|(upper, lower)| {
-            let weight = match (vertices[upper].on_edge(), vertices[lower].on_edge()) {
-                (true, true) => 8.0,
-                (false, false) => 1.0,
-                _ => 2.0,
-            };
-            (upper, lower, weight)
-        })
-        .collect();
-    let unit_links: Vec<(usize, usize)> = links
-        .iter()
-        .map(|(upper, lower, _)| (*upper, *lower))
         .collect();
 
     let mut keys: Vec<f32> = (0..vertices.len()).map(|vertex| vertex as f32).collect();
@@ -465,6 +453,66 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
     );
 
     let vertex_breadth: Vec<f32> = vertices.iter().map(|vertex| vertex.breadth).collect();
+    let mut order = vec![0; vertices.len()];
+    for rank in &ordering.ranks {
+        for (at, &vertex) in rank.iter().enumerate() {
+            order[vertex] = at;
+        }
+    }
+    let spreads = |vertex: usize| match vertices[vertex].kind {
+        Kind::Node(node) => match &graph.nodes[node].shape {
+            Shape::Rectangle
+            | Shape::Rounded
+            | Shape::Subroutine
+            | Shape::Cylinder
+            | Shape::Table { .. } => true,
+            Shape::Hexagon
+            | Shape::Stadium
+            | Shape::LeanRight
+            | Shape::LeanLeft
+            | Shape::Trapezoid
+            | Shape::InvertedTrapezoid => orient.vertical(),
+            _ => false,
+        },
+        _ => false,
+    };
+    let chain_ends: Vec<Ends> = route::ports(&chains, &order, &vertex_breadth, &spreads);
+    let on_edge = |vertex: usize| vertices[vertex].on_edge();
+    let links: Vec<place::Link> = chains
+        .iter()
+        .zip(&chain_ends)
+        .flat_map(|(chain, ends)| {
+            let last = chain.vertices.len() - 2;
+            chain
+                .vertices
+                .windows(2)
+                .enumerate()
+                .map(move |(at, pair)| {
+                    let (upper, lower) = (pair[0], pair[1]);
+                    let weight = match (on_edge(upper), on_edge(lower)) {
+                        (true, true) => 8.0,
+                        (false, false) => 1.0,
+                        _ => 2.0,
+                    };
+                    place::Link {
+                        upper,
+                        lower,
+                        weight,
+                        upper_port: if at == 0 { ends.exit } else { 0.0 },
+                        lower_port: if at == last { ends.entry } else { 0.0 },
+                    }
+                })
+        })
+        .collect();
+    let chain_paths: Vec<place::Path> = chains
+        .iter()
+        .zip(&chain_ends)
+        .map(|(chain, ends)| place::Path {
+            vertices: &chain.vertices,
+            exit: ends.exit,
+            entry: ends.entry,
+        })
+        .collect();
     let vertex_thin: Vec<bool> = vertices.iter().map(Vertex::thin).collect();
     let mut room_after = vec![0.0; vertices.len()];
     for (&node, at) in &loops {
@@ -492,6 +540,7 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
             group_pad: &group_pad,
             group_min_breadth: &group_min_breadth,
             links: &links,
+            paths: &chain_paths,
         },
     );
     let mut center = placement.center.clone();
@@ -517,24 +566,6 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
     }
     let center = &center;
 
-    let spreads = |vertex: usize| match vertices[vertex].kind {
-        Kind::Node(node) => match &graph.nodes[node].shape {
-            Shape::Rectangle
-            | Shape::Rounded
-            | Shape::Subroutine
-            | Shape::Cylinder
-            | Shape::Table { .. } => true,
-            Shape::Hexagon
-            | Shape::Stadium
-            | Shape::LeanRight
-            | Shape::LeanLeft
-            | Shape::Trapezoid
-            | Shape::InvertedTrapezoid => orient.vertical(),
-            _ => false,
-        },
-        _ => false,
-    };
-    let chain_ends: Vec<Ends> = route::ports(&chains, center, &vertex_breadth, &spreads);
     let paths: Vec<Vec<(f32, f32)>> = chains
         .iter()
         .zip(&chain_ends)

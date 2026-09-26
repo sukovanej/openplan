@@ -91,6 +91,18 @@ pub fn run(channel: Channel) -> Result<()> {
     Ok(())
 }
 
+pub fn auto(on: bool) -> Result<()> {
+    Control::resolve()?
+        .home()
+        .edit_update(|record| record.auto = on)?;
+    if on {
+        println!("the daemon updates itself");
+    } else {
+        println!("the daemon does not update itself; run `openplan update` to update");
+    }
+    Ok(())
+}
+
 fn download(github: &Github, release: &Release, name: &str) -> Result<Vec<u8>> {
     println!("downloading {name}");
     let bytes = github.download_verified(release, name)?;
