@@ -15,7 +15,7 @@ The daemon checks for a new release at an interval. It installs the release when
 
 ```mermaid
 flowchart LR
-  timer[every 6 hours and 5 minutes after start] -->|check| daemon
+  timer[every hour and 5 minutes after start] -->|check| daemon
   daemon -->|latest or canary| github[GitHub releases]
   daemon -->|a newer release| swap[download, wait until idle, replace the binary, exec it]
   daemon -->|last check and its result| home["OPENPLAN_HOME/update.json"]
@@ -24,7 +24,7 @@ flowchart LR
 ## Design
 
 - **The daemon does the work.** The daemon runs all the time, so it owns the check. The CLI and the app do not check. The install uses the `op-update` crate from [[./00108-self-update-the-cli-and-the-desk.md]]: the same download, the same SHA256 check, and the same refusal of a binary it does not own.
-- **Interval.** The daemon checks 5 minutes after it starts, then every 6 hours. The interval limits restarts on the canary channel, where each push to `main` makes a new build.
+- **Interval.** The daemon checks 5 minutes after it starts, then every hour. The interval limits restarts on the canary channel to one an hour, where each push to `main` makes a new build.
 - **Channel from the version.** The channel is not stored. A build with `-canary.` in its version follows the canary release of [[./00123-canary-releases-and-openplan-upd.md]]. Any other build follows `releases/latest`. `openplan update` and `openplan update --canary` stay the way to change the channel.
 - **Install only when idle.** The daemon downloads and verifies the release first. Then it waits until no agent session runs. The check, the replacement of the executable, and the stop happen under the lock that starting a session takes, so no session starts in between. A session request after that gets 503. The stop is graceful, so an open write request finishes first. The daemon never stops an agent session to update.
 - **Start again in the same process.** After the stop, the daemon calls `exec` on the new executable. The new daemon keeps the pid, the log, and the port, so the web UI reconnects to the same address. `openplan server restart` is not used: it spawns a second process that must wait for the port. The new daemon compares its version with the version in `update.json` and records the result.
