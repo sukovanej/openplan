@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: done
 created: 2026-09-25T15:19:25Z
 dependencies:
 - ./00116-bundle-one-font-for-diagram-text.md
@@ -16,6 +16,14 @@ Remove `@terrastruct/d2`, `elkjs`, and `@xyflow/react` from the web app.
 The daemon parses Mermaid into a diagram IR, lays the IR out, and writes
 SVG. The flow page builds the same IR from the tasks and uses the same
 renderer. The browser only shows the SVG, and pans and zooms it.
+
+## State
+
+The three crates and the API are done: the parser (#170), the font
+(#171), the graph layout and the SVG writer (#173), the sequence layout
+(#175), and the API with the flow drawing (#181). The rest of the work
+(lint, web, migration, skill, and prompt) moved to
+[[./00122-show-the-daemon-s-mermaid-diagra.md]].
 
 ## Why
 
