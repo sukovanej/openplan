@@ -1,0 +1,29 @@
+{
+  "nodes": [
+    { "kind": "box", "project": "openplan", "id": "OPP-1", "title": "Draw diagrams with an own engine", "status": "in_progress" },
+    { "kind": "leaf", "project": "openplan", "id": "OPP-2", "title": "Parse Mermaid", "status": "in_progress", "parent": "OPP-1", "wave": 0, "position": 0, "blocks_count": 1 },
+    { "kind": "leaf", "project": "openplan", "id": "OPP-3", "title": "Bundle a font", "status": "in_review", "wave": 0, "position": 1, "blocks_count": 1 },
+    { "kind": "box", "project": "openplan", "id": "OPP-10", "title": "Serve the drawings", "status": "todo", "parent": "OPP-1" },
+    { "kind": "leaf", "project": "openplan", "id": "OPP-11", "title": "Draw a posted diagram", "status": "todo", "parent": "OPP-10", "wave": 1, "position": 0, "blocks_count": 1 },
+    { "kind": "leaf", "project": "openplan", "id": "OPP-12", "title": "Draw the flow", "status": "backlog", "parent": "OPP-10", "wave": 1, "position": 1, "blocks_count": 0 },
+    { "kind": "leaf", "project": "openplan", "id": "OPP-4", "title": "A child of a task outside the flow", "status": { "kind": "invalid", "message": "unknown status \"later\"" }, "parent": "OPP-40", "wave": 2, "position": 0, "blocks_count": 0 },
+    {
+      "kind": "leaf",
+      "project": "openplan",
+      "id": "OPP-5",
+      "title": "A status in conflict",
+      "status": { "kind": "conflict", "value": "cancelled", "sides": [{ "label": "ours", "value": "todo" }, { "label": "theirs", "value": "cancelled" }] },
+      "wave": 2,
+      "position": 1,
+      "blocks_count": 0
+    },
+    { "kind": "unresolved", "project": "openplan", "id": "OPP-99" }
+  ],
+  "edges": [
+    { "project": "openplan", "from": "OPP-2", "to": "OPP-11" },
+    { "project": "openplan", "from": "OPP-3", "to": "OPP-12" },
+    { "project": "openplan", "from": "OPP-11", "to": "OPP-4" },
+    { "project": "openplan", "from": "OPP-10", "to": "OPP-5" },
+    { "project": "openplan", "from": "OPP-99", "to": "OPP-5" }
+  ]
+}

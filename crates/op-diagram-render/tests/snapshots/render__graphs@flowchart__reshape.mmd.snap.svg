@@ -22,4 +22,14 @@
 .op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
 .op-diagram .text-number { fill: #fff; }
 .op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
 </style><g class="edge stroke-solid"><path class="edge-line" d="M70.45 68L70.45 116"/><g class="head head-arrow"><path d="M70.45 124L65.95 115L74.95 115Z"/></g></g><g class="node shape-diamond"><polygon class="outline" points="70.45,8 132.91,38 70.45,68 8,38"/><text class="text-label" x="70.45" y="43.09" font-size="14" font-weight="400" text-anchor="middle">Choice</text></g><g class="node shape-rectangle"><rect class="outline" x="50.16" y="124" width="40.58" height="40" rx="3"/><text class="text-label" x="70.45" y="149.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g></svg>

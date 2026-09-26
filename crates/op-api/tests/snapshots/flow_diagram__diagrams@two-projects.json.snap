@@ -1,0 +1,69 @@
+---
+source: crates/op-api/tests/flow_diagram.rs
+expression: flow.diagram()
+input_file: crates/op-api/tests/flow_diagrams/two-projects.json
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "alpha/AAA-1",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "First in alpha"
+      ],
+      "caption": "AAA-1",
+      "icon": "clock",
+      "link": "/alpha/task/AAA-1",
+      "classes": [
+        "status-todo"
+      ],
+      "rank": 0
+    },
+    {
+      "id": "beta/AAA-1",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "First in beta, with the same key"
+      ],
+      "caption": "AAA-1",
+      "icon": "circle_check",
+      "link": "/beta/task/AAA-1",
+      "classes": [
+        "status-done"
+      ],
+      "rank": 0
+    },
+    {
+      "id": "alpha/AAA-2",
+      "shape": {
+        "kind": "rounded"
+      },
+      "label": [
+        "Second in alpha"
+      ],
+      "caption": "AAA-2",
+      "icon": "clock",
+      "link": "/alpha/task/AAA-2",
+      "classes": [
+        "status-todo"
+      ],
+      "rank": 1
+    }
+  ],
+  "edges": [
+    {
+      "from": "alpha/AAA-1",
+      "to": "alpha/AAA-2",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

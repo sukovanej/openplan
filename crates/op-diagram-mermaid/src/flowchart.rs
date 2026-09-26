@@ -287,6 +287,7 @@ impl Chart {
         let clusters = self.cluster_at;
         Ok(Graph {
             direction: self.direction,
+            pack: None,
             nodes: self
                 .nodes
                 .into_iter()

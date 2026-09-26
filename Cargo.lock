@@ -3881,6 +3881,8 @@ dependencies = [
 name = "op-api"
 version = "0.0.3"
 dependencies = [
+ "insta",
+ "op-diagram",
  "op-task",
  "serde",
  "serde_json",
@@ -4044,6 +4046,9 @@ dependencies = [
  "op-backend",
  "op-backend-git",
  "op-backend-local",
+ "op-diagram",
+ "op-diagram-mermaid",
+ "op-diagram-render",
  "op-index",
  "op-task",
  "op-tracker",

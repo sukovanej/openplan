@@ -1,6 +1,6 @@
-use op_diagram::{Cluster, Node, Row, Shape};
+use op_diagram::{Cluster, Icon, Node, Row, Shape};
 
-use crate::scene::{Outline, Text};
+use crate::scene::{IconBox, Outline, Rect, Text};
 use crate::text::{Block, CAPTION, CELL, EDGE_LABEL, HEADER, LABEL, TABLE_HEADER, block};
 
 pub(super) const MAX_LABEL: f32 = 200.0;
@@ -15,12 +15,17 @@ const TABLE_PAD_Y: f32 = 8.0;
 const TABLE_COLUMN_GAP: f32 = 12.0;
 const EDGE_LABEL_PAD_X: f32 = 4.0;
 const EDGE_LABEL_PAD_Y: f32 = 2.0;
+const ICON: f32 = 16.0;
+const ICON_GAP: f32 = 10.0;
+const HEADER_ICON: f32 = 14.0;
+const HEADER_ICON_GAP: f32 = 8.0;
 
 pub(super) struct Body {
     pub(super) width: f32,
     pub(super) height: f32,
     pub(super) outline: Outline,
     pub(super) texts: Vec<Text>,
+    pub(super) icon: Option<IconBox>,
 }
 
 pub(super) fn node(node: &Node) -> Body {
@@ -34,14 +39,41 @@ pub(super) fn node(node: &Node) -> Body {
     let label = block(&node.label, LABEL, MAX_LABEL);
     let text_width = caption.width.max(label.width);
     let text_height = caption.height + label.height;
-    let frame = frame(&node.shape, text_width, text_height);
-    let mut texts = caption.centered(frame.text_center, frame.text_top);
-    texts.extend(label.centered(frame.text_center, frame.text_top + caption.height));
+    let Some(icon) = node.icon else {
+        let frame = frame(&node.shape, text_width, text_height);
+        let mut texts = caption.centered(frame.text_center, frame.text_top);
+        texts.extend(label.centered(frame.text_center, frame.text_top + caption.height));
+        return Body {
+            width: frame.width,
+            height: frame.height,
+            outline: outline(&node.shape),
+            texts,
+            icon: None,
+        };
+    };
+    // Beside an icon the text starts at its left edge, as it does on a task card. All cards take the
+    // width of the longest line a label can have, so the cards of a flow line up in columns.
+    let content_width = ICON + ICON_GAP + MAX_LABEL.max(text_width);
+    let content_height = text_height.max(ICON);
+    let frame = frame(&node.shape, content_width, content_height);
+    let left = frame.text_center - content_width / 2.0;
+    let text_top = frame.text_top + (content_height - text_height) / 2.0;
+    let mut texts = caption.left_aligned(left + ICON + ICON_GAP, text_top);
+    texts.extend(label.left_aligned(left + ICON + ICON_GAP, text_top + caption.height));
     Body {
         width: frame.width,
         height: frame.height,
         outline: outline(&node.shape),
         texts,
+        icon: Some(IconBox {
+            icon,
+            rect: Rect {
+                x: left,
+                y: frame.text_top + (content_height - ICON) / 2.0,
+                width: ICON,
+                height: ICON,
+            },
+        }),
     }
 }
 
@@ -166,27 +198,58 @@ fn table(label: &[String], rows: &[Row]) -> Body {
             },
         },
         texts,
+        icon: None,
     }
 }
 
 pub(super) struct Header {
     pub(super) caption: Block,
     pub(super) label: Block,
+    pub(super) icon: Option<Icon>,
 }
 
 impl Header {
     pub(super) fn width(&self) -> f32 {
-        self.caption.width.max(self.label.width)
+        self.indent() + self.caption.width.max(self.label.width)
     }
 
     pub(super) fn height(&self) -> f32 {
-        self.caption.height + self.label.height
+        let text_height = self.text_height();
+        match self.icon {
+            Some(_) => text_height.max(HEADER_ICON),
+            None => text_height,
+        }
     }
 
     pub(super) fn texts(&self, left: f32, top: f32) -> Vec<Text> {
+        let left = left + self.indent();
+        let top = top + (self.height() - self.text_height()) / 2.0;
         let mut texts = self.caption.left_aligned(left, top);
         texts.extend(self.label.left_aligned(left, top + self.caption.height));
         texts
+    }
+
+    pub(super) fn icon(&self, left: f32, top: f32) -> Option<IconBox> {
+        self.icon.map(|icon| IconBox {
+            icon,
+            rect: Rect {
+                x: left,
+                y: top + (self.height() - HEADER_ICON) / 2.0,
+                width: HEADER_ICON,
+                height: HEADER_ICON,
+            },
+        })
+    }
+
+    fn text_height(&self) -> f32 {
+        self.caption.height + self.label.height
+    }
+
+    fn indent(&self) -> f32 {
+        match self.icon {
+            Some(_) => HEADER_ICON + HEADER_ICON_GAP,
+            None => 0.0,
+        }
     }
 }
 
@@ -197,6 +260,7 @@ pub(super) fn header(cluster: &Cluster) -> Header {
             None => Block::empty(CAPTION),
         },
         label: block(&cluster.label, HEADER, MAX_HEADER),
+        icon: cluster.icon,
     }
 }
 

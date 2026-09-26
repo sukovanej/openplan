@@ -18,7 +18,7 @@ use axum::{
 };
 use op_api::{
     ApiErrorBody, ChangeEvent, DaemonInfo, FlowCycles, KeyError, ProjectView, Refusal,
-    RegisterProject, RenameProject,
+    RegisterProject, RenameProject, SourcePosition,
 };
 use op_backend::{Actor, BackendError};
 use op_tracker::TrackerError;
@@ -37,10 +37,12 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
 pub mod agent;
+mod drawing;
 mod project;
 mod registry;
 mod tasks;
 use agent::AgentSessions;
+pub use drawing::DrawingCache;
 pub use project::{
     Location, OpenError, Project, STORE_DIR, machine_actor, open_backend, sync_view,
 };
@@ -178,6 +180,7 @@ pub struct AppState {
     health: Option<Arc<DaemonInfo>>,
     publisher: Publisher,
     agents: Arc<AgentSessions>,
+    drawings: Arc<DrawingCache>,
 }
 
 impl AppState {
@@ -198,6 +201,7 @@ impl AppState {
             health: None,
             publisher: Publisher::new(),
             agents: Arc::new(AgentSessions::new(agent::backends())),
+            drawings: Arc::new(DrawingCache::new(DrawingCache::BUDGET)),
         }
     }
 
@@ -212,6 +216,10 @@ impl AppState {
 
     pub fn agents(&self) -> Arc<AgentSessions> {
         Arc::clone(&self.agents)
+    }
+
+    pub fn drawings(&self) -> Arc<DrawingCache> {
+        Arc::clone(&self.drawings)
     }
 
     pub fn with_registry(mut self, path: PathBuf) -> Self {
@@ -535,6 +543,8 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(tasks::get_board))
         .routes(routes!(tasks::get_merged_board))
         .routes(routes!(tasks::get_flow))
+        .routes(routes!(drawing::draw_flow))
+        .routes(routes!(drawing::draw_diagram))
         .routes(routes!(tasks::search_project))
         .routes(routes!(tasks::search_all))
         .routes(routes!(
@@ -954,6 +964,7 @@ pub(crate) struct ApiError {
     message: String,
     reason: Option<Refusal>,
     cycles: Vec<Vec<String>>,
+    position: Option<SourcePosition>,
 }
 
 impl ApiError {
@@ -963,6 +974,7 @@ impl ApiError {
             message: message.into(),
             reason: None,
             cycles: Vec::new(),
+            position: None,
         }
     }
 
@@ -1034,11 +1046,24 @@ impl From<BackendError> for ApiError {
 // exist, and only an edit to them can change it.
 impl From<FlowCycles> for ApiError {
     fn from(err: FlowCycles) -> Self {
+        let message = err.to_string();
         Self {
-            status: StatusCode::UNPROCESSABLE_ENTITY,
-            message: err.to_string(),
-            reason: None,
             cycles: err.cycles,
+            ..Self::new(StatusCode::UNPROCESSABLE_ENTITY, message)
+        }
+    }
+}
+
+// A diagram that does not parse is the answer to the request, as a cycle is: only an edit to the
+// source can change it.
+impl From<op_diagram_mermaid::ParseError> for ApiError {
+    fn from(err: op_diagram_mermaid::ParseError) -> Self {
+        Self {
+            position: Some(SourcePosition {
+                line: err.line,
+                column: err.column,
+            }),
+            ..Self::new(StatusCode::UNPROCESSABLE_ENTITY, err.to_string())
         }
     }
 }
@@ -1084,6 +1109,7 @@ impl IntoResponse for ApiError {
                 message: self.message,
                 reason: self.reason,
                 cycles: self.cycles,
+                position: self.position,
             }),
         )
             .into_response()

@@ -1,4 +1,4 @@
-use op_diagram::{Head, Stroke};
+use op_diagram::{Head, Icon, Stroke};
 
 use crate::measure::Weight;
 
@@ -104,6 +104,12 @@ pub enum Outline {
     Note,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IconBox {
+    pub icon: Icon,
+    pub rect: Rect,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeBox {
     pub id: String,
@@ -111,6 +117,7 @@ pub struct NodeBox {
     pub outline: Outline,
     pub rect: Rect,
     pub texts: Vec<Text>,
+    pub icon: Option<IconBox>,
     pub classes: Vec<String>,
     pub link: Option<String>,
 }
@@ -122,6 +129,7 @@ pub struct ClusterBox {
     pub depth: usize,
     pub rect: Rect,
     pub texts: Vec<Text>,
+    pub icon: Option<IconBox>,
     pub classes: Vec<String>,
     pub link: Option<String>,
 }
@@ -156,7 +164,8 @@ pub struct Guide {
     pub kind: GuideKind,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+// A diagram with nothing in it has no size, so the page can tell it apart from one it draws.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Scene {
     pub width: f32,
     pub height: f32,
@@ -192,15 +201,26 @@ fn move_texts(texts: &mut [Text], dx: f32, dy: f32) {
     }
 }
 
+impl IconBox {
+    pub(crate) fn moved(self, dx: f32, dy: f32) -> IconBox {
+        IconBox {
+            rect: self.rect.moved(dx, dy),
+            ..self
+        }
+    }
+}
+
 impl Scene {
     pub(crate) fn translate(&mut self, dx: f32, dy: f32) {
         for cluster in &mut self.clusters {
             cluster.rect = cluster.rect.moved(dx, dy);
             move_texts(&mut cluster.texts, dx, dy);
+            cluster.icon = cluster.icon.map(|icon| icon.moved(dx, dy));
         }
         for node in &mut self.nodes {
             node.rect = node.rect.moved(dx, dy);
             move_texts(&mut node.texts, dx, dy);
+            node.icon = node.icon.map(|icon| icon.moved(dx, dy));
         }
         for edge in &mut self.edges {
             for point in &mut edge.points {

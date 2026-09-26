@@ -1,3 +1,4 @@
+mod diagram;
 mod family;
 mod growth;
 mod layout;

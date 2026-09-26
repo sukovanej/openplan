@@ -852,12 +852,19 @@ pub(crate) async fn get_flow(
     State(state): State<AppState>,
     Query(parameters): Query<Vec<(String, String)>>,
 ) -> Result<Json<Flow>, ApiError> {
-    let query = flow_query(&parameters)?;
+    Ok(Json(flow(&state, &parameters).await?))
+}
+
+pub(crate) async fn flow(
+    state: &AppState,
+    parameters: &[(String, String)],
+) -> Result<Flow, ApiError> {
+    let query = flow_query(parameters)?;
     let projects: Vec<Arc<Project>> = match query.projects.is_empty() {
         false => query
             .projects
             .iter()
-            .map(|name| project_of(&state, name))
+            .map(|name| project_of(state, name))
             .collect::<Result<_, _>>()?,
         true => state
             .projects()
@@ -865,15 +872,14 @@ pub(crate) async fn get_flow(
             .filter(|project| project.blocked().is_none())
             .collect(),
     };
-    let flow = blocking(move || {
+    blocking(move || {
         let mut tasks = Vec::new();
         for project in projects {
             tasks.append(&mut project.index().list(&project.name()));
         }
         Ok(Flow::build(&tasks, &query)?)
     })
-    .await?;
-    Ok(Json(flow))
+    .await
 }
 
 fn flow_query(parameters: &[(String, String)]) -> Result<FlowQuery, ApiError> {

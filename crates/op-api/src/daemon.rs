@@ -23,6 +23,16 @@ pub struct ApiErrorBody {
     // it cannot do with a sentence. Every other refusal sends the message alone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cycles: Vec<Vec<String>>,
+    // Where a diagram source stops parsing, so that an editor can point at the place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub position: Option<SourcePosition>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SourcePosition {
+    pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

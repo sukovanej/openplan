@@ -80,6 +80,7 @@ impl Head {
             outline: self.outline.clone(),
             rect,
             texts: self.label.centered(center, text_top),
+            icon: None,
             classes: vec!["participant".to_owned()],
             link: None,
         }
@@ -241,6 +242,9 @@ struct Builder<'a> {
 }
 
 pub(crate) fn layout(sequence: &Sequence) -> Scene {
+    if sequence.participants.is_empty() {
+        return Scene::default();
+    }
     let participants = &sequence.participants;
     let column: HashMap<&str, usize> = participants
         .iter()
@@ -412,6 +416,7 @@ impl Builder<'_> {
                 },
                 texts: block(&[self.numbers.to_string()], NUMBER, f32::INFINITY)
                     .centered(center.x, center.y - NUMBER.line_height() / 2.0),
+                icon: None,
                 classes: vec!["sequence-number".to_owned()],
                 link: None,
             });
@@ -470,6 +475,7 @@ impl Builder<'_> {
             outline: Outline::Note,
             rect,
             texts: text.centered(rect.x + rect.width / 2.0, rect.y + NOTE_PAD_Y),
+            icon: None,
             classes: vec!["note".to_owned()],
             link: None,
         });
@@ -542,6 +548,7 @@ impl Builder<'_> {
             depth,
             rect,
             texts,
+            icon: None,
             classes: vec!["block".to_owned(), format!("block-{operator}")],
             link: None,
         });
@@ -571,6 +578,7 @@ impl Builder<'_> {
                 height: end - activation.start,
             },
             texts: Vec::new(),
+            icon: None,
             classes: vec!["activation".to_owned()],
             link: None,
         });

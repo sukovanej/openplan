@@ -22,4 +22,14 @@
 .op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
 .op-diagram .text-number { fill: #fff; }
 .op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
-</style><g class="edge stroke-solid"><path class="edge-line" d="M28.43 48L28.43 96"/><g class="head head-arrow"><path d="M28.43 104L23.93 95L32.93 95Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M28.29 144L28.29 192"/><g class="head head-arrow"><path d="M28.29 200L23.79 191L32.79 191Z"/></g></g><g class="node shape-rectangle"><rect class="outline" x="8.5" y="8" width="39.88" height="40" rx="3"/><text class="text-label" x="28.43" y="33.09" font-size="14" font-weight="400" text-anchor="middle">a</text></g><g class="node shape-rectangle"><rect class="outline" x="8" y="104" width="40.58" height="40" rx="3"/><text class="text-label" x="28.29" y="129.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g><g class="node shape-rectangle"><rect class="outline" x="8.29" y="200" width="40" height="40" rx="3"/><text class="text-label" x="28.29" y="225.09" font-size="14" font-weight="400" text-anchor="middle">c</text></g></svg>
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
+</style><g class="edge stroke-solid"><path class="edge-line" d="M28.29 48L28.29 96"/><g class="head head-arrow"><path d="M28.29 104L23.79 95L32.79 95Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M28.29 144L28.29 192"/><g class="head head-arrow"><path d="M28.29 200L23.79 191L32.79 191Z"/></g></g><g class="node shape-rectangle"><rect class="outline" x="8.5" y="8" width="39.88" height="40" rx="3"/><text class="text-label" x="28.43" y="33.09" font-size="14" font-weight="400" text-anchor="middle">a</text></g><g class="node shape-rectangle"><rect class="outline" x="8" y="104" width="40.58" height="40" rx="3"/><text class="text-label" x="28.29" y="129.09" font-size="14" font-weight="400" text-anchor="middle">b</text></g><g class="node shape-rectangle"><rect class="outline" x="8.29" y="200" width="40" height="40" rx="3"/><text class="text-label" x="28.29" y="225.09" font-size="14" font-weight="400" text-anchor="middle">c</text></g></svg>

@@ -22,4 +22,14 @@
 .op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
 .op-diagram .text-number { fill: #fff; }
 .op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
 </style><g class="edge stroke-solid"><path class="edge-line" d="M111.52 28L180.85 28"/><g class="head head-arrow"><path d="M188.85 28L179.85 32.5L179.85 23.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M123.05 108L171.05 108"/><g class="head head-arrow"><path d="M179.05 108L170.05 112.5L170.05 103.5Z"/></g></g><g class="node shape-rectangle"><rect class="outline" x="19.53" y="8" width="91.98" height="40" rx="3"/><text class="text-label" x="65.52" y="33.09" font-size="14" font-weight="400" text-anchor="middle">my-node</text></g><g class="node shape-rectangle"><rect class="outline" x="188.85" y="8" width="55.56" height="40" rx="3"/><text class="text-label" x="216.63" y="33.09" font-size="14" font-weight="400" text-anchor="middle">b-2</text></g><g class="node shape-rectangle"><rect class="outline" x="8" y="88" width="115.05" height="40" rx="3"/><text class="text-label" x="65.52" y="113.09" font-size="14" font-weight="400" text-anchor="middle">Dívka u baru</text></g><g class="node shape-rectangle"><rect class="outline" x="179.05" y="88" width="75.17" height="40" rx="3"/><text class="text-label" x="216.63" y="113.09" font-size="14" font-weight="400" text-anchor="middle">mladík</text></g></svg>

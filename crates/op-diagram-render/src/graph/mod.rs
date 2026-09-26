@@ -1,4 +1,5 @@
 mod order;
+mod pack;
 mod place;
 mod rank;
 mod route;
@@ -179,6 +180,15 @@ fn group_parents(graph: &Graph, group_at: &HashMap<&str, usize>) -> Vec<Level> {
 }
 
 pub(crate) fn layout(graph: &Graph) -> Scene {
+    if graph.nodes.is_empty() && graph.clusters.is_empty() {
+        return Scene::default();
+    }
+    if let Some(page) = graph.pack {
+        let parts = pack::parts(graph);
+        if parts.len() > 1 {
+            return pack::pack(parts.iter().map(layout).collect(), page);
+        }
+    }
     let direction = graph.direction;
     let orient = Frame {
         direction,
@@ -584,6 +594,7 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
             outline: body.outline.clone(),
             rect,
             texts,
+            icon: body.icon.map(|icon| icon.moved(rect.x, rect.y)),
             classes: node.classes.clone(),
             link: node.link.clone(),
         });
@@ -600,6 +611,7 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
                 depth: ancestors(&group_parent, Some(group)).count() - 1,
                 rect,
                 texts: headers[group].texts(rect.x + CLUSTER_PAD, rect.y + CLUSTER_PAD),
+                icon: headers[group].icon(rect.x + CLUSTER_PAD, rect.y + CLUSTER_PAD),
                 classes: cluster.classes.clone(),
                 link: cluster.link.clone(),
             }
