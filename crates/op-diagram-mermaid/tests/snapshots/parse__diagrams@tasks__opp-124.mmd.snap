@@ -1,0 +1,128 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/opp-124.mmd
+---
+{
+  "kind": "sequence",
+  "participants": [
+    {
+      "id": "line",
+      "label": [
+        "change line"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "query",
+      "label": [
+        "React Query"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "daemon",
+      "label": [
+        "daemon"
+      ],
+      "kind": "box"
+    },
+    {
+      "id": "backend",
+      "label": [
+        "Backend"
+      ],
+      "kind": "box"
+    }
+  ],
+  "items": [
+    {
+      "kind": "message",
+      "from": "line",
+      "to": "line",
+      "text": [
+        "hover delay ends"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "line",
+      "to": "query",
+      "text": [
+        "diff(project, revision, path)"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "query",
+      "to": "daemon",
+      "text": [
+        "GET only on a cache miss"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "daemon",
+      "to": "backend",
+      "text": [
+        "read_at(parent, path)"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "daemon",
+      "to": "backend",
+      "text": [
+        "read_at(revision, path)"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "daemon",
+      "to": "daemon",
+      "text": [
+        "diff in process, cap the size"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "daemon",
+      "to": "query",
+      "text": [
+        "{ diff, truncated }"
+      ],
+      "stroke": "dotted",
+      "tail": "none",
+      "head": "arrow"
+    },
+    {
+      "kind": "message",
+      "from": "query",
+      "to": "line",
+      "text": [
+        "DiffView in the popover"
+      ],
+      "stroke": "dotted",
+      "tail": "none",
+      "head": "arrow"
+    }
+  ]
+}

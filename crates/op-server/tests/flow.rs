@@ -3,7 +3,7 @@ mod common;
 use axum::http::StatusCode;
 use common::*;
 use op_server::AppState;
-use serde_json::{Value, json};
+use serde_json::json;
 
 async fn todo(state: &AppState, project: &str, title: &str, dependencies: &[&str]) -> String {
     create_in(
@@ -14,24 +14,18 @@ async fn todo(state: &AppState, project: &str, title: &str, dependencies: &[&str
     .await
 }
 
-async fn flow(state: &AppState, query: &str) -> Value {
-    json_of(state, &format!("/api/flow{query}")).await
-}
-
-fn waves(flow: &Value) -> Vec<(String, String, u64)> {
-    flow["nodes"]
-        .as_array()
+// The tasks the flow drawing shows, each by the page its card links to.
+async fn pages(state: &AppState, query: &str) -> Vec<String> {
+    let body = json_of(state, &format!("/api/flow/drawing{query}")).await;
+    let mut pages: Vec<String> = body["svg"]
+        .as_str()
         .unwrap()
-        .iter()
-        .filter(|node| node["kind"] == "leaf")
-        .map(|node| {
-            (
-                node["project"].as_str().unwrap().to_owned(),
-                node["id"].as_str().unwrap().to_owned(),
-                node["wave"].as_u64().unwrap(),
-            )
-        })
-        .collect()
+        .split(r#"<a href=""#)
+        .skip(1)
+        .map(|rest| rest.split('"').next().unwrap().to_owned())
+        .collect();
+    pages.sort();
+    pages
 }
 
 fn two_projects() -> (tempfile::TempDir, tempfile::TempDir, AppState) {
@@ -45,19 +39,15 @@ fn two_projects() -> (tempfile::TempDir, tempfile::TempDir, AppState) {
 }
 
 #[tokio::test]
-async fn the_waves_are_global_across_the_projects() {
+async fn the_flow_takes_every_project_the_daemon_serves() {
     let (_alpha, _beta, state) = two_projects();
     let first = todo(&state, "alpha", "alpha one", &[]).await;
     todo(&state, "alpha", "alpha two", &[&first]).await;
     todo(&state, "beta", "beta one", &[]).await;
 
     assert_eq!(
-        waves(&flow(&state, "").await),
-        vec![
-            ("alpha".to_owned(), "AAA-1".to_owned(), 0),
-            ("beta".to_owned(), "BBB-1".to_owned(), 0),
-            ("alpha".to_owned(), "AAA-2".to_owned(), 1),
-        ]
+        pages(&state, "").await,
+        vec!["/alpha/task/AAA-1", "/alpha/task/AAA-2", "/beta/task/BBB-1",]
     );
 }
 
@@ -68,8 +58,8 @@ async fn a_project_parameter_leaves_the_other_project_out() {
     todo(&state, "beta", "beta one", &[]).await;
 
     assert_eq!(
-        waves(&flow(&state, "?project=beta").await),
-        vec![("beta".to_owned(), "BBB-1".to_owned(), 0)]
+        pages(&state, "?project=beta").await,
+        vec!["/beta/task/BBB-1"]
     );
 }
 
@@ -89,21 +79,21 @@ async fn the_seeds_are_every_unfinished_task_until_a_status_narrows_them() {
     assert_eq!(closed.status(), StatusCode::OK);
 
     assert_eq!(
-        waves(&flow(&state, "").await).len(),
+        pages(&state, "").await.len(),
         2,
         "the todo task and the backlog task seed, the done task does not"
     );
     assert_eq!(
-        waves(&flow(&state, "?status=backlog").await),
-        vec![("alpha".to_owned(), "AAA-2".to_owned(), 0)]
+        pages(&state, "?status=backlog").await,
+        vec!["/alpha/task/AAA-2"]
     );
     assert_eq!(
-        waves(&flow(&state, "?status=done").await),
-        vec![("alpha".to_owned(), "AAA-3".to_owned(), 0)],
+        pages(&state, "?status=done").await,
+        vec!["/alpha/task/AAA-3"],
         "a caller who asks for a finished task gets it"
     );
     assert_eq!(
-        waves(&flow(&state, "?status=todo&status=backlog").await).len(),
+        pages(&state, "?status=todo&status=backlog").await.len(),
         2,
         "two values of one name are alternatives"
     );
@@ -112,7 +102,7 @@ async fn the_seeds_are_every_unfinished_task_until_a_status_narrows_them() {
 #[tokio::test]
 async fn a_task_parameter_needs_a_project() {
     let (_alpha, _beta, state) = two_projects();
-    let response = send(&state, "GET", "/api/flow?task=AAA-1", None).await;
+    let response = send(&state, "GET", "/api/flow/drawing?task=AAA-1", None).await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert!(
@@ -126,7 +116,7 @@ async fn a_task_parameter_needs_a_project() {
 #[tokio::test]
 async fn an_unknown_parameter_is_refused() {
     let (_alpha, _beta, state) = two_projects();
-    let response = send(&state, "GET", "/api/flow?porject=alpha", None).await;
+    let response = send(&state, "GET", "/api/flow/drawing?porject=alpha", None).await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -140,7 +130,7 @@ async fn an_unknown_status_is_refused() {
     let (_alpha, _beta, state) = two_projects();
 
     assert_eq!(
-        send(&state, "GET", "/api/flow?status=review", None)
+        send(&state, "GET", "/api/flow/drawing?status=review", None)
             .await
             .status(),
         StatusCode::BAD_REQUEST
@@ -152,7 +142,7 @@ async fn an_unknown_project_is_not_found() {
     let (_alpha, _beta, state) = two_projects();
 
     assert_eq!(
-        send(&state, "GET", "/api/flow?project=gamma", None)
+        send(&state, "GET", "/api/flow/drawing?project=gamma", None)
             .await
             .status(),
         StatusCode::NOT_FOUND
@@ -167,11 +157,8 @@ async fn a_named_task_grows_the_flow_from_itself_alone() {
     todo(&state, "alpha", "alpha three", &[&second]).await;
 
     assert_eq!(
-        waves(&flow(&state, "?project=alpha&task=AAA-2").await),
-        vec![
-            ("alpha".to_owned(), "AAA-1".to_owned(), 0),
-            ("alpha".to_owned(), "AAA-2".to_owned(), 1),
-        ],
+        pages(&state, "?project=alpha&task=AAA-2").await,
+        vec!["/alpha/task/AAA-1", "/alpha/task/AAA-2",],
         "the flow takes what the task waits for, and not what waits for it"
     );
 }
@@ -190,7 +177,7 @@ async fn a_cycle_is_unprocessable_and_names_its_members() {
     .await;
     assert_eq!(patched.status(), StatusCode::OK);
 
-    let response = send(&state, "GET", "/api/flow", None).await;
+    let response = send(&state, "GET", "/api/flow/drawing", None).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let body = body_json(response).await;
     assert_eq!(body["cycles"], json!([["AAA-1", "AAA-2"]]));
@@ -203,7 +190,7 @@ async fn a_cycle_is_unprocessable_and_names_its_members() {
 #[tokio::test]
 async fn another_refusal_sends_no_cycles_field() {
     let (_alpha, _beta, state) = two_projects();
-    let body = body_json(send(&state, "GET", "/api/flow?project=gamma", None).await).await;
+    let body = body_json(send(&state, "GET", "/api/flow/drawing?project=gamma", None).await).await;
 
     assert!(body.get("cycles").is_none());
 }
@@ -215,10 +202,7 @@ async fn a_repeated_project_sends_each_task_once() {
     todo(&state, "alpha", "alpha two", &[&first]).await;
 
     assert_eq!(
-        waves(&flow(&state, "?project=alpha&project=alpha").await),
-        vec![
-            ("alpha".to_owned(), "AAA-1".to_owned(), 0),
-            ("alpha".to_owned(), "AAA-2".to_owned(), 1),
-        ]
+        pages(&state, "?project=alpha&project=alpha").await,
+        vec!["/alpha/task/AAA-1", "/alpha/task/AAA-2",]
     );
 }

@@ -26,7 +26,9 @@ export const mergedBoardKey = [...mergedKey, "board"] as const
 // The flow spans every project a query names, so it lives beside the merged board rather than under
 // one project.
 export const flowsKey = [...mergedKey, "flow"] as const
-export const flowKey = (query: string) => [...flowsKey, query] as const
+export const flowKey = (query: string, width: number, height: number) => [...flowsKey, query, width, height] as const
+// A drawing follows from its source alone, so no change to a task makes one stale.
+export const diagramKey = (source: string) => ["diagram", source] as const
 export const boardKey = (project: string) => [...projectKey(project), "board"] as const
 export const tasksKey = (project: string) => [...projectKey(project), "tasks"] as const
 export const tagsKey = (project: string) => [...projectKey(project), "tags"] as const

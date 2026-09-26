@@ -104,8 +104,8 @@ describe("invalidation", () => {
 
   // A flow that names no project spans them all.
   it("re-reads a flow only after a change in a project that the flow shows", async () => {
-    const alpha = observe(flowKey("project=alpha"))
-    const every = observe(flowKey(""))
+    const alpha = observe(flowKey("project=alpha", 800, 600))
+    const every = observe(flowKey("", 800, 600))
     await vi.waitFor(() => {
       expect(alpha.getCurrentResult().data).toBe(1)
       expect(every.getCurrentResult().data).toBe(1)

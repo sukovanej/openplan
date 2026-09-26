@@ -1,0 +1,5 @@
+flowchart LR
+  timer[every 6 hours and 5 minutes after start] -->|check| daemon
+  daemon -->|latest or canary| github[GitHub releases]
+  daemon -->|a newer release| swap[wait until idle, replace the binary, restart]
+  daemon -->|last check and its result| home["OPENPLAN_HOME/update.json"]

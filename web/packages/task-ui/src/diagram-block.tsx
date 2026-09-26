@@ -1,56 +1,33 @@
 import { X } from "lucide-react"
-import { type ReactNode, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 
+import type { Drawing } from "@openplan/api-client"
 import { Button, cn, Modal, Skeleton } from "@openplan/ui"
 
-import { type DiagramResult, type DiagramTheme, drawDiagram, type DrawnDiagram, svgDataUrl } from "./diagram"
-import { useResolvedTheme } from "./use-dark-mode"
+import { type DiagramOutcome, useDiagramDrawer } from "./diagram-drawer"
+import { DiagramSvg } from "./diagram-svg"
+import { DiagramViewport } from "./diagram-viewport"
 
-type Drawing = { source: string; theme: DiagramTheme; result: DiagramResult }
-
-// The last picture stays up while the other theme's render is on its way, so a theme flip never
-// drops back to the placeholder.
-function useDiagram(source: string): { current: Drawing | null; last: DrawnDiagram | null } {
-  const theme = useResolvedTheme()
-  const [drawing, setDrawing] = useState<Drawing | null>(null)
+function useDiagram(source: string): DiagramOutcome | null {
+  const draw = useDiagramDrawer()
+  const [outcome, setOutcome] = useState<{ source: string; outcome: DiagramOutcome } | null>(null)
   useEffect(() => {
     let current = true
-    void drawDiagram(source, theme).then((result) => {
-      if (current) setDrawing({ source, theme, result })
+    void draw(source).then((drawn) => {
+      if (current) setOutcome({ source, outcome: drawn })
     })
     return () => {
       current = false
     }
-  }, [source, theme])
-  const matches = drawing !== null && drawing.source === source
-  const current = matches && drawing.theme === theme ? drawing : null
-  const last = matches && "drawn" in drawing.result ? drawing.result.drawn : null
-  return { current, last }
+  }, [draw, source])
+  return outcome?.source === source ? outcome.outcome : null
 }
 
-// d2 draws labels at 16px, larger than the prose around them. A diagram wider than the column
-// shrinks further to fit it.
-const SCALE = 0.75
-
-// The canvas colours of d2 themes 3 and 200, so the frame and the picture read as one surface.
-const canvasColors = "bg-white dark:bg-[#1e1e2e]"
-const frameClass = cn("border-border my-3 rounded-lg border p-2", canvasColors)
-
-function Picture({ drawn }: { drawn: DrawnDiagram }) {
-  return (
-    <img
-      src={svgDataUrl(drawn.svg)}
-      alt="Diagram"
-      width={Math.round(drawn.size.width * SCALE)}
-      height={Math.round(drawn.size.height * SCALE)}
-      className="mx-auto my-0 block h-auto max-w-full"
-    />
-  )
-}
+const frameClass = "border-border my-3 rounded-lg border p-3"
 
 // The full view holds the focus, and `data-keys-ignore` keeps the page's single-key bindings off it
 // while it is open.
-function DrawnFigure({ drawn }: { drawn: DrawnDiagram }) {
+function DrawnFigure({ drawing }: { drawing: Drawing }) {
   const [fullView, setFullView] = useState(false)
   const close = () => setFullView(false)
   return (
@@ -60,21 +37,18 @@ function DrawnFigure({ drawn }: { drawn: DrawnDiagram }) {
           type="button"
           aria-label="Show the diagram in full view"
           onClick={() => setFullView(true)}
-          className="block w-full cursor-zoom-in focus:outline-none"
+          className="block w-full cursor-zoom-in overflow-hidden focus:outline-none"
         >
-          <Picture drawn={drawn} />
+          <DiagramSvg
+            drawing={drawing}
+            className="mx-auto w-fit max-w-full [&_svg]:block [&_svg]:h-auto [&_svg]:max-w-full"
+          />
         </button>
       </figure>
       {/* The modal centres its content in a padded backdrop. The full view covers the whole window
-          instead, so the picture gets all of it. */}
-      <Modal
-        open={fullView}
-        onClose={close}
-        label="Diagram"
-        className={cn("fixed inset-0 p-4", canvasColors)}
-        data-keys-ignore
-      >
-        <img src={svgDataUrl(drawn.svg)} alt="Diagram" className="block size-full object-contain" />
+          instead, so the drawing gets all of it. */}
+      <Modal open={fullView} onClose={close} label="Diagram" className="bg-background fixed inset-0" data-keys-ignore>
+        <DiagramViewport drawing={drawing} label="Diagram" />
         <Button
           size="icon"
           aria-label="Close"
@@ -88,10 +62,32 @@ function DrawnFigure({ drawn }: { drawn: DrawnDiagram }) {
   )
 }
 
-// An <img> keeps the SVG inert: nothing inside it runs or reaches the page.
-export function DiagramBlock({ source, children }: { source: string; children: ReactNode }) {
-  const { current, last } = useDiagram(source)
-  if (current === null && last === null) {
+function Refusal({ source, error, line }: { source: string; error: string; line?: number }) {
+  return (
+    <div className="my-3" data-diagram="error">
+      <p role="alert" className="text-danger my-0 mb-1 font-mono text-xs whitespace-pre-wrap">
+        {error}
+      </p>
+      <pre>
+        <code>
+          {source.split("\n").map((text, index) => (
+            <span
+              key={index}
+              data-failed={index + 1 === line ? "" : undefined}
+              className="data-[failed]:bg-danger-surface data-[failed]:text-danger-foreground block"
+            >
+              {text === "" ? "​" : text}
+            </span>
+          ))}
+        </code>
+      </pre>
+    </div>
+  )
+}
+
+export function DiagramBlock({ source }: { source: string }) {
+  const outcome = useDiagram(source)
+  if (outcome === null) {
     return (
       <figure className={frameClass} data-diagram="drawing" role="status">
         <span className="sr-only">Drawing the diagram</span>
@@ -106,16 +102,15 @@ export function DiagramBlock({ source, children }: { source: string; children: R
       </figure>
     )
   }
-  if (current !== null && "error" in current.result) {
+  if ("error" in outcome) {
+    return <Refusal source={source.replace(/\n$/, "")} error={outcome.error} line={outcome.line} />
+  }
+  if (outcome.drawing.width === 0) {
     return (
-      <div className="my-3" data-diagram="error">
-        <p role="alert" className="text-danger my-0 mb-1 font-mono text-xs whitespace-pre-wrap">
-          {current.result.error}
-        </p>
-        {children}
-      </div>
+      <figure className={cn(frameClass, "text-muted-foreground text-center text-xs")} data-diagram="empty">
+        The diagram is empty.
+      </figure>
     )
   }
-  const drawn = current !== null && "drawn" in current.result ? current.result.drawn : last!
-  return <DrawnFigure drawn={drawn} />
+  return <DrawnFigure drawing={outcome.drawing} />
 }

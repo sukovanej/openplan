@@ -27,6 +27,12 @@ export class FlowCycles extends Data.TaggedError("FlowCycles")<{
   readonly cycles: ReadonlyArray<ReadonlyArray<string>>
 }> {}
 
+// A diagram source the daemon cannot read, with the place it stopped.
+export class DiagramRefused extends Data.TaggedError("DiagramRefused")<{
+  readonly message: string
+  readonly position?: Api.SourcePosition
+}> {}
+
 export type ApiError = TaskNotFound | TaskRejected | HttpClientError.HttpClientError | Schema.SchemaError
 
 // "" in the browser (same-origin, relative). Tests supply an absolute base because node's
@@ -101,11 +107,28 @@ const unexpected = (error: HttpClientError.HttpClientError) => {
   return Effect.fail(new TaskRejected({ status, message: body.message, reason: body.reason }))
 }
 
-export const getFlow = (
+export const drawDiagram = (
+  source: string,
+): Effect.Effect<Api.Drawing, ApiError | DiagramRefused, HttpClient.HttpClient> =>
+  Effect.flatMap(tasks, (client) => client.drawDiagram({ payload: { source } })).pipe(
+    Effect.catchTags({
+      DrawDiagram422: (error) =>
+        Effect.fail(new DiagramRefused({ message: error.cause.message, position: error.cause.position })),
+      HttpClientError: unexpected,
+    }),
+  )
+
+export interface PageSize {
+  readonly width: number
+  readonly height: number
+}
+
+export const drawFlow = (
   selection: FlowSelection,
-): Effect.Effect<Api.Flow, ApiError | FlowCycles, HttpClient.HttpClient> =>
+  page: PageSize,
+): Effect.Effect<Api.Drawing, ApiError | FlowCycles, HttpClient.HttpClient> =>
   Effect.flatMap(tasks, (client) =>
-    client.getFlow({
+    client.drawFlow({
       params: {
         project: selection.projects,
         // The daemon is what knows the status names, and it refuses one it cannot read with a 400
@@ -113,15 +136,17 @@ export const getFlow = (
         status: selection.statuses as ReadonlyArray<Api.Status>,
         task: selection.tasks,
         tag: selection.tags,
+        width: page.width,
+        height: page.height,
       },
     }),
   ).pipe(
     Effect.catchTags({
-      GetFlow400: refusal,
-      GetFlow404: refusal,
-      GetFlow422: (error) =>
+      DrawFlow400: refusal,
+      DrawFlow404: refusal,
+      DrawFlow422: (error) =>
         Effect.fail(new FlowCycles({ message: error.cause.message, cycles: error.cause.cycles ?? [] })),
-      GetFlow503: refusal,
+      DrawFlow503: refusal,
       HttpClientError: unexpected,
     }),
   )

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 528.56 236" width="528.56" height="236" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
+.op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
+.op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
+.op-diagram .stroke-thick .edge-line { stroke-width: 2.8; }
+.op-diagram .head-arrow path, .op-diagram .head-circle circle { fill: #5f6776; }
+.op-diagram .head-open path, .op-diagram .head-cross path, .op-diagram .head-cardinality path { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .head-ring { fill: #fff; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .edge-label-box { fill: #fff; }
+.op-diagram text { fill: #1f2430; }
+.op-diagram .text-caption { fill: #6b7280; }
+.op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .text-edge-label { fill: #3a4150; }
+.op-diagram .lifeline { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 4 4; }
+.op-diagram .divider { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 5 4; }
+.op-diagram .block .cluster-box { fill: none; stroke: #9aa2b1; }
+.op-diagram .activation .outline { fill: #e6e9f2; stroke: #7b8599; }
+.op-diagram .note .outline { fill: #fdf6d8; stroke: #cbb971; }
+.op-diagram .note .outline-detail { stroke: #cbb971; }
+.op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
+.op-diagram .text-number { fill: #fff; }
+.op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
+</style><g class="edge stroke-solid"><path class="edge-line" d="M90.42 89.5L97.42 89.5Q104.42 89.5 104.42 81.5L104.42 36Q104.42 28 112.42 28L359.41 28"/><g class="head head-arrow"><path d="M367.41 28L358.41 32.5L358.41 23.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M90.42 97.5L309.77 97.5Q317.77 97.5 317.77 102.75L317.77 102.75Q317.77 108 325.62 108L333.48 108"/><g class="head head-arrow"><path d="M341.48 108L332.48 112.5L332.48 103.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M90.42 105.5L97.42 105.5Q104.42 105.5 104.42 113.5L104.42 150.5Q104.42 158.5 112.42 158.5L309.77 158.5Q317.77 158.5 317.77 166.5L317.77 190Q317.77 198 320.77 198L323.77 198"/><g class="head head-arrow"><path d="M331.77 198L322.77 202.5L322.77 193.5Z"/></g></g><g class="node shape-rectangle"><rect class="outline" x="8" y="77.5" width="82.42" height="40" rx="3"/><text class="text-label" x="49.21" y="102.59" font-size="14" font-weight="400" text-anchor="middle">request</text></g><g class="node shape-rectangle"><rect class="outline" x="367.41" y="8" width="117.5" height="40" rx="3"/><text class="text-label" x="426.16" y="33.09" font-size="14" font-weight="400" text-anchor="middle">respond 404</text></g><g class="node shape-rectangle"><rect class="outline" x="341.48" y="88" width="169.38" height="40" rx="3"/><text class="text-label" x="426.16" y="113.09" font-size="14" font-weight="400" text-anchor="middle">reverse_proxy :8080</text></g><g class="node shape-rectangle"><rect class="outline" x="331.77" y="168" width="188.8" height="60" rx="3"/><text class="text-label" x="426.16" y="193.09" font-size="14" font-weight="400" text-anchor="middle">file_server, falls back to</text><text class="text-label" x="426.16" y="213.09" font-size="14" font-weight="400" text-anchor="middle">index.html</text></g><g class="edge-label"><rect class="edge-label-box" x="118.42" y="9" width="185.34" height="38" rx="3"/><text class="text-edge-label" x="211.09" y="23.87" font-size="12" font-weight="400" text-anchor="middle">path */.* *.php /wp-* /cgi-bin/*</text><text class="text-edge-label" x="211.09" y="40.87" font-size="12" font-weight="400" text-anchor="middle">not /.well-known/*</text></g><g class="edge-label"><rect class="edge-label-box" x="183.24" y="87" width="55.7" height="21" rx="3"/><text class="text-edge-label" x="211.09" y="101.87" font-size="12" font-weight="400" text-anchor="middle">@server</text></g><g class="edge-label"><rect class="edge-label-box" x="163.6" y="148" width="94.98" height="21" rx="3"/><text class="text-edge-label" x="211.09" y="162.87" font-size="12" font-weight="400" text-anchor="middle">everything else</text></g></svg>

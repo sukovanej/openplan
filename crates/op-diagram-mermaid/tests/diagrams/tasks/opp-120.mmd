@@ -1,0 +1,10 @@
+sequenceDiagram
+  participant ui as Web UI
+  participant sync as Sync thread
+  participant git as git fetch
+  participant ssh
+  ui ->> sync: sync now (sets due)
+  sync ->> git: Command::output()
+  git ->> ssh: git-upload-pack
+  ssh ->> ssh: waits on a dead connection
+  ui ->> sync: sync now (nobody reads due)

@@ -4,10 +4,8 @@ mod growth;
 mod layout;
 mod wiring;
 
-use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
-
 use op_task::Status;
+use serde::Deserialize;
 
 use crate::field::Field;
 use crate::task::{TaskListItem, coordinate, parent_coordinate};
@@ -61,7 +59,7 @@ impl FlowQuery {
 
 // The implementation order of one task set: a flat node list and the edges between the nodes. An
 // edge runs from the dependency to the task that waits for it, which is the direction the time runs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Flow {
     pub nodes: Vec<FlowNode>,
     pub edges: Vec<FlowEdge>,
@@ -71,7 +69,7 @@ pub struct Flow {
 // `box` is a parent: the flow draws it around its children and reads its span from them, so it takes
 // no place of its own. An `unresolved` node is a dependency that names no task of its project — the
 // raw text is all it has, and no work can complete it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FlowNode {
     Leaf {
@@ -79,8 +77,7 @@ pub enum FlowNode {
         id: String,
         title: String,
         status: Field<Status>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[schema(nullable = false)]
+        #[serde(default)]
         parent: Option<String>,
         wave: usize,
         position: usize,
@@ -91,8 +88,7 @@ pub enum FlowNode {
         id: String,
         title: String,
         status: Field<Status>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[schema(nullable = false)]
+        #[serde(default)]
         parent: Option<String>,
     },
     Unresolved {
@@ -102,7 +98,7 @@ pub enum FlowNode {
 }
 
 // No edge crosses a project, because a key resolves inside one store only.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct FlowEdge {
     pub project: String,
     pub from: String,

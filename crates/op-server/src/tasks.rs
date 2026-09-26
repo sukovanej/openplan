@@ -831,30 +831,6 @@ fn every_task(state: &AppState) -> Vec<TaskListItem> {
 
 // The implementation order of the tasks a query selects, across every project it names. Each
 // parameter repeats; the repeats of one name are alternatives, and two names narrow each other.
-#[utoipa::path(
-    get,
-    path = "/api/flow",
-    params(
-        ("project" = Option<Vec<String>>, Query, description = "Project name; omit to take every project the daemon serves"),
-        ("status" = Option<Vec<Status>>, Query, description = "Seed status; omit it to seed every task that is not done or cancelled"),
-        ("task" = Option<Vec<String>>, Query, description = "Task key; it needs a project"),
-        ("tag" = Option<Vec<String>>, Query, description = "Tag name")
-    ),
-    responses(
-        (status = 200, description = "The nodes of the flow and the edges between them", body = Flow),
-        (status = 400, description = "The query names an unknown parameter, an unknown status, or a task without a project", body = ApiErrorBody),
-        (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 422, description = "The dependencies of the selected tasks form a cycle", body = ApiErrorBody),
-        (status = 503, description = "A named project is registered but not being served", body = ApiErrorBody)
-    )
-)]
-pub(crate) async fn get_flow(
-    State(state): State<AppState>,
-    Query(parameters): Query<Vec<(String, String)>>,
-) -> Result<Json<Flow>, ApiError> {
-    Ok(Json(flow(&state, &parameters).await?))
-}
-
 pub(crate) async fn flow(
     state: &AppState,
     parameters: &[(String, String)],

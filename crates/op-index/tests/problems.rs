@@ -209,3 +209,25 @@ fn a_problem_goes_away_with_its_cause() {
         .expect("load");
     assert!(index.detail("p", 1).expect("detail").problems.is_empty());
 }
+
+#[test]
+fn a_broken_mermaid_fence_names_its_line_in_the_task_file() {
+    let found = problems(&[
+        task(
+            1,
+            "",
+            "# One\n\n```mermaid\nflowchart LR\n  a --> b\n```\n\n```mermaid\nflowchart LR\n  a -->\n```\n",
+        ),
+        task(2, "", "# Two\n\n```d2\na -> b\n```\n"),
+    ]);
+    let codes: Vec<(&str, ProblemCode)> = found
+        .iter()
+        .flat_map(|(id, problems)| problems.iter().map(move |(code, _)| (id.as_str(), *code)))
+        .collect();
+    assert_eq!(codes, vec![("OPP-1", ProblemCode::Diagram)]);
+    let message = &found["OPP-1"][0].1;
+    assert!(
+        message.starts_with("the Mermaid diagram fails at line 14, column "),
+        "{message}"
+    );
+}

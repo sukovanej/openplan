@@ -1,0 +1,174 @@
+/* The daemon writes diagrams with classes and no colors; `crates/op-diagram-render/tests/review.css`
+   lists every class. The shades mix from the theme tokens, so `.dark` recolors a diagram with no new
+   request. They mix in oklab: the gray tokens carry a hue of 0 in oklch, and a mix there turns red. */
+.op-diagram {
+  --diagram-canvas: var(--background);
+  --diagram-ink: var(--foreground);
+  --diagram-faint-ink: var(--muted-foreground);
+  --diagram-line: color-mix(in oklab, var(--foreground) 55%, var(--background));
+  --diagram-faint-line: color-mix(in oklab, var(--foreground) 30%, var(--background));
+  --diagram-surface: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --diagram-cluster: color-mix(in oklab, var(--foreground) 2.5%, var(--background));
+  --diagram-note: color-mix(in oklab, var(--warning) 14%, var(--background));
+  --diagram-note-line: color-mix(in oklab, var(--warning) 70%, var(--background));
+  font-family: "Inter Diagram", sans-serif;
+  overflow: visible;
+}
+
+/* Tailwind scans this file and reads `outline` as its utility, which draws a square frame around
+   every shape. */
+.op-diagram .outline {
+  outline: none;
+  fill: var(--diagram-surface);
+  stroke: var(--diagram-line);
+  stroke-width: 1.2;
+}
+.op-diagram .outline-detail {
+  fill: none;
+  stroke: var(--diagram-line);
+  stroke-width: 1.2;
+}
+.op-diagram .cluster-box {
+  fill: var(--diagram-cluster);
+  stroke: var(--diagram-faint-line);
+  stroke-width: 1;
+}
+
+.op-diagram .edge-line {
+  fill: none;
+  stroke: var(--diagram-line);
+  stroke-width: 1.4;
+}
+.op-diagram .stroke-dotted .edge-line {
+  stroke-dasharray: 4 3;
+}
+.op-diagram .stroke-thick .edge-line {
+  stroke-width: 2.8;
+}
+.op-diagram .head-arrow path,
+.op-diagram .head-circle circle {
+  fill: var(--diagram-line);
+}
+.op-diagram .head-open path,
+.op-diagram .head-cross path,
+.op-diagram .head-cardinality path {
+  fill: none;
+  stroke: var(--diagram-line);
+  stroke-width: 1.4;
+}
+.op-diagram .head-ring {
+  fill: var(--diagram-canvas);
+  stroke: var(--diagram-line);
+  stroke-width: 1.4;
+}
+.op-diagram .edge-label-box {
+  fill: var(--diagram-canvas);
+}
+
+.op-diagram text {
+  fill: var(--diagram-ink);
+}
+.op-diagram .text-caption {
+  fill: var(--diagram-faint-ink);
+}
+.op-diagram .text-header {
+  fill: var(--diagram-faint-ink);
+  paint-order: stroke;
+  stroke: var(--diagram-cluster);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+.op-diagram .text-edge-label {
+  fill: var(--diagram-faint-ink);
+}
+
+.op-diagram .lifeline,
+.op-diagram .divider {
+  stroke: var(--diagram-faint-line);
+  stroke-width: 1;
+}
+.op-diagram .lifeline {
+  stroke-dasharray: 4 4;
+}
+.op-diagram .divider {
+  stroke-dasharray: 5 4;
+}
+.op-diagram .block .cluster-box {
+  fill: none;
+  stroke: var(--diagram-faint-line);
+}
+.op-diagram .activation .outline {
+  fill: color-mix(in oklab, var(--foreground) 10%, var(--background));
+}
+.op-diagram .note .outline {
+  fill: var(--diagram-note);
+  stroke: var(--diagram-note-line);
+}
+.op-diagram .note .outline-detail {
+  stroke: var(--diagram-note-line);
+}
+.op-diagram .sequence-number .outline {
+  fill: var(--diagram-line);
+  stroke: none;
+}
+.op-diagram .text-number {
+  fill: var(--diagram-canvas);
+}
+.op-diagram .actor-figure {
+  fill: none;
+  stroke: var(--diagram-line);
+  stroke-width: 1.4;
+}
+
+.op-diagram .icon {
+  color: var(--diagram-faint-ink);
+}
+.op-diagram .status-backlog {
+  --status: var(--status-backlog);
+}
+.op-diagram .status-todo {
+  --status: var(--status-todo);
+}
+.op-diagram .status-in-progress {
+  --status: var(--status-in-progress);
+}
+.op-diagram .status-in-review {
+  --status: var(--status-in-review);
+}
+.op-diagram .status-done {
+  --status: var(--status-done);
+}
+.op-diagram .status-cancelled {
+  --status: var(--status-cancelled);
+}
+.op-diagram .status-unreadable {
+  --status: var(--status-unreadable);
+}
+.op-diagram .node[class*="status-"] .outline {
+  stroke: var(--status);
+  fill: color-mix(in oklab, var(--status) 10%, var(--background));
+}
+.op-diagram .cluster[class*="status-"] .cluster-box {
+  stroke: var(--status);
+  fill: color-mix(in oklab, var(--status) 5%, var(--background));
+}
+.op-diagram [class*="status-"] .icon {
+  color: var(--status);
+}
+.op-diagram .unresolved .outline {
+  fill: var(--diagram-canvas);
+  stroke: var(--diagram-faint-line);
+  stroke-dasharray: 4 3;
+}
+
+.op-diagram a {
+  cursor: pointer;
+}
+.op-diagram a:hover .outline,
+.op-diagram a:hover .cluster-box {
+  stroke-width: 2;
+}
+.op-diagram a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

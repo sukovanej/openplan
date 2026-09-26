@@ -202,13 +202,21 @@ data flows, what order events take, or how a table looks, draw it. One diagram
 replaces a long paragraph and a reader takes it in faster. Write prose only for
 what a picture cannot show: a rule, a reason, or a number.
 
-Draw the diagram as a fenced code block tagged `d2`. The web UI renders the
-block as a picture. Use plain [d2](https://d2lang.com): shapes, containers,
-and connections. Do not use imports, icons, links, or layout settings.
+Draw the diagram as a fenced code block tagged `mermaid`. The daemon draws the
+block, and `openplan lint` reports a block that does not parse. Use only this
+subset of [Mermaid](https://mermaid.js.org):
 
-- Parts and how they connect: shapes and arrows. Group with containers.
-- Order of events: `shape: sequence_diagram`.
-- A schema or record: `shape: sql_table` or `shape: class`.
+- Parts and how they connect: `flowchart TD` or `flowchart LR`. Give a node a
+  shape with `[ ]`, `( )`, `{ }`, `[( )]`, or `(( ))`. Join nodes with `-->`,
+  `---`, `-.->`, or `==>`, and label an edge with `-->|text|`. Group nodes with
+  `subgraph … end`.
+- Order of events: `sequenceDiagram` with `participant`, `actor`, the messages
+  `->>` and `-->>`, `Note`, and the blocks `loop`, `alt`, `opt`, and `par`.
+- A schema or record: `erDiagram` with entity blocks (`type name PK "comment"`)
+  and relationships such as `||--o{`.
+
+Do not use `%%{init}%%`, front matter, `@{ }` shapes, `click`, `classDef`, or
+`style`. Other diagram types do not draw.
 
 Put one or two sentences before the diagram to say what it shows. Do not
 repeat the diagram in prose after it.
@@ -216,10 +224,10 @@ repeat the diagram in prose after it.
 ````markdown
 The CLI reads through the daemon.
 
-```d2
-cli -> daemon: HTTP
-daemon -> tasks: reads the tasks ref
-tasks: {shape: cylinder}
+```mermaid
+flowchart LR
+  cli[CLI] -->|HTTP| daemon[Daemon]
+  daemon -->|reads| tasks[(tasks ref)]
 ```
 ````
 

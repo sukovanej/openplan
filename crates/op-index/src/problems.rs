@@ -30,6 +30,9 @@ impl Index {
             for problem in &entry.comment_problems {
                 push(&mut found, number, ProblemCode::Comment, problem.clone());
             }
+            for problem in &entry.diagram_problems {
+                push(&mut found, number, ProblemCode::Diagram, problem.clone());
+            }
             if let Some(parent) = entry.metadata.parent() {
                 match self.existing(parent) {
                     Some(target) => {

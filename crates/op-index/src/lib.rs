@@ -30,6 +30,7 @@ struct Entry {
     // The tasks the text names with `[[…]]`, found or not.
     body_refs: Vec<u64>,
     comment_problems: Vec<String>,
+    diagram_problems: Vec<String>,
     haystack: Haystack,
 }
 
@@ -323,6 +324,7 @@ impl Entry {
             titles,
             body_refs,
             comment_problems: op_task::comment::problems(&partial.body),
+            diagram_problems: diagram_problems(&raw),
             haystack: haystack(&title, &partial.body, &metadata),
             comment_count: op_task::comment::parse(&partial.body).len(),
             conflicts,
@@ -395,5 +397,30 @@ pub fn comments_of(body: &str) -> Vec<Comment> {
     op_task::comment::parse(body)
         .iter()
         .map(Comment::from)
+        .collect()
+}
+
+// The place counts from the top of the task file, the text that `openplan get` prints and an agent
+// edits. A fence in a comment sits in a blockquote, so its lines in the file carry a `> ` that the
+// parser never saw.
+fn diagram_problems(raw: &str) -> Vec<String> {
+    op_md::fences(raw)
+        .into_iter()
+        .filter(|fence| fence.language.eq_ignore_ascii_case("mermaid"))
+        .filter_map(|fence| {
+            let err = op_diagram_mermaid::parse(&fence.text).err()?;
+            let line = raw[..fence.text_start].matches('\n').count() + err.line;
+            let in_file = raw.lines().nth(line - 1).unwrap_or("");
+            let in_fence = fence.text.lines().nth(err.line - 1).unwrap_or("");
+            let prefix = match in_file.ends_with(in_fence) {
+                true => in_file.chars().count() - in_fence.chars().count(),
+                false => 0,
+            };
+            Some(format!(
+                "the Mermaid diagram fails at line {line}, column {}: {}",
+                err.column + prefix,
+                err.message
+            ))
+        })
         .collect()
 }

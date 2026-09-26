@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 765.67 332" width="765.67" height="332" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
+.op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
+.op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
+.op-diagram .stroke-thick .edge-line { stroke-width: 2.8; }
+.op-diagram .head-arrow path, .op-diagram .head-circle circle { fill: #5f6776; }
+.op-diagram .head-open path, .op-diagram .head-cross path, .op-diagram .head-cardinality path { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .head-ring { fill: #fff; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .edge-label-box { fill: #fff; }
+.op-diagram text { fill: #1f2430; }
+.op-diagram .text-caption { fill: #6b7280; }
+.op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .text-edge-label { fill: #3a4150; }
+.op-diagram .lifeline { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 4 4; }
+.op-diagram .divider { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 5 4; }
+.op-diagram .block .cluster-box { fill: none; stroke: #9aa2b1; }
+.op-diagram .activation .outline { fill: #e6e9f2; stroke: #7b8599; }
+.op-diagram .note .outline { fill: #fdf6d8; stroke: #cbb971; }
+.op-diagram .note .outline-detail { stroke: #cbb971; }
+.op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
+.op-diagram .text-number { fill: #fff; }
+.op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
+</style><path class="lifeline" d="M48.33 48L48.33 284"/><path class="lifeline" d="M274.16 48L274.16 284"/><path class="lifeline" d="M435.78 48L435.78 284"/><path class="lifeline" d="M576.8 48L576.8 284"/><g class="edge stroke-solid"><path class="edge-line" d="M48.33 92L266.16 92"/><g class="head head-arrow"><path d="M274.16 92L265.16 96.5L265.16 87.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M274.16 130L427.78 130"/><g class="head head-arrow"><path d="M435.78 130L426.78 134.5L426.78 125.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M435.78 168L568.8 168"/><g class="head head-arrow"><path d="M576.8 168L567.8 172.5L567.8 163.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M576.8 206L600.8 206Q608.8 206 608.8 214L608.8 218Q608.8 226 600.8 226L584.8 226"/><g class="head head-arrow"><path d="M576.8 226L585.8 221.5L585.8 230.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M48.33 264L266.16 264"/><g class="head head-arrow"><path d="M274.16 264L265.16 268.5L265.16 259.5Z"/></g></g><g class="node shape-rectangle participant"><rect class="outline" x="8" y="8" width="80.66" height="40" rx="3"/><text class="text-label" x="48.33" y="33.09" font-size="14" font-weight="400" text-anchor="middle">Web UI</text></g><g class="node shape-rectangle participant"><rect class="outline" x="8" y="284" width="80.66" height="40" rx="3"/><text class="text-label" x="48.33" y="309.09" font-size="14" font-weight="400" text-anchor="middle">Web UI</text></g><g class="node shape-rectangle participant"><rect class="outline" x="218.26" y="8" width="111.8" height="40" rx="3"/><text class="text-label" x="274.16" y="33.09" font-size="14" font-weight="400" text-anchor="middle">Sync thread</text></g><g class="node shape-rectangle participant"><rect class="outline" x="218.26" y="284" width="111.8" height="40" rx="3"/><text class="text-label" x="274.16" y="309.09" font-size="14" font-weight="400" text-anchor="middle">Sync thread</text></g><g class="node shape-rectangle participant"><rect class="outline" x="392.43" y="8" width="86.7" height="40" rx="3"/><text class="text-label" x="435.78" y="33.09" font-size="14" font-weight="400" text-anchor="middle">git fetch</text></g><g class="node shape-rectangle participant"><rect class="outline" x="392.43" y="284" width="86.7" height="40" rx="3"/><text class="text-label" x="435.78" y="309.09" font-size="14" font-weight="400" text-anchor="middle">git fetch</text></g><g class="node shape-rectangle participant"><rect class="outline" x="540.8" y="8" width="72" height="40" rx="3"/><text class="text-label" x="576.8" y="33.09" font-size="14" font-weight="400" text-anchor="middle">ssh</text></g><g class="node shape-rectangle participant"><rect class="outline" x="540.8" y="284" width="72" height="40" rx="3"/><text class="text-label" x="576.8" y="309.09" font-size="14" font-weight="400" text-anchor="middle">ssh</text></g><g class="edge-label"><rect class="edge-label-box" x="94.93" y="68" width="132.63" height="20" rx="3"/><text class="text-edge-label" x="161.24" y="82.73" font-size="13" font-weight="400" text-anchor="middle">sync now (sets due)</text></g><g class="edge-label"><rect class="edge-label-box" x="291.16" y="106" width="127.63" height="20" rx="3"/><text class="text-edge-label" x="354.97" y="120.73" font-size="13" font-weight="400" text-anchor="middle">Command::output()</text></g><g class="edge-label"><rect class="edge-label-box" x="452.78" y="144" width="107.02" height="20" rx="3"/><text class="text-edge-label" x="506.29" y="158.73" font-size="13" font-weight="400" text-anchor="middle">git-upload-pack</text></g><g class="edge-label"><rect class="edge-label-box" x="580.8" y="182" width="176.88" height="20" rx="3"/><text class="text-edge-label" x="669.23" y="196.73" font-size="13" font-weight="400" text-anchor="middle">waits on a dead connection</text></g><g class="edge-label"><rect class="edge-label-box" x="65.33" y="240" width="191.83" height="20" rx="3"/><text class="text-edge-label" x="161.24" y="254.73" font-size="13" font-weight="400" text-anchor="middle">sync now (nobody reads due)</text></g></svg>

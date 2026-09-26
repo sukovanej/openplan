@@ -1,0 +1,83 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-98.mmd
+---
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "request",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "request"
+      ]
+    },
+    {
+      "id": "probe",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "respond 404"
+      ]
+    },
+    {
+      "id": "server",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "reverse_proxy :8080"
+      ]
+    },
+    {
+      "id": "app",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "file_server, falls back to index.html"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "request",
+      "to": "probe",
+      "label": [
+        "path */.* *.php /wp-* /cgi-bin/*",
+        "not /.well-known/*"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "request",
+      "to": "server",
+      "label": [
+        "@server"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "request",
+      "to": "app",
+      "label": [
+        "everything else"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-99.mmd
+---
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "browser",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "browser"
+      ]
+    },
+    {
+      "id": "app",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Caddy: web/, else index.html"
+      ]
+    },
+    {
+      "id": "server",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Caddy: reverse_proxy :8080"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "browser",
+      "to": "app",
+      "label": [
+        "mudro.cz"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "browser",
+      "to": "server",
+      "label": [
+        "api.mudro.cz: fetch, sockets, OAuth"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

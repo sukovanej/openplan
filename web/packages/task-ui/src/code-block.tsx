@@ -28,7 +28,7 @@ function languageTag(className: unknown): string | undefined {
   return undefined
 }
 
-const DIAGRAM_TAG = "d2"
+const DIAGRAM_TAG = "mermaid"
 
 type Fence = { source: string; kind: "diagram" } | { source: string; kind: "code"; lang: CodeLanguage }
 
@@ -57,7 +57,7 @@ export function CodeBlock({ node, children, ...props }: ComponentProps<"pre"> & 
   const plain = <pre {...props}>{children}</pre>
   const fence = fencedCode(node)
   if (fence === null) return plain
-  if (fence.kind === "diagram") return <DiagramBlock source={fence.source}>{plain}</DiagramBlock>
+  if (fence.kind === "diagram") return <DiagramBlock source={fence.source} />
   return (
     <HighlightedCode source={fence.source} lang={fence.lang}>
       {plain}

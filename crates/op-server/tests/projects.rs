@@ -857,7 +857,10 @@ async fn a_daemon_with_no_projects_still_serves() {
     );
     assert_eq!(json_of(&state, "/api/projects").await, json!([]));
     assert_eq!(json_of(&state, "/api/board").await, json!({ "groups": [] }));
-    assert_eq!(json_of(&state, "/api/flow").await["nodes"], json!([]));
+    assert_eq!(
+        json_of(&state, "/api/flow/drawing").await["width"],
+        json!(0.0)
+    );
 }
 
 // Membership changes are the daemon's own writes, so a state built from a fixed list has no file to

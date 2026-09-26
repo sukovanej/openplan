@@ -542,7 +542,6 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(agent::approve))
         .routes(routes!(tasks::get_board))
         .routes(routes!(tasks::get_merged_board))
-        .routes(routes!(tasks::get_flow))
         .routes(routes!(drawing::draw_flow))
         .routes(routes!(drawing::draw_diagram))
         .routes(routes!(tasks::search_project))

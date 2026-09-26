@@ -1,0 +1,13 @@
+sequenceDiagram
+  participant line as change line
+  participant query as React Query
+  participant daemon
+  participant backend as Backend
+  line ->> line: hover delay ends
+  line ->> query: diff(project, revision, path)
+  query ->> daemon: GET only on a cache miss
+  daemon ->> backend: read_at(parent, path)
+  daemon ->> backend: read_at(revision, path)
+  daemon ->> daemon: diff in process, cap the size
+  daemon -->> query: { diff, truncated }
+  query -->> line: DiffView in the popover

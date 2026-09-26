@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 555.16 136" width="555.16" height="136" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
+.op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
+.op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
+.op-diagram .stroke-thick .edge-line { stroke-width: 2.8; }
+.op-diagram .head-arrow path, .op-diagram .head-circle circle { fill: #5f6776; }
+.op-diagram .head-open path, .op-diagram .head-cross path, .op-diagram .head-cardinality path { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .head-ring { fill: #fff; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .edge-label-box { fill: #fff; }
+.op-diagram text { fill: #1f2430; }
+.op-diagram .text-caption { fill: #6b7280; }
+.op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .text-edge-label { fill: #3a4150; }
+.op-diagram .lifeline { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 4 4; }
+.op-diagram .divider { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 5 4; }
+.op-diagram .block .cluster-box { fill: none; stroke: #9aa2b1; }
+.op-diagram .activation .outline { fill: #e6e9f2; stroke: #7b8599; }
+.op-diagram .note .outline { fill: #fdf6d8; stroke: #cbb971; }
+.op-diagram .note .outline-detail { stroke: #cbb971; }
+.op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
+.op-diagram .text-number { fill: #fff; }
+.op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
+</style><g class="edge stroke-solid"><path class="edge-line" d="M94.53 56.75L101.53 56.75Q108.53 56.75 108.53 48.75L108.53 36Q108.53 28 116.53 28L315.25 28"/><g class="head head-arrow"><path d="M323.25 28L314.25 32.5L314.25 23.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M94.53 68.75L101.53 68.75Q108.53 68.75 108.53 76.75L108.53 89.5Q108.53 97.5 116.53 97.5L301.25 97.5Q309.25 97.5 309.25 102.75L309.25 102.75Q309.25 108 313.11 108L316.98 108"/><g class="head head-arrow"><path d="M324.98 108L315.98 112.5L315.98 103.5Z"/></g></g><g class="node shape-rectangle"><rect class="outline" x="8" y="42.75" width="86.53" height="40" rx="3"/><text class="text-label" x="51.27" y="67.84" font-size="14" font-weight="400" text-anchor="middle">browser</text></g><g class="node shape-rectangle"><rect class="outline" x="323.25" y="8" width="223.91" height="40" rx="3"/><text class="text-label" x="435.2" y="33.09" font-size="14" font-weight="400" text-anchor="middle">Caddy: web/, else index.html</text></g><g class="node shape-rectangle"><rect class="outline" x="324.98" y="88" width="220.45" height="40" rx="3"/><text class="text-label" x="435.2" y="113.09" font-size="14" font-weight="400" text-anchor="middle">Caddy: reverse_proxy :8080</text></g><g class="edge-label"><rect class="edge-label-box" x="178.09" y="17.5" width="61.61" height="21" rx="3"/><text class="text-edge-label" x="208.89" y="32.37" font-size="12" font-weight="400" text-anchor="middle">mudro.cz</text></g><g class="edge-label"><rect class="edge-label-box" x="122.53" y="78.5" width="172.72" height="38" rx="3"/><text class="text-edge-label" x="208.89" y="93.37" font-size="12" font-weight="400" text-anchor="middle">api.mudro.cz: fetch, sockets,</text><text class="text-edge-label" x="208.89" y="110.37" font-size="12" font-weight="400" text-anchor="middle">OAuth</text></g></svg>
