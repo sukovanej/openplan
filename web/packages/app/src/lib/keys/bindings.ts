@@ -39,6 +39,14 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.detail.escape(),
   },
   {
+    id: "activity.back",
+    keys: "Escape",
+    scope: "activity",
+    label: "Leave the activity",
+    group: "Navigation",
+    run: (ctx) => ctx.back(),
+  },
+  {
     id: "flow.back",
     keys: "Escape",
     scope: "flow",

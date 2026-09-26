@@ -49,6 +49,12 @@ export function taskReference(reference: string): { id: string; section: string 
     : { id: reference.slice(0, hash), section: reference.slice(hash + 1) || undefined }
 }
 
+export function activityProjectOf(path: string): string | undefined {
+  const [, project, segment, rest] = path.split("/")
+  if (project === undefined || project === "" || segment !== ACTIVITY_SEGMENT || (rest ?? "") !== "") return undefined
+  return decodeURIComponent(project)
+}
+
 export function taskRouteOf(path: string): TaskRoute | undefined {
   const [, project, segment, rest] = path.split("/")
   if (project === undefined || project === "" || segment !== TASK_SEGMENT || rest === undefined) return undefined

@@ -1,6 +1,6 @@
 import { Bot, Tag as TagIcon } from "lucide-react"
-import { memo, type MouseEvent } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { memo, type MouseEvent, useMemo } from "react"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 
 import type { HistoryEntry, RevisionView, TaskRef } from "@openplan/api-client"
 import {
@@ -15,6 +15,7 @@ import {
 import { cn, TimeAgo, Tooltip } from "@openplan/ui"
 
 import { type ActivityRow, activityRows, changePath, taskChangeOf } from "../lib/history"
+import { type RevisionNavigation, revisionNavigation } from "../lib/revision-navigation"
 
 // With `task`, the list is the history of that one task: a line needs not name the task, and each
 // revision opens the task as that revision left it.
@@ -32,6 +33,9 @@ export function RevisionList({
   task?: string
   selected?: string
 }) {
+  const { state } = useLocation()
+  const onRevision = selected !== undefined
+  const navigation = useMemo(() => revisionNavigation(onRevision, state), [onRevision, state])
   return (
     <ol aria-label="Revisions" className="text-sm">
       {entries.map((entry) => (
@@ -42,6 +46,7 @@ export function RevisionList({
           refs={refs}
           task={task}
           current={entry.revision.id === selected}
+          navigation={navigation}
         />
       ))}
     </ol>
@@ -69,12 +74,14 @@ const Revision = memo(function Revision({
   refs,
   task,
   current,
+  navigation,
 }: {
   project: string
   entry: HistoryEntry
   refs: ReadonlyMap<string, TaskRef> | undefined
   task: string | undefined
   current: boolean
+  navigation: RevisionNavigation
 }) {
   const navigate = useNavigate()
   const lines: ReadonlyArray<ActivityRow> =
@@ -87,7 +94,7 @@ const Revision = memo(function Revision({
   const open = (event: MouseEvent<HTMLLIElement>) => {
     const link = event.target instanceof Element && event.target.closest("a") !== null
     if (to === undefined || link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    navigate(to)
+    navigate(to, navigation)
   }
   const when = <TimeAgo iso={entry.revision.at} label="Changed" />
   return (
@@ -104,7 +111,13 @@ const Revision = memo(function Revision({
           {to === undefined ? (
             when
           ) : (
-            <Link to={to} aria-current={current ? "page" : undefined} className="hover:text-foreground">
+            <Link
+              to={to}
+              replace={navigation.replace}
+              state={navigation.state}
+              aria-current={current ? "page" : undefined}
+              className="hover:text-foreground"
+            >
               {when}
             </Link>
           )}

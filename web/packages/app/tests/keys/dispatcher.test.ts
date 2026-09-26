@@ -387,6 +387,14 @@ describe("scope resolution", () => {
     expect(h.detail.escape).toBe(0)
   })
 
+  it("takes Escape back from the activity", () => {
+    const h = mount()
+    h.setScope("activity")
+    press("Escape")
+    expect(h.went).toEqual(["back"])
+    expect(h.detail.escape).toBe(0)
+  })
+
   it("triggers parent, subtask, and tag edits only on the detail route", () => {
     const h = mount()
     press("p")

@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Undo2, Waypoints, X } from "lucide-react"
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import type {
   Board,
@@ -63,6 +63,7 @@ import { errorText } from "../lib/format"
 import { taskChangeOf, useTaskHistory, useTaskRevision } from "../lib/history"
 import { useAbbreviation } from "../lib/projects"
 import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
+import { isOverLiveTask } from "../lib/revision-navigation"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
 import { abortable } from "../lib/runtime"
@@ -93,7 +94,6 @@ export function DetailRoute() {
   return <TaskRoute key={`${project}:${id}`} project={project} id={id} />
 }
 
-// The revision lives in the URL, so the browser's Back returns to the version the reader saw before.
 function TaskRoute({ project, id }: { project: string; id: string }) {
   const [params] = useSearchParams()
   const revision = params.get(REVISION_PARAM)
@@ -300,13 +300,7 @@ function TaskAtRevision({ project, id, revision }: { project: string; id: string
                 title={task?.title}
               />
             </PanelTitle>
-            <Link
-              to={taskPath(project, id)}
-              className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
-            >
-              <Undo2 className="size-3.5" />
-              Current version
-            </Link>
+            <CurrentVersionLink project={project} id={id} />
           </PanelHeader>
           <PanelBody className="p-6">
             <RevisionNotice id={id} revision={revision} entry={entry} />
@@ -324,6 +318,30 @@ function TaskAtRevision({ project, id, revision }: { project: string; id: string
       }
       aside={<TaskHistory project={project} id={id} selected={revision} />}
     />
+  )
+}
+
+// The current version takes the place of the revisions, as they take the place of each other. Where
+// the reader opened them from the current version, a Back returns to its entry.
+function CurrentVersionLink({ project, id }: { project: string; id: string }) {
+  const navigate = useNavigate()
+  const { state } = useLocation()
+  const back = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!isOverLiveTask(state) || event.button !== 0) return
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    navigate(-1)
+  }
+  return (
+    <Link
+      to={taskPath(project, id)}
+      replace
+      onClick={back}
+      className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
+    >
+      <Undo2 className="size-3.5" />
+      Current version
+    </Link>
   )
 }
 

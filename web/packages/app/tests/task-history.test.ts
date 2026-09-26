@@ -1,14 +1,15 @@
 // @vitest-environment happy-dom
 
 import { QueryClientProvider } from "@tanstack/react-query"
-import { act, createElement } from "react"
+import { act, createElement, useEffect } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import { MemoryRouter } from "react-router-dom"
+import { MemoryRouter, type NavigationType, useLocation, useNavigationType } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { TaskHistory } from "../src/components/task-history"
 import { TASK_HISTORY_PAGE } from "../src/lib/history"
 import { queryClient, queryInvalidator } from "../src/lib/query-client"
+import { isOverLiveTask, revisionNavigation } from "../src/lib/revision-navigation"
 
 const served = vi.hoisted(() => ({
   // Newest first, as the daemon answers: r24 down to r0.
@@ -45,6 +46,18 @@ vi.mock("../src/lib/api", async () => {
   }
 })
 
+const seen: { location?: { pathname: string; search: string; state: unknown }; navigation?: NavigationType } = {}
+
+function LocationProbe() {
+  const location = useLocation()
+  const navigation = useNavigationType()
+  useEffect(() => {
+    seen.location = location
+    seen.navigation = navigation
+  }, [location, navigation])
+  return null
+}
+
 let mounted: { root: Root; container: HTMLElement } | undefined
 
 afterEach(async () => {
@@ -77,7 +90,7 @@ async function until(check: () => boolean): Promise<void> {
   throw new Error("the history never settled")
 }
 
-async function show(selected: string | undefined): Promise<HTMLElement> {
+async function show(selected: string | undefined, state: unknown = null): Promise<HTMLElement> {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   const container = document.createElement("div")
   document.body.append(container)
@@ -88,7 +101,20 @@ async function show(selected: string | undefined): Promise<HTMLElement> {
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(MemoryRouter, null, createElement(TaskHistory, { project: "openplan", id: "OPP-1", selected })),
+        createElement(
+          MemoryRouter,
+          {
+            initialEntries: [
+              {
+                pathname: "/openplan/task/OPP-1",
+                search: selected === undefined ? "" : `?revision=${selected}`,
+                state,
+              },
+            ],
+          },
+          createElement(TaskHistory, { project: "openplan", id: "OPP-1", selected }),
+          createElement(LocationProbe),
+        ),
       ),
     )
   })
@@ -132,6 +158,27 @@ describe("the history of a task", () => {
 
     const current = entries(root).filter((entry) => entry.querySelector("a[aria-current='page']") !== null)
     expect(current.map(href)).toEqual(["/openplan/task/OPP-1?revision=r23"])
+  })
+
+  it("opens a revision from the live task as a new entry above it", async () => {
+    const root = await show(undefined)
+
+    await act(async () => entries(root)[2]?.click())
+
+    expect(seen.navigation).toBe("PUSH")
+    expect(seen.location?.search).toBe("?revision=r22")
+    expect(isOverLiveTask(seen.location?.state)).toBe(true)
+  })
+
+  // Esc and Back then leave all the revisions at once, for the page that opened the first one.
+  it("opens the next revision in the place of the one on screen", async () => {
+    const root = await show("r23", revisionNavigation(false, null).state)
+
+    await act(async () => entries(root)[2]?.querySelector("a")?.click())
+
+    expect(seen.navigation).toBe("REPLACE")
+    expect(seen.location?.search).toBe("?revision=r22")
+    expect(isOverLiveTask(seen.location?.state)).toBe(true)
   })
 
   // A write to the task is a new revision, and the daemon names the task it changed.

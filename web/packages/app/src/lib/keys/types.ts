@@ -3,8 +3,8 @@
 export const OVERLAY_NAMES = ["help", "palette"] as const
 export type OverlayName = (typeof OVERLAY_NAMES)[number]
 
-export type Scope = "global" | "list" | "detail" | "flow" | "rows" | OverlayName
-export type RouteScope = "list" | "detail" | "flow"
+export type Scope = "global" | "list" | "detail" | "activity" | "flow" | "rows" | OverlayName
+export type RouteScope = "list" | "detail" | "activity" | "flow"
 
 export function isOverlayScope(scope: Scope): scope is OverlayName {
   return (OVERLAY_NAMES as ReadonlyArray<string>).includes(scope)
@@ -48,7 +48,7 @@ export interface DetailControls {
 
 export interface RunContext {
   readonly navigate: (to: string) => void
-  // Back to where the reader came from, or to the board when this page opened the session.
+  // Back to where the reader came from, or to the page above this one when it opened the session.
   readonly back: () => void
   readonly overlay: (name: OverlayName) => OverlayControls
   readonly palette: PaletteControls

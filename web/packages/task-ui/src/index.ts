@@ -49,6 +49,7 @@ export { TaskBody } from "./task-body"
 export {
   ACTIVITY_ROUTE,
   activityPath,
+  activityProjectOf,
   BOARD_ROUTE,
   boardPath,
   FLOW_ROUTE,
