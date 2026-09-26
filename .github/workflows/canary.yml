@@ -9,10 +9,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: canary
-  cancel-in-progress: true
-
 jobs:
   plan:
     runs-on: ubuntu-22.04
@@ -43,6 +39,10 @@ jobs:
   build:
     name: build (${{ join(matrix.targets, ', ') }})
     needs: plan
+    # A newer build of the same target stops this one. A cancelled build skips the publish of its run.
+    concurrency:
+      group: canary-build-${{ join(matrix.targets, '_') }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
@@ -96,6 +96,12 @@ jobs:
 
   publish:
     needs: [plan, build]
+    # A publish that starts always finishes: a cancel between the delete and the create would leave
+    # no canary release. GitHub keeps only the newest waiting publish, so an older build never
+    # replaces a newer one.
+    concurrency:
+      group: canary-publish
+      cancel-in-progress: false
     runs-on: ubuntu-22.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
