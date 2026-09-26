@@ -13,15 +13,12 @@ The daemon installs a new release on its own. The user does not run `openplan up
 
 The daemon checks for a new release at an interval. It installs the release when no work runs, and it restarts on the new binary.
 
-```d2
-timer: every 6 hours and 5 minutes after start
-daemon: daemon
-github: GitHub releases
-home: OPENPLAN_HOME/update.json
-timer -> daemon: check
-daemon -> github: latest or canary
-daemon -> daemon: wait until idle, replace the binary, restart
-daemon -> home: last check and its result
+```mermaid
+flowchart LR
+  timer[every 6 hours and 5 minutes after start] -->|check| daemon
+  daemon -->|latest or canary| github[GitHub releases]
+  daemon -->|a newer release| swap[wait until idle, replace the binary, restart]
+  daemon -->|last check and its result| home["OPENPLAN_HOME/update.json"]
 ```
 
 ## Design
