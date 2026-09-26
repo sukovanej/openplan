@@ -34,12 +34,23 @@ pub fn run() -> Result<()> {
     println!("openplan {current} -> {}", release.version);
 
     let control = Control::resolve()?;
-    let app = control.app().filter(|app| app.bundle.is_dir());
+    let app_archive_name = op_update::app_archive_name(target);
+    let app = match control.app().filter(|app| app.bundle.is_dir()) {
+        Some(app) if !release.publishes(&app_archive_name) => {
+            println!(
+                "release {} publishes no {app_archive_name}; {} keeps its version",
+                release.tag,
+                app.bundle.display()
+            );
+            None
+        }
+        app => app,
+    };
 
     let cli_archive = download(&github, &release, &op_update::cli_archive_name(target))?;
     let app_archive = app
         .as_ref()
-        .map(|_| download(&github, &release, &op_update::app_archive_name(target)))
+        .map(|_| download(&github, &release, &app_archive_name))
         .transpose()?;
 
     let app_was_running = match &app {

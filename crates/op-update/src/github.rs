@@ -98,6 +98,10 @@ impl Github {
 }
 
 impl Release {
+    pub fn publishes(&self, name: &str) -> bool {
+        self.assets.iter().any(|asset| asset.name == name)
+    }
+
     pub fn asset(&self, name: &str) -> Result<&Asset> {
         match self.assets.iter().find(|asset| asset.name == name) {
             Some(asset) => Ok(asset),
