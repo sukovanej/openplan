@@ -3,10 +3,10 @@ use std::process::Command;
 
 use anyhow::{Context as _, Result, bail};
 use op_daemon::{AppInfo, Control, StopOutcome};
-use op_update::{Environment, Github, Release, owner_of};
+use op_update::{Channel, Environment, Github, Release, Step, owner_of};
 use semver::Version;
 
-pub fn run() -> Result<()> {
+pub fn run(channel: Channel) -> Result<()> {
     let exe = std::env::current_exe()
         .and_then(|exe| exe.canonicalize())
         .context("locating this executable")?;
@@ -24,14 +24,24 @@ pub fn run() -> Result<()> {
     let current =
         Version::parse(env!("CARGO_PKG_VERSION")).context("parsing the built-in version")?;
     let github = Github::default();
-    let release = github
-        .latest_release()
-        .context("looking up the newest release")?;
-    if release.version <= current {
-        println!("openplan {current} is the newest release");
-        return Ok(());
+    let release = github.release(channel).context(match channel {
+        Channel::Stable => "looking up the newest release",
+        Channel::Canary => "looking up the canary build",
+    })?;
+    match release.step_from(&current) {
+        Step::UpToDate => {
+            match channel {
+                Channel::Stable => println!("openplan {current} is the newest release"),
+                Channel::Canary => println!("openplan {current} is the newest canary build"),
+            }
+            return Ok(());
+        }
+        Step::Install => println!("openplan {current} -> {}", release.version),
+        Step::BackToStable => println!(
+            "openplan {current} -> {}: back from the canary build to the stable release",
+            release.version
+        ),
     }
-    println!("openplan {current} -> {}", release.version);
 
     let control = Control::resolve()?;
     let app_archive_name = op_update::app_archive_name(target);
