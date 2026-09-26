@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: in_progress
 created: 2026-09-26T03:15:20Z
 tags:
 - cli
