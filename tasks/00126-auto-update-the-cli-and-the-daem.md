@@ -30,8 +30,36 @@ flowchart LR
 - **A binary it does not own.** When `op-update` refuses the binary (`~/.cargo/bin`, Homebrew, `/usr`, `/nix/store`, `/mnt`), the daemon logs the refusal once and makes no more checks. A `mise run install` build thus never updates on its own.
 - **Opt out.** `openplan update --auto off` stops the checks. `openplan update --auto on` starts them again. The setting lives in `OPENPLAN_HOME/update.json`. The default is on.
 - **Failure is quiet but visible.** A failed check or install keeps the old binary and logs the cause. The daemon tries again at the next interval. `update.json` keeps the time and the result of the last check, and `openplan server status` prints them.
-- **The web UI reloads.** The UI compares the daemon version after an SSE reconnect. When the version changed, it reloads the page, so the tab gets the new SPA.
+- **The web UI reloads.** The daemon binary holds the SPA, so an open tab runs the old SPA after an update. Read the section "The web UI during an update".
 - **No app.** Releases carry no desktop app now. Auto-update replaces the CLI and the daemon only.
+
+## The web UI during an update
+
+The UI keeps the daemon version from page load. After each SSE reconnect it reads the version again, before it fetches data.
+
+```mermaid
+sequenceDiagram
+  participant ui as Web UI
+  participant old as Old daemon
+  participant new as New daemon
+  ui->>old: GET /health at page load
+  old-->>ui: version A
+  old->>ui: daemon_stopping, reason update
+  Note over ui: show "Updating", fast backoff
+  ui->>new: GET /api/events with the cursor
+  ui->>new: GET /health
+  new-->>ui: version B
+  alt no editor or dialog is open
+    ui->>ui: location.reload()
+  else an editor or dialog is open
+    ui->>ui: show "New version" with a Reload button
+  end
+```
+
+- **Keep the version from page load.** The UI reads `/health` at startup and keeps `version`. A server that is not a daemon answers `/health` with the text `ok`. Then the UI has no version and never reloads.
+- **Check the version first.** On a reconnect, the UI compares the version before it applies `resync` or fetches data. The old SPA must not decode the replies of a new API.
+- **Tell an update from a crash.** `daemon_stopping` carries a reason: `update` or `stop`. On `update` the UI shows "Updating" and reconnects with the fast backoff. On `stop` it keeps "The daemon is down." and the 10-second poll.
+- **Keep unsaved work.** The daemon calls itself idle when no agent session and no write request run. A draft in the browser does not count. The UI reloads at once only when no editor and no dialog are open. Otherwise it shows "New version" with a Reload button, and the user reloads when ready.
 
 ## Constraints
 
@@ -42,3 +70,4 @@ flowchart LR
 ## Tests
 
 - `op-update` and daemon tests use `Github::at` with a local server. They cover a new release, no new release, the canary channel, a digest that does not match, a binary the updater does not own, the opt-out, and an install that waits for an agent session to end.
+- Web tests cover the reload on a new version, no reload on the same version, the prompt when an editor is open, and the "Updating" state on a `daemon_stopping` with the reason `update`.
