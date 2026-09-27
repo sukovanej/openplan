@@ -24,15 +24,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  ref["refs/openplan/tasks"] --> c3["commit<br/>OPP-131: status → in_progress"]
-  track["refs/openplan/remotes/origin/tasks<br/>last tip seen on origin"] --> c2
-  c3 --> c2["commit"] --> c1["commit"]
-  c3 --> tree["tree"]
-  tree --> config["config.toml<br/>abbreviation = OPP"]
-  tree --> tasks["tasks/<br/>00120-stop-a-hung-git-fetch.md"]
-  tree --> tags["tags/<br/>bug.md"]
-  tree --> docs["docs/<br/>storage-and-sync.md"]
-  tree --> assets["assets/"]
+  ref["refs/openplan/tasks"] --> tip["commit<br/>OPP-131: status → in_progress<br/>author + Via: claude-code"]
+  track["refs/openplan/remotes/origin/tasks<br/>last tip seen on origin"] --> older["older commits"]
+  tip -- parent --> older
+  tip --> tree["tree"]
+  tree --> files["config.toml<br/>tasks/00120-stop-a-hung-git-fetch.md<br/>tags/bug.md<br/>docs/storage-and-sync.md<br/>assets/…"]
 ```
 
 Both refs are outside `refs/heads/` and `refs/remotes/`: a forge shows no branch, and `git fetch --prune` does not delete them.
