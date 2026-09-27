@@ -1,7 +1,7 @@
 import type { RevisionView } from "@openplan/api-client"
 import { cn, MetaLine, TimeAgo, Tooltip } from "@openplan/ui"
 
-import { AgentMark } from "./agent-tag"
+import { AgentMark } from "./agent-mark"
 
 const SHORT_REVISION = 7
 

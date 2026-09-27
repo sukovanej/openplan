@@ -5,7 +5,6 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import type { DocChange, HistoryEntry, RevisionView, TagChange, TagView, TaskRef } from "@openplan/api-client"
 import {
   AgentMark,
-  AgentTag,
   DocChangeView,
   DocumentChangeView,
   docRevisionPath,
@@ -207,7 +206,7 @@ const Revision = memo(function Revision({
             </Link>
           )}
         </span>
-        <Who revision={entry.revision} compact={one} />
+        <Who revision={entry.revision} />
         {showProject && (
           <MetaItem icon={FolderGit2} className="text-muted-foreground text-xs">
             {project}
@@ -377,19 +376,12 @@ function TaskName({
   )
 }
 
-// A narrow list names the agent in a tooltip, so the change keeps the room it needs.
-function Who({ revision, compact }: { revision: RevisionView; compact: boolean }) {
+function Who({ revision }: { revision: RevisionView }) {
   const author = <span className="text-foreground/90 whitespace-nowrap">{revision.author}</span>
-  const agent =
-    revision.agent === undefined ? undefined : compact ? (
-      <AgentMark agent={revision.agent} />
-    ) : (
-      <AgentTag agent={revision.agent} />
-    )
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 leading-5">
       {revision.email === undefined ? author : <Tooltip content={revision.email}>{author}</Tooltip>}
-      {agent}
+      {revision.agent !== undefined && <AgentMark agent={revision.agent} />}
     </span>
   )
 }
