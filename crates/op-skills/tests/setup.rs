@@ -1,6 +1,15 @@
 use std::fs;
+use std::path::Path;
 
 use op_skills::Agent;
+
+fn embedded_skills() -> Vec<String> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("skills");
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect()
+}
 
 #[test]
 fn setup_installs_all_embedded_skills_for_each_agent() {
@@ -9,8 +18,8 @@ fn setup_installs_all_embedded_skills_for_each_agent() {
     op_skills::setup(root.path(), &[Agent::Claude, Agent::Codex]).unwrap();
 
     for agent_dir in [".claude/skills", ".agents/skills"] {
-        for skill in ["openplan", "openplan-docs"] {
-            let path = root.path().join(agent_dir).join(skill).join("SKILL.md");
+        for skill in embedded_skills() {
+            let path = root.path().join(agent_dir).join(&skill).join("SKILL.md");
             let contents = fs::read_to_string(path).unwrap();
             assert!(contents.starts_with(&format!("---\nname: {skill}\n")));
         }
@@ -72,9 +81,9 @@ fn setup_names_the_browser_of_each_agent() {
 
     op_skills::setup(root.path(), &[Agent::Claude, Agent::Codex]).unwrap();
 
-    for skill in ["openplan", "openplan-docs"] {
+    for skill in embedded_skills() {
         let read = |agent_dir: &str| {
-            fs::read_to_string(root.path().join(agent_dir).join(skill).join("SKILL.md")).unwrap()
+            fs::read_to_string(root.path().join(agent_dir).join(&skill).join("SKILL.md")).unwrap()
         };
         let claude = read(".claude/skills");
         let codex = read(".agents/skills");
