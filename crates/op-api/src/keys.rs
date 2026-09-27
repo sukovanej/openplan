@@ -1,5 +1,5 @@
-use op_task::Abbreviation;
 use op_task::reference::Target;
+use op_task::{Abbreviation, TaskLink};
 
 // A spelling of an id the store has no id for. One key spelling is accepted and nothing else is, so
 // a refusal names the form that would have worked rather than guessing at what was meant.
@@ -34,9 +34,11 @@ impl KeyError {
     }
 }
 
-pub(crate) fn reference_of(abbreviation: Abbreviation, key: &str) -> Result<String, KeyError> {
+pub(crate) fn link_of(abbreviation: Abbreviation, key: &str) -> Result<TaskLink, KeyError> {
     abbreviation
         .parse_ref(key)
+        .as_deref()
+        .and_then(TaskLink::from_id)
         .ok_or_else(|| KeyError::new(abbreviation, key))
 }
 

@@ -1117,7 +1117,6 @@ impl From<TrackerError> for ApiError {
             | TrackerError::TagNotFound { .. }
             | TrackerError::DocNotFound { .. } => StatusCode::NOT_FOUND,
             TrackerError::Invalid(_)
-            | TrackerError::InvalidRef { .. }
             | TrackerError::TagUnregistered { .. }
             | TrackerError::InvalidColor(_) => StatusCode::BAD_REQUEST,
             TrackerError::TagExists { .. }

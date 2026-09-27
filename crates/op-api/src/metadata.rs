@@ -115,12 +115,12 @@ impl Metadata {
         Metadata::Fields(FrontmatterFields {
             status: Field::Value(fm.status),
             created: Field::Value(Rfc3339(fm.created)),
-            parent: Field::Value(fm.parent.as_deref().map(|p| key_of(abbreviation, p))),
+            parent: Field::Value(fm.parent.as_ref().map(|p| key_of(abbreviation, &p.id()))),
             rank: Field::Value(fm.rank.clone()),
             dependencies: Field::Value(
                 fm.dependencies
                     .iter()
-                    .map(|d| key_of(abbreviation, d))
+                    .map(|d| key_of(abbreviation, &d.id()))
                     .collect(),
             ),
             tags: Field::Value(fm.tags.clone()),

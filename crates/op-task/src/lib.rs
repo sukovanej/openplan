@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -87,7 +85,7 @@ pub struct Frontmatter {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_parent"
     )]
-    pub parent: Option<String>,
+    pub parent: Option<TaskLink>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rank: Option<String>,
     #[serde(
@@ -95,7 +93,7 @@ pub struct Frontmatter {
         skip_serializing_if = "Vec::is_empty",
         deserialize_with = "deserialize_dependencies"
     )]
-    pub dependencies: Vec<String>,
+    pub dependencies: Vec<TaskLink>,
     // An unordered set, unlike `dependencies`: two branches that each add a tag must merge to the
     // union, so the field carries no order a merge could disagree about.
     #[serde(
@@ -122,9 +120,9 @@ pub fn three_way<T: PartialEq + Clone>(base: &T, ours: &T, theirs: &T) -> Option
     }
 }
 
-pub(crate) fn names(base: &[String], ours: &[String], theirs: &[String]) -> Vec<String> {
-    let held = |list: &[String], name: &String| list.iter().any(|item| item == name);
-    let mut out: Vec<String> = base
+pub(crate) fn names<T: PartialEq + Clone>(base: &[T], ours: &[T], theirs: &[T]) -> Vec<T> {
+    let held = |list: &[T], name: &T| list.iter().any(|item| item == name);
+    let mut out: Vec<T> = base
         .iter()
         .filter(|name| held(ours, name) && held(theirs, name))
         .cloned()
@@ -337,33 +335,108 @@ fn section_of(reference: &str) -> Option<&str> {
     reference.split_once('#').map(|(_, section)| section)
 }
 
-// The in-memory spelling of a reference is the id, so nothing above the store has to know
-// what a task's file is called; only the store, which can see the directory, writes the file form.
-fn ref_of(value: &serde_yaml::Value) -> Option<String> {
-    let reference = match value {
-        serde_yaml::Value::String(reference) => reference.clone(),
-        serde_yaml::Value::Number(number) => number.as_u64()?.to_string(),
-        _ => return None,
-    };
-    let number = ref_id(&reference)?;
-    Some(match section_of(&reference) {
-        Some(section) => format!("{number}#{section}"),
-        None => number.to_string(),
-    })
+// Another task as a task file names it: the path to the target's file, `./00042-write-the-parser.md`.
+// Only the number names the task. The slug is a snapshot of the target's title, kept so that a write
+// puts back the path it read. A link that a person wrote as a bare number, or that a write sets from
+// a key, has no slug.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskLink {
+    pub number: u64,
+    pub slug: Option<String>,
+    pub section: Option<String>,
 }
 
-fn parent_of(value: &serde_yaml::Value) -> Option<String> {
-    match value {
-        serde_yaml::Value::String(reference) if section_of(reference).is_some() => None,
-        other => ref_of(other),
+impl TaskLink {
+    pub fn to(number: u64) -> Self {
+        Self {
+            number,
+            slug: None,
+            section: None,
+        }
     }
+
+    // `42` or `42#Design`: the spelling that the layers above the store turn into a key.
+    pub fn from_id(id: &str) -> Option<Self> {
+        Some(Self {
+            number: parse_id(ref_target(id))?,
+            slug: None,
+            section: section_of(id).map(str::to_owned),
+        })
+    }
+
+    pub fn id(&self) -> String {
+        match &self.section {
+            Some(section) => format!("{}#{section}", self.number),
+            None => self.number.to_string(),
+        }
+    }
+
+    pub fn with_file_name(mut self, file_name: &str) -> Self {
+        if let Some((number, slug)) = file_name.strip_suffix(".md").and_then(stem_parts)
+            && number == self.number
+        {
+            self.slug = Some(slug);
+        }
+        self
+    }
+
+    pub fn from_value(value: &serde_yaml::Value) -> Option<Self> {
+        let reference = match value {
+            serde_yaml::Value::String(reference) => reference.clone(),
+            serde_yaml::Value::Number(number) => number.as_u64()?.to_string(),
+            _ => return None,
+        };
+        let target = ref_target(&reference);
+        let section = section_of(&reference).map(str::to_owned);
+        let (number, slug) = match file_stem(target) {
+            Some(stem) => stem_parts(stem).map(|(number, slug)| (number, Some(slug)))?,
+            None => (parse_id(target)?, None),
+        };
+        Some(Self {
+            number,
+            slug,
+            section,
+        })
+    }
+}
+
+impl Serialize for TaskLink {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match (&self.slug, &self.section) {
+            (Some(slug), _) => {
+                let stem = match slug.is_empty() {
+                    true => format!("{:0ID_DIGITS$}", self.number),
+                    false => format!("{:0ID_DIGITS$}-{slug}", self.number),
+                };
+                let path = task_ref(&format!("{stem}.md"));
+                serializer.serialize_str(&with_section(&path, &self.id()))
+            }
+            (None, None) => serializer.serialize_u64(self.number),
+            (None, Some(_)) => serializer.serialize_str(&self.id()),
+        }
+    }
+}
+
+fn stem_parts(stem: &str) -> Option<(u64, String)> {
+    let number = file_id(stem)?;
+    let digits = stem.bytes().take_while(u8::is_ascii_digit).count();
+    let slug = stem[digits..].strip_prefix('-').unwrap_or_default();
+    Some((number, slug.to_owned()))
+}
+
+fn ref_of(value: &serde_yaml::Value) -> Option<String> {
+    TaskLink::from_value(value).map(|link| link.id())
+}
+
+fn parent_of(value: &serde_yaml::Value) -> Option<TaskLink> {
+    TaskLink::from_value(value).filter(|link| link.section.is_none())
 }
 
 pub const REFERENCE_EXPECTED: &str = "expected a task file, like ./00042-write-the-parser.md";
 
 fn deserialize_parent<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<String>, D::Error> {
+) -> Result<Option<TaskLink>, D::Error> {
     match Option::<serde_yaml::Value>::deserialize(deserializer)? {
         None | Some(serde_yaml::Value::Null) => Ok(None),
         Some(value) => parent_of(&value)
@@ -374,33 +447,14 @@ fn deserialize_parent<'de, D: serde::Deserializer<'de>>(
 
 fn deserialize_dependencies<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Vec<String>, D::Error> {
+) -> Result<Vec<TaskLink>, D::Error> {
     Vec::<serde_yaml::Value>::deserialize(deserializer)?
         .iter()
         .map(|value| {
-            ref_of(value).ok_or_else(|| {
+            TaskLink::from_value(value).ok_or_else(|| {
                 serde::de::Error::custom(format!("{REFERENCE_EXPECTED}, one per entry"))
             })
         })
-        .collect()
-}
-
-// Sync merges tasks in memory, where a reference is a task number, and it has no plan to find the
-// file of each task. So it takes each path from the files it merges.
-pub fn reference_paths(input: &str) -> BTreeMap<String, String> {
-    let Some(frontmatter) = parse_partial(input).frontmatter else {
-        return BTreeMap::new();
-    };
-    let dependencies = frontmatter
-        .get("dependencies")
-        .and_then(serde_yaml::Value::as_sequence)
-        .into_iter()
-        .flatten();
-    frontmatter
-        .get("parent")
-        .into_iter()
-        .chain(dependencies)
-        .filter_map(|value| Some((ref_of(value)?, value.as_str()?.to_owned())))
         .collect()
 }
 
@@ -512,7 +566,7 @@ impl Task {
         self.resolve("status");
     }
 
-    pub fn set_parent(&mut self, parent: Option<String>) {
+    pub fn set_parent(&mut self, parent: Option<TaskLink>) {
         self.frontmatter.parent = parent;
         self.resolve("parent");
     }
@@ -522,7 +576,7 @@ impl Task {
         self.resolve("rank");
     }
 
-    pub fn set_dependencies(&mut self, dependencies: Vec<String>) {
+    pub fn set_dependencies(&mut self, dependencies: Vec<TaskLink>) {
         self.frontmatter.dependencies = dependencies;
         self.resolve("dependencies");
     }
@@ -801,7 +855,7 @@ fn optional_parent(map: &serde_yaml::Mapping) -> FieldResult<Option<String>> {
     match map.get("parent") {
         None | Some(serde_yaml::Value::Null) => Ok(None),
         Some(value) => parent_of(value)
-            .map(Some)
+            .map(|link| Some(link.id()))
             .ok_or_else(|| FieldError::Invalid(REFERENCE_EXPECTED.to_owned())),
     }
 }

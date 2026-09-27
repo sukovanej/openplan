@@ -6,7 +6,7 @@ use op_backend::{Actor, Backend, Signer};
 use op_backend_git::{GitBackend, Options};
 use op_task::comment::NewComment;
 use op_task::content::Text;
-use op_task::{Status, Task, Timestamp};
+use op_task::{Status, Task, TaskLink, Timestamp};
 use op_tracker::{HistoryQuery, TaskMergePolicy, Tracker, TrackerError};
 
 fn git(dir: &Path, args: &[&str]) {
@@ -185,7 +185,7 @@ fn a_reference_to_a_renumbered_task_follows_it() {
     let child = bob.create("Child");
     bob.tracker
         .update_task(&bob.actor, child, |task| {
-            task.set_parent(Some(target.to_string()));
+            task.set_parent(Some(TaskLink::to(target)));
             Ok(())
         })
         .expect("parent");
@@ -203,7 +203,13 @@ fn a_reference_to_a_renumbered_task_follows_it() {
         .find(|(_, title)| title == "Child")
         .expect("child")
         .0;
-    assert_eq!(bob.task(child).frontmatter.parent, Some(target.to_string()));
+    assert_eq!(
+        bob.task(child)
+            .frontmatter
+            .parent
+            .map(|parent| parent.number),
+        Some(target)
+    );
 }
 
 #[test]
@@ -216,8 +222,8 @@ fn a_merged_task_keeps_its_references_as_paths() {
     alice
         .tracker
         .update_task(&alice.actor, 1, |task| {
-            task.set_parent(Some("2".to_owned()));
-            task.set_dependencies(vec!["3".to_owned()]);
+            task.set_parent(Some(TaskLink::to(2)));
+            task.set_dependencies(vec![TaskLink::to(3)]);
             Ok(())
         })
         .expect("references");
@@ -232,7 +238,7 @@ fn a_merged_task_keeps_its_references_as_paths() {
         .expect("status");
     bob.tracker
         .update_task(&bob.actor, 1, |task| {
-            task.set_parent(Some("4".to_owned()));
+            task.set_parent(Some(TaskLink::to(4)));
             Ok(())
         })
         .expect("parent");
@@ -247,7 +253,7 @@ fn a_merged_task_keeps_its_references_as_paths() {
     alice
         .tracker
         .update_task(&alice.actor, 1, |task| {
-            task.set_parent(Some("2".to_owned()));
+            task.set_parent(Some(TaskLink::to(2)));
             Ok(())
         })
         .expect("parent");

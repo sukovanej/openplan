@@ -5,7 +5,7 @@ use op_task::content::Text;
 use op_task::{Abbreviation, Status, Task, Timestamp};
 
 use crate::field::FieldUpdate;
-use crate::keys::{KeyError, body_from_keys, body_from_keys_keeping, reference_of};
+use crate::keys::{KeyError, body_from_keys, body_from_keys_keeping, link_of};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CreateTask {
@@ -32,13 +32,13 @@ impl CreateTask {
         task.set_parent(
             self.parent
                 .as_deref()
-                .map(|parent| reference_of(abbreviation, parent))
+                .map(|parent| link_of(abbreviation, parent))
                 .transpose()?,
         );
         task.set_dependencies(
             self.dependencies
                 .iter()
-                .map(|dependency| reference_of(abbreviation, dependency))
+                .map(|dependency| link_of(abbreviation, dependency))
                 .collect::<Result<_, _>>()?,
         );
         task.set_tags(self.tags);
@@ -78,7 +78,7 @@ impl TaskPatch {
         match self.parent {
             FieldUpdate::Keep => {}
             FieldUpdate::Clear => task.set_parent(None),
-            FieldUpdate::Set(key) => task.set_parent(Some(reference_of(abbreviation, &key)?)),
+            FieldUpdate::Set(key) => task.set_parent(Some(link_of(abbreviation, &key)?)),
         }
         if let Some(rank) = self.rank {
             task.set_rank(Some(rank));
@@ -87,7 +87,7 @@ impl TaskPatch {
             task.set_dependencies(
                 dependencies
                     .iter()
-                    .map(|dependency| reference_of(abbreviation, dependency))
+                    .map(|dependency| link_of(abbreviation, dependency))
                     .collect::<Result<_, _>>()?,
             );
         }

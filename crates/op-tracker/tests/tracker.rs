@@ -4,7 +4,7 @@ use op_backend::{Actor, LogQuery, Signer};
 use op_backend_local::{LocalBackend, Options};
 use op_task::comment::NewComment;
 use op_task::tag::Tag;
-use op_task::{Status, Task, Timestamp};
+use op_task::{Status, Task, TaskLink, Timestamp};
 use op_tracker::{HistoryQuery, Tracker, TrackerError};
 
 struct Fixture {
@@ -169,15 +169,15 @@ fn references_are_checked_and_written_as_the_target_file() {
         })
     };
     assert!(matches!(
-        refuse(|task| task.set_parent(Some("9".to_owned()))),
+        refuse(|task| task.set_parent(Some(TaskLink::to(9)))),
         Err(TrackerError::Invalid(_))
     ));
     assert!(matches!(
-        refuse(|task| task.set_parent(Some("2".to_owned()))),
+        refuse(|task| task.set_parent(Some(TaskLink::to(2)))),
         Err(TrackerError::Invalid(_))
     ));
     assert!(matches!(
-        refuse(|task| task.set_dependencies(vec!["9".to_owned()])),
+        refuse(|task| task.set_dependencies(vec![TaskLink::to(9)])),
         Err(TrackerError::Invalid(_))
     ));
     assert!(matches!(
@@ -191,7 +191,7 @@ fn references_are_checked_and_written_as_the_target_file() {
 
     tracker
         .update_task(&actor(), child, |task| {
-            task.set_parent(Some(parent.to_string()));
+            task.set_parent(Some(TaskLink::to(parent)));
             task.append_body("See [[1]].");
             Ok(())
         })
@@ -203,7 +203,7 @@ fn references_are_checked_and_written_as_the_target_file() {
 
     assert!(matches!(
         tracker.update_task(&actor(), parent, |task| {
-            task.set_parent(Some(child.to_string()));
+            task.set_parent(Some(TaskLink::to(child)));
             Ok(())
         }),
         Err(TrackerError::Invalid(message)) if message.contains("descendant")
@@ -218,7 +218,7 @@ fn a_dangling_reference_does_not_block_an_unrelated_edit() {
     let task = create(tracker, "Task");
     tracker
         .update_task(&actor(), task, |task| {
-            task.set_dependencies(vec![gone.to_string()]);
+            task.set_dependencies(vec![TaskLink::to(gone)]);
             Ok(())
         })
         .expect("update");
@@ -282,8 +282,8 @@ fn child_of_parent_and_dependency(tracker: &Tracker) -> u64 {
     let child = create(tracker, "Child");
     tracker
         .update_task(&actor(), child, |task| {
-            task.set_parent(Some("1".to_owned()));
-            task.set_dependencies(vec!["2".to_owned()]);
+            task.set_parent(Some(TaskLink::to(1)));
+            task.set_dependencies(vec![TaskLink::to(2)]);
             task.set_tags(vec!["feature".to_owned()]);
             Ok(())
         })
