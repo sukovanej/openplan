@@ -23,6 +23,8 @@ Thus:
 2. A passkey is the usual way to sign in. After the first email sign-in, ask the person to add a passkey.
 3. An email code stays available as a fallback for a browser that has no passkey.
 
+Do not add a password. A password needs email to reset it, so it gives no more security than email. It also adds a secret that the server must keep and that a person can reuse on other sites.
+
 ## Email sign-in
 
 Send a 6-digit code and a link in the same email. The person types the code in the tab that asked for it, or opens the link in that browser.
