@@ -63,3 +63,19 @@ fn setup_removes_retired_skills_and_keeps_the_users_files_beside_them() {
             .all(|file| file.matches())
     );
 }
+
+#[test]
+fn setup_names_the_browser_of_each_agent() {
+    let root = tempfile::tempdir().unwrap();
+
+    op_skills::setup(root.path(), &[Agent::Claude, Agent::Codex]).unwrap();
+
+    let claude = fs::read_to_string(root.path().join(".claude/skills/openplan/SKILL.md")).unwrap();
+    let codex = fs::read_to_string(root.path().join(".agents/skills/openplan/SKILL.md")).unwrap();
+    assert!(claude.contains("`mcp__Claude_Browser__navigate`"));
+    assert!(codex.contains("`@Browser`"));
+    assert!(!codex.contains("Claude"));
+    for skill in [claude, codex] {
+        assert!(!skill.contains("{{"));
+    }
+}

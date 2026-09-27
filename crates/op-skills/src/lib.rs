@@ -23,16 +23,52 @@ impl Agent {
     fn skill_path(self, root: &Path, skill: &Skill) -> PathBuf {
         self.skills_dir(root).join(skill.name).join(FILE_NAME)
     }
+
+    fn placeholders(self) -> [(&'static str, &'static str); 2] {
+        match self {
+            Self::Claude => [
+                ("{{browser}}", "the browser pane of the Claude desktop app"),
+                (
+                    "{{browser_tool}}",
+                    "the `navigate` tool of the pane (`mcp__Claude_Browser__navigate`)",
+                ),
+            ],
+            Self::Codex => [
+                ("{{browser}}", "the built-in browser of the Codex app"),
+                ("{{browser_tool}}", "`@Browser`"),
+            ],
+        }
+    }
+
+    fn render(self, template: &str) -> String {
+        self.placeholders()
+            .iter()
+            .fold(template.to_owned(), |text, (placeholder, value)| {
+                text.replace(placeholder, value)
+            })
+    }
+
+    fn expected(self, skill: &Skill) -> Expected {
+        match skill.template {
+            Template::Contents(template) => Expected::Contents(self.render(template)),
+            Template::Retired => Expected::Retired,
+        }
+    }
 }
 
 struct Skill {
     name: &'static str,
-    expected: Expected,
+    template: Template,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Expected {
+enum Template {
     Contents(&'static str),
+    Retired,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Expected {
+    Contents(String),
     Retired,
 }
 
@@ -43,19 +79,19 @@ const FILE_NAME: &str = "SKILL.md";
 const SKILLS: &[Skill] = &[
     Skill {
         name: "openplan",
-        expected: Expected::Contents(include_str!("../skills/openplan/SKILL.md")),
+        template: Template::Contents(include_str!("../skills/openplan/SKILL.md")),
     },
     Skill {
         name: "task-comments",
-        expected: Expected::Retired,
+        template: Template::Retired,
     },
     Skill {
         name: "task-management-merge",
-        expected: Expected::Retired,
+        template: Template::Retired,
     },
     Skill {
         name: "task-management",
-        expected: Expected::Retired,
+        template: Template::Retired,
     },
 ];
 
@@ -71,7 +107,7 @@ pub struct SkillFile {
 
 impl SkillFile {
     pub fn matches(&self) -> bool {
-        match self.expected {
+        match &self.expected {
             Expected::Contents(contents) => self.source.as_deref() == Some(contents.as_bytes()),
             Expected::Retired => self.source.is_none(),
         }
@@ -90,7 +126,7 @@ pub fn installed(root: &Path) -> io::Result<Vec<SkillFile>> {
             of_agent.push(SkillFile {
                 name: skill.name,
                 source: read(&path)?,
-                expected: skill.expected,
+                expected: agent.expected(skill),
                 path,
             });
         }
@@ -105,9 +141,9 @@ pub fn setup(root: &Path, agents: &[Agent]) -> Result<()> {
     for agent in agents {
         for skill in SKILLS {
             let path = agent.skill_path(root, skill);
-            match skill.expected {
+            match agent.expected(skill) {
                 Expected::Contents(contents) => {
-                    write(&path, contents).with_context(|| format!("write {}", path.display()))
+                    write(&path, &contents).with_context(|| format!("write {}", path.display()))
                 }
                 Expected::Retired => {
                     remove(&path).with_context(|| format!("remove {}", path.display()))

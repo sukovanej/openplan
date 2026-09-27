@@ -62,7 +62,7 @@ pub fn run(root: &Path, keys: &[String], json: bool, skills_only: bool) -> Resul
                     task: None,
                     path: Some(skill.path.clone()),
                     code: "skill",
-                    message: match (skill.expected, &skill.source) {
+                    message: match (&skill.expected, &skill.source) {
                         (Expected::Retired, _) => format!(
                             "skill {} is retired: the openplan skill replaces it",
                             skill.name

@@ -21,13 +21,12 @@ Do not write an address yourself, because the port and the project name are
 different on each machine. In a task file, a commit message, or a pull request,
 write the key only. Other people cannot open a local address.
 
-After you create or change a task, show its page in the browser pane of the
-Claude desktop app. Open the address from `openplan url <key>` with the
-`navigate` tool of the pane (`mcp__Claude_Browser__navigate`). When you write
-more than one task in a row, show the last one. When the pane already shows the
-page, do not open it again, because the page updates itself. Skip this step
-after `openplan delete`, and skip it when the session has no browser pane. Do
-not open the address in a different browser.
+After you create or change a task, show its page in {{browser}}.
+Open the address from `openplan url <key>` with {{browser_tool}}.
+When you write more than one task in a row, show the last one. When the browser
+already shows the page, do not open it again, because the page updates itself.
+Skip this step after `openplan delete`, and skip it when the session cannot use
+that browser. Do not open the address in a different browser.
 
 Statuses: `backlog` `todo` `in_progress` `in_review` `done` `cancelled`.
 
