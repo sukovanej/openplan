@@ -82,6 +82,10 @@ const SKILLS: &[Skill] = &[
         template: Template::Contents(include_str!("../skills/openplan/SKILL.md")),
     },
     Skill {
+        name: "openplan-docs",
+        template: Template::Contents(include_str!("../skills/openplan-docs/SKILL.md")),
+    },
+    Skill {
         name: "task-comments",
         template: Template::Retired,
     },

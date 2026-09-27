@@ -1,7 +1,7 @@
 # openplan
 
-Local-first task manager (Rust workspace). Design and work live in openplan tasks in the git ref
-`refs/openplan/tasks`; read and write them only with the `openplan` CLI.
+Local-first task manager (Rust workspace). Design and work live in openplan tasks and docs in the
+git ref `refs/openplan/tasks`; read and write them only with the `openplan` CLI.
 
 ## Worktrees
 

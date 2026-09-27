@@ -9,9 +9,11 @@ fn setup_installs_all_embedded_skills_for_each_agent() {
     op_skills::setup(root.path(), &[Agent::Claude, Agent::Codex]).unwrap();
 
     for agent_dir in [".claude/skills", ".agents/skills"] {
-        let contents =
-            fs::read_to_string(root.path().join(agent_dir).join("openplan/SKILL.md")).unwrap();
-        assert!(contents.starts_with("---\nname: openplan\n"));
+        for skill in ["openplan", "openplan-docs"] {
+            let path = root.path().join(agent_dir).join(skill).join("SKILL.md");
+            let contents = fs::read_to_string(path).unwrap();
+            assert!(contents.starts_with(&format!("---\nname: {skill}\n")));
+        }
     }
 }
 
@@ -70,12 +72,17 @@ fn setup_names_the_browser_of_each_agent() {
 
     op_skills::setup(root.path(), &[Agent::Claude, Agent::Codex]).unwrap();
 
-    let claude = fs::read_to_string(root.path().join(".claude/skills/openplan/SKILL.md")).unwrap();
-    let codex = fs::read_to_string(root.path().join(".agents/skills/openplan/SKILL.md")).unwrap();
-    assert!(claude.contains("`mcp__Claude_Browser__navigate`"));
-    assert!(codex.contains("`@Browser`"));
-    assert!(!codex.contains("Claude"));
-    for skill in [claude, codex] {
-        assert!(!skill.contains("{{"));
+    for skill in ["openplan", "openplan-docs"] {
+        let read = |agent_dir: &str| {
+            fs::read_to_string(root.path().join(agent_dir).join(skill).join("SKILL.md")).unwrap()
+        };
+        let claude = read(".claude/skills");
+        let codex = read(".agents/skills");
+        assert!(claude.contains("`mcp__Claude_Browser__navigate`"));
+        assert!(codex.contains("`@Browser`"));
+        assert!(!codex.contains("Claude"));
+        for skill in [claude, codex] {
+            assert!(!skill.contains("{{"));
+        }
     }
 }
