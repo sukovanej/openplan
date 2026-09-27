@@ -168,7 +168,7 @@
 
 @theme inline {
   --font-sans: -apple-system, "SF Pro Text", BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Source Serif 4 Variable", ui-serif, Georgia, serif;
+  --font-prose: "Open Sans Variable", sans-serif;
   --font-mono: Menlo, ui-monospace, SFMono-Regular, monospace;
   --font-diagram: "Inter Diagram", sans-serif;
   --radius-sm: calc(var(--radius) - 4px);

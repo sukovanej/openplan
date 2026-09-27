@@ -5,14 +5,14 @@ import { cn } from "./cn"
 const proseColors =
   "[--tw-prose-body:var(--prose-body)] [--tw-prose-bold:var(--prose-body)] [--tw-prose-headings:var(--prose-heading)] [--tw-prose-code:var(--prose-code)] [--tw-prose-bullets:var(--prose-marker)] [--tw-prose-counters:var(--prose-marker)] dark:[--tw-prose-invert-body:var(--prose-body)] dark:[--tw-prose-invert-bold:var(--prose-body)] dark:[--tw-prose-invert-headings:var(--prose-heading)] dark:[--tw-prose-invert-code:var(--prose-code)] dark:[--tw-prose-invert-bullets:var(--prose-marker)] dark:[--tw-prose-invert-counters:var(--prose-marker)]"
 
-// The serif reads thin against the dark ground at 400, so the body spends one step of the variable
+// Light text reads thin against the dark ground at 400, so the body spends one step of the variable
 // face there.
-const proseBody = "font-serif text-[15px] leading-6 max-w-none dark:[font-weight:450]"
+const proseBody = "font-prose text-[15px] leading-6 max-w-none dark:[font-weight:450]"
 
-// Headings stay on the UI face. The rule above an h2 is what gives a task with a dozen `##` sections
-// visible breaks, which margin alone did not.
+// The rule above an h2 is what gives a task with a dozen `##` sections visible breaks, which
+// margin alone did not.
 const proseHeadings =
-  "prose-headings:font-sans prose-headings:mt-7 prose-headings:mb-3 prose-h2:mt-[34px] prose-h2:border-t prose-h2:border-border prose-h2:pt-[18px] prose-h2:text-(length:--prose-h2-size) prose-h2:font-semibold prose-h3:mt-[26px] prose-h3:mb-1.5 prose-h3:text-(length:--prose-h3-size) prose-h4:text-(length:--prose-h4-size)"
+  "prose-headings:mt-7 prose-headings:mb-3 prose-h2:mt-[34px] prose-h2:border-t prose-h2:border-border prose-h2:pt-[18px] prose-h2:text-(length:--prose-h2-size) prose-h2:font-semibold prose-h3:mt-[26px] prose-h3:mb-1.5 prose-h3:text-(length:--prose-h3-size) prose-h4:text-(length:--prose-h4-size)"
 
 const proseSpacing =
   "prose-p:my-[14px] prose-ul:my-[14px] prose-ol:my-[14px] prose-li:my-1 prose-pre:my-3 prose-pre:bg-muted prose-pre:font-mono prose-pre:text-foreground"
