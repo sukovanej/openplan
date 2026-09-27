@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: todo
 created: 2026-09-27T15:17:29Z
 dependencies:
 - ./00128-show-github-issue-and-pull-reque.md
