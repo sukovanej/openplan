@@ -1,9 +1,8 @@
-import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
+import { type ReactNode, useId, useLayoutEffect, useRef, useState } from "react"
 
 import { cn } from "./cn"
 
 const GAP = 6
-const HOVER_DELAY = 300
 
 export function Tooltip({
   content,
@@ -17,7 +16,6 @@ export function Tooltip({
   const anchor = useRef<HTMLSpanElement>(null)
   const pointed = useRef(false)
   const bubble = useRef<HTMLDivElement>(null)
-  const delay = useRef<number>(undefined)
   const [shown, setShown] = useState(false)
   const [at, setAt] = useState<{ left: number; top: number }>()
   const id = useId()
@@ -45,10 +43,7 @@ export function Tooltip({
     }
   }, [shown, content])
 
-  useEffect(() => () => window.clearTimeout(delay.current), [])
-
   const hide = () => {
-    window.clearTimeout(delay.current)
     setShown(false)
     setAt(undefined)
   }
@@ -58,11 +53,7 @@ export function Tooltip({
       ref={anchor}
       aria-describedby={shown ? id : undefined}
       className={cn("inline-flex", className)}
-      // A pointer sweeping a list crosses elements it is not asking about; a keyboard landing on one
-      // is asking.
-      onPointerEnter={() => {
-        delay.current = window.setTimeout(() => setShown(true), HOVER_DELAY)
-      }}
+      onPointerEnter={() => setShown(true)}
       onPointerLeave={hide}
       onPointerDown={() => {
         pointed.current = true

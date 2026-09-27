@@ -1,10 +1,8 @@
 import { act } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import { Tooltip } from "../src/tooltip"
 import { render } from "./render"
-
-afterEach(() => vi.useRealTimers())
 
 const enter = (element: Element) => act(() => void element.dispatchEvent(new Event("pointerover", { bubbles: true })))
 const leave = (element: Element) => act(() => void element.dispatchEvent(new Event("pointerout", { bubbles: true })))
@@ -19,8 +17,7 @@ describe("Tooltip", () => {
     expect(container.querySelector("[role=tooltip]")).toBeNull()
   })
 
-  it("waits out the pointer sweeping across it", () => {
-    vi.useFakeTimers()
+  it("shows at once under the pointer and hides when it leaves", () => {
     const container = render(
       <Tooltip content="In progress">
         <button>status</button>
@@ -28,9 +25,6 @@ describe("Tooltip", () => {
     )
     const anchor = container.firstElementChild!
     enter(anchor)
-    expect(container.querySelector("[role=tooltip]")).toBeNull()
-
-    act(() => vi.advanceTimersByTime(300))
     expect(container.querySelector("[role=tooltip]")?.textContent).toBe("In progress")
 
     leave(anchor)
