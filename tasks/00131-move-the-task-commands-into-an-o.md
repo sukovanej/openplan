@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: todo
 created: 2026-09-27T13:54:57Z
 tags:
 - cli
