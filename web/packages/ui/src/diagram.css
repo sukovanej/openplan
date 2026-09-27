@@ -9,6 +9,7 @@
   --diagram-faint-line: color-mix(in oklab, var(--foreground) 30%, var(--diagram-canvas));
   --diagram-surface: color-mix(in oklab, var(--foreground) 5%, var(--diagram-canvas));
   --diagram-cluster: color-mix(in oklab, var(--foreground) 2.5%, var(--diagram-canvas));
+  --diagram-table-header: color-mix(in oklab, var(--foreground) 11%, var(--diagram-canvas));
   --diagram-note: color-mix(in oklab, var(--warning) 14%, var(--diagram-canvas));
   --diagram-note-line: color-mix(in oklab, var(--warning) 70%, var(--diagram-canvas));
   font-family: "Inter Diagram", sans-serif;
@@ -27,6 +28,14 @@
   fill: none;
   stroke: var(--diagram-line);
   stroke-width: 1.2;
+}
+.op-diagram .table-header {
+  fill: var(--diagram-table-header);
+}
+.op-diagram .code-box {
+  fill: var(--prose-code-surface);
+  stroke: var(--prose-code-border);
+  stroke-width: 1;
 }
 .op-diagram .cluster-box {
   fill: var(--diagram-cluster);
@@ -77,6 +86,22 @@
   stroke: var(--diagram-cluster);
   stroke-width: 5px;
   stroke-linejoin: round;
+}
+.op-diagram .shape-table .text-header {
+  fill: var(--diagram-ink);
+  stroke: none;
+}
+.op-diagram .text-code {
+  fill: var(--prose-code);
+}
+.op-diagram .text-key {
+  fill: var(--diagram-faint-ink);
+}
+/* No italic face is loaded, so the browser slants the regular one and keeps the widths the daemon
+   measured. */
+.op-diagram .text-comment {
+  fill: var(--diagram-faint-ink);
+  font-style: italic;
 }
 .op-diagram .text-edge-label {
   fill: var(--diagram-faint-ink);

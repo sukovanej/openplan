@@ -3,7 +3,7 @@ use std::fmt::Write;
 use op_diagram::{Head, Stroke};
 
 use crate::icon;
-use crate::measure::Weight;
+use crate::measure::{Font, MONO_FAMILY};
 use crate::scene::{
     Anchor, ClusterBox, EdgePath, GuideKind, IconBox, NodeBox, Outline, Point, Rect, Scene, Text,
     TextRole,
@@ -20,6 +20,8 @@ const CYLINDER_CAP: f32 = 7.0;
 const DOUBLE_RING: f32 = 5.0;
 const SUBROUTINE_BAR: f32 = 8.0;
 const NOTE_FOLD: f32 = 8.0;
+const TABLE_CORNER: f32 = 6.0;
+const CODE_CORNER: f32 = 3.0;
 
 // The SVG carries classes and no colors, so the page styles it in its own theme. Every text and
 // attribute value passes through `escape`, and a link that is not a path on this site is left out:
@@ -374,16 +376,41 @@ fn write_outline(out: &mut String, outline: &Outline, rect: &Rect) {
                 number(x + w)
             );
         }
-        Outline::Table { dividers } => {
-            write_rect(out, "outline", rect, SQUARE);
-            for divider in dividers {
+        Outline::Table { header, codes } => {
+            write_rect(out, "outline", rect, TABLE_CORNER);
+            if *header < h {
+                let r = TABLE_CORNER;
+                let _ = write!(
+                    out,
+                    r#"<path class="table-header" d="M{x0} {bottom}V{y1}A{r} {r} 0 0 1 {x1} {y0}H{x2}A{r} {r} 0 0 1 {x3} {y1}V{bottom}Z"/>"#,
+                    x0 = number(x),
+                    x1 = number(x + r),
+                    x2 = number(x + w - r),
+                    x3 = number(x + w),
+                    y0 = number(y),
+                    y1 = number(y + r),
+                    bottom = number(y + header),
+                    r = number(r),
+                );
                 let _ = write!(
                     out,
                     r#"<path class="outline-detail" d="M{} {}H{}"/>"#,
                     number(x),
-                    number(y + divider),
+                    number(y + header),
                     number(x + w)
                 );
+            } else {
+                write_rect(out, "table-header", rect, TABLE_CORNER);
+            }
+            // The header covers the inner half of the frame's stroke, so the frame goes on top again.
+            write_rect(out, "outline-detail", rect, TABLE_CORNER);
+            for code in codes {
+                let code = Rect {
+                    x: x + code.x,
+                    y: y + code.y,
+                    ..*code
+                };
+                write_rect(out, "code-box", &code, CODE_CORNER);
             }
         }
     }
@@ -395,6 +422,9 @@ fn role_class(role: TextRole) -> &'static str {
         TextRole::Caption => "text-caption",
         TextRole::Header => "text-header",
         TextRole::Cell => "text-cell",
+        TextRole::Code => "text-code",
+        TextRole::Key => "text-key",
+        TextRole::Comment => "text-comment",
         TextRole::EdgeLabel => "text-edge-label",
         TextRole::Number => "text-number",
     }
@@ -406,13 +436,14 @@ fn write_texts(out: &mut String, texts: &[Text]) {
             Anchor::Start => "start",
             Anchor::Middle => "middle",
         };
-        let weight = match text.weight {
-            Weight::Regular => "400",
-            Weight::SemiBold => "600",
+        let font = match text.font {
+            Font::Regular => r#"font-weight="400""#.to_owned(),
+            Font::SemiBold => r#"font-weight="600""#.to_owned(),
+            Font::Mono => format!(r#"font-family="{MONO_FAMILY}" font-weight="400""#),
         };
         let _ = write!(
             out,
-            r#"<text class="{}" x="{}" y="{}" font-size="{}" font-weight="{weight}" text-anchor="{anchor}">{}</text>"#,
+            r#"<text class="{}" x="{}" y="{}" font-size="{}" {font} text-anchor="{anchor}">{}</text>"#,
             role_class(text.role),
             number(text.x),
             number(text.baseline),

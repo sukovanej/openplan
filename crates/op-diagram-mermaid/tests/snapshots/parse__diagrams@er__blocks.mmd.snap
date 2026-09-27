@@ -11,18 +11,14 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/blocks.mmd
       "id": "A",
       "shape": {
         "kind": "table",
-        "rows": [
+        "attributes": [
           {
-            "cells": [
-              "int",
-              "one"
-            ]
+            "data_type": "int",
+            "name": "one"
           },
           {
-            "cells": [
-              "int",
-              "two"
-            ]
+            "data_type": "int",
+            "name": "two"
           }
         ]
       },
@@ -34,7 +30,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/blocks.mmd
       "id": "B",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "B"
@@ -44,12 +40,10 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/blocks.mmd
       "id": "C",
       "shape": {
         "kind": "table",
-        "rows": [
+        "attributes": [
           {
-            "cells": [
-              "int",
-              "three"
-            ]
+            "data_type": "int",
+            "name": "three"
           }
         ]
       },
@@ -61,7 +55,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/blocks.mmd
       "id": "D",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "D"

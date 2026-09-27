@@ -1,10 +1,16 @@
 mod inter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Weight {
+pub enum Font {
     Regular,
     SemiBold,
+    Mono,
 }
+
+// The page draws `Font::Mono` in the first of these it has. Each draws an ASCII character at most
+// `MONO_ADVANCE` wide, so the width measured here never falls short of the drawn one.
+pub const MONO_FAMILY: &str = "Menlo, SFMono-Regular, Consolas, DejaVu Sans Mono, monospace";
+const MONO_ADVANCE: f32 = 0.602;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineMetrics {
@@ -20,13 +26,24 @@ const FALLBACK: f32 = inter::UNITS_PER_EM;
 // rounding here keeps the width the layout reserves from ever falling short of the drawn one.
 const GRID: f32 = 64.0;
 
-pub fn text_width(text: &str, size: f32, weight: Weight) -> f32 {
-    let table = match weight {
-        Weight::Regular => inter::REGULAR,
-        Weight::SemiBold => inter::SEMI_BOLD,
+pub fn text_width(text: &str, size: f32, font: Font) -> f32 {
+    let width = match font {
+        Font::Regular => inter_width(inter::REGULAR, text, size),
+        Font::SemiBold => inter_width(inter::SEMI_BOLD, text, size),
+        Font::Mono => {
+            let ems: f32 = text
+                .chars()
+                .map(|c| if c.is_ascii() { MONO_ADVANCE } else { 1.0 })
+                .sum();
+            ems * size
+        }
     };
+    (width * GRID).ceil() / GRID
+}
+
+fn inter_width(table: &[(u32, &[u16])], text: &str, size: f32) -> f32 {
     let units: f32 = text.chars().map(|c| advance(table, c)).sum();
-    (units * size / inter::UNITS_PER_EM * GRID).ceil() / GRID
+    units * size / inter::UNITS_PER_EM
 }
 
 pub fn line_metrics(size: f32) -> LineMetrics {

@@ -11,55 +11,49 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/all.mmd
       "id": "CUSTOMER",
       "shape": {
         "kind": "table",
-        "rows": [
+        "attributes": [
           {
-            "cells": [
-              "string",
-              "id",
+            "data_type": "string",
+            "name": "id",
+            "keys": [
               "PK"
             ]
           },
           {
-            "cells": [
-              "string",
-              "email",
-              "UK",
-              "login"
-            ]
+            "data_type": "string",
+            "name": "email",
+            "keys": [
+              "UK"
+            ],
+            "comment": "login"
           },
           {
-            "cells": [
-              "int",
-              "address_id",
+            "data_type": "int",
+            "name": "address_id",
+            "keys": [
               "FK"
             ]
           },
           {
-            "cells": [
-              "string",
-              "code",
-              "PK, FK"
+            "data_type": "string",
+            "name": "code",
+            "keys": [
+              "PK",
+              "FK"
             ]
           },
           {
-            "cells": [
-              "string",
-              "note",
-              "",
-              "free text"
-            ]
+            "data_type": "string",
+            "name": "note",
+            "comment": "free text"
           },
           {
-            "cells": [
-              "varchar(255)",
-              "title"
-            ]
+            "data_type": "varchar(255)",
+            "name": "title"
           },
           {
-            "cells": [
-              "string[]",
-              "tags"
-            ]
+            "data_type": "string[]",
+            "name": "tags"
           }
         ]
       },
@@ -71,7 +65,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/all.mmd
       "id": "ORDER",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "ORDER"
@@ -81,7 +75,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/all.mmd
       "id": "line item",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "line item"
@@ -91,7 +85,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/all.mmd
       "id": "PRODUCT",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "PRODUCT"
@@ -101,7 +95,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/all.mmd
       "id": "PROFILE",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "PROFILE"
@@ -111,7 +105,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/all.mmd
       "id": "ACCOUNT",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "ACCOUNT"

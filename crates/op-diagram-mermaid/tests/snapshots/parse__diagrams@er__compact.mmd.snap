@@ -11,7 +11,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/compact.mmd
       "id": "CUSTOMER",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "CUSTOMER"
@@ -21,7 +21,7 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/er/compact.mmd
       "id": "ORDER",
       "shape": {
         "kind": "table",
-        "rows": []
+        "attributes": []
       },
       "label": [
         "ORDER"

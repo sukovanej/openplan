@@ -1,7 +1,9 @@
-use op_diagram::{Cluster, Icon, Node, Row, Shape};
+use op_diagram::{Attribute, Cluster, Icon, Node, Shape};
 
-use crate::scene::{IconBox, Outline, Rect, Text};
-use crate::text::{Block, CAPTION, CELL, EDGE_LABEL, HEADER, LABEL, TABLE_HEADER, block};
+use crate::scene::{Anchor, IconBox, Outline, Rect, Text};
+use crate::text::{
+    Block, CAPTION, CELL, CODE, COMMENT, EDGE_LABEL, HEADER, KEY, LABEL, TABLE_HEADER, block,
+};
 
 pub(super) const MAX_LABEL: f32 = 200.0;
 const MAX_HEADER: f32 = 320.0;
@@ -13,6 +15,9 @@ const SUBROUTINE_BAR: f32 = 8.0;
 const TABLE_PAD_X: f32 = 12.0;
 const TABLE_PAD_Y: f32 = 8.0;
 const TABLE_COLUMN_GAP: f32 = 12.0;
+const TABLE_ROW_GAP: f32 = 6.0;
+const CODE_PAD_X: f32 = 4.0;
+const CODE_PAD_Y: f32 = 1.0;
 const EDGE_LABEL_PAD_X: f32 = 4.0;
 const EDGE_LABEL_PAD_Y: f32 = 2.0;
 const ICON: f32 = 16.0;
@@ -29,8 +34,8 @@ pub(super) struct Body {
 }
 
 pub(super) fn node(node: &Node) -> Body {
-    if let Shape::Table { rows } = &node.shape {
-        return table(&node.label, rows);
+    if let Shape::Table { attributes } = &node.shape {
+        return table(&node.label, attributes);
     }
     let caption = match &node.caption {
         Some(caption) => block(std::slice::from_ref(caption), CAPTION, MAX_LABEL),
@@ -153,53 +158,87 @@ fn outline(shape: &Shape) -> Outline {
         Shape::Trapezoid => Outline::Trapezoid,
         Shape::InvertedTrapezoid => Outline::InvertedTrapezoid,
         Shape::Table { .. } => Outline::Table {
-            dividers: Vec::new(),
+            header: 0.0,
+            codes: Vec::new(),
         },
     }
 }
 
-fn table(label: &[String], rows: &[Row]) -> Body {
+fn table(label: &[String], attributes: &[Attribute]) -> Body {
     let header = block(label, TABLE_HEADER, f32::INFINITY);
-    let columns = rows.iter().map(|row| row.cells.len()).max().unwrap_or(0);
-    let widths: Vec<f32> = (0..columns)
-        .map(|column| {
-            rows.iter()
-                .filter_map(|row| row.cells.get(column))
-                .map(|cell| CELL.width(cell))
-                .fold(0.0, f32::max)
-        })
-        .collect();
-    let content = widths.iter().sum::<f32>() + TABLE_COLUMN_GAP * columns.saturating_sub(1) as f32;
+    let widest = |width: fn(&Attribute) -> f32| attributes.iter().map(width).fold(0.0, f32::max);
+    let widths = [
+        widest(|attribute| code_width(&attribute.data_type)),
+        widest(|attribute| CELL.width(&attribute.name)),
+        widest(|attribute| KEY.width(&key_list(attribute))),
+        widest(|attribute| {
+            attribute
+                .comment
+                .as_deref()
+                .map_or(0.0, |comment| COMMENT.width(comment))
+        }),
+    ];
+    let mut lefts = [TABLE_PAD_X; 4];
+    let mut left = TABLE_PAD_X;
+    for (column, width) in widths.iter().enumerate() {
+        lefts[column] = left;
+        if *width > 0.0 {
+            left += width + TABLE_COLUMN_GAP;
+        }
+    }
+    let content = (left - TABLE_COLUMN_GAP - TABLE_PAD_X).max(0.0);
     let width = header.width.max(content) + 2.0 * TABLE_PAD_X;
     let header_height = header.height + 2.0 * TABLE_PAD_Y;
-    let row_height = CELL.line_height() + 4.0;
-    let rows_height = match rows.len() {
+    let row_height = CELL.line_height() + TABLE_ROW_GAP;
+    let rows_height = match attributes.len() {
         0 => 0.0,
         count => count as f32 * row_height + TABLE_PAD_Y,
     };
+    let code_height = CODE.line_height() + 2.0 * CODE_PAD_Y;
     let mut texts = header.centered(width / 2.0, TABLE_PAD_Y);
-    for (at, row) in rows.iter().enumerate() {
-        let top = header_height + TABLE_PAD_Y / 2.0 + at as f32 * row_height + 2.0;
-        let mut left = TABLE_PAD_X;
-        for (cell, column_width) in row.cells.iter().zip(&widths) {
-            let cell = block(std::slice::from_ref(cell), CELL, f32::INFINITY);
-            texts.extend(cell.left_aligned(left, top));
-            left += column_width + TABLE_COLUMN_GAP;
+    let mut codes = Vec::new();
+    for (at, attribute) in attributes.iter().enumerate() {
+        let top = header_height + TABLE_PAD_Y / 2.0 + at as f32 * row_height;
+        let baseline = CELL.baseline(top + TABLE_ROW_GAP / 2.0);
+        codes.push(Rect {
+            x: lefts[0],
+            y: top + (row_height - code_height) / 2.0,
+            width: code_width(&attribute.data_type),
+            height: code_height,
+        });
+        texts.push(CODE.text(
+            &attribute.data_type,
+            lefts[0] + CODE_PAD_X,
+            baseline,
+            Anchor::Start,
+        ));
+        texts.push(CELL.text(&attribute.name, lefts[1], baseline, Anchor::Start));
+        let keys = key_list(attribute);
+        if !keys.is_empty() {
+            texts.push(KEY.text(&keys, lefts[2], baseline, Anchor::Start));
+        }
+        if let Some(comment) = &attribute.comment {
+            texts.push(COMMENT.text(comment, lefts[3], baseline, Anchor::Start));
         }
     }
     Body {
         width,
         height: header_height + rows_height,
         outline: Outline::Table {
-            dividers: if rows.is_empty() {
-                Vec::new()
-            } else {
-                vec![header_height]
-            },
+            header: header_height,
+            codes,
         },
         texts,
         icon: None,
     }
+}
+
+fn code_width(data_type: &str) -> f32 {
+    CODE.width(data_type) + 2.0 * CODE_PAD_X
+}
+
+fn key_list(attribute: &Attribute) -> String {
+    attribute.keys.join(", ")
 }
 
 pub(super) struct Header {
