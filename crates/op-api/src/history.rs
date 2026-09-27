@@ -193,9 +193,6 @@ pub struct SyncView {
     pub last_success: Option<Rfc3339>,
     pub ahead: usize,
     pub behind: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(nullable = false)]
-    pub error: Option<String>,
     pub syncing: bool,
 }
 

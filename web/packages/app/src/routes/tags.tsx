@@ -20,8 +20,9 @@ import {
 } from "@openplan/ui"
 
 import { createTag, deleteTag, listTags, patchTag, TaskRejected } from "../lib/api"
+import { demotedReason, useDemotedReason, useFaults } from "../lib/faults"
 import { errorText } from "../lib/format"
-import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { useProject, useProjects } from "../lib/projects"
 import { tagsKey, useProjectMutation } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
@@ -41,12 +42,12 @@ export function TagsRoute() {
 function OneProjectTags({ project }: { project: string }) {
   const projects = useProjects()
   const known = useProject(project)
+  const reason = useDemotedReason(project)
   // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
   // the daemon has answered.
   if (projects !== undefined && known === undefined) {
     return <EmptyState title="No such project" detail={project} />
   }
-  const reason = demotedReason(known)
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }
@@ -60,6 +61,7 @@ function OneProjectTags({ project }: { project: string }) {
 // Each project keeps a registry of its own, so each has its own section and its own form.
 function EveryProjectTags() {
   const projects = useProjects()
+  const faults = useFaults()
   return (
     <TagsPanel>
       {projects === undefined ? (
@@ -68,7 +70,7 @@ function EveryProjectTags() {
         <p className="text-muted-foreground text-sm">No projects yet.</p>
       ) : (
         projects.map((entry, index) => {
-          const reason = demotedReason(entry)
+          const reason = demotedReason(faults, entry.name)
           return (
             <Section key={entry.name} title={entry.name} className={cn(index === 0 && "mt-0 border-t-0 pt-0")}>
               {reason === undefined ? (

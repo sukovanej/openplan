@@ -46,9 +46,10 @@ pub fn migrate(root: &Path, daemon_url: Option<&str>, backend: Option<BackendKin
     let kind = backend.unwrap_or(BackendKind::Git);
     if kind == BackendKind::Git {
         let location = Location::find(&checkout, Some(BackendKind::Git))?;
-        let machine = op_server::machine_actor(&location.root);
-        let mut options = op_backend_git::Options::new(Arc::new(TaskMergePolicy));
-        options.machine = machine;
+        let options = op_backend_git::Options::new(
+            Arc::new(TaskMergePolicy),
+            op_backend_git::signer(&location.root),
+        );
         // Opened at the checkout, so the history copied is that of the branch the caller stands on.
         let backend = GitBackend::open(&checkout, options)?;
         let imported = backend.import(&checkout, STORE_DIR)?;

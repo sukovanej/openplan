@@ -6,7 +6,8 @@ use std::time::Duration;
 use gix::ObjectId;
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Change, Committed, Events, HeadMoved, LogEntry,
-    LogQuery, MergePolicy, Origin, Remote, Revision, RevisionId, Snapshot, SyncStatus, Write,
+    LogQuery, MergePolicy, Origin, Remote, Revision, RevisionId, Signer, Snapshot, SyncStatus,
+    Write,
 };
 use tokio::sync::broadcast;
 
@@ -15,7 +16,7 @@ mod import;
 mod objects;
 mod sync;
 
-pub use checkout::{Checkout, identity, inspect};
+pub use checkout::{Checkout, identity, inspect, signer};
 pub use import::{Imported, UNCOMMITTED_MESSAGE};
 pub use sync::fetch_tasks;
 
@@ -35,17 +36,17 @@ pub struct Options {
     pub remote: Option<String>,
     pub policy: Arc<dyn MergePolicy>,
     // Signs merge commits and reference logs, which no person wrote.
-    pub machine: Actor,
+    pub signer: Signer,
     // A half-open connection after a sleep or a network change makes git wait with no end.
     pub network_timeout: Duration,
 }
 
 impl Options {
-    pub fn new(policy: Arc<dyn MergePolicy>) -> Self {
+    pub fn new(policy: Arc<dyn MergePolicy>, signer: Signer) -> Self {
         Self {
             remote: Some(DEFAULT_REMOTE.to_owned()),
             policy,
-            machine: Actor::new("openplan"),
+            signer,
             network_timeout: NETWORK_TIMEOUT,
         }
     }
@@ -60,7 +61,7 @@ pub(crate) struct Inner {
     common_dir: PathBuf,
     remote: Option<String>,
     policy: Arc<dyn MergePolicy>,
-    machine: Actor,
+    signer: Signer,
     network_timeout: Duration,
     writing: Mutex<()>,
     syncing: Mutex<()>,
@@ -81,7 +82,7 @@ impl GitBackend {
             .remote
             .filter(|name| local.find_remote(name.as_str()).is_ok());
         if let Some(remote) = &remote {
-            start_from_tracking(&local, remote, &options.machine)?;
+            start_from_tracking(&local, remote, &options.signer)?;
         }
         let announced = objects::tip(&local, TASKS_REF)?;
         let status = SyncStatus {
@@ -94,7 +95,7 @@ impl GitBackend {
                 common_dir,
                 remote,
                 policy: options.policy,
-                machine: options.machine,
+                signer: options.signer,
                 network_timeout: options.network_timeout,
                 writing: Mutex::new(()),
                 syncing: Mutex::new(()),
@@ -114,22 +115,27 @@ impl GitBackend {
 
 // A repository that fetched the tasks without the daemon, as `fetch_tasks` or a CI job does, holds
 // only the remote-tracking reference. Starting the local one there lets a reader see the tasks
-// before any sync runs.
+// before any sync runs. With no one to sign the move, the first sync starts it instead.
 fn start_from_tracking(
     repo: &gix::Repository,
     remote: &str,
-    machine: &Actor,
+    signer: &Signer,
 ) -> Result<(), BackendError> {
     let tracking = tracking_reference(remote);
     if objects::tip(repo, TASKS_REF)?.is_none()
         && let Some(theirs) = objects::tip(repo, &tracking)?
     {
+        let machine = match signer.sign() {
+            Ok(machine) => machine,
+            Err(BackendError::NoIdentity) => return Ok(()),
+            Err(err) => return Err(err),
+        };
         objects::move_reference(
             repo,
             TASKS_REF,
             None,
             theirs,
-            machine,
+            &machine,
             &format!("start from {tracking}"),
         )?;
     }

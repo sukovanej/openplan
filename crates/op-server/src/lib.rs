@@ -17,7 +17,7 @@ use axum::{
     routing::get,
 };
 use op_api::{
-    ApiErrorBody, ChangeEvent, DaemonInfo, FlowCycles, KeyError, ProjectView, Refusal,
+    ApiErrorBody, ChangeEvent, DaemonInfo, Fault, FlowCycles, KeyError, ProjectView, Refusal,
     RegisterProject, RenameProject, SourcePosition, StopReason,
 };
 use op_backend::{Actor, BackendError};
@@ -45,9 +45,7 @@ mod revision_diff;
 mod tasks;
 use agent::AgentSessions;
 pub use drawing::DrawingCache;
-pub use project::{
-    Location, OpenError, Project, STORE_DIR, machine_actor, open_backend, sync_view,
-};
+pub use project::{Location, OpenError, Project, STORE_DIR, open_backend, sync_view};
 pub use registry::{
     ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError, canonical, same_path, unique_name,
 };
@@ -102,6 +100,9 @@ pub(crate) struct Published {
 pub(crate) struct Publisher {
     tx: broadcast::Sender<Published>,
     log: Arc<EventLog>,
+    // The faults of each project as the last `FaultsChanged` left them. A project with none is
+    // absent.
+    faults: Arc<Mutex<BTreeMap<String, Vec<Fault>>>>,
 }
 
 // `boot` tells two daemon lifetimes apart, so a cursor from before a restart is never read as one
@@ -119,6 +120,37 @@ impl Publisher {
                 boot: format!("{:x}", op_backend::now().as_second()),
                 recent: Mutex::new((0, VecDeque::new())),
             }),
+            faults: Arc::new(Mutex::new(BTreeMap::new())),
+        }
+    }
+
+    pub fn report(&self, project: &Project) {
+        let faults = project.faults();
+        let name = project.name();
+        {
+            let mut reported = self.faults.lock().expect("fault record poisoned");
+            if reported
+                .get(&name)
+                .map_or(faults.is_empty(), |known| *known == faults)
+            {
+                return;
+            }
+            match faults.is_empty() {
+                true => reported.remove(&name),
+                false => reported.insert(name, faults),
+            };
+        }
+        self.publish(ChangeEvent::FaultsChanged, None);
+    }
+
+    pub fn forget(&self, project: &str) {
+        let removed = self
+            .faults
+            .lock()
+            .expect("fault record poisoned")
+            .remove(project);
+        if removed.is_some() {
+            self.publish(ChangeEvent::FaultsChanged, None);
         }
     }
 
@@ -261,6 +293,7 @@ impl AppState {
     pub fn start_projects(&self) {
         for project in self.projects() {
             project.start(self.publisher.clone());
+            self.publisher.report(&project);
         }
     }
 
@@ -310,6 +343,15 @@ impl AppState {
                 found => found?,
             },
         };
+        // Resolved before anything opens, so a start no one can sign registers nothing.
+        let start = match (abbreviation, author) {
+            (Some(abbreviation), Some(author)) => Some((abbreviation, author)),
+            (Some(abbreviation), None) => Some((
+                abbreviation,
+                op_backend_git::identity(&location.root).map_err(TrackerError::from)?,
+            )),
+            (None, _) => None,
+        };
         let (project, created) = match self.serving(&location) {
             Some(existing) => (existing, false),
             // Opening reads every task, so it runs before the lock that every request takes.
@@ -346,10 +388,10 @@ impl AppState {
             tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
             project.start(self.publisher.clone());
         }
-        if let Some(abbreviation) = abbreviation {
-            let author = author.unwrap_or_else(|| project.machine().clone());
+        if let Some((abbreviation, author)) = start {
             start_tasks(&project, abbreviation, &author)?;
         }
+        self.publisher.report(&project);
         Ok((project.view(), created))
     }
 
@@ -375,6 +417,7 @@ impl AppState {
             projects.remove(name).expect("checked above")
         };
         project.stop();
+        self.publisher.forget(name);
         tracing::info!(project = %name, "project removed");
         Ok(())
     }
@@ -414,6 +457,8 @@ impl AppState {
             projects.insert(to.to_owned(), Arc::clone(&project));
             project
         };
+        self.publisher.forget(from);
+        self.publisher.report(&project);
         Ok(project.view())
     }
 
@@ -567,6 +612,7 @@ struct ApiDoc;
 fn documented() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
+        .routes(routes!(list_faults))
         .routes(routes!(list_projects, register_project))
         .routes(routes!(delete_project, rename_project))
         .routes(routes!(tasks::list_tasks, tasks::create_task))
@@ -669,10 +715,19 @@ fn registered(state: &AppState) -> String {
 
 // The identity a write is signed with: what the caller sent, or the project's own identity when it
 // sent none.
-pub(crate) fn actor_of(headers: &HeaderMap, project: &Project) -> Actor {
-    author_of(headers).unwrap_or_else(|| Actor {
+pub(crate) fn actor_of(
+    state: &AppState,
+    headers: &HeaderMap,
+    project: &Project,
+) -> Result<Actor, ApiError> {
+    if let Some(author) = author_of(headers) {
+        return Ok(author);
+    }
+    let signed = project.sign();
+    state.publisher.report(project);
+    Ok(Actor {
         via: header_text(headers, op_api::AGENT_HEADER),
-        ..project.machine().clone()
+        ..signed?
     })
 }
 
@@ -788,10 +843,12 @@ async fn watch_projects(state: AppState) {
     loop {
         tokio::time::sleep(project::ROOT_POLL).await;
         let projects = state.projects();
+        let publisher = state.publisher.clone();
         let moved = tokio::task::spawn_blocking(move || {
             let mut moved = false;
             for project in &projects {
                 moved |= project.poll();
+                publisher.report(project);
             }
             moved
         })
@@ -813,6 +870,17 @@ async fn health(State(state): State<AppState>) -> Response {
         Some(info) => Json(info.as_ref()).into_response(),
         None => (StatusCode::OK, "ok").into_response(),
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/faults",
+    responses((status = 200, description = "What keeps each project from its work until a person acts", body = Vec<Fault>))
+)]
+async fn list_faults(State(state): State<AppState>) -> Result<Json<Vec<Fault>>, ApiError> {
+    let faults =
+        blocking(move || Ok(state.projects().iter().flat_map(|p| p.faults()).collect())).await?;
+    Ok(Json(faults))
 }
 
 #[utoipa::path(
@@ -1065,6 +1133,7 @@ impl From<TrackerError> for ApiError {
             | TrackerError::Task(_) => StatusCode::UNPROCESSABLE_ENTITY,
             TrackerError::Backend(BackendError::UnknownRevision(_)) => StatusCode::NOT_FOUND,
             TrackerError::Backend(BackendError::Sync(_)) => StatusCode::BAD_GATEWAY,
+            TrackerError::Backend(BackendError::NoIdentity) => StatusCode::SERVICE_UNAVAILABLE,
             TrackerError::Backend(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let reason = match &err {

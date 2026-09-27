@@ -4,10 +4,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, Weak};
 use std::time::Duration;
 
-use op_api::{BackendKind, ChangeEvent, ProjectStatus, ProjectView, Rfc3339, SyncView};
+use op_api::{BackendKind, ChangeEvent, Fault, FaultKind, ProjectView, Rfc3339, SyncView};
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Change, HeadMoved, LogQuery, Origin, RevisionId,
-    Schedule, SyncLoop, SyncStatus,
+    Schedule, Signer, SyncLoop, SyncStatus,
 };
 use op_backend_git::GitBackend;
 use op_backend_local::LocalBackend;
@@ -128,21 +128,19 @@ fn fetched_from_remote(path: &Path) -> bool {
 // open instead.
 pub fn open_backend(
     location: &Location,
-    machine: &Actor,
+    signer: &Signer,
     watch: bool,
 ) -> Result<Arc<dyn Backend>, OpenError> {
     Ok(match location.kind {
-        BackendKind::Git => {
-            let policy = Arc::new(TaskMergePolicy);
-            let mut options = op_backend_git::Options::new(policy);
-            options.machine = machine.clone();
-            Arc::new(GitBackend::open(&location.root, options)?)
-        }
+        BackendKind::Git => Arc::new(GitBackend::open(
+            &location.root,
+            op_backend_git::Options::new(Arc::new(TaskMergePolicy), signer.clone()),
+        )?),
         BackendKind::Local => Arc::new(LocalBackend::open(
             location.root.join(STORE_DIR),
             op_backend_local::Options {
                 watch,
-                external_author: machine.clone(),
+                signer: signer.clone(),
             },
         )?),
     })
@@ -184,30 +182,20 @@ pub(crate) fn canonical(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-// The name that signs what the daemon writes on its own: merges, sync notes, and edits from the
-// web UI. The repository's git identity where there is one.
-pub fn machine_actor(root: &Path) -> Actor {
-    op_backend_git::identity(root).unwrap_or_else(|| {
-        Actor::new(
-            std::env::var("USER")
-                .ok()
-                .filter(|user| !user.trim().is_empty())
-                .unwrap_or_else(|| "openplan".to_owned()),
-        )
-    })
-}
-
 #[derive(Debug, Default)]
 struct Health {
     root_gone: bool,
-    error: Option<String>,
+    unreadable: Option<String>,
+    unsigned: bool,
+    outside_unread: Option<String>,
 }
 
 pub struct Project {
     name: RwLock<String>,
     pub path: PathBuf,
     location: Location,
-    machine: Actor,
+    // Signs what the daemon writes on its own: merges, hand edits, and edits from the web UI.
+    signer: Signer,
     tracker: Tracker,
     index: Mutex<Index>,
     loaded: Mutex<Option<RevisionId>>,
@@ -218,13 +206,13 @@ pub struct Project {
 
 impl Project {
     pub fn open(name: impl Into<String>, location: Location) -> Result<Self, OpenError> {
-        let machine = machine_actor(&location.root);
-        let backend = open_backend(&location, &machine, true)?;
+        let signer = op_backend_git::signer(&location.root);
+        let backend = open_backend(&location, &signer, true)?;
         let project = Self {
             name: RwLock::new(name.into()),
             path: location.root.clone(),
             location,
-            machine,
+            signer,
             tracker: Tracker::new(backend),
             index: Mutex::new(Index::new()),
             loaded: Mutex::new(None),
@@ -271,8 +259,12 @@ impl Project {
         &self.tracker
     }
 
-    pub fn machine(&self) -> &Actor {
-        &self.machine
+    // The git identity of the project, read now, so a name set after the project opened signs the
+    // next write. Whether it is set is a fault of the project.
+    pub fn sign(&self) -> Result<Actor, BackendError> {
+        let signed = self.signer.sign();
+        self.lock_health().unsigned = matches!(signed, Err(BackendError::NoIdentity));
+        signed
     }
 
     pub fn index(&self) -> MutexGuard<'_, Index> {
@@ -307,7 +299,6 @@ impl Project {
                 .abbreviation()
                 .map(|abbreviation| abbreviation.to_string())
                 .unwrap_or_default(),
-            status: self.status(),
             sync: self.sync_status().as_ref().map(sync_view),
         }
     }
@@ -326,14 +317,14 @@ impl Project {
     }
 
     fn record_health(&self, result: Result<Option<String>, TrackerError>) {
-        let error = match &result {
+        let unreadable = match &result {
             Ok(plan_error) => plan_error.clone(),
             Err(err) => Some(err.to_string()),
         };
-        if let Some(reason) = &error {
+        if let Some(reason) = &unreadable {
             tracing::warn!(project = %self.name(), %reason, "the project cannot serve its tasks");
         }
-        self.lock_health().error = error;
+        self.lock_health().unreadable = unreadable;
     }
 
     // The head is read under the index lock: two writes that reload at once could otherwise finish
@@ -501,24 +492,64 @@ impl Project {
     // What stops this project from answering at all. A project with no tasks yet still answers, so
     // `init` can start them.
     pub fn blocked(&self) -> Option<String> {
-        self.lock_health()
+        self.blocked_by(&self.lock_health())
+    }
+
+    fn blocked_by(&self, health: &Health) -> Option<String> {
+        health
             .root_gone
             .then(|| format!("the project root {} no longer exists", self.path.display()))
     }
 
-    pub fn status(&self) -> ProjectStatus {
-        match self.blocked().or_else(|| self.lock_health().error.clone()) {
-            Some(reason) => ProjectStatus::Error { reason },
-            None => ProjectStatus::Ok,
+    pub fn faults(&self) -> Vec<Fault> {
+        let project = self.name();
+        let health = self.lock_health();
+        let fault = |kind, message: String| Fault {
+            project: project.clone(),
+            kind,
+            message,
+        };
+        // Nothing else of a project with no root can be read, so nothing else is worth saying.
+        if let Some(reason) = self.blocked_by(&health) {
+            return vec![fault(FaultKind::RootGone, reason)];
         }
+        let mut faults = Vec::new();
+        if let Some(reason) = &health.unreadable {
+            faults.push(fault(FaultKind::Unreadable, reason.clone()));
+        }
+        if health.unsigned {
+            faults.push(fault(
+                FaultKind::NoIdentity,
+                BackendError::NoIdentity.to_string(),
+            ));
+        }
+        if let Some(error) = self.sync_status().and_then(|status| status.error) {
+            faults.push(fault(
+                FaultKind::SyncFailed,
+                format!("the last sync failed: {error}"),
+            ));
+        }
+        if let Some(error) = &health.outside_unread {
+            faults.push(fault(
+                FaultKind::OutsideChangesUnread,
+                format!("changes made outside openplan were not read: {error}"),
+            ));
+        }
+        faults
     }
 
-    // One watchdog tick: whether the root still exists, and any write made outside this daemon.
-    // Answers whether the project's status moved.
+    // One watchdog tick: whether the root still exists, whether git names someone to sign a write,
+    // and any write made outside this daemon. Answers whether the project started or stopped
+    // answering.
     pub fn poll(&self) -> bool {
-        if let Err(err) = self.tracker.backend().refresh() {
-            tracing::warn!(project = %self.name(), error = %err, "outside changes not read");
-        }
+        let unsigned = matches!(self.signer.sign(), Err(BackendError::NoIdentity));
+        let outside_unread = match self.tracker.backend().refresh() {
+            Ok(_) | Err(BackendError::NoIdentity) => None,
+            Err(err) => {
+                tracing::warn!(project = %self.name(), error = %err, "outside changes not read");
+                Some(err.to_string())
+            }
+        };
         let misses = match self.path.is_dir() {
             true => {
                 self.root_misses.store(0, Ordering::Relaxed);
@@ -528,6 +559,8 @@ impl Project {
         };
         let gone = misses >= ROOT_MISSES;
         let mut health = self.lock_health();
+        health.unsigned = unsigned;
+        health.outside_unread = outside_unread;
         let moved = health.root_gone != gone;
         health.root_gone = gone;
         if moved {
@@ -588,7 +621,6 @@ pub fn sync_view(status: &SyncStatus) -> SyncView {
         last_success: status.last_success.map(Rfc3339),
         ahead: status.ahead,
         behind: status.behind,
-        error: status.error.clone(),
         syncing: status.syncing,
     }
 }
@@ -607,6 +639,7 @@ fn pump(
                 };
                 project.reload();
                 publisher.publish(ChangeEvent::Resync, None);
+                publisher.report(&project);
                 continue;
             }
             Err(RecvError::Closed) => return,
@@ -623,5 +656,6 @@ fn pump(
                 None,
             ),
         }
+        publisher.report(&project);
     }
 }

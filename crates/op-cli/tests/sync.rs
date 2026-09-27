@@ -121,7 +121,6 @@ fn sync_status_reports_the_last_sync_and_why_it_failed() {
     let view = json(remote.run(&ann, &["sync", "--status", "--json"]));
     assert_eq!(view["remote"], "origin");
     assert!(view["last_success"].is_string(), "{view}");
-    assert!(view.get("error").is_none(), "{view}");
 
     remote.offline();
     remote.create(&ann, "Written offline");
@@ -145,16 +144,20 @@ fn sync_status_reports_the_last_sync_and_why_it_failed() {
         "the reason is printed: {}",
         stdout(&failing)
     );
-    let view: serde_json::Value =
-        serde_json::from_str(&stdout(&remote.run(&ann, &["sync", "--status", "--json"]))).unwrap();
-    assert!(view["error"].is_string(), "{view}");
+    let as_json = remote.run(&ann, &["sync", "--status", "--json"]);
+    assert!(!as_json.status.success());
+    assert!(
+        stderr(&as_json).starts_with("the last sync failed"),
+        "{}",
+        stderr(&as_json)
+    );
+    let view: serde_json::Value = serde_json::from_str(&stdout(&as_json)).unwrap();
     assert_eq!(view["ahead"], 1);
 
     remote.online();
     let sent = ok(remote.run(&ann, &["sync", "--json"]));
     let result: serde_json::Value = serde_json::from_str(&sent).unwrap();
     assert!(result["sent"].as_u64().unwrap() >= 1, "{result}");
-    assert!(result["status"].get("error").is_none(), "{result}");
     ok(remote.run(&ann, &["sync", "--status"]));
 }
 

@@ -5,9 +5,10 @@ import { useLocation, useNavigate } from "react-router-dom"
 import type { ProjectView } from "@openplan/api-client"
 import { cn, CONTROL_HEIGHT, Kbd, Menu, type MenuItem, Tooltip, useDismissOnOutsideClick } from "@openplan/ui"
 
+import { demotedReason, useFaults } from "../lib/faults"
 import { useProjectMenuRequest } from "../lib/project-menu"
 import { selectedProjects, selects, switchProjectPath } from "../lib/project-scope"
-import { demotedReason, useProjects } from "../lib/projects"
+import { useProjects } from "../lib/projects"
 
 const EVERY_PROJECT = "All projects"
 const SHORTCUT = "o"
@@ -17,6 +18,7 @@ const SHORTCUT = "o"
 // tooltip says why.
 export function ProjectSelect({ className }: { className?: string }) {
   const projects = useProjects()
+  const faults = useFaults()
   const { pathname, search } = useLocation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -30,8 +32,7 @@ export function ProjectSelect({ className }: { className?: string }) {
   const selected = selectedProjects(pathname, search)
   const choices: ReadonlyArray<ProjectView | undefined> = [undefined, ...projects]
   const isSelected = (choice: ProjectView | undefined) => selects(selected, choice?.name)
-  const reason =
-    selected.length === 1 ? demotedReason(projects.find((project) => project.name === selected[0])) : undefined
+  const reason = selected.length === 1 ? demotedReason(faults, selected[0]) : undefined
 
   const pick = (index: number) => {
     setOpen(false)
@@ -109,7 +110,8 @@ function Choice({
   selected: boolean
   digit: string | undefined
 }) {
-  const reason = demotedReason(project)
+  const faults = useFaults()
+  const reason = project === undefined ? undefined : demotedReason(faults, project.name)
   const name = (
     <span className="flex min-w-0 grow items-center gap-1.5">
       {reason !== undefined && <TriangleAlert className="text-warning size-3.5 shrink-0" aria-hidden />}

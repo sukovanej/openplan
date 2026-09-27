@@ -25,8 +25,9 @@ import { ChildGuide, GridRow, RowGrid, type RowSlot, TreeGuides } from "../compo
 import { ListSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { getBoard, getMergedBoard } from "../lib/api"
+import { useDemotedReason } from "../lib/faults"
 import { errorText } from "../lib/format"
-import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { useProject, useProjects } from "../lib/projects"
 import { boardKey, mergedBoardKey } from "../lib/query-client"
 import { abortable } from "../lib/runtime"
 import { type TagsByName, useTagRegistries } from "../lib/tags"
@@ -53,6 +54,7 @@ function MergedBoard() {
 function ProjectBoard({ project }: { project: string }) {
   const projects = useProjects()
   const known = useProject(project)
+  const reason = useDemotedReason(project)
   const board = useQuery({
     queryKey: boardKey(project),
     queryFn: abortable(getBoard(project)),
@@ -62,7 +64,6 @@ function ProjectBoard({ project }: { project: string }) {
   if (projects !== undefined && known === undefined) {
     return <EmptyState title="No such project" detail={project} />
   }
-  const reason = demotedReason(known)
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }

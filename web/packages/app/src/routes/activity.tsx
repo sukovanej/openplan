@@ -9,9 +9,10 @@ import { EmptyState, Panel, PanelBody, SkeletonList } from "@openplan/ui"
 import { OlderRevisions } from "../components/older-revisions"
 import { MergedRevisionList, RevisionList } from "../components/revision-list"
 import { getBoard, getMergedBoard, listAllDocs } from "../lib/api"
+import { demotedReason, useDemotedReason, useFaults } from "../lib/faults"
 import { errorText } from "../lib/format"
 import { useMergedHistory, useProjectHistory } from "../lib/history"
-import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { useProject, useProjects } from "../lib/projects"
 import { allDocsKey, boardKey, mergedBoardKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
@@ -52,12 +53,12 @@ export function ActivityRoute() {
 function ProjectActivity({ project }: { project: string }) {
   const projects = useProjects()
   const known = useProject(project)
+  const reason = useDemotedReason(project)
   // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
   // the daemon has answered.
   if (projects !== undefined && known === undefined) {
     return <EmptyState title="No such project" detail={project} />
   }
-  const reason = demotedReason(known)
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }
@@ -89,6 +90,7 @@ export function Activity({ project }: { project: string }) {
 // all.
 function EveryActivity() {
   const projects = useProjects()
+  const faults = useFaults()
   if (projects === undefined) {
     return (
       <ActivityPanel>
@@ -96,7 +98,9 @@ function EveryActivity() {
       </ActivityPanel>
     )
   }
-  const served = projects.filter((project) => demotedReason(project) === undefined).map((project) => project.name)
+  const served = projects
+    .filter((project) => demotedReason(faults, project.name) === undefined)
+    .map((project) => project.name)
   return <MergedActivity projects={served} />
 }
 

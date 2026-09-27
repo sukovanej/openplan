@@ -14,6 +14,23 @@ struct Daemon {
     home: tempfile::TempDir,
 }
 
+// Git names who signs every write, so each store sits in a checkout that names someone.
+fn checkout() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    for args in [
+        &["init", "-q", "-b", "main"][..],
+        &["config", "user.name", "Test"],
+    ] {
+        let status = std::process::Command::new("git")
+            .current_dir(dir.path())
+            .args(args)
+            .status()
+            .expect("git must be installed for this test");
+        assert!(status.success(), "git {args:?}");
+    }
+    dir
+}
+
 impl Daemon {
     // The daemon runs on its own runtime, as it does in production, so the blocking client can call
     // it from the test thread.
@@ -39,12 +56,12 @@ impl Daemon {
     }
 
     fn with_one_project(info: DaemonInfo) -> (Self, tempfile::TempDir) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = checkout();
         let location = Location::find(dir.path(), Some(BackendKind::Local)).unwrap();
         let project = Project::open("test", location).unwrap();
         project
             .tracker()
-            .init(project.machine(), "OPP".parse().unwrap())
+            .init(&project.sign().unwrap(), "OPP".parse().unwrap())
             .unwrap();
         project.reload();
         (Self::spawn(AppState::new([project]).with_health(info)), dir)
@@ -310,7 +327,7 @@ fn projects_register_rename_and_leave_through_the_daemon() {
     let daemon = Daemon::spawn(AppState::new([]));
     let base = &daemon.base;
     let client = Client::default();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = checkout();
 
     let (view, created) = client
         .register_project(base, dir.path(), Some(BackendKind::Local), Some("OPP"))

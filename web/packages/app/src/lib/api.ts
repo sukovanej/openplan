@@ -165,6 +165,11 @@ export const listProjects: Effect.Effect<
   Effect.catchTags({ HttpClientError: unexpected }),
 )
 
+export const listFaults: Effect.Effect<ReadonlyArray<Api.Fault>, ApiError, HttpClient.HttpClient> = Effect.flatMap(
+  tasks,
+  (client) => client.listFaults(undefined),
+).pipe(Effect.catchTags({ HttpClientError: unexpected }))
+
 export const listTasks = (
   project: string,
 ): Effect.Effect<ReadonlyArray<Api.TaskListItem>, ApiError, HttpClient.HttpClient> =>

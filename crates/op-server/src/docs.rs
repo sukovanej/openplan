@@ -136,7 +136,7 @@ pub(crate) async fn create_doc(
     Json(body): Json<CreateDoc>,
 ) -> Result<Response, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let created = op_task::now();
     let detail = blocking(move || {
         let doc = body
@@ -206,7 +206,7 @@ pub(crate) async fn patch_doc(
     Json(patch): Json<DocPatch>,
 ) -> Result<Json<DocDetail>, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let detail = blocking(move || {
         let name = op_task::doc::normalize_name(&name)
             .map_err(|err| ApiError::bad_request(err.to_string()))?;
@@ -267,7 +267,7 @@ pub(crate) async fn write_doc_text(
     Json(body): Json<WriteDocText>,
 ) -> Result<Json<DocDetail>, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let detail = blocking(move || {
         let (base, text) = body.into_texts(project.abbreviation()?)?;
         let updated = project
@@ -387,7 +387,7 @@ pub(crate) async fn delete_doc(
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     blocking(move || {
         let committed = project.tracker().delete_doc(&actor, &name)?;
         project.written(committed.as_ref());

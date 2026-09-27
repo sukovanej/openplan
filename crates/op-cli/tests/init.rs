@@ -82,6 +82,24 @@ fn init_outside_a_repository_starts_a_local_directory() {
 }
 
 #[test]
+fn init_outside_a_repository_with_no_git_name_registers_nothing() {
+    let home = Home::new();
+    home.forget_git_name();
+    let dir = tempfile::tempdir().unwrap();
+
+    let refused = home.run(dir.path(), &["init", "--abbreviation", "LOC"]);
+
+    assert!(!refused.status.success());
+    assert!(
+        stderr(&refused).contains("git config --global user.name"),
+        "{}",
+        stderr(&refused)
+    );
+    assert!(!dir.path().join(".plan").exists());
+    assert!(!home.registry().contains("path"), "{}", home.registry());
+}
+
+#[test]
 fn init_with_the_local_backend_keeps_the_tasks_of_a_repository_in_a_directory() {
     let home = Home::new();
     let repo = tempfile::tempdir().unwrap();

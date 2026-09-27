@@ -1,8 +1,9 @@
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
 
-import type { ProjectView, SyncResult, SyncView } from "@openplan/api-client"
+import type { Fault, ProjectView, SyncResult, SyncView } from "@openplan/api-client"
 
 import { getSync, runSync } from "./api"
+import { demotedReason, syncFailure, useFaults } from "./faults"
 import { useProjects } from "./projects"
 import { projectMutationsKey, syncKey } from "./query-client"
 import { abortable, runtime } from "./runtime"
@@ -12,6 +13,7 @@ export type SyncState = "offline" | "syncing" | "failed" | "waiting" | "idle"
 export interface ProjectSync {
   readonly project: string
   readonly view: SyncView
+  readonly failure?: string
 }
 
 export function waitingCount(syncs: ReadonlyArray<ProjectSync>): number {
@@ -19,7 +21,7 @@ export function waitingCount(syncs: ReadonlyArray<ProjectSync>): number {
 }
 
 export function failed(syncs: ReadonlyArray<ProjectSync>): ReadonlyArray<ProjectSync> {
-  return syncs.filter((one) => one.view.error !== undefined)
+  return syncs.filter((one) => one.failure !== undefined)
 }
 
 // A failure outranks a count, because it is what keeps the count from going down.
@@ -32,14 +34,15 @@ export function syncState(syncs: ReadonlyArray<ProjectSync>, live: boolean, work
 
 // Only tasks in a git ref sync, and only with a remote to sync with. The daemon names that remote
 // in `sync`, so a local project and a repository without a remote both come without one.
-export function syncable(project: ProjectView): boolean {
-  return project.status.state === "ok" && project.backend === "git" && project.sync !== undefined
+export function syncable(project: ProjectView, faults: ReadonlyArray<Fault>): boolean {
+  return demotedReason(faults, project.name) === undefined && project.backend === "git" && project.sync !== undefined
 }
 
 // The project list already carries each state, so the first read costs nothing. A sync event re-reads
 // the one project it names.
 export function useProjectSyncs(): ReadonlyArray<ProjectSync> {
-  const projects = (useProjects() ?? []).filter(syncable)
+  const faults = useFaults()
+  const projects = (useProjects() ?? []).filter((project) => syncable(project, faults))
   return useQueries({
     queries: projects.map((project) => ({
       queryKey: syncKey(project.name),
@@ -50,7 +53,7 @@ export function useProjectSyncs(): ReadonlyArray<ProjectSync> {
       results.flatMap((result, at) => {
         const project = projects[at]
         if (project === undefined || result.data === undefined) return []
-        return [{ project: project.name, view: result.data }]
+        return [{ project: project.name, view: result.data, failure: syncFailure(faults, project.name) }]
       }),
   })
 }

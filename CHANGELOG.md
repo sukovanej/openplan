@@ -12,6 +12,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The openplan-docs skill tells the agent to read and write the project docs
   with `openplan doc` when the user mentions a doc, and to show each doc it
   creates or changes in the built-in browser of the agent app.
+- The web UI header shows a warning control when a project has a fault that
+  you must fix: no git `user.name`, a failed sync, a project root that is gone,
+  tasks that do not parse, or outside changes that the daemon could not read.
+  The control lists each fault with its project, and it changes as faults start
+  and end. `GET /api/faults` lists the faults, and the `faults_changed` event
+  tells a client that the list changed.
 
 ### Changed
 
@@ -43,6 +49,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The keyboard help (`?`) puts its groups in columns when they do not fit the
   height of the window. When the window is too narrow for more columns, the
   help scrolls.
+- Every write needs git `user.name`. openplan no longer signs a write with
+  `$USER` or with `openplan`. With no name, a write fails and tells you how to
+  set one, and a read still works. A local project outside a git repository
+  uses the global git config: `git config --global user.name "Your Name"`.
+- The HTTP API no longer has `ProjectView.status` or `SyncView.error`. Read
+  `GET /api/faults` instead.
 
 ### Fixed
 

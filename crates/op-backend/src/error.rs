@@ -16,6 +16,11 @@ pub enum BackendError {
     Storage(String),
     #[error("sync: {0}")]
     Sync(String),
+    #[error(
+        "git `user.name` is not set, and every write is signed with it; set it with \
+         `git config --global user.name \"Your Name\"`"
+    )]
+    NoIdentity,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }

@@ -22,6 +22,7 @@ const DOC = "doc"
 
 export const projectKey = (project: string) => ["project", project] as const
 export const projectsKey = ["projects"] as const
+export const faultsKey = ["faults"] as const
 export const mergedKey = ["merged"] as const
 export const projectMutationsKey = ["mutation", "project"] as const
 export const mergedBoardKey = [...mergedKey, "board"] as const
@@ -145,6 +146,7 @@ const refresh = (reads: Reads) => {
 
 export const queryInvalidator: Invalidator = {
   refreshProjects: () => refresh({ queryKey: projectsKey }),
+  refreshFaults: () => refresh({ queryKey: faultsKey }),
   refreshList: (project) => {
     refresh({ queryKey: boardKey(project) })
     refresh({ queryKey: tasksKey(project) })

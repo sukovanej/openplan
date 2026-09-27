@@ -315,6 +315,39 @@ async fn a_task_edited_by_hand_is_announced_and_served() {
         .await;
 }
 
+fn write_config(state: &op_server::AppState, text: &str) {
+    let project = project(state);
+    let text = text.to_owned();
+    project
+        .tracker()
+        .backend()
+        .commit(&project.sign().unwrap(), &mut |_| {
+            Ok(op_backend::Edit::new(
+                "Write the config",
+                vec![op_backend::Op::put("config.toml", text.as_str())],
+            ))
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_fault_that_starts_or_ends_is_announced() {
+    let (_dir, state) = local_state();
+    state.start_projects();
+    let mut events = EventStream::open(&state, None).await;
+
+    write_config(&state, "abbreviation = 7\n");
+    events.find("faults_changed").await;
+    let faults = json_of(&state, "/api/faults").await;
+    assert_eq!(faults.as_array().unwrap().len(), 1, "{faults}");
+    assert_eq!(faults[0]["project"], PROJECT);
+    assert_eq!(faults[0]["kind"], "unreadable");
+
+    write_config(&state, "abbreviation = \"OPP\"\n");
+    events.find("faults_changed").await;
+    assert_eq!(json_of(&state, "/api/faults").await, json!([]));
+}
+
 #[tokio::test]
 async fn a_project_change_is_announced() {
     let home = tempfile::tempdir().unwrap();
