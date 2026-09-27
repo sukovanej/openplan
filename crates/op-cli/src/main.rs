@@ -94,7 +94,7 @@ enum Command {
         #[arg(required = true)]
         keys: Vec<String>,
     },
-    /// Report task problems (fields, references, cycles, tags, conflicts, Mermaid diagrams), doc conflicts, and stale agent skills; never starts a daemon
+    /// Report problems in the tasks, docs, and agent skills
     Lint {
         /// Report only these tasks; every task is checked all the same
         keys: Vec<String>,
