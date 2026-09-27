@@ -32,7 +32,7 @@ pull_requests:
 - Store the full address, not a number. A task can link a pull request in a different repository.
 - Store only what a person decides: which pull requests belong to the task. Do not store the state, the title, or the checks in the task. They change on the forge, and each change would make a revision and a sync conflict.
 
-A new crate `op-forge` parses the addresses. OPP-128 also needs this parser for the remote URL, so move its remote parsing into this crate.
+The crate `op-forge` parses the addresses. OPP-128 needs the same crate for the remote URL. The task that merges first adds the crate, `ProjectView.forge`, and the short form component. The other task uses them.
 
 ```mermaid
 erDiagram
@@ -73,12 +73,12 @@ openplan tasks show OPP-42                  # prints each pull request with its 
 - `TaskPatch` gains `pull_requests` (replace), `add_pull_requests`, and `remove_pull_requests`. `CreateTask` gains `pull_requests`.
 - `TaskDetail` gains `pull_requests: Vec<PullRequestView>`. `PullRequestView` is `{ url, forge, repo, number, short, status }`. `status` is `{ state, title, updated_at }` or absent. `state` is `open`, `draft`, `merged`, or `closed`. Part 2 fills `status`.
 - `TaskListItem` gains `pull_requests: Vec<PullRequestView>` too, so the list does not ask for each task.
-- `ProjectView` gains `forge: { kind, host, repo }` from the sync remote. This field replaces the `github` field that OPP-128 plans.
+- `ProjectView` gains `forge: { kind, host, repo }` from the sync remote, if OPP-128 has not added it. Add GitLab: `gitlab.com`, and each host that `glab auth status` lists.
 - Run `mise run generate-web-client`.
 
 ### Web UI
 
-- The task page has a section "Pull requests" in the aside, below "Depends on". Each row shows the forge icon, the short form from OPP-128 (`#214`, or `owner/repo#214` for another repository), the title, and a state chip. The row opens the pull request. A remove button shows on hover.
+- The task page has a section "Pull requests" in the aside, below "Depends on". Each row shows the forge icon, the short form component (`#214`, or `owner/repo#214` for another repository), the title, and a state chip. The row opens the pull request. A remove button shows on hover.
 - A "+" button opens a text input. It takes an address or a number. Enter adds the pull request. The input shows the error that the server sends.
 - Build the section like `tags-field.tsx`: `patchTask` with `add_pull_requests` or `remove_pull_requests`. Add the field to `FIELD_NAMES` in `task-ui/src/metadata.ts`, and show `FieldConflictControl` for it.
 - The task list shows a pull request icon on a row that has pull requests. The color is the state of the newest pull request. The tooltip lists each pull request.
