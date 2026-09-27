@@ -35,6 +35,8 @@
 .op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
 .op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
 .op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .outline.lid { fill: #e3e7f0; }
+.op-diagram .node[class*="status-"] .outline.lid { fill: color-mix(in srgb, var(--status) 26%, #fff); }
 .op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
 .op-diagram [class*="status-"] .icon { color: var(--status); }
 .op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }

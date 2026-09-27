@@ -55,6 +55,17 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   uses the global git config: `git config --global user.name "Your Name"`.
 - The HTTP API no longer has `ProjectView.status` or `SyncView.error`. Read
   `GET /api/faults` instead.
+- A cylinder node (`[(text)]`) in a Mermaid diagram has a darker lid. The lid
+  gets taller as the node gets wider, from 6 to 12 px, so a wide cylinder no
+  longer looks flat.
+- A diamond node (`{text}`) wraps its label until it is no more than twice as
+  wide as it is high. Before, a long label made a flat diamond, such as 293 by
+  60 px.
+- Diamond, hexagon, lean, trapezoid, and asymmetric nodes have rounded corners.
+- An edge ends on the outline of a node where the outline does not fill its
+  box: at the rounded tip of a diamond, and at the slanted side of a lean,
+  trapezoid, or asymmetric node in a `LR` or `RL` flowchart. Before, a gap
+  could stay between the edge and the node.
 
 ### Fixed
 

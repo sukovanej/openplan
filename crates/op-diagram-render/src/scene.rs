@@ -92,7 +92,7 @@ pub enum Outline {
     Rounded,
     Stadium,
     Subroutine,
-    Cylinder,
+    Cylinder { cap: f32 },
     Circle,
     DoubleCircle,
     Asymmetric,

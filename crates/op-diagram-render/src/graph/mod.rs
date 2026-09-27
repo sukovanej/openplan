@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use op_diagram::{Direction, Graph, Shape, Stroke};
 
 use crate::scene::{ClusterBox, EdgeLabel, EdgePath, NodeBox, Point, Rect, Scene};
+use crate::shape::{self, Side};
 use order::{Level, Structure};
 use rank::Constraint;
 use route::{Chain, Ends};
@@ -103,6 +104,32 @@ impl Frame {
             y: center.y - height / 2.0,
             width,
             height,
+        }
+    }
+
+    fn depth_side(self, after: bool) -> Side {
+        match (self.direction, after) {
+            (Direction::Down, true) | (Direction::Up, false) => Side::Bottom,
+            (Direction::Down, false) | (Direction::Up, true) => Side::Top,
+            (Direction::Right, true) | (Direction::Left, false) => Side::Right,
+            (Direction::Right, false) | (Direction::Left, true) => Side::Left,
+        }
+    }
+
+    fn breadth_side(self) -> Side {
+        if self.vertical() {
+            Side::Right
+        } else {
+            Side::Bottom
+        }
+    }
+
+    // A depth offset from the middle of a box, as an offset along its side that faces across the
+    // ranks.
+    fn along_breadth_side(self, depth: f32) -> f32 {
+        match self.direction {
+            Direction::Down | Direction::Right => depth,
+            Direction::Up | Direction::Left => -depth,
         }
     }
 
@@ -572,13 +599,16 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
         .map(|(chain, ends)| route::links(chain, ends, center))
         .collect();
     let tracks = route::tracks(&paths, &chains, &vertex_rank, ranks);
-    // Off its middle, a cylinder's top and bottom curve toward its body, so a line there ends where
-    // the curve is.
-    let cap = |vertex: usize, x: f32| match vertices[vertex].kind {
-        Kind::Node(node) if orient.vertical() && graph.nodes[node].shape == Shape::Cylinder => {
-            let reach = (x - center[vertex]) / (vertices[vertex].breadth / 2.0);
-            size::CYLINDER_CAP * (1.0 - (1.0 - reach * reach).max(0.0).sqrt())
-        }
+    // An outline that does not fill its box, such as a diamond tip or a cylinder lid, sits in from
+    // the box side, so a line ends where the outline is.
+    let inset = |vertex: usize, breadth: f32, after: bool| match vertices[vertex].kind {
+        Kind::Node(node) => shape::inset(
+            &bodies[node].outline,
+            bodies[node].width,
+            bodies[node].height,
+            orient.depth_side(after),
+            breadth - center[vertex],
+        ),
         _ => 0.0,
     };
 
@@ -665,7 +695,7 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
         vertices: &vertices,
         rows: &rows,
         group_depth: &group_depth,
-        cap: &cap,
+        inset: &inset,
     };
     let mut edges = Vec::new();
     for (index, chain) in chains.iter().enumerate() {
@@ -729,11 +759,20 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
             let reach = LOOP_REACH + LOOP_NEST * nested as f32;
             let spread =
                 (LOOP_SPREAD + LOOP_NEST / 2.0 * nested as f32).min(body_depth / 2.0 - 2.0);
+            let touch = |depth: f32| {
+                side - shape::inset(
+                    &bodies[node].outline,
+                    bodies[node].width,
+                    bodies[node].height,
+                    frame.breadth_side(),
+                    frame.along_breadth_side(depth),
+                )
+            };
             let points = [
-                (side, middle - spread),
+                (touch(-spread), middle - spread),
                 (side + reach, middle - spread),
                 (side + reach, middle + spread),
-                (side, middle + spread),
+                (touch(spread), middle + spread),
             ]
             .into_iter()
             .map(|(breadth, depth)| frame.point(breadth, depth))
@@ -841,7 +880,7 @@ struct Router<'a> {
     vertices: &'a [Vertex],
     rows: &'a Rows,
     group_depth: &'a [(f32, f32)],
-    cap: &'a dyn Fn(usize, f32) -> f32,
+    inset: &'a dyn Fn(usize, f32, bool) -> f32,
 }
 
 impl Router<'_> {
@@ -854,12 +893,16 @@ impl Router<'_> {
         let start = match chain.upper_cluster {
             Some(group) => self.group_depth[group].1,
             None => {
-                self.rows.middle(first.rank) + first.depth / 2.0 - (self.cap)(first_vertex, exit)
+                self.rows.middle(first.rank) + first.depth / 2.0
+                    - (self.inset)(first_vertex, exit, true)
             }
         };
         let finish = match chain.lower_cluster {
             Some(group) => self.group_depth[group].0,
-            None => self.rows.middle(last.rank) - last.depth / 2.0 + (self.cap)(last_vertex, entry),
+            None => {
+                self.rows.middle(last.rank) - last.depth / 2.0
+                    + (self.inset)(last_vertex, entry, false)
+            }
         };
         let mut points = vec![(exit, start)];
         for (at, &(from, to)) in path.iter().enumerate() {

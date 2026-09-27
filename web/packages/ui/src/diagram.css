@@ -173,6 +173,12 @@
   stroke: var(--status);
   fill: color-mix(in oklab, var(--status) 10%, var(--background));
 }
+.op-diagram .outline.lid {
+  fill: var(--diagram-table-header);
+}
+.op-diagram .node[class*="status-"] .outline.lid {
+  fill: color-mix(in oklab, var(--status) 22%, var(--background));
+}
 .op-diagram .cluster[class*="status-"] .cluster-box {
   stroke: var(--status);
   fill: color-mix(in oklab, var(--status) 5%, var(--background));
