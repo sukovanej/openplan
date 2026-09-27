@@ -9,7 +9,7 @@ use axum::http::{Request, StatusCode, header};
 use axum::response::Response;
 use http_body_util::BodyExt;
 use op_api::BackendKind;
-use op_backend::{Actor, Edit, Op};
+use op_backend::{Actor, Edit, Op, Signer};
 use op_server::{AppState, Location, Project, app};
 use op_task::{Status, Task};
 use op_tracker::Tracker;
@@ -57,7 +57,12 @@ pub fn repository(dir: &Path) {
     identify(dir);
 }
 
+// Git names who signs every write, so a local store sits in a checkout that names someone. The
+// developer's own `~/.gitconfig` would name someone too, and CI has none.
 pub fn open(name: &str, dir: &Path, kind: BackendKind) -> Project {
+    if op_backend_git::inspect(dir).is_none() {
+        repository(dir);
+    }
     let location = Location::find(dir, Some(kind)).unwrap();
     Project::open(name, location).unwrap()
 }
@@ -65,7 +70,7 @@ pub fn open(name: &str, dir: &Path, kind: BackendKind) -> Project {
 pub fn started(project: Project, abbreviation: &str) -> Project {
     project
         .tracker()
-        .init(project.machine(), abbreviation.parse().unwrap())
+        .init(&project.sign().unwrap(), abbreviation.parse().unwrap())
         .unwrap();
     project.reload();
     project
@@ -107,7 +112,7 @@ pub fn seed(state: &AppState, files: &[(&str, &str)]) {
     project
         .tracker()
         .backend()
-        .commit(project.machine(), &mut |_| {
+        .commit(&project.sign().unwrap(), &mut |_| {
             Ok(Edit::new("Seed the tasks", ops.clone()))
         })
         .unwrap();
@@ -120,7 +125,9 @@ pub fn task_file(status: &str, title: &str, extra: &str) -> String {
 
 // A second handle on the same storage, as another process holds it.
 pub fn other_process(project: &Project) -> Tracker {
-    let backend = op_server::open_backend(project.location(), &Actor::new("Bob"), false).unwrap();
+    let backend =
+        op_server::open_backend(project.location(), &Signer::fixed(Actor::new("Bob")), false)
+            .unwrap();
     Tracker::new(backend)
 }
 

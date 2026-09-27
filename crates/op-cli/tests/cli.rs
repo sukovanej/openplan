@@ -1696,6 +1696,7 @@ fn comment_refuses_an_unsigned_entry() {
     let project = Project::local();
     let id = project.create("Ship login");
     git(project.path(), &["config", "--unset", "user.name"]);
+    project.home.forget_git_name();
 
     let out = project.run(&["tasks", "comment", &id, "hello"]);
 
@@ -1705,6 +1706,35 @@ fn comment_refuses_an_unsigned_entry() {
         "stderr: {}",
         stderr(&out)
     );
+}
+
+#[test]
+fn a_write_with_no_git_name_is_refused_and_the_project_says_why() {
+    let project = Project::local();
+    project.create("Before");
+    git(project.path(), &["config", "--unset", "user.name"]);
+    project.home.forget_git_name();
+
+    let refused = project.run(&["tasks", "create", "Unsigned"]);
+    assert!(!refused.status.success());
+    assert!(
+        stderr(&refused).contains("git config --global user.name"),
+        "stderr: {}",
+        stderr(&refused)
+    );
+    let listed = ok(project.run(&["tasks", "list"]));
+    assert!(listed.contains("Before"), "a read needs no name: {listed}");
+    let projects = ok(project.run(&["project", "list"]));
+    assert!(
+        projects.contains("!       git `user.name` is not set"),
+        "{projects}"
+    );
+
+    git(project.path(), &["config", "user.name", "Ann"]);
+    project.create("After");
+    common::wait_until(std::time::Duration::from_secs(15), || {
+        !ok(project.run(&["project", "list"])).contains("user.name")
+    });
 }
 
 #[test]

@@ -116,6 +116,7 @@ fn integrate(
         if ours == Some(theirs) || (base == Some(theirs)) {
             return Ok(ours);
         }
+        let machine = inner.signer.sign()?;
         let fast_forward = ours.is_none() || base == ours;
         let (next, message) = match fast_forward {
             true => (theirs, "Fast-forward to the remote tasks".to_owned()),
@@ -130,14 +131,14 @@ fn integrate(
                     &repo,
                     merged,
                     &[ours, theirs],
-                    &inner.machine,
+                    &machine,
                     op_backend::now(),
                     &message,
                 )?;
                 (commit, message)
             }
         };
-        if !objects::move_reference(&repo, TASKS_REF, ours, next, &inner.machine, &message)? {
+        if !objects::move_reference(&repo, TASKS_REF, ours, next, &machine, &message)? {
             continue;
         }
         let changes = inner.changes_between(ours, Some(next))?;

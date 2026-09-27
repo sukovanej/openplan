@@ -38,10 +38,44 @@ fn with_registry(home: &Path, projects: impl IntoIterator<Item = Project>) -> Ap
     AppState::new(projects).with_registry(home.join(REGISTRY_FILE))
 }
 
+// The CLI signs every registration, so a directory outside git needs no git identity of its own.
+const WRITER: (&str, &str) = (op_api::AUTHOR_HEADER, "Test");
+
 async fn register(state: &AppState, body: Value) -> (StatusCode, Value) {
-    let response = send(state, "POST", "/api/projects", Some(body)).await;
+    let response = send_as(state, "POST", "/api/projects", Some(body), &[WRITER]).await;
     let status = response.status();
     (status, body_json(response).await)
+}
+
+async fn create_signed(state: &AppState, project: &str, title: &str) -> String {
+    let response = send_as(
+        state,
+        "POST",
+        &format!("/api/projects/{project}/tasks"),
+        Some(json!({ "title": title })),
+        &[WRITER],
+    )
+    .await;
+    let status = response.status();
+    let body = body_json(response).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    body["id"].as_str().unwrap().to_owned()
+}
+
+async fn faults_of(state: &AppState, project: &str) -> Vec<(String, String)> {
+    json_of(state, "/api/faults")
+        .await
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|fault| fault["project"] == project)
+        .map(|fault| {
+            (
+                fault["kind"].as_str().unwrap().to_owned(),
+                fault["message"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
 }
 
 fn project_view<'a>(listed: &'a Value, name: &str) -> &'a Value {
@@ -58,7 +92,7 @@ fn break_config(state: &AppState, name: &str) {
     project
         .tracker()
         .backend()
-        .commit(project.machine(), &mut |_| {
+        .commit(&project.sign().unwrap(), &mut |_| {
             Ok(op_backend::Edit::new(
                 "Break the config",
                 vec![op_backend::Op::put("config.toml", "abbreviation = 7\n")],
@@ -74,7 +108,7 @@ fn write_config(state: &AppState, name: &str, abbreviation: &str) {
     project
         .tracker()
         .backend()
-        .commit(project.machine(), &mut |_| {
+        .commit(&project.sign().unwrap(), &mut |_| {
             Ok(op_backend::Edit::new(
                 "Write the config",
                 vec![op_backend::Op::put("config.toml", text.as_str())],
@@ -234,20 +268,18 @@ async fn a_broken_config_demotes_one_project_and_leaves_the_other_serving() {
 
     break_config(&state, "alpha");
 
-    let listed = json_of(&state, "/api/projects").await;
-    let alpha = project_view(&listed, "alpha");
-    assert_eq!(alpha["status"]["state"], "error");
-    let reason = alpha["status"]["reason"].as_str().unwrap();
-    assert!(reason.contains("abbreviation"), "{reason}");
-    assert_eq!(project_view(&listed, "beta")["status"]["state"], "ok");
+    let faults = faults_of(&state, "alpha").await;
+    assert_eq!(faults.len(), 1, "{faults:?}");
+    assert_eq!(faults[0].0, "unreadable");
+    assert!(faults[0].1.contains("abbreviation"), "{faults:?}");
+    assert_eq!(faults_of(&state, "beta").await, []);
     assert_eq!(
         board_rows(&state, "/api/board").await,
         vec![("beta".to_owned(), "BBB-1".to_owned(), 0)]
     );
 
     write_config(&state, "alpha", "AAA");
-    let listed = json_of(&state, "/api/projects").await;
-    assert_eq!(project_view(&listed, "alpha")["status"]["state"], "ok");
+    assert_eq!(faults_of(&state, "alpha").await, []);
     assert_eq!(board_rows(&state, "/api/board").await.len(), 2);
 }
 
@@ -262,13 +294,13 @@ async fn a_project_whose_tasks_cannot_be_read_says_so() {
 
     std::fs::write(&reference, "0123456789012345678901234567890123456789\n").unwrap();
     project(&state).reload();
-    let listed = json_of(&state, "/api/projects").await;
-    assert_eq!(listed[0]["status"]["state"], "error", "{listed}");
+    let faults = faults_of(&state, PROJECT).await;
+    assert_eq!(faults.len(), 1, "{faults:?}");
+    assert_eq!(faults[0].0, "unreadable");
 
     std::fs::write(&reference, tip).unwrap();
     project(&state).reload();
-    let listed = json_of(&state, "/api/projects").await;
-    assert_eq!(listed[0]["status"]["state"], "ok", "{listed}");
+    assert_eq!(faults_of(&state, PROJECT).await, []);
     assert_eq!(
         ids(&json_of(&state, "/api/projects/test/tasks").await),
         vec!["OPP-1"]
@@ -336,8 +368,13 @@ async fn a_removed_root_demotes_the_project_and_a_restored_one_promotes_it() {
         StatusCode::OK,
         "the daemon keeps serving; only the project with the missing root is demoted"
     );
-    let listed = json_of(&state, "/api/projects").await;
-    assert_eq!(project_view(&listed, "alpha")["status"]["state"], "error");
+    let faults = faults_of(&state, "alpha").await;
+    assert_eq!(
+        faults.len(),
+        1,
+        "only the missing root, which stops everything else: {faults:?}"
+    );
+    assert_eq!(faults[0].0, "root_gone");
 
     std::fs::create_dir(&root).unwrap();
     assert!(vanishing.poll(), "the root is back");
@@ -394,11 +431,10 @@ async fn registering_a_directory_with_an_abbreviation_starts_its_tasks() {
         "a directory outside git keeps its tasks in files"
     );
     assert_eq!(view["abbreviation"], "OPP");
-    assert_eq!(view["status"]["state"], "ok");
     assert!(dir.path().join(".plan/config.toml").exists());
 
     let name = view["name"].as_str().unwrap().to_owned();
-    let id = create_in(&state, &name, json!({ "title": "First" })).await;
+    let id = create_signed(&state, &name, "First").await;
     assert_eq!(id, "OPP-1");
 
     let registry = ProjectRegistry::read(&home.path().join(REGISTRY_FILE))
@@ -490,7 +526,6 @@ async fn registering_a_project_twice_answers_the_entry_it_already_has() {
     let (status, entry) =
         register(&state, json!({ "path": dir.path(), "abbreviation": "AAA" })).await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(entry["status"]["state"], "ok");
 
     let (status, again) = register(&state, json!({ "path": dir.path() })).await;
     assert_eq!(
@@ -520,12 +555,7 @@ async fn a_restarted_daemon_serves_what_it_registered() {
         let (status, view) =
             register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
         assert_eq!(status, StatusCode::CREATED);
-        create_in(
-            &state,
-            view["name"].as_str().unwrap(),
-            json!({ "title": "Kept" }),
-        )
-        .await;
+        create_signed(&state, view["name"].as_str().unwrap(), "Kept").await;
     }
     drop(state);
 

@@ -21,8 +21,9 @@ import {
 } from "@openplan/ui"
 
 import { createTag, deleteTag, listTags, patchTag, TaskRejected } from "../lib/api"
+import { useDemotedReason } from "../lib/faults"
 import { errorText } from "../lib/format"
-import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { useProject, useProjects } from "../lib/projects"
 import { tagsKey, useProjectMutation } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
@@ -37,6 +38,7 @@ export function TagsRoute() {
   const { project = "" } = useParams()
   const projects = useProjects()
   const known = useProject(project)
+  const reason = useDemotedReason(project)
   const tags = useQuery({
     queryKey: tagsKey(project),
     queryFn: abortable(listTags(project)),
@@ -49,7 +51,6 @@ export function TagsRoute() {
   if (projects !== undefined && known === undefined) {
     return <EmptyState title="No such project" detail={project} />
   }
-  const reason = demotedReason(known)
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use op_api::{
     ApiErrorBody, BackendKind, Comment, CreateComment, CreateDoc, CreateTag, CreateTask,
-    DaemonInfo, DocDetail, DocListItem, DocPatch, HistoryEntry, ProjectView, Refusal,
+    DaemonInfo, DocDetail, DocListItem, DocPatch, Fault, HistoryEntry, ProjectView, Refusal,
     RegisterProject, RenameProject, SearchHit, SyncResult, SyncView, TagPatch, TagView,
     TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView, WriteTaskFile,
 };
@@ -231,6 +231,10 @@ impl Client {
             base_url,
             &["sync"],
         )?)
+    }
+
+    pub fn faults(&self, base_url: &str) -> Result<Vec<Fault>, ClientError> {
+        self.read(Url::parse(&format!("{base_url}/api/faults")).map_err(|_| unusable(base_url))?)
     }
 
     pub fn sync(&self, base_url: &str, project: &str) -> Result<SyncResult, ClientError> {

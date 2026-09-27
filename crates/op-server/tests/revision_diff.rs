@@ -90,7 +90,7 @@ async fn a_moved_task_diffs_its_old_file_against_its_new_one() {
         project
             .tracker()
             .backend()
-            .commit(project.machine(), &mut |_| {
+            .commit(&project.sign().unwrap(), &mut |_| {
                 Ok(Edit::new(
                     "Move the task",
                     vec![Op::remove(from), Op::put(path, moved.as_bytes())],

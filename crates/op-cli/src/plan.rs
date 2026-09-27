@@ -2,9 +2,9 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 use op_api::{
-    Comment, CreateComment, CreateDoc, CreateTag, DocDetail, DocListItem, DocPatch, HistoryEntry,
-    ProjectView, Refusal, SearchHit, SyncResult, SyncView, TagPatch, TagView, TaskAtRevision,
-    TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    Comment, CreateComment, CreateDoc, CreateTag, DocDetail, DocListItem, DocPatch, Fault,
+    HistoryEntry, ProjectView, Refusal, SearchHit, SyncResult, SyncView, TagPatch, TagView,
+    TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
 };
 use op_client::Client;
 use op_server::Location;
@@ -125,6 +125,14 @@ impl Plan {
 
     pub fn sync_status(&self) -> Result<SyncView> {
         served(self.client.sync_status(&self.base_url, &self.project))
+    }
+
+    pub fn faults(&self) -> Result<Vec<Fault>> {
+        let faults = self.client.faults(&self.base_url)?;
+        Ok(faults
+            .into_iter()
+            .filter(|fault| fault.project == self.project)
+            .collect())
     }
 
     pub fn docs(&self) -> Result<Vec<DocListItem>> {

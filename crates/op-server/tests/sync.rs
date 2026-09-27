@@ -178,7 +178,7 @@ async fn a_sync_merges_two_offline_creates_and_keeps_both() {
 }
 
 #[tokio::test]
-async fn a_failed_sync_is_a_502_and_the_status_keeps_the_error() {
+async fn a_failed_sync_is_a_502_and_a_fault_of_the_project() {
     let team = Team::new();
     let alice_path = team.clone("alice");
     let alice = member(&alice_path, Some("OPP"));
@@ -200,15 +200,20 @@ async fn a_failed_sync_is_a_502_and_the_status_keeps_the_error() {
     assert!(message_of(&body_json(failed).await).starts_with("sync:"));
 
     let status = json_of(&alice, "/api/projects/test/sync").await;
-    assert!(status["error"].is_string(), "{status}");
     assert!(status["last_attempt"].is_string(), "{status}");
     assert_eq!(
         status["last_success"], succeeded,
         "a failure keeps the last success"
     );
-    assert_eq!(
-        json_of(&alice, "/api/projects").await[0]["sync"]["error"],
-        status["error"]
+    let faults = json_of(&alice, "/api/faults").await;
+    assert_eq!(faults[0]["project"], "test", "{faults}");
+    assert_eq!(faults[0]["kind"], "sync_failed", "{faults}");
+    assert!(
+        faults[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("the last sync failed: sync:"),
+        "{faults}"
     );
 }
 

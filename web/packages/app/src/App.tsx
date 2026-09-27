@@ -5,6 +5,7 @@ import { DiagramDrawer, DOCS_ROUTE, FLOW_ROUTE } from "@openplan/task-ui"
 
 import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"
+import { FaultStatus } from "./components/fault-status"
 import { Flash } from "./components/flash"
 import { HelpOverlay } from "./components/help-overlay"
 import { MutationError } from "./components/mutation-error"
@@ -39,6 +40,7 @@ export function App() {
             <Waypoints className="size-3.5" />
             Flow
           </Link>
+          <FaultStatus />
           <SyncStatus />
           <ThemeToggle />
         </div>

@@ -8,9 +8,10 @@ import { EmptyState, Panel, PanelBody, PanelHeader, PanelTitle, SkeletonList } f
 import { OlderRevisions } from "../components/older-revisions"
 import { RevisionList } from "../components/revision-list"
 import { getBoard, listAllDocs } from "../lib/api"
+import { useDemotedReason } from "../lib/faults"
 import { errorText } from "../lib/format"
 import { useProjectHistory } from "../lib/history"
-import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { useProject, useProjects } from "../lib/projects"
 import { allDocsKey, boardKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
@@ -38,6 +39,7 @@ export function ActivityRoute() {
   const { project = "" } = useParams()
   const projects = useProjects()
   const known = useProject(project)
+  const reason = useDemotedReason(project)
   useRowCursor(NO_ROWS)
 
   // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
@@ -45,7 +47,6 @@ export function ActivityRoute() {
   if (projects !== undefined && known === undefined) {
     return <EmptyState title="No such project" detail={project} />
   }
-  const reason = demotedReason(known)
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }

@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client"
 import { MemoryRouter } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { ProjectView, SyncView } from "@openplan/api-client"
+import type { Fault, ProjectView, SyncView } from "@openplan/api-client"
 
 import { SYNC_LABEL, SyncStatus } from "../src/components/sync-status"
 import { connectionStore } from "../src/lib/connection"
@@ -20,7 +20,11 @@ const view = (over: Partial<SyncView> = {}): SyncView => ({
   syncing: false,
   ...over,
 })
-const sync = (project: string, over: Partial<SyncView> = {}): ProjectSync => ({ project, view: view(over) })
+const sync = (project: string, over: Partial<SyncView> = {}, failure?: string): ProjectSync => ({
+  project,
+  view: view(over),
+  failure,
+})
 
 describe("the sync state", () => {
   it("counts what every project has to send and to receive", () => {
@@ -28,7 +32,7 @@ describe("the sync state", () => {
   })
 
   it("names the projects whose last sync failed", () => {
-    expect(failed([sync("a"), sync("b", { error: "no route" })]).map((one) => one.project)).toEqual(["b"])
+    expect(failed([sync("a"), sync("b", {}, "no route")]).map((one) => one.project)).toEqual(["b"])
   })
 
   it("is idle when nothing waits", () => {
@@ -41,11 +45,11 @@ describe("the sync state", () => {
 
   // A failure is what keeps the count from going down, so it outranks the count.
   it("has failed when one project's last sync failed, whatever else waits", () => {
-    expect(syncState([sync("a", { ahead: 4 }), sync("b", { error: "no route" })], true, false)).toBe("failed")
+    expect(syncState([sync("a", { ahead: 4 }), sync("b", {}, "no route")], true, false)).toBe("failed")
   })
 
   it("is syncing while a sync runs", () => {
-    expect(syncState([sync("a", { error: "no route" })], true, true)).toBe("syncing")
+    expect(syncState([sync("a", {}, "no route")], true, true)).toBe("syncing")
   })
 
   it("is syncing while the daemon runs a sync of its own", () => {
@@ -54,7 +58,7 @@ describe("the sync state", () => {
 
   // Nothing can sync while the daemon is down, and what the control holds is already stale.
   it("is offline whatever the daemon last reported", () => {
-    expect(syncState([sync("a", { ahead: 3, error: "no route" })], false, true)).toBe("offline")
+    expect(syncState([sync("a", { ahead: 3 }, "no route")], false, true)).toBe("offline")
   })
 })
 
@@ -64,19 +68,19 @@ describe("which projects sync", () => {
     root: "/repo",
     backend: "git",
     abbreviation: "OPP",
-    status: { state: "ok" },
     sync: view(),
     ...over,
   })
+  const gone: Fault = { project: "openplan", kind: "root_gone", message: "the project root /repo no longer exists" }
 
   it("takes a git project that has a remote", () => {
-    expect(syncable(project({}))).toBe(true)
+    expect(syncable(project({}), [])).toBe(true)
   })
 
   it("leaves out a local project, a repository without a remote, and a project that is not served", () => {
-    expect(syncable(project({ backend: "local", sync: undefined }))).toBe(false)
-    expect(syncable(project({ sync: undefined }))).toBe(false)
-    expect(syncable(project({ status: { state: "error", reason: "gone" } }))).toBe(false)
+    expect(syncable(project({ backend: "local", sync: undefined }), [])).toBe(false)
+    expect(syncable(project({ sync: undefined }), [])).toBe(false)
+    expect(syncable(project({}), [gone])).toBe(false)
   })
 })
 
@@ -88,8 +92,8 @@ const served = vi.hoisted(() => ({
     syncing: boolean
     last_success?: string
     last_attempt?: string
-    error?: string
   },
+  faults: [] as Array<Fault>,
   reads: 0,
   synced: [] as Array<string>,
 }))
@@ -104,11 +108,11 @@ vi.mock("../src/lib/api", async () => {
         git_common_dir: "/repo/.git",
         backend: "git",
         abbreviation: "OPP",
-        status: { state: "ok" },
         sync: { remote: "origin", ahead: 1, behind: 0, syncing: false },
       },
-      { name: "notes", root: "/notes", backend: "local", abbreviation: "NTS", status: { state: "ok" } },
+      { name: "notes", root: "/notes", backend: "local", abbreviation: "NTS" },
     ]),
+    listFaults: Effect.sync(() => served.faults),
     getSync: () =>
       Effect.sync(() => {
         served.reads += 1
@@ -133,6 +137,7 @@ afterEach(async () => {
     held.container.remove()
   }
   served.view = { remote: "origin", ahead: 1, behind: 0, syncing: false }
+  served.faults = []
   served.reads = 0
   served.synced = []
   queryClient.clear()
@@ -195,15 +200,26 @@ describe("the sync control", () => {
     expect(served.reads).toBe(0)
   })
 
-  it("re-reads the state when the daemon says a sync ran, and marks a failed sync", async () => {
-    const root = await openTheControl()
-    served.view = { remote: "origin", ahead: 1, behind: 0, syncing: false, error: "could not reach origin" }
+  it("re-reads the state when the daemon says a sync ran", async () => {
+    await openTheControl()
 
     queryInvalidator.refreshSync("openplan")
     await tick()
     await tick()
 
     expect(served.reads).toBe(1)
+  })
+
+  it("marks a failed sync when the daemon says a fault started", async () => {
+    const root = await openTheControl()
+    served.faults = [
+      { project: "openplan", kind: "sync_failed", message: "the last sync failed: could not reach origin" },
+    ]
+
+    queryInvalidator.refreshFaults()
+    await tick()
+    await tick()
+
     expect(root.querySelector('[aria-label="The last sync failed"]')).not.toBeNull()
   })
 

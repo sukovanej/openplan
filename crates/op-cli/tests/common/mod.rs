@@ -15,6 +15,10 @@ pub fn openplan(home: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_openplan"));
     cmd.env("OPENPLAN_HOME", home).env("OPENPLAN_PORT", "0");
     isolate_git(&mut cmd);
+    let global = global_git_config(home);
+    if global.is_file() {
+        cmd.env("GIT_CONFIG_GLOBAL", global);
+    }
     // The agent is detected from the environment and from the processes above this one, so a test
     // run from inside a coding agent would sign its writes with that agent. A named one is the
     // same everywhere.
@@ -32,9 +36,15 @@ pub fn openplan(home: &Path) -> Command {
     cmd
 }
 
-// The repository under test is the only git config a test may read. Without this a developer's own
-// `~/.gitconfig` reaches the command, and a test about an unset field passes here and fails on a
-// machine that sets it.
+// The git config of the person who runs the commands of a `Home`, so a store outside a repository
+// has a name to sign its writes with.
+fn global_git_config(home: &Path) -> PathBuf {
+    home.join("gitconfig")
+}
+
+// The repository under test and the global config of its `Home` are the only git config a test may
+// read. Without this a developer's own `~/.gitconfig` reaches the command, and a test about an unset
+// field passes here and fails on a machine that sets it.
 fn isolate_git(cmd: &mut Command) {
     cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null");
@@ -136,9 +146,15 @@ pub struct Home {
 
 impl Home {
     pub fn new() -> Self {
-        Self {
+        let home = Self {
             dir: tempfile::tempdir().unwrap(),
-        }
+        };
+        write(&global_git_config(home.path()), "[user]\n\tname = Test\n");
+        home
+    }
+
+    pub fn forget_git_name(&self) {
+        write(&global_git_config(self.path()), "");
     }
 
     pub fn path(&self) -> &Path {

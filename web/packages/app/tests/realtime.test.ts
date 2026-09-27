@@ -12,6 +12,7 @@ const page = vi.hoisted(() => ({
 vi.mock("../src/lib/query-client", () => ({
   queryInvalidator: {
     refreshProjects: () => refreshed.calls.push("projects"),
+    refreshFaults: () => refreshed.calls.push("faults"),
     refreshList: (project: string) => refreshed.calls.push(`list ${project}`),
     refreshTask: (project: string, id: string) => refreshed.calls.push(`task ${project}/${id}`),
     refreshDoc: (project: string, name: string) => refreshed.calls.push(`doc ${project}/${name}`),
@@ -111,7 +112,7 @@ describe("the event stream", () => {
   it("reads the projects and everything on screen again when the first stream opens", async () => {
     const stream = await start()
     expect(stream.url).toBe("/api/events")
-    expect(refreshed.calls).toEqual(["projects", "screen every"])
+    expect(refreshed.calls).toEqual(["projects", "faults", "screen every"])
   })
 
   it("refreshes each read once for a burst of events, after a short wait", async () => {
@@ -153,7 +154,7 @@ describe("the event stream", () => {
     const next = await reconnect(stream)
 
     expect(next.url).toBe("/api/events")
-    expect(refreshed.calls).toEqual(["projects", "screen every"])
+    expect(refreshed.calls).toEqual(["projects", "faults", "screen every"])
   })
 
   it("waits ten seconds before it connects again after a stop", async () => {
@@ -191,7 +192,7 @@ describe("a new version of the daemon", () => {
 
     expect(await drop(stream)).toBeUndefined()
     expect(page.reloads).toBe(1)
-    expect(refreshed.calls).toEqual(["projects", "screen every"])
+    expect(refreshed.calls).toEqual(["projects", "faults", "screen every"])
   })
 
   it("does not reload the page for the same version", async () => {

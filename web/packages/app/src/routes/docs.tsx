@@ -30,8 +30,9 @@ import {
 import { ChildGuide, GridRow, RowGrid, type RowSlot, TreeGuides } from "../components/row-grid"
 import { listAllDocs } from "../lib/api"
 import { docTree, type DocTreeRow } from "../lib/doc-tree"
+import { demotedReason, useFaults } from "../lib/faults"
 import { errorText } from "../lib/format"
-import { demotedReason, useProjects } from "../lib/projects"
+import { useProjects } from "../lib/projects"
 import { allDocsKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
@@ -106,6 +107,7 @@ function DocGrid({ docs, project }: { docs: ReadonlyArray<DocListItem>; project:
 // store am I looking at — for a page that is not under one.
 function ProjectFilter({ selected }: { selected: string | undefined }) {
   const projects = useProjects()
+  const faults = useFaults()
   if (projects === undefined || projects.length === 0) return null
   return (
     <nav
@@ -119,7 +121,7 @@ function ProjectFilter({ selected }: { selected: string | undefined }) {
           to={docsPath(project.name)}
           label={project.name}
           active={selected === project.name}
-          reason={demotedReason(project)}
+          reason={demotedReason(faults, project.name)}
         />
       ))}
     </nav>

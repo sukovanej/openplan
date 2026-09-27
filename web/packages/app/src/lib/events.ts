@@ -23,6 +23,9 @@ export const ChangeEvent = Schema.Union([
     project: Schema.String,
   }),
   Schema.Struct({
+    kind: Schema.Literal("faults_changed"),
+  }),
+  Schema.Struct({
     kind: Schema.Literal("resync"),
   }),
   Schema.Struct({
@@ -34,6 +37,7 @@ export type ChangeEvent = typeof ChangeEvent.Type
 
 export interface Invalidator {
   readonly refreshProjects: () => void
+  readonly refreshFaults: () => void
   readonly refreshList: (project: string) => void
   readonly refreshTask: (project: string, id: string) => void
   readonly refreshDoc: (project: string, name: string) => void
@@ -94,9 +98,16 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
       inv.refreshSync(event.project)
       return
     }
+    // A fault started or ended. The change that started or ended it sends events of its own, which
+    // re-read what it changed, so only the faults are re-read.
+    case "faults_changed": {
+      inv.refreshFaults()
+      return
+    }
     // The stream dropped events and cannot say which, so nothing on screen can be trusted.
     case "resync": {
       inv.refreshProjects()
+      inv.refreshFaults()
       inv.refreshVisible()
       return
     }
@@ -109,6 +120,7 @@ export function applyChange(inv: Invalidator, event: ChangeEvent): void {
 
 interface Held {
   projects: boolean
+  faults: boolean
   everything: boolean
   readonly screens: Set<string>
   readonly lists: Set<string>
@@ -121,6 +133,7 @@ interface Held {
 
 const nothingHeld = (): Held => ({
   projects: false,
+  faults: false,
   everything: false,
   screens: new Set(),
   lists: new Set(),
@@ -135,6 +148,7 @@ const nothingHeld = (): Held => ({
 // of every screen covers them all.
 function release(target: Invalidator, held: Held): void {
   if (held.projects) target.refreshProjects()
+  if (held.faults) target.refreshFaults()
   if (held.everything) {
     target.refreshVisible()
     return
@@ -176,6 +190,10 @@ export function coalesced(target: Invalidator, schedule: (flush: () => void) => 
     refreshProjects: () =>
       hold((due) => {
         due.projects = true
+      }),
+    refreshFaults: () =>
+      hold((due) => {
+        due.faults = true
       }),
     refreshList: (project) => hold((due) => due.lists.add(project)),
     refreshTask: (project, id) =>

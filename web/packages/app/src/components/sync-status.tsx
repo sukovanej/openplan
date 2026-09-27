@@ -97,7 +97,7 @@ function ProjectSyncRow({
   syncNow: ReturnType<typeof useSyncNow>
   onLeave: () => void
 }) {
-  const { project, view } = sync
+  const { project, view, failure } = sync
   const state = syncState([sync], live, syncNow.variables === project && syncNow.isPending)
   return (
     <li aria-label={project} className="flex items-center gap-3 pl-1 text-xs">
@@ -113,8 +113,8 @@ function ProjectSyncRow({
           </>
         )}
       </span>
-      {view.error !== undefined && (
-        <Tooltip content={`The last sync failed: ${view.error}`}>
+      {failure !== undefined && (
+        <Tooltip content={failure}>
           <CloudAlert role="img" aria-label="The last sync failed" className="text-warning size-3.5" />
         </Tooltip>
       )}

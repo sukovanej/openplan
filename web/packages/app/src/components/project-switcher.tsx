@@ -4,7 +4,8 @@ import { Link, useLocation } from "react-router-dom"
 import { boardPath, taskRouteOf } from "@openplan/task-ui"
 import { cn, Tooltip } from "@openplan/ui"
 
-import { demotedReason, useProjects } from "../lib/projects"
+import { demotedReason, useFaults } from "../lib/faults"
+import { useProjects } from "../lib/projects"
 
 const MERGED = "All projects"
 
@@ -13,6 +14,7 @@ const MERGED = "All projects"
 // tooltip says why.
 export function ProjectSwitcher() {
   const projects = useProjects()
+  const faults = useFaults()
   const current = currentProject(useLocation().pathname)
   if (projects === undefined || projects.length === 0) return null
   return (
@@ -24,7 +26,7 @@ export function ProjectSwitcher() {
           to={boardPath(project.name)}
           label={project.name}
           active={current === project.name}
-          reason={demotedReason(project)}
+          reason={demotedReason(faults, project.name)}
         />
       ))}
     </nav>

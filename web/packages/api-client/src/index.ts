@@ -103,16 +103,16 @@ export const SourcePosition = Schema.Struct({
 }).annotate({ identifier: "SourcePosition" })
 export type Refusal = "tag_referenced" | "tag_unregistered"
 export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"]).annotate({ identifier: "Refusal" })
+export type FaultKind = "root_gone" | "unreadable" | "no_identity" | "sync_failed" | "outside_changes_unread"
+export const FaultKind = Schema.Literals([
+  "root_gone",
+  "unreadable",
+  "no_identity",
+  "sync_failed",
+  "outside_changes_unread",
+]).annotate({ identifier: "FaultKind" })
 export type BackendKind = "git" | "local"
 export const BackendKind = Schema.Literals(["git", "local"]).annotate({ identifier: "BackendKind" })
-export type ProjectStatus = { readonly state: "ok" } | { readonly reason: string; readonly state: "error" }
-export const ProjectStatus = Schema.Union(
-  [
-    Schema.Struct({ state: Schema.Literal("ok") }),
-    Schema.Struct({ reason: Schema.String, state: Schema.Literal("error") }),
-  ],
-  { mode: "oneOf" },
-).annotate({ identifier: "ProjectStatus" })
 export type Rfc3339 = string
 export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
 export type RenameProject = { readonly name: string }
@@ -381,6 +381,10 @@ export const ApiErrorBody = Schema.Struct({
   position: Schema.optionalKey(SourcePosition),
   reason: Schema.optionalKey(Refusal),
 }).annotate({ identifier: "ApiErrorBody" })
+export type Fault = { readonly kind: FaultKind; readonly message: string; readonly project: string }
+export const Fault = Schema.Struct({ kind: FaultKind, message: Schema.String, project: Schema.String }).annotate({
+  identifier: "Fault",
+})
 export type RegisterProject = { readonly abbreviation?: string; readonly backend?: BackendKind; readonly path: string }
 export const RegisterProject = Schema.Struct({
   abbreviation: Schema.optionalKey(Schema.String),
@@ -390,7 +394,6 @@ export const RegisterProject = Schema.Struct({
 export type SyncView = {
   readonly ahead: number
   readonly behind: number
-  readonly error?: string
   readonly last_attempt?: Rfc3339
   readonly last_success?: Rfc3339
   readonly remote: string
@@ -403,7 +406,6 @@ export const SyncView = Schema.Struct({
   behind: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
     Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
   ),
-  error: Schema.optionalKey(Schema.String),
   last_attempt: Schema.optionalKey(Rfc3339),
   last_success: Schema.optionalKey(Rfc3339),
   remote: Schema.String,
@@ -554,7 +556,6 @@ export type ProjectView = {
   readonly git_common_dir?: string
   readonly name: string
   readonly root: string
-  readonly status: ProjectStatus
   readonly sync?: SyncView
 }
 export const ProjectView = Schema.Struct({
@@ -563,7 +564,6 @@ export const ProjectView = Schema.Struct({
   git_common_dir: Schema.optionalKey(Schema.String),
   name: Schema.String,
   root: Schema.String,
-  status: ProjectStatus,
   sync: Schema.optionalKey(SyncView),
 }).annotate({ identifier: "ProjectView" })
 export type SyncResult = {
@@ -866,6 +866,8 @@ export type ListAllDocs404 = ApiErrorBody
 export const ListAllDocs404 = ApiErrorBody
 export type ListAllDocs503 = ApiErrorBody
 export const ListAllDocs503 = ApiErrorBody
+export type ListFaults200 = ReadonlyArray<Fault>
+export const ListFaults200 = Schema.Array(Fault)
 export type DrawFlowParams = {
   readonly project?: ReadonlyArray<string>
   readonly status?: ReadonlyArray<Status>
@@ -1456,6 +1458,15 @@ export const make = (
             "400": decodeError("ListAllDocs400", ListAllDocs400),
             "404": decodeError("ListAllDocs404", ListAllDocs404),
             "503": decodeError("ListAllDocs503", ListAllDocs503),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    listFaults: (options) =>
+      HttpClientRequest.get("/api/faults").pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(ListFaults200),
             orElse: unexpectedStatus,
           }),
         ),
@@ -2399,6 +2410,12 @@ export interface TasksClient {
     | TasksClientError<"ListAllDocs400", typeof ListAllDocs400.Type>
     | TasksClientError<"ListAllDocs404", typeof ListAllDocs404.Type>
     | TasksClientError<"ListAllDocs503", typeof ListAllDocs503.Type>
+  >
+  readonly listFaults: <Config extends OperationConfig>(
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListFaults200.Type, Config>,
+    HttpClientError.HttpClientError | SchemaError
   >
   readonly drawFlow: <Config extends OperationConfig>(
     options:

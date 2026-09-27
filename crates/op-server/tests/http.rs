@@ -1638,7 +1638,6 @@ fn optional_response_fields_are_absent_rather_than_nullable() {
         ("DocumentChange", "tag"),
         ("DocumentChange", "doc"),
         ("DocChange", "renamed_from"),
-        ("SyncView", "error"),
         ("ProjectView", "git_common_dir"),
     ] {
         assert_eq!(

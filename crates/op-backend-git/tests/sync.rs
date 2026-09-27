@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Edit, LogQuery, MergeInput, MergePolicy, Op,
-    Origin, PreferTheirs, Resolution,
+    Origin, PreferTheirs, Resolution, Signer,
 };
 use op_backend_git::{GitBackend, Options, TASKS_NAME, fetch_tasks, tracking_reference};
 
@@ -69,7 +69,11 @@ fn open(path: &Path) -> GitBackend {
 }
 
 fn open_with(path: &Path, policy: Arc<dyn MergePolicy>) -> GitBackend {
-    GitBackend::open(path, Options::new(policy)).expect("open")
+    GitBackend::open(path, Options::new(policy, machine())).expect("open")
+}
+
+fn machine() -> Signer {
+    Signer::fixed(Actor::new("openplan"))
 }
 
 fn put(backend: &dyn Backend, path: &str, text: &str) {
@@ -492,7 +496,7 @@ fn a_remote_that_never_answers_fails_the_sync_and_stops_ssh() {
         &["config", "core.sshCommand", ssh.to_str().expect("utf-8")],
     );
     git(dir.path(), &["config", "ssh.variant", "simple"]);
-    let mut options = Options::new(Arc::new(PreferTheirs));
+    let mut options = Options::new(Arc::new(PreferTheirs), machine());
     options.network_timeout = Duration::from_millis(500);
     let backend = GitBackend::open(dir.path(), options).expect("open");
 

@@ -33,8 +33,9 @@ impl GitBackend {
             let repo = inner.local();
             let tip = replay(&repo, dir)?;
             if let Some(tip) = tip {
+                let machine = inner.signer.sign()?;
                 let moved =
-                    objects::move_reference(&repo, TASKS_REF, None, tip, &inner.machine, "import")?;
+                    objects::move_reference(&repo, TASKS_REF, None, tip, &machine, "import")?;
                 if !moved {
                     return Err(BackendError::Contended);
                 }
@@ -69,7 +70,7 @@ impl GitBackend {
         }
         let uncommitted = !ops.is_empty()
             && self
-                .commit(&inner.machine, &mut |_| {
+                .commit(&inner.signer.sign()?, &mut |_| {
                     Ok(Edit::new(UNCOMMITTED_MESSAGE, ops.clone()))
                 })?
                 .is_some();

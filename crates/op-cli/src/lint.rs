@@ -41,8 +41,12 @@ pub fn run(root: &Path, keys: &[String], json: bool, skills_only: bool) -> Resul
     let mut docs = 0;
     if !skills_only {
         let location = Location::find_or_join(root)?;
-        let machine = op_server::machine_actor(&location.root);
-        let tracker = Tracker::new(op_server::open_backend(&location, &machine, false)?);
+        let signer = op_backend_git::signer(&location.root);
+        let backend = op_server::open_backend(&location, &signer, false)?;
+        // A hand edit that no one can sign stays out of the history, and a check without it would
+        // pass the files as they were.
+        backend.refresh()?;
+        let tracker = Tracker::new(backend);
         let mut index = Index::new();
         index.load(&tracker.plan()?)?;
         let wanted = wanted(&index, keys)?;
