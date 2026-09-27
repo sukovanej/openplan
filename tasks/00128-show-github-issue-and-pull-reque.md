@@ -26,16 +26,19 @@ When the project has no GitHub repository, every link shows `owner/repo#<n>`.
 
 The web UI does not know the repository of the project now. The daemon reads it from the git remote that the project syncs with (`origin` by default) and sends it in `ProjectView`.
 
+OPP-136 needs the same remote and the same short form. The task that merges first adds the parts below, and the other task uses them.
+
 ```mermaid
 flowchart LR
-  remote[(git remote URL)] -->|parse| daemon[Daemon]
-  daemon -->|ProjectView.github| web[Web UI]
+  remote[(git remote URL)] -->|op-forge parses| daemon[Daemon]
+  daemon -->|ProjectView.forge| web[Web UI]
   web --> body[Task body and comments]
 ```
 
-- Add an optional field `github` (`"owner/repo"`) to `ProjectView` in `crates/op-api/src/project.rs`. Leave the field out when the project has no remote, or when the remote is not on `github.com`.
-- Parse these remote URL forms: `https://github.com/owner/repo(.git)`, `git@github.com:owner/repo(.git)`, and `ssh://git@github.com/owner/repo(.git)`.
+- Add a crate `op-forge` that parses the remote URL. Parse these forms: `https://<host>/<path>(.git)`, `git@<host>:<path>(.git)`, and `ssh://git@<host>/<path>(.git)`. `github.com` is GitHub. OPP-136 adds GitLab.
+- Add an optional field `forge` (`{ kind, host, repo }`) to `ProjectView` in `crates/op-api/src/project.rs`. Leave the field out when the project has no remote, or when `op-forge` does not know the host.
 - Regenerate the web client with `mise run generate-web-client`.
+- Put the short form in one component in `web/packages/task-ui`. The "Pull requests" section of OPP-136 uses the same component.
 
 ## Requirements
 
