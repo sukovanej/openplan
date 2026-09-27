@@ -516,9 +516,9 @@ pub fn comments_of(body: &str) -> Vec<Comment> {
         .collect()
 }
 
-// The place counts from the top of the task file, the text that `openplan get` prints and an agent
-// edits. A fence in a comment sits in a blockquote, so its lines in the file carry a `> ` that the
-// parser never saw.
+// The place counts from the top of the task file, the text that `openplan tasks get` prints and an
+// agent edits. A fence in a comment sits in a blockquote, so its lines in the file carry a `> `
+// that the parser never saw.
 pub(crate) fn diagram_problems(raw: &str) -> Vec<String> {
     op_md::fences(raw)
         .into_iter()

@@ -39,10 +39,10 @@ describe("fenced code blocks", () => {
   })
 
   it("leaves an inline code chip alone", async () => {
-    const root = await highlighted("Run `openplan list` now.")
+    const root = await highlighted("Run `openplan tasks list` now.")
     const code = root.querySelector("code")!
     expect(code.closest("pre")).toBeNull()
     expect(code.className).toBe("")
-    expect(code.textContent).toBe("openplan list")
+    expect(code.textContent).toBe("openplan tasks list")
   })
 })

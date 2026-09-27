@@ -237,11 +237,11 @@ impl Project {
     }
 
     pub fn create(&self, title: &str) -> String {
-        ok(self.run(&["create", title])).trim().to_owned()
+        ok(self.run(&["tasks", "create", title])).trim().to_owned()
     }
 
     pub fn child(&self, title: &str, parent: &str) -> String {
-        ok(self.run(&["create", title, "--parent", parent]))
+        ok(self.run(&["tasks", "create", title, "--parent", parent]))
             .trim()
             .to_owned()
     }
@@ -361,7 +361,9 @@ impl Remote {
     }
 
     pub fn create(&self, root: &Path, title: &str) -> String {
-        ok(self.run(root, &["create", title])).trim().to_owned()
+        ok(self.run(root, &["tasks", "create", title]))
+            .trim()
+            .to_owned()
     }
 
     // The remote goes missing, as it does for a laptop on a train.

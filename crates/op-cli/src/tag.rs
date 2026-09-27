@@ -160,7 +160,7 @@ fn delete(plan: &Plan, name: &str, force: bool, yes: bool) -> Result<()> {
     // goes. Saying so is what keeps --force from costing the reader a debugging session.
     if !carried.is_empty() {
         eprintln!(
-            "warning: {} still carr{} {}; each one refuses a write until you drop the name with `openplan set <id> tags \"…\"`",
+            "warning: {} still carr{} {}; each one refuses a write until you drop the name with `openplan tasks set <id> tags \"…\"`",
             plural_tasks(carried.len()),
             if carried.len() == 1 { "ies" } else { "y" },
             tag.name,

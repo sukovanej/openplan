@@ -67,7 +67,7 @@ Without installing, run it from the checkout as `cargo run -p openplan -- <args>
 ```sh
 openplan init --abbreviation OPP    # start the tasks: in the ref refs/openplan/tasks in a repository
 openplan migrate                    # move a legacy .plan/ beside the code into that ref
-openplan list                       # the tasks of this project
+openplan tasks list                 # the tasks of this project
 openplan history OPP-42             # who changed a task, and when
 openplan sync                       # exchange the tasks with the remote now
 openplan open                       # the web UI in your browser

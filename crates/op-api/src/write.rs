@@ -148,8 +148,8 @@ pub(crate) fn texts(
     ))
 }
 
-// A whole task file, as `openplan get` prints one, to write back over the task. The comment log is
-// append-only, so the text must keep every entry the task already has.
+// A whole task file, as `openplan tasks get` prints one, to write back over the task. The comment
+// log is append-only, so the text must keep every entry the task already has.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct WriteTaskFile {
     pub text: String,

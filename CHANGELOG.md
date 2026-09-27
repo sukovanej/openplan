@@ -13,6 +13,14 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with `openplan doc` when the user mentions a doc, and to show each doc it
   creates or changes in the built-in browser of the agent app.
 
+### Changed
+
+- The task commands are in the `openplan tasks` group: `create`, `list`,
+  `search`, `get`, `write`, `comment`, `comments`, `show`, `tree`, `move`,
+  `set`, and `delete`. For example, `openplan get OPP-42` is now
+  `openplan tasks get OPP-42`. Run `openplan setup-skills` to update the agent
+  skills in a checkout.
+
 ### Fixed
 
 - An open web UI page reloads when it cannot load a part of the app, such as the

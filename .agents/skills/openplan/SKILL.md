@@ -27,8 +27,8 @@ After you create or change a task, show its page in the built-in browser of the 
 Open the address from `openplan url <key>` with `@Browser`.
 When you write more than one task in a row, show the last one. When the browser
 already shows the page, do not open it again, because the page updates itself.
-Skip this step after `openplan delete`, and skip it when the session cannot use
-that browser. Do not open the address in a different browser.
+Skip this step after `openplan tasks delete`, and skip it when the session
+cannot use that browser. Do not open the address in a different browser.
 
 Statuses: `backlog` `todo` `in_progress` `in_review` `done` `cancelled`.
 
@@ -38,16 +38,16 @@ it and which agent ran the command, so do not sign or date what you write.
 ## Read
 
 ```sh
-openplan list                       # id / status / title
-openplan list --status in_progress  # filter by status
-openplan list --parent <key>        # children of a task
-openplan list --json                # [{id,title,status,parent?}]
-openplan show <key>                 # metadata: id, title, status, parent, dependencies
-openplan get  <key>                 # the whole task file
-openplan get  <key> --json          # {id,title,metadata,description,comments}
-openplan history <key>              # the revisions of the task, newest first
-openplan get  <key> --revision <id> # the task file as it stood at a revision
-openplan url  <key>...              # the web UI address of each task or doc
+openplan tasks list                       # id / status / title
+openplan tasks list --status in_progress  # filter by status
+openplan tasks list --parent <key>        # children of a task
+openplan tasks list --json                # [{id,title,status,parent?}]
+openplan tasks show <key>                 # metadata: id, title, status, parent, dependencies
+openplan tasks get  <key>                 # the whole task file
+openplan tasks get  <key> --json          # {id,title,metadata,description,comments}
+openplan history <key>                    # the revisions of the task, newest first
+openplan tasks get  <key> --revision <id> # the task file as it stood at a revision
+openplan url  <key>...                    # the web UI address of each task or doc
 ```
 
 ## Create
@@ -58,11 +58,11 @@ work is a request to do the work. Finish it, and create no task.
 A new task starts in `backlog`. Pass `--status` only when the user asks for one.
 
 ```sh
-openplan create "Ship login page"
-openplan create "Add validation" --parent <key>
-openplan create "Deploy" --status todo --dependency <key> --dependency <key2>
-openplan create "Ship login" --body "Support OAuth and email login."
-openplan create "Ship login" --body-file notes.md   # or --body-file - for stdin
+openplan tasks create "Ship login page"
+openplan tasks create "Add validation" --parent <key>
+openplan tasks create "Deploy" --status todo --dependency <key> --dependency <key2>
+openplan tasks create "Ship login" --body "Support OAuth and email login."
+openplan tasks create "Ship login" --body-file notes.md   # or --body-file - for stdin
 ```
 
 Set the dependencies at creation. A dependency says that the other task must be
@@ -70,8 +70,8 @@ complete first, so name only a task that blocks this one. `--parent` groups the
 subtasks of a large task.
 
 ```sh
-openplan create "Add the store schema" --parent OPP-42            # prints OPP-43
-openplan create "Read the schema in the API" --parent OPP-42 --dependency OPP-43
+openplan tasks create "Add the store schema" --parent OPP-42            # prints OPP-43
+openplan tasks create "Read the schema in the API" --parent OPP-42 --dependency OPP-43
 ```
 
 Tag the task at creation. Read the `Tag` section below.
@@ -83,9 +83,9 @@ registers it. Every project registers `bug`, `feature`, and `draft`, and a
 project adds its own names for the areas it splits into.
 
 ```sh
-openplan tag list                       # name, color, and meaning
-openplan create "Fix the parser" --tag bug --tag daemon
-openplan set <key> tags "bug, daemon"   # replaces the set; "" clears it
+openplan tag list                             # name, color, and meaning
+openplan tasks create "Fix the parser" --tag bug --tag daemon
+openplan tasks set <key> tags "bug, daemon"   # replaces the set; "" clears it
 ```
 
 Give each task you create one kind (`bug`, `feature`, or `draft`) and each area
@@ -96,17 +96,17 @@ not ask for. When no name fits, leave the task untagged and say so.
 ## Update
 
 ```sh
-openplan set <key> status in_progress
-openplan set <key> parent <parent-key>
-openplan set <key> dependencies "<key1>, <key2>"   # empty string clears them
-openplan set <key> tags "bug, daemon"              # empty string clears them
+openplan tasks set <key> status in_progress
+openplan tasks set <key> parent <parent-key>
+openplan tasks set <key> dependencies "<key1>, <key2>"   # empty string clears them
+openplan tasks set <key> tags "bug, daemon"              # empty string clears them
 ```
 
 To change the body, write the whole file back:
 
 ```sh
-openplan get <key> > task.md     # edit task.md
-openplan write <key> --file task.md
+openplan tasks get <key> > task.md     # edit task.md
+openplan tasks write <key> --file task.md
 openplan lint <key>
 ```
 
@@ -115,14 +115,14 @@ refuses a file that drops an entry.
 
 `openplan lint <key>` reports what is wrong with the task: a reference to a
 task that does not exist, a parent or dependency cycle, a tag that is not
-registered, or a conflict. Sync can cause these, so `openplan get` also prints
-them on stderr. Repair each one before you work on the task.
+registered, or a conflict. Sync can cause these, so `openplan tasks get` also
+prints them on stderr. Repair each one before you work on the task.
 
 ## Conflict
 
 When two people change the same field or the same lines of a task, sync keeps
-both versions in the task as a git conflict block. `openplan get` warns about
-it on stderr, `openplan list` marks the row with `[conflict]`, and
+both versions in the task as a git conflict block. `openplan tasks get` warns
+about it on stderr, `openplan tasks list` marks the row with `[conflict]`, and
 `openplan lint` reports it.
 
 ```markdown
@@ -138,9 +138,9 @@ before you work on the task:
 
 1. Read both versions. Keep the one that fits the task, or join them. When you
    cannot tell which one is right, ask the user.
-2. For a conflict in a field, run `openplan set <key> <field> <value>`.
+2. For a conflict in a field, run `openplan tasks set <key> <field> <value>`.
 3. For a conflict in the body, remove the markers and the version you drop,
-   then `openplan write`. Change a block completely or not at all: `write`
+   then `openplan tasks write`. Change a block completely or not at all: `write`
    refuses an edit inside a block that keeps its markers.
 4. Run `openplan lint <key>`.
 
@@ -149,8 +149,8 @@ before you work on the task:
 The user names the task. Do these two steps before you read the code, search
 the repository, plan, or start a subagent:
 
-1. `openplan get <key>` reads the task.
-2. `openplan set <key> status in_progress`.
+1. `openplan tasks get <key>` reads the task.
+2. `openplan tasks set <key> status in_progress`.
 
 Set `in_review` when the work is complete. A human sets `done`. The one
 exception is a merge: read the `Merge` section below.
@@ -182,14 +182,14 @@ Keep an entry to one or two lines. Write it when the fact appears, on the task
 the fact belongs to.
 
 ```sh
-openplan comments <key>                    # read the log; --json
-openplan comment  <key> "One short line."  # append; --body-file - for markdown
+openplan tasks comments <key>                    # read the log; --json
+openplan tasks comment  <key> "One short line."  # append; --body-file - for markdown
 ```
 
 ## Merge
 
-A merge does not change the status of a task. Only `openplan set` changes it.
-When the user asks you to merge the work of a task, do these steps. Take the
+A merge does not change the status of a task. Only `openplan tasks set` changes
+it. When the user asks you to merge the work of a task, do these steps. Take the
 task key from the conversation or from the branch name. Work with no task key
 has no status to change.
 
@@ -202,8 +202,8 @@ has no status to change.
      for the answer.
 2. Merge the way the repository merges. This skill does not choose the method
    or the tools.
-3. When step 1 decided `done`, run `openplan set <key> status done` after the
-   merge lands. When the merge fails, leave the status.
+3. When step 1 decided `done`, run `openplan tasks set <key> status done` after
+   the merge lands. When the merge fails, leave the status.
 
 Never guess. A wrong `done` closes work that is still open. A request to merge
 is the review that `in_review` waits for, so the agent writes `done` here and
@@ -265,8 +265,8 @@ openplan doc delete storage-layout --yes
 ## Delete
 
 ```sh
-openplan delete <key>          # asks [y/N]
-openplan delete <key> --yes    # no prompt
+openplan tasks delete <key>          # asks [y/N]
+openplan tasks delete <key> --yes    # no prompt
 ```
 
 The history keeps a deleted task. `openplan history` shows the revision that

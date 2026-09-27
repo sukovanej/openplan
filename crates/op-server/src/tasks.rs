@@ -235,8 +235,8 @@ pub(crate) async fn patch_task(
     Ok(Json(detail))
 }
 
-// The whole file, as `openplan get` prints it. An agent or a person edits a task this way now that
-// no task file sits in the checkout.
+// The whole file, as `openplan tasks get` prints it. An agent or a person edits a task this way now
+// that no task file sits in the checkout.
 #[utoipa::path(
     put,
     path = "/api/projects/{project}/tasks/{id}/file",
@@ -271,7 +271,7 @@ pub(crate) async fn write_task_file(
             if !now.starts_with(&kept) {
                 return Err(TrackerError::Invalid(
                     "the comment log is append-only; keep every entry the task has and add new \
-                     ones with `openplan comment`"
+                     ones with `openplan tasks comment`"
                         .to_owned(),
                 ));
             }

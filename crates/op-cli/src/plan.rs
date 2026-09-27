@@ -247,7 +247,7 @@ pub fn resolve_project(
     let (view, created) =
         register(client, base_url, location).context("the daemon did not take the project")?;
     if created {
-        // stderr, because stdout carries the id `openplan create` prints and scripts read.
+        // stderr, because stdout carries the id `openplan tasks create` prints and scripts read.
         eprintln!("registered project {} at {}", view.name, view.root);
     }
     Ok(view.name)

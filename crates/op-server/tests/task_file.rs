@@ -17,7 +17,7 @@ async fn put(state: &AppState, id: &str, text: &str) -> (StatusCode, Value) {
     (status, body_json(response).await)
 }
 
-// The file as `openplan get` prints it: the text of the newest revision of the task.
+// The file as `openplan tasks get` prints it: the text of the newest revision of the task.
 async fn file_of(state: &AppState, id: &str) -> String {
     let history = json_of(
         state,

@@ -625,7 +625,7 @@ fn openapi_prints_the_spec_without_a_daemon() {
 
 fn updated_of(daemon: &Daemon, id: &str) -> serde_json::Value {
     let view: serde_json::Value =
-        serde_json::from_str(&ok(daemon.run(&["get", id, "--json"]))).unwrap();
+        serde_json::from_str(&ok(daemon.run(&["tasks", "get", id, "--json"]))).unwrap();
     view["updated"].clone()
 }
 
@@ -634,7 +634,9 @@ fn updated_of(daemon: &Daemon, id: &str) -> serde_json::Value {
 #[test]
 fn a_read_dates_a_task_the_same_whoever_started_the_daemon() {
     let daemon = Daemon::new();
-    let id = ok(daemon.run(&["create", "Dated task"])).trim().to_owned();
+    let id = ok(daemon.run(&["tasks", "create", "Dated task"]))
+        .trim()
+        .to_owned();
 
     let started_by_the_write = updated_of(&daemon, &id);
     assert!(started_by_the_write.is_string(), "{started_by_the_write}");
@@ -650,7 +652,7 @@ fn a_read_dates_a_task_the_same_whoever_started_the_daemon() {
 fn a_read_with_no_reachable_daemon_fails_explicitly() {
     let daemon = Daemon::new();
 
-    let out = daemon.run(&["--daemon", "http://127.0.0.1:1", "list"]);
+    let out = daemon.run(&["--daemon", "http://127.0.0.1:1", "tasks", "list"]);
 
     assert!(!out.status.success(), "an unreachable daemon must not pass");
     assert!(
@@ -676,7 +678,7 @@ fn a_read_is_answered_for_the_project_the_caller_stands_in() {
 
     let view: serde_json::Value = serde_json::from_str(&ok(daemon
         .home
-        .run(ours.path(), &["get", "OPP-1", "--json"])))
+        .run(ours.path(), &["tasks", "get", "OPP-1", "--json"])))
     .unwrap();
 
     assert_eq!(view["title"], "Ours");
@@ -694,7 +696,7 @@ fn a_start_registers_nothing_and_the_first_write_registers() {
     ok(daemon.run(&["server", "ping"]));
     assert!(!registry.exists(), "starting is not registering");
 
-    let first = daemon.run(&["create", "First task"]);
+    let first = daemon.run(&["tasks", "create", "First task"]);
     assert!(first.status.success(), "stderr: {}", stderr(&first));
     assert!(
         stderr(&first).contains("registered project"),
@@ -717,7 +719,7 @@ fn a_start_registers_nothing_and_the_first_write_registers() {
         "the entry keeps where the tasks live: {seeded}"
     );
 
-    ok(daemon.run(&["create", "Second task"]));
+    ok(daemon.run(&["tasks", "create", "Second task"]));
     assert_eq!(
         daemon.home.registry(),
         seeded,
@@ -730,7 +732,7 @@ fn a_start_registers_nothing_and_the_first_write_registers() {
 #[test]
 fn a_renamed_project_survives_a_restart() {
     let daemon = Daemon::new();
-    ok(daemon.run(&["create", "First task"]));
+    ok(daemon.run(&["tasks", "create", "First task"]));
 
     let (name, root) = projects(&daemon).remove(0);
     let renamed = ok(daemon.run(&["project", "rename", &name, "chosen"]));
@@ -739,7 +741,7 @@ fn a_renamed_project_survives_a_restart() {
     ok(daemon.run(&["server", "restart", "--port", "0"]));
     assert_eq!(projects(&daemon), vec![("chosen".to_owned(), root.clone())]);
 
-    let write = daemon.run(&["create", "Second task"]);
+    let write = daemon.run(&["tasks", "create", "Second task"]);
     assert!(write.status.success(), "stderr: {}", stderr(&write));
     assert!(
         !stderr(&write).contains("registered"),
@@ -752,7 +754,7 @@ fn a_renamed_project_survives_a_restart() {
 fn project_rename_refuses_a_taken_or_unusable_name() {
     let daemon = Daemon::new();
     let second = task_store("BBB", None);
-    ok(daemon.run(&["create", "First task"]));
+    ok(daemon.run(&["tasks", "create", "First task"]));
     ok(daemon.run(&["project", "add", second.path().to_str().unwrap()]));
     let names = registry_names(&daemon);
 
@@ -778,7 +780,7 @@ fn project_rename_refuses_a_taken_or_unusable_name() {
 fn project_add_registers_a_second_project_and_remove_leaves_its_files() {
     let daemon = Daemon::new();
     let second = task_store("OPP", Some("Shared"));
-    ok(daemon.run(&["create", "First project"]));
+    ok(daemon.run(&["tasks", "create", "First project"]));
 
     let added = ok(daemon.run(&["project", "add", second.path().to_str().unwrap()]));
     assert!(added.contains("registered"), "{added}");
@@ -842,7 +844,7 @@ fn project_list_says_when_nothing_is_registered() {
 fn root_on_an_explicit_start_names_no_favoured_project() {
     let daemon = Daemon::new();
     let second = task_store("BBB", Some("Other"));
-    ok(daemon.run(&["create", "First project"]));
+    ok(daemon.run(&["tasks", "create", "First project"]));
     ok(daemon.run(&["project", "add", second.path().to_str().unwrap()]));
 
     ok(daemon
@@ -870,7 +872,7 @@ fn root_on_an_explicit_start_names_no_favoured_project() {
 fn a_rename_keeps_the_entry_in_place() {
     let daemon = Daemon::new();
     let second = task_store("OPP", Some("Shared"));
-    ok(daemon.run(&["create", "First project"]));
+    ok(daemon.run(&["tasks", "create", "First project"]));
     ok(daemon.run(&["project", "add", second.path().to_str().unwrap()]));
 
     let before = registry_names(&daemon);
@@ -891,7 +893,7 @@ fn a_rename_keeps_the_entry_in_place() {
 fn a_registry_entry_that_cannot_be_opened_can_still_be_removed() {
     let daemon = Daemon::new();
     let second = task_store("OPP", Some("Shared"));
-    ok(daemon.run(&["create", "First project"]));
+    ok(daemon.run(&["tasks", "create", "First project"]));
     ok(daemon.run(&["project", "add", second.path().to_str().unwrap()]));
     let gone_root = canonical(second.path());
     let (gone, _) = projects(&daemon)
@@ -921,7 +923,7 @@ fn a_registry_entry_that_cannot_be_opened_can_still_be_removed() {
 #[test]
 fn project_list_marks_a_demoted_project_with_its_reason() {
     let daemon = Daemon::new();
-    ok(daemon.run(&["create", "Anchor"]));
+    ok(daemon.run(&["tasks", "create", "Anchor"]));
 
     write(
         &daemon.root_path().join(".plan/config.toml"),
@@ -947,7 +949,11 @@ fn concurrent_first_writes_register_one_project() {
     let handles: Vec<_> = (0..4)
         .map(|n| {
             let mut cmd = daemon.cmd();
-            std::thread::spawn(move || cmd.args(["create", &format!("Task {n}")]).output().unwrap())
+            std::thread::spawn(move || {
+                cmd.args(["tasks", "create", &format!("Task {n}")])
+                    .output()
+                    .unwrap()
+            })
         })
         .collect();
     for handle in handles {
@@ -977,7 +983,7 @@ fn a_local_store_above_a_checkout_answers_for_it() {
     let inner = outer.path().join("repo");
     git_repo(&inner);
 
-    let created = home.run(&inner, &["create", "From the checkout"]);
+    let created = home.run(&inner, &["tasks", "create", "From the checkout"]);
 
     assert_eq!(ok(created).trim(), "OUT-1");
     assert_eq!(task_count(outer.path()), 1, "the task lands in the store");
