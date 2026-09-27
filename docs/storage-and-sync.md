@@ -8,7 +8,7 @@ Tasks live as git objects under `refs/openplan/tasks`, not in the working tree. 
 ## Components
 
 ```mermaid
-flowchart LR
+flowchart TD
   ui["Web UI / CLI"] -->|HTTP| daemon["Daemon<br/>op-server"]
   daemon --> index["op-index<br/>read model of the head"]
   daemon --> backend["GitBackend<br/>op-backend-git"]
@@ -23,7 +23,7 @@ flowchart LR
 ## Storage layout
 
 ```mermaid
-flowchart LR
+flowchart TD
   ref["refs/openplan/tasks"] --> c3["commit<br/>OPP-131: status → in_progress"]
   track["refs/openplan/remotes/origin/tasks<br/>last tip seen on origin"] --> c2
   c3 --> c2["commit"] --> c1["commit"]
@@ -93,7 +93,7 @@ flowchart TD
 ## When sync runs
 
 ```mermaid
-flowchart LR
+flowchart TD
   start["Daemon start"] -->|now| sync(["Sync"])
   write["Local write"] -->|2 s| sync
   button["openplan sync<br/>Sync now in the UI"] -->|now| sync
