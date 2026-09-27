@@ -76,6 +76,31 @@ const components: Components = {
   },
 }
 
+const inlineComponents: Components = { ...components, p: ({ children }) => <>{children}</> }
+
+interface BodyScope {
+  project: string
+  markdown: string
+  refs?: ReadonlyArray<TaskRef>
+  docRefs?: ReadonlyArray<DocRef>
+  abbreviation: string | undefined
+}
+
+function Rendered({ project, markdown, refs, docRefs, abbreviation, parts }: BodyScope & { parts: Components }) {
+  const refMap = useMemo(() => new Map((refs ?? []).map((ref) => [ref.id, ref])), [refs])
+  const docRefMap = useMemo(() => new Map((docRefs ?? []).map((ref) => [ref.name, ref])), [docRefs])
+  const plugins = useMemo(() => [remarkGfm, taskLinkPlugins({ project, abbreviation })], [project, abbreviation])
+  return (
+    <RefsContext.Provider value={refMap}>
+      <DocRefsContext.Provider value={docRefMap}>
+        <Markdown remarkPlugins={plugins} components={parts}>
+          {markdown}
+        </Markdown>
+      </DocRefsContext.Provider>
+    </RefsContext.Provider>
+  )
+}
+
 // react-markdown parses the whole text on each render, and the page around a body renders on each
 // move of its cursor.
 export const TaskBody = memo(function TaskBody({
@@ -85,25 +110,21 @@ export const TaskBody = memo(function TaskBody({
   docRefs,
   abbreviation,
   ...props
-}: ComponentProps<typeof Prose> & {
-  project: string
-  markdown: string
-  refs?: ReadonlyArray<TaskRef>
-  docRefs?: ReadonlyArray<DocRef>
-  abbreviation: string | undefined
-}) {
-  const refMap = useMemo(() => new Map((refs ?? []).map((ref) => [ref.id, ref])), [refs])
-  const docRefMap = useMemo(() => new Map((docRefs ?? []).map((ref) => [ref.name, ref])), [docRefs])
-  const plugins = useMemo(() => [remarkGfm, taskLinkPlugins({ project, abbreviation })], [project, abbreviation])
+}: ComponentProps<typeof Prose> & BodyScope) {
   return (
-    <RefsContext.Provider value={refMap}>
-      <DocRefsContext.Provider value={docRefMap}>
-        <Prose {...props}>
-          <Markdown remarkPlugins={plugins} components={components}>
-            {markdown}
-          </Markdown>
-        </Prose>
-      </DocRefsContext.Provider>
-    </RefsContext.Provider>
+    <Prose {...props}>
+      <Rendered
+        project={project}
+        markdown={markdown}
+        refs={refs}
+        docRefs={docRefs}
+        abbreviation={abbreviation}
+        parts={components}
+      />
+    </Prose>
   )
+})
+
+export const TaskInline = memo(function TaskInline(scope: BodyScope) {
+  return <Rendered {...scope} parts={inlineComponents} />
 })

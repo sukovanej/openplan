@@ -29,7 +29,9 @@ export class Portals {
   private next = 0
 
   mount(element: HTMLElement, node: ReactNode): void {
-    this.entries.set(element, { key: this.next++, element, node })
+    // The same key keeps React's state in a widget whose element CodeMirror reuses.
+    const key = this.entries.get(element)?.key ?? this.next++
+    this.entries.set(element, { key, element, node })
     this.emit()
   }
 

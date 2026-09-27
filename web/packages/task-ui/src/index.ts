@@ -58,7 +58,7 @@ export {
 } from "./status"
 export { TagChip } from "./tag-chip"
 export { ColorDot, ColorPicker } from "./tag-palette"
-export { TaskBody } from "./task-body"
+export { TaskBody, TaskInline } from "./task-body"
 export { type Referenced, referenced, referencePath, taskRefMatches } from "./task-links"
 export { ensureHighlighter, highlightTokens, resolveLang, watchHighlighter } from "./highlighter"
 export { DiagramBlock } from "./diagram-block"

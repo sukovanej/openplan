@@ -9,6 +9,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The body editor edits a table as a grid. A click on a cell edits it in
+  place, and Tab, Enter, and the arrow keys move between cells. A toolbar adds
+  and deletes rows and columns and sets the alignment of a column.
 - The openplan-docs skill tells the agent to read and write the project docs
   with `openplan doc` when the user mentions a doc, and to show each doc it
   creates or changes in the built-in browser of the agent app.

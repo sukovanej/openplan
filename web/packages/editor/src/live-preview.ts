@@ -15,13 +15,13 @@ import {
 } from "@openplan/task-ui"
 
 import { isInCode } from "./syntax"
+import { tableAt, tableKeys, TableWidget } from "./table-view"
 import {
   BulletWidget,
   CheckboxWidget,
   ConflictWidget,
   DiagramWidget,
   ImageWidget,
-  MarkdownBlockWidget,
   RuleWidget,
   TaskRefWidget,
 } from "./widgets"
@@ -192,11 +192,19 @@ function listMark(builder: Builder, state: EditorState, node: SyntaxNode): void 
   builder.add(node.from, node.to, mark("cm-list-number"))
 }
 
+// A rendered table draws its own references, and a reference that took its range first would keep
+// the table from rendering.
+function inRenderedTable(builder: Builder, state: EditorState, at: number): boolean {
+  const table = tableAt(state, at)
+  return table !== null && !builder.touches(table.from, table.to)
+}
+
 function taskRefs(builder: Builder, state: EditorState, abbreviation: string): void {
   for (const match of taskRefMatches(state.doc.toString())) {
     const from = match.index
     const to = from + match[0].length
     if (referenced(match[1], abbreviation) === null || isInCode(state, from, 1)) continue
+    if (inRenderedTable(builder, state, from)) continue
     if (builder.touches(from, to)) builder.add(from, to, mark("cm-ref-source"))
     else builder.replace(from, to, Decoration.replace({ widget: new TaskRefWidget(match[1]) }))
   }
@@ -303,11 +311,7 @@ export function previewOf(state: EditorState, focused: boolean, abbreviation: st
             builder.lines(node.from, node.to, "cm-table-source")
           } else {
             const source = state.sliceDoc(node.from, node.to)
-            builder.replace(
-              node.from,
-              node.to,
-              Decoration.replace({ widget: new MarkdownBlockWidget(source), block: true }),
-            )
+            builder.replace(node.from, node.to, Decoration.replace({ widget: new TableWidget(source), block: true }))
           }
           return false
         default:
@@ -351,6 +355,7 @@ export function livePreview(abbreviation: string): Extension {
     focused,
     preview,
     highlighter,
+    tableKeys,
     EditorView.domEventHandlers({
       focus: (_event, view) => view.dispatch({ effects: setFocused.of(true) }),
       blur: (_event, view) => view.dispatch({ effects: setFocused.of(false) }),
