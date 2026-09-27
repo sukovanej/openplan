@@ -35,5 +35,5 @@ too long:    [icon] OPP-42
 ```
 
 - Keep one width for all cards, so the cards of a flow stay in columns.
-- Keep the card heights integer ([[../docs/task-row-border-shimmer.md]] in memory: a fractional height gives half-pixel borders).
+- Keep the card heights integer. A fractional height gives half-pixel borders on a Retina display.
 - Do the same for the header of a box.
