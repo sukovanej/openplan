@@ -3,7 +3,7 @@ import { CircleAlert } from "lucide-react"
 import type { Comment, DocRef, Field_Rfc3339, Field_String, TaskRef } from "@openplan/api-client"
 import { absoluteTime, MetaLine, Section, Tooltip } from "@openplan/ui"
 
-import { AgentMark } from "./agent-tag"
+import { AgentMark } from "./agent-mark"
 import { fieldFailure, fieldMessage, fieldValue } from "./metadata"
 import { TaskBody } from "./task-body"
 

@@ -3,7 +3,7 @@ import { UserRound } from "lucide-react"
 import type { Author } from "@openplan/api-client"
 import { MetaItem, Tooltip } from "@openplan/ui"
 
-import { AgentMark } from "./agent-tag"
+import { AgentMark } from "./agent-mark"
 
 export function TaskAuthor({ author, withAgent }: { author: Author | undefined; withAgent: boolean }) {
   if (author === undefined) return null

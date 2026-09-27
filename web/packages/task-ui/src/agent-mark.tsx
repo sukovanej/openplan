@@ -1,15 +1,6 @@
 import { Bot } from "lucide-react"
 
-import { Tag, Tooltip } from "@openplan/ui"
-
-export function AgentTag({ agent }: { agent: string }) {
-  return (
-    <Tag className="border-border text-muted-foreground">
-      <Bot aria-hidden className="size-3" />
-      <span>{agent}</span>
-    </Tag>
-  )
-}
+import { Tooltip } from "@openplan/ui"
 
 export function AgentMark({ agent }: { agent: string }) {
   return (

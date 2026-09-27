@@ -150,7 +150,7 @@ describe("the activity", () => {
 
     const [first, second] = revisions(root)
     expect(first.textContent?.match(/Milan/g)).toHaveLength(1)
-    expect(first.textContent).toContain("claude-code")
+    expect(first.querySelector("[aria-label='via claude-code']")).not.toBeNull()
     expect(first.querySelector("time")?.compareDocumentPosition(first.querySelector("ul")!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     )

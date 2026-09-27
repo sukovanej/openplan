@@ -1,4 +1,4 @@
-export { AgentMark, AgentTag } from "./agent-tag"
+export { AgentMark } from "./agent-mark"
 export { BodyConflict, TaskBodyWithConflicts } from "./body-conflict"
 export { type BodySegment, bodySegments, type ConflictBlock } from "./body-segments"
 export { ChangeMark } from "./change-mark"
