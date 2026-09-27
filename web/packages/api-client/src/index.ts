@@ -15,6 +15,8 @@ export type TaskTree = {
 }
 export const TaskTree = Schema.suspend((): Schema.Codec<TaskTree> => __recursive_TaskTree)
 // non-recursive definitions
+export type Rfc3339 = string
+export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
 export type Author = { readonly agent?: string; readonly email?: string; readonly name: string }
 export const Author = Schema.Struct({
   agent: Schema.optionalKey(Schema.String),
@@ -113,15 +115,17 @@ export const ProjectStatus = Schema.Union(
   ],
   { mode: "oneOf" },
 ).annotate({ identifier: "ProjectStatus" })
-export type Rfc3339 = string
-export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
 export type RenameProject = { readonly name: string }
 export const RenameProject = Schema.Struct({ name: Schema.String }).annotate({ identifier: "RenameProject" })
-export type CreateSession = { readonly agent?: string | null; readonly prompt: string; readonly task?: string | null }
+export type CreateSession = {
+  readonly agent?: string | null
+  readonly context?: string | null
+  readonly prompt: string
+}
 export const CreateSession = Schema.Struct({
   agent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null]).annotate({ examples: ["claude_code"] })),
+  context: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   prompt: Schema.String,
-  task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
 }).annotate({ identifier: "CreateSession" })
 export type CreatedSession = { readonly id: string }
 export const CreatedSession = Schema.Struct({ id: Schema.String }).annotate({ identifier: "CreatedSession" })
@@ -235,6 +239,70 @@ export const DaemonInfo = Schema.Struct({
     .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
   version: Schema.String,
 }).annotate({ identifier: "DaemonInfo" })
+export type SessionSummary = {
+  readonly agent: string
+  readonly approvals: number
+  readonly context?: string | null
+  readonly id: string
+  readonly project: string
+  readonly started_at: Rfc3339
+  readonly status: { readonly [x: string]: Schema.Json }
+  readonly tasks: ReadonlyArray<string>
+  readonly title: string
+}
+export const SessionSummary = Schema.Struct({
+  agent: Schema.String.annotate({ examples: ["claude_code"] }),
+  approvals: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  context: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  id: Schema.String,
+  project: Schema.String,
+  started_at: Rfc3339,
+  status: Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })),
+  tasks: Schema.Array(Schema.String),
+  title: Schema.String,
+}).annotate({ identifier: "SessionSummary" })
+export type SyncView = {
+  readonly ahead: number
+  readonly behind: number
+  readonly error?: string
+  readonly last_attempt?: Rfc3339
+  readonly last_success?: Rfc3339
+  readonly remote: string
+  readonly syncing: boolean
+}
+export const SyncView = Schema.Struct({
+  ahead: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  behind: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  error: Schema.optionalKey(Schema.String),
+  last_attempt: Schema.optionalKey(Rfc3339),
+  last_success: Schema.optionalKey(Rfc3339),
+  remote: Schema.String,
+  syncing: Schema.Boolean,
+}).annotate({ identifier: "SyncView" })
+export type RevisionView = {
+  readonly agent?: string
+  readonly at: Rfc3339
+  readonly author: string
+  readonly email?: string
+  readonly id: string
+  readonly message: string
+  readonly parents: ReadonlyArray<string>
+}
+export const RevisionView = Schema.Struct({
+  agent: Schema.optionalKey(Schema.String),
+  at: Rfc3339,
+  author: Schema.String,
+  email: Schema.optionalKey(Schema.String),
+  id: Schema.String,
+  message: Schema.String,
+  parents: Schema.Array(Schema.String),
+}).annotate({ identifier: "RevisionView" })
 export type FieldConflict_Rfc3339 = {
   readonly kind: ConflictTag
   readonly sides: ReadonlyArray<ConflictSide_Rfc3339>
@@ -387,60 +455,6 @@ export const RegisterProject = Schema.Struct({
   backend: Schema.optionalKey(BackendKind),
   path: Schema.String,
 }).annotate({ identifier: "RegisterProject" })
-export type SyncView = {
-  readonly ahead: number
-  readonly behind: number
-  readonly error?: string
-  readonly last_attempt?: Rfc3339
-  readonly last_success?: Rfc3339
-  readonly remote: string
-  readonly syncing: boolean
-}
-export const SyncView = Schema.Struct({
-  ahead: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-  ),
-  behind: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-  ),
-  error: Schema.optionalKey(Schema.String),
-  last_attempt: Schema.optionalKey(Rfc3339),
-  last_success: Schema.optionalKey(Rfc3339),
-  remote: Schema.String,
-  syncing: Schema.Boolean,
-}).annotate({ identifier: "SyncView" })
-export type SessionSummary = {
-  readonly agent: string
-  readonly id: string
-  readonly started_at: Rfc3339
-  readonly status: { readonly [x: string]: Schema.Json }
-  readonly task?: string | null
-}
-export const SessionSummary = Schema.Struct({
-  agent: Schema.String.annotate({ examples: ["claude_code"] }),
-  id: Schema.String,
-  started_at: Rfc3339,
-  status: Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })),
-  task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
-}).annotate({ identifier: "SessionSummary" })
-export type RevisionView = {
-  readonly agent?: string
-  readonly at: Rfc3339
-  readonly author: string
-  readonly email?: string
-  readonly id: string
-  readonly message: string
-  readonly parents: ReadonlyArray<string>
-}
-export const RevisionView = Schema.Struct({
-  agent: Schema.optionalKey(Schema.String),
-  at: Rfc3339,
-  author: Schema.String,
-  email: Schema.optionalKey(Schema.String),
-  id: Schema.String,
-  message: Schema.String,
-  parents: Schema.Array(Schema.String),
-}).annotate({ identifier: "RevisionView" })
 export type DocumentChange = {
   readonly doc?: string
   readonly kind: DocumentChangeKind
@@ -505,6 +519,40 @@ export const FieldConflict_String = Schema.Struct({
 }).annotate({ identifier: "FieldConflict_String" })
 export type WriteTaskText = { readonly base: TaskText; readonly text: TaskText }
 export const WriteTaskText = Schema.Struct({ base: TaskText, text: TaskText }).annotate({ identifier: "WriteTaskText" })
+export type ProjectView = {
+  readonly abbreviation: string
+  readonly backend: BackendKind
+  readonly git_common_dir?: string
+  readonly name: string
+  readonly root: string
+  readonly status: ProjectStatus
+  readonly sync?: SyncView
+}
+export const ProjectView = Schema.Struct({
+  abbreviation: Schema.String,
+  backend: BackendKind,
+  git_common_dir: Schema.optionalKey(Schema.String),
+  name: Schema.String,
+  root: Schema.String,
+  status: ProjectStatus,
+  sync: Schema.optionalKey(SyncView),
+}).annotate({ identifier: "ProjectView" })
+export type SyncResult = {
+  readonly merged: boolean
+  readonly received: number
+  readonly sent: number
+  readonly status: SyncView
+}
+export const SyncResult = Schema.Struct({
+  merged: Schema.Boolean,
+  received: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  sent: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  status: SyncView,
+}).annotate({ identifier: "SyncResult" })
 export type Field_Rfc3339 = string | FieldError | FieldConflict_Rfc3339
 export const Field_Rfc3339 = Schema.Union(
   [Schema.String.annotate({ format: "date-time" }), FieldError, FieldConflict_Rfc3339],
@@ -548,40 +596,6 @@ export const TaskChange = Schema.Struct({
   task: Schema.String,
   title: Schema.optionalKey(Schema.String),
 }).annotate({ identifier: "TaskChange" })
-export type ProjectView = {
-  readonly abbreviation: string
-  readonly backend: BackendKind
-  readonly git_common_dir?: string
-  readonly name: string
-  readonly root: string
-  readonly status: ProjectStatus
-  readonly sync?: SyncView
-}
-export const ProjectView = Schema.Struct({
-  abbreviation: Schema.String,
-  backend: BackendKind,
-  git_common_dir: Schema.optionalKey(Schema.String),
-  name: Schema.String,
-  root: Schema.String,
-  status: ProjectStatus,
-  sync: Schema.optionalKey(SyncView),
-}).annotate({ identifier: "ProjectView" })
-export type SyncResult = {
-  readonly merged: boolean
-  readonly received: number
-  readonly sent: number
-  readonly status: SyncView
-}
-export const SyncResult = Schema.Struct({
-  merged: Schema.Boolean,
-  received: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-  ),
-  sent: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-  ),
-  status: SyncView,
-}).annotate({ identifier: "SyncResult" })
 export type Field_String = string | FieldError | FieldConflict_String
 export const Field_String = Schema.Union([Schema.String, FieldError, FieldConflict_String], { mode: "oneOf" }).annotate(
   { identifier: "Field_String" },
@@ -848,6 +862,8 @@ const __recursive_TaskTree = Schema.Struct({
   title: Schema.String,
 }).annotate({ identifier: "TaskTree" })
 // schemas
+export type ListSessions200 = ReadonlyArray<SessionSummary>
+export const ListSessions200 = Schema.Array(SessionSummary)
 export type GetMergedBoard200 = Board
 export const GetMergedBoard200 = Board
 export type DrawDiagramRequestJson = DiagramSource
@@ -930,12 +946,6 @@ export type RenameProject409 = ApiErrorBody
 export const RenameProject409 = ApiErrorBody
 export type RenameProject503 = ApiErrorBody
 export const RenameProject503 = ApiErrorBody
-export type ListSessions200 = ReadonlyArray<SessionSummary>
-export const ListSessions200 = Schema.Array(SessionSummary)
-export type ListSessions404 = ApiErrorBody
-export const ListSessions404 = ApiErrorBody
-export type ListSessions503 = ApiErrorBody
-export const ListSessions503 = ApiErrorBody
 export type CreateSessionRequestJson = CreateSession
 export const CreateSessionRequestJson = CreateSession
 export type CreateSession201 = CreatedSession
@@ -958,6 +968,8 @@ export type Approve503 = ApiErrorBody
 export const Approve503 = ApiErrorBody
 export type InterruptSession404 = ApiErrorBody
 export const InterruptSession404 = ApiErrorBody
+export type InterruptSession409 = ApiErrorBody
+export const InterruptSession409 = ApiErrorBody
 export type InterruptSession503 = ApiErrorBody
 export const InterruptSession503 = ApiErrorBody
 export type PromptSessionRequestJson = Say
@@ -1427,6 +1439,15 @@ export const make = (
       )
   return {
     httpClient,
+    listSessions: (options) =>
+      HttpClientRequest.get("/api/agent/sessions").pipe(
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            "2xx": decodeSuccess(ListSessions200),
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
     getMergedBoard: (options) =>
       HttpClientRequest.get("/api/board").pipe(
         withResponse(options?.config)(
@@ -1545,25 +1566,6 @@ export const make = (
           ),
         ),
       ),
-    listSessions: (project, options) =>
-      __makePathRequest(
-        HttpClientRequest.get,
-        [project],
-        () => "/api/projects/" + __encodePathParam(project) + "/agent/sessions",
-      ).pipe(
-        Effect.flatMap((request) =>
-          request.pipe(
-            withResponse(options?.config)(
-              HttpClientResponse.matchStatus({
-                "2xx": decodeSuccess(ListSessions200),
-                "404": decodeError("ListSessions404", ListSessions404),
-                "503": decodeError("ListSessions503", ListSessions503),
-                orElse: unexpectedStatus,
-              }),
-            ),
-          ),
-        ),
-      ),
     createSession: (project, options) =>
       __makePathRequest(
         HttpClientRequest.post,
@@ -1642,6 +1644,7 @@ export const make = (
             withResponse(options?.config)(
               HttpClientResponse.matchStatus({
                 "404": decodeError("InterruptSession404", InterruptSession404),
+                "409": decodeError("InterruptSession409", InterruptSession409),
                 "503": decodeError("InterruptSession503", InterruptSession503),
                 "202": () => Effect.void,
                 orElse: unexpectedStatus,
@@ -2375,6 +2378,12 @@ export const make = (
 
 export interface TasksClient {
   readonly httpClient: HttpClient.HttpClient
+  readonly listSessions: <Config extends OperationConfig>(
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<typeof ListSessions200.Type, Config>,
+    HttpClientError.HttpClientError | SchemaError
+  >
   readonly getMergedBoard: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
@@ -2452,16 +2461,6 @@ export interface TasksClient {
     | TasksClientError<"RenameProject409", typeof RenameProject409.Type>
     | TasksClientError<"RenameProject503", typeof RenameProject503.Type>
   >
-  readonly listSessions: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ListSessions200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"ListSessions404", typeof ListSessions404.Type>
-    | TasksClientError<"ListSessions503", typeof ListSessions503.Type>
-  >
   readonly createSession: <Config extends OperationConfig>(
     project: string,
     options: { readonly payload: typeof CreateSessionRequestJson.Encoded; readonly config?: Config | undefined },
@@ -2505,6 +2504,7 @@ export interface TasksClient {
     | HttpClientError.HttpClientError
     | SchemaError
     | TasksClientError<"InterruptSession404", typeof InterruptSession404.Type>
+    | TasksClientError<"InterruptSession409", typeof InterruptSession409.Type>
     | TasksClientError<"InterruptSession503", typeof InterruptSession503.Type>
   >
   readonly promptSession: <Config extends OperationConfig>(

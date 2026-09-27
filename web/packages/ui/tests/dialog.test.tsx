@@ -29,4 +29,17 @@ describe("Dialog", () => {
     })
     expect(onClose).toHaveBeenCalledOnce()
   })
+
+  it("closes on Escape from inside", () => {
+    const onClose = vi.fn()
+    render(
+      <Dialog open onClose={onClose} title="Transcript">
+        <p>body</p>
+      </Dialog>,
+    )
+    act(() => {
+      dialogOf().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
 })

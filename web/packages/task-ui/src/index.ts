@@ -75,6 +75,7 @@ export {
   DOCS_ROUTE,
   docsPath,
   FLOW_ROUTE,
+  projectRouteOf,
   REVISION_PARAM,
   revisionPath,
   TAGS_ROUTE,

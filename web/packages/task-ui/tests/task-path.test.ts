@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest"
 
-import { activityPath, activityProjectOf, boardPath, revisionPath, taskPath, taskRouteOf } from "../src/task-path"
+import {
+  activityPath,
+  activityProjectOf,
+  boardPath,
+  projectRouteOf,
+  revisionPath,
+  taskPath,
+  taskRouteOf,
+} from "../src/task-path"
 
 describe("boardPath", () => {
   it("spells the route for a project's board", () => {
@@ -61,5 +69,20 @@ describe("activityProjectOf", () => {
     expect(activityProjectOf("/web/tags")).toBeUndefined()
     expect(activityProjectOf("/activity")).toBeUndefined()
     expect(activityProjectOf("/web/activity/more")).toBeUndefined()
+  })
+})
+
+describe("projectRouteOf", () => {
+  it("names the project of a board, a tags page, an activity page, and a task", () => {
+    expect(projectRouteOf("/openplan")).toBe("openplan")
+    expect(projectRouteOf("/openplan/tags")).toBe("openplan")
+    expect(projectRouteOf(activityPath("openplan"))).toBe("openplan")
+    expect(projectRouteOf("/open%20plan/task/OPP-1")).toBe("open plan")
+  })
+
+  it("names none on the merged board or the flow", () => {
+    expect(projectRouteOf("/")).toBeUndefined()
+    expect(projectRouteOf("/flow")).toBeUndefined()
+    expect(projectRouteOf("/flow?task=OPP-1")).toBeUndefined()
   })
 })

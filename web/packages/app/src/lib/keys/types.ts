@@ -1,6 +1,6 @@
 // Every overlay the app can put over the page. One is open at a time, and each is its own key
 // scope, so two overlays can bind the same key without either one firing under the other.
-export const OVERLAY_NAMES = ["help", "palette"] as const
+export const OVERLAY_NAMES = ["help", "palette", "prompt"] as const
 export type OverlayName = (typeof OVERLAY_NAMES)[number]
 
 export type Scope = "global" | "list" | "detail" | "activity" | "flow" | "rows" | OverlayName
@@ -47,6 +47,11 @@ export interface DetailControls {
   readonly escape: () => void
 }
 
+export interface AgentControls {
+  // The prompt bar on a new prompt, whatever session it showed before.
+  readonly newPrompt: () => void
+}
+
 export interface RunContext {
   readonly navigate: (to: string) => void
   // Back to where the reader came from, or to the page above this one when it opened the session.
@@ -56,6 +61,7 @@ export interface RunContext {
   readonly cursor: CursorControls
   readonly task: TaskControls
   readonly detail: DetailControls
+  readonly agent: AgentControls
 }
 
 export interface Binding {

@@ -37,6 +37,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
 pub mod agent;
+mod agent_store;
 mod docs;
 mod drawing;
 mod project;
@@ -44,6 +45,8 @@ mod registry;
 mod revision_diff;
 mod tasks;
 use agent::AgentSessions;
+use agent_store::AgentStore;
+pub use agent_store::{AGENT_SESSIONS_FILE, AgentStoreError};
 pub use drawing::DrawingCache;
 pub use project::{
     Location, OpenError, Project, STORE_DIR, machine_actor, open_backend, sync_view,
@@ -89,13 +92,11 @@ pub enum ProjectsError {
     Tracker(#[from] TrackerError),
 }
 
-// One published change, numbered so a client that reconnects can ask for what it missed. `via` is
-// the agent that made the change, which only the daemon itself reads.
+// One published change, numbered so a client that reconnects can ask for what it missed.
 #[derive(Debug, Clone)]
 pub(crate) struct Published {
     pub seq: u64,
     pub event: ChangeEvent,
-    pub via: Option<String>,
 }
 
 #[derive(Clone)]
@@ -122,7 +123,7 @@ impl Publisher {
         }
     }
 
-    pub fn publish(&self, event: ChangeEvent, via: Option<String>) {
+    pub fn publish(&self, event: ChangeEvent) {
         // Every sync reports its status, twice a minute for each project, even when nothing moved.
         match event {
             ChangeEvent::SyncChanged { .. } => tracing::debug!(?event, "change published"),
@@ -133,7 +134,6 @@ impl Publisher {
         let published = Published {
             seq: recent.0,
             event,
-            via,
         };
         recent.1.push_back(published.clone());
         if recent.1.len() > REPLAY {
@@ -204,7 +204,10 @@ impl AppState {
             shutdown: Arc::new(watch::channel(None).0),
             health: None,
             publisher: Publisher::new(),
-            agents: Arc::new(AgentSessions::new(agent::backends())),
+            agents: Arc::new(AgentSessions::new(
+                agent::backends(),
+                AgentStore::in_memory(),
+            )),
             drawings: Arc::new(DrawingCache::new(DrawingCache::BUDGET)),
         }
     }
@@ -214,8 +217,17 @@ impl AppState {
         mut self,
         agents: BTreeMap<op_agent::AgentKind, Arc<dyn op_agent::Agent>>,
     ) -> Self {
-        self.agents = Arc::new(AgentSessions::new(agents));
+        self.agents = Arc::new(AgentSessions::new(agents, AgentStore::in_memory()));
         self
+    }
+
+    // The sessions the file holds come back, and every change to one lands there; a state built
+    // without it keeps its sessions in memory. It keeps the backends already installed.
+    pub fn with_agent_store(mut self, path: &std::path::Path) -> Result<Self, AgentStoreError> {
+        let (store, stored) = AgentStore::open(path)?;
+        self.agents = Arc::new(AgentSessions::new(self.agents.backends(), store));
+        agent::restore(&self, stored);
+        Ok(self)
     }
 
     pub fn agents(&self) -> Arc<AgentSessions> {
@@ -570,7 +582,8 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(list_projects, register_project))
         .routes(routes!(delete_project, rename_project))
         .routes(routes!(tasks::list_tasks, tasks::create_task))
-        .routes(routes!(agent::list_sessions, agent::create_session))
+        .routes(routes!(agent::list_sessions))
+        .routes(routes!(agent::create_session))
         .routes(routes!(agent::delete_session))
         .routes(routes!(agent::prompt_session))
         .routes(routes!(agent::interrupt_session))
@@ -798,7 +811,7 @@ async fn watch_projects(state: AppState) {
         .await
         .unwrap_or(false);
         if moved {
-            state.publisher.publish(ChangeEvent::ProjectsChanged, None);
+            state.publisher.publish(ChangeEvent::ProjectsChanged);
         }
     }
 }
@@ -846,7 +859,7 @@ async fn register_project(
     let author = author_of(&headers);
     let (view, created) = blocking(move || Ok(registering.register_as(&body, author)?)).await?;
     if created {
-        state.publisher.publish(ChangeEvent::ProjectsChanged, None);
+        state.publisher.publish(ChangeEvent::ProjectsChanged);
     }
     let status = match created {
         true => StatusCode::CREATED,
@@ -872,7 +885,7 @@ async fn delete_project(
 ) -> Result<StatusCode, ApiError> {
     let removing = state.clone();
     blocking(move || Ok(removing.deregister(&project)?)).await?;
-    state.publisher.publish(ChangeEvent::ProjectsChanged, None);
+    state.publisher.publish(ChangeEvent::ProjectsChanged);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -896,7 +909,7 @@ async fn rename_project(
 ) -> Result<Json<ProjectView>, ApiError> {
     let renaming = state.clone();
     let view = blocking(move || Ok(renaming.rename_project(&project, &body.name)?)).await?;
-    state.publisher.publish(ChangeEvent::ProjectsChanged, None);
+    state.publisher.publish(ChangeEvent::ProjectsChanged);
     Ok(Json(view))
 }
 

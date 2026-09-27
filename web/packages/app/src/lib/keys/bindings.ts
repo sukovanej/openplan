@@ -142,6 +142,31 @@ export const bindings: ReadonlyArray<Binding> = [
     group: "Task",
     run: (ctx) => ctx.task.copyId(),
   },
+  // The prompt bar lies over the foot of any page, so its key works everywhere.
+  {
+    id: "agent.new",
+    keys: "n",
+    scope: "global",
+    label: "Start a new prompt",
+    group: "Agent",
+    run: (ctx) => ctx.agent.newPrompt(),
+  },
+  {
+    id: "prompt.close",
+    keys: "Escape",
+    scope: "prompt",
+    label: "Hide the agent",
+    group: "Agent",
+    run: (ctx) => ctx.overlay("prompt").close(),
+  },
+  {
+    id: "prompt.new",
+    keys: "n",
+    scope: "prompt",
+    label: "Start a new prompt",
+    group: "Agent",
+    run: (ctx) => ctx.agent.newPrompt(),
+  },
   {
     id: "palette.home",
     keys: "mod+k",

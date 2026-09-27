@@ -19,9 +19,19 @@ export interface DispatcherConfig {
 }
 
 // An open overlay takes the keyboard for itself: only its own scope is live, so nothing behind it
-// fires under it.
-export function activeScopes(activeOverlay: OverlayName | null, route: Scope): ReadonlyArray<Scope> {
-  return activeOverlay === null ? ["global", route, "rows"] : [activeOverlay]
+// fires under it. A modal dialog a component opens on its own, such as the agent's transcript, is
+// no overlay and has no scope, so it silences the page behind it and binds nothing itself.
+export function activeScopes(
+  activeOverlay: OverlayName | null,
+  route: Scope,
+  localModal = false,
+): ReadonlyArray<Scope> {
+  if (activeOverlay !== null) return [activeOverlay]
+  return localModal ? [] : ["global", route, "rows"]
+}
+
+function localModalOpen(): boolean {
+  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null
 }
 
 export function activeBindings(
@@ -70,7 +80,7 @@ export class Dispatcher {
     }
 
     const ctx = this.config.context()
-    const scopes = activeScopes(this.config.activeOverlay(), this.config.routeScope())
+    const scopes = activeScopes(this.config.activeOverlay(), this.config.routeScope(), localModalOpen())
     const bindings = activeBindings(this.config.bindings, scopes, ctx)
     const token = fromEvent(event)
 
