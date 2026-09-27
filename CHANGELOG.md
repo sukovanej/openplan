@@ -9,6 +9,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The openplan skill tells the agent to show each task it creates or changes
+  in the browser pane of the Claude desktop app.
 - The web UI edits the title and the description of a task in place. The
   description is a markdown editor with a live preview: the markdown shows where
   the caret is, and the rest shows as it renders. `/` inserts a block, `@` or
