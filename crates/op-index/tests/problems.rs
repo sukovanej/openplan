@@ -66,8 +66,14 @@ fn a_sound_set_of_tasks_has_no_problems() {
 #[test]
 fn a_reference_a_file_spells_as_a_key_or_a_number_is_a_problem() {
     let found = problems(&[
-        task(1, "parent: 2\n", "# One\n\nSee [[OPP-2]] and [[OPP-9]].\n"),
+        task(
+            1,
+            "parent: 2\ndependencies: [3]\n",
+            "# One\n\nSee [[OPP-2#Design]], [[storage]] and [[OPP-9]].\n",
+        ),
         task(2, "", "# Two\n"),
+        task(3, "", "# Three\n"),
+        ("docs/storage.md".to_owned(), "# Storage\n".to_owned()),
     ]);
 
     assert_eq!(
@@ -79,11 +85,20 @@ fn a_reference_a_file_spells_as_a_key_or_a_number_is_a_problem() {
             ),
             (
                 ProblemCode::ReferencePath,
-                "`2` names OPP-2; a file names it by the path to the task file".to_owned()
+                "the dependency `3` is not a path; write `./00003-t.md`".to_owned()
             ),
             (
                 ProblemCode::ReferencePath,
-                "`OPP-2` names OPP-2; a file names it by the path to the task file".to_owned()
+                "the link `[[OPP-2#Design]]` is not a path; write `[[./00002-t.md#Design]]`"
+                    .to_owned()
+            ),
+            (
+                ProblemCode::ReferencePath,
+                "the link `[[storage]]` is not a path; write `[[../docs/storage.md]]`".to_owned()
+            ),
+            (
+                ProblemCode::ReferencePath,
+                "the parent `2` is not a path; write `./00002-t.md`".to_owned()
             ),
         ]
     );

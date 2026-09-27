@@ -1972,11 +1972,17 @@ fn lint_reports_a_reference_a_file_names_by_its_key_or_its_name() {
     let printed = stdout(&out);
     assert!(!out.status.success(), "{printed}");
     assert!(
-        printed.contains("OPP-2: error[reference_path]: `OPP-1` names OPP-1"),
+        printed.contains(
+            "OPP-2: error[reference_path]: the link `[[OPP-1]]` is not a path; \
+             write `[[./00001-clean.md]]`"
+        ),
         "{printed}"
     );
     assert!(
-        printed.contains("OPP-2: error[reference_path]: `storage` names the doc storage"),
+        printed.contains(
+            "OPP-2: error[reference_path]: the link `[[storage]]` is not a path; \
+             write `[[../docs/storage.md]]`"
+        ),
         "{printed}"
     );
     assert!(printed.contains("checked 2 tasks, 1 doc and"), "{printed}");

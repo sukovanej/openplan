@@ -102,23 +102,32 @@ pub fn unpathed(
         .collect()
 }
 
+#[derive(Debug, Default)]
+pub struct FrontmatterSpellings {
+    pub parent: Option<String>,
+    pub dependencies: Vec<String>,
+}
+
 // The `parent:` and `dependencies:` of a task file as the file spells them, published version.
-pub fn frontmatter_spellings(input: &str) -> Vec<String> {
+pub fn frontmatter_spellings(input: &str) -> FrontmatterSpellings {
     let Some((frontmatter, _)) = crate::split_frontmatter(input) else {
-        return Vec::new();
+        return FrontmatterSpellings::default();
     };
     let published = crate::conflict::published(&frontmatter.replace('\r', ""));
     let Ok(map) = serde_yaml::from_str::<serde_yaml::Mapping>(&published) else {
-        return Vec::new();
+        return FrontmatterSpellings::default();
     };
     let spelled = |value: &serde_yaml::Value| match value {
         serde_yaml::Value::String(text) => Some(text.clone()),
         serde_yaml::Value::Number(number) => Some(number.to_string()),
         _ => None,
     };
-    let mut out: Vec<String> = map.get("parent").and_then(spelled).into_iter().collect();
-    if let Some(serde_yaml::Value::Sequence(items)) = map.get("dependencies") {
-        out.extend(items.iter().filter_map(spelled));
+    let dependencies = match map.get("dependencies") {
+        Some(serde_yaml::Value::Sequence(items)) => items.iter().filter_map(spelled).collect(),
+        _ => Vec::new(),
+    };
+    FrontmatterSpellings {
+        parent: map.get("parent").and_then(spelled),
+        dependencies,
     }
-    out
 }
