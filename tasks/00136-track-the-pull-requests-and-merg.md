@@ -17,6 +17,7 @@ A task often has one or more pull requests. Nothing in the task records them now
 In this task, "pull request" also means a GitLab merge request.
 
 ## Part 1: manual editing
+
 ### Data
 
 Add the field `pull_requests` to the front matter. Each value is the address of one pull request.
