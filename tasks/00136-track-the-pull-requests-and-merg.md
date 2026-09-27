@@ -66,6 +66,7 @@ openplan tasks show OPP-42                  # prints each pull request with its 
 - Add `pr add` and `pr remove` to `TaskCommand` in `crates/op-cli/src/tasks.rs`. They change one value. Two agents that add at the same time must not drop an entry, so these commands do not read the set and write it back. They send `add_pull_requests` or `remove_pull_requests` in `TaskPatch`, and the server applies them inside `update_task`.
 - `show` prints one line for each pull request: the short form, the state, and the title. When the daemon does not know the state, it prints the address only.
 - `get --json` gets the field through `TaskDetail` with no extra work.
+- Add `pull_requests` to the help line of `tasks set` and to the field list in its error message.
 
 ### API
 
