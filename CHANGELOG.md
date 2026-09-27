@@ -7,6 +7,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.4...main)
 
+### Added
+
+- The openplan-docs skill tells the agent to read and write the project docs
+  with `openplan doc` when the user mentions a doc, and to show each doc it
+  creates or changes in the built-in browser of the agent app.
+
 ### Changed
 
 - The task commands are in the `openplan tasks` group: `create`, `list`,
@@ -15,10 +21,20 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `openplan tasks get OPP-42`. Run `openplan setup-skills` to update the agent
   skills in a checkout.
 
+### Fixed
+
+- An open web UI page reloads when it cannot load a part of the app, such as the
+  diff view, after the daemon starts again on a new build of the same version.
+  Before, it showed "Failed to fetch dynamically imported module".
+
 ## [0.0.4](https://github.com/sukovanej/openplan/compare/v0.0.3...v0.0.4) - 2026-09-26
 
 ### Added
 
+- The openplan skill tells the agent to show each task it creates or changes
+  in the built-in browser of the Claude desktop app or the Codex app.
+  `openplan setup-skills` writes the name of the browser tool that each agent
+  uses into the skill of that agent.
 - The web UI edits the title and the description of a task in place. The
   description is a markdown editor with a live preview: the markdown shows where
   the caret is, and the rest shows as it renders. `/` inserts a block, `@` or

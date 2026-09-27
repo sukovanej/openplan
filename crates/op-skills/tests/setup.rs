@@ -1,6 +1,15 @@
 use std::fs;
+use std::path::Path;
 
 use op_skills::Agent;
+
+fn embedded_skills() -> Vec<String> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("skills");
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect()
+}
 
 #[test]
 fn setup_installs_all_embedded_skills_for_each_agent() {
@@ -9,9 +18,11 @@ fn setup_installs_all_embedded_skills_for_each_agent() {
     op_skills::setup(root.path(), &[Agent::Claude, Agent::Codex]).unwrap();
 
     for agent_dir in [".claude/skills", ".agents/skills"] {
-        let contents =
-            fs::read_to_string(root.path().join(agent_dir).join("openplan/SKILL.md")).unwrap();
-        assert!(contents.starts_with("---\nname: openplan\n"));
+        for skill in embedded_skills() {
+            let path = root.path().join(agent_dir).join(&skill).join("SKILL.md");
+            let contents = fs::read_to_string(path).unwrap();
+            assert!(contents.starts_with(&format!("---\nname: {skill}\n")));
+        }
     }
 }
 
@@ -62,4 +73,25 @@ fn setup_removes_retired_skills_and_keeps_the_users_files_beside_them() {
             .iter()
             .all(|file| file.matches())
     );
+}
+
+#[test]
+fn setup_names_the_browser_of_each_agent() {
+    let root = tempfile::tempdir().unwrap();
+
+    op_skills::setup(root.path(), &[Agent::Claude, Agent::Codex]).unwrap();
+
+    for skill in embedded_skills() {
+        let read = |agent_dir: &str| {
+            fs::read_to_string(root.path().join(agent_dir).join(&skill).join("SKILL.md")).unwrap()
+        };
+        let claude = read(".claude/skills");
+        let codex = read(".agents/skills");
+        assert!(claude.contains("`mcp__Claude_Browser__navigate`"));
+        assert!(codex.contains("`@Browser`"));
+        assert!(!codex.contains("Claude"));
+        for skill in [claude, codex] {
+            assert!(!skill.contains("{{"));
+        }
+    }
 }

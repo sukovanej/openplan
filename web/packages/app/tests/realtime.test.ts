@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const refreshed = vi.hoisted(() => ({ calls: [] as Array<string> }))
-const page = vi.hoisted(() => ({ unsaved: false, reloads: 0, version: "1.0.0" as string | undefined, up: true }))
+const page = vi.hoisted(() => ({
+  unsaved: false,
+  reloads: 0,
+  version: "1.0.0" as string | undefined,
+  up: true,
+  chunkFailed: undefined as ((event: Event) => void) | undefined,
+}))
 
 vi.mock("../src/lib/query-client", () => ({
   queryInvalidator: {
@@ -50,12 +56,22 @@ beforeEach(() => {
   vi.stubGlobal("EventSource", FakeEventSource)
   vi.stubGlobal("fetch", health)
   vi.stubGlobal("document", {})
-  vi.stubGlobal("window", { location: { reload: () => (page.reloads += 1) } })
+  vi.stubGlobal("window", {
+    location: { reload: () => (page.reloads += 1) },
+    addEventListener: (type: string, listener: (event: Event) => void) => {
+      if (type === "vite:preloadError") page.chunkFailed = listener
+    },
+  })
+  const stored = new Map<string, string>()
+  vi.stubGlobal("sessionStorage", {
+    getItem: (key: string) => stored.get(key) ?? null,
+    setItem: (key: string, value: string) => void stored.set(key, value),
+  })
   // The stream is a module singleton, so each test starts a fresh module.
   vi.resetModules()
   FakeEventSource.made = []
   refreshed.calls = []
-  Object.assign(page, { unsaved: false, reloads: 0, version: "1.0.0", up: true })
+  Object.assign(page, { unsaved: false, reloads: 0, version: "1.0.0", up: true, chunkFailed: undefined })
 })
 
 afterEach(() => {
@@ -201,5 +217,38 @@ describe("a new version of the daemon", () => {
     expect(await drop(stream)).toBeUndefined()
     expect(page.reloads).toBe(0)
     expect(await connection()).toBe("outdated")
+  })
+})
+
+describe("a chunk the page cannot load", () => {
+  const failure = () => {
+    let prevented = false
+    return { event: { preventDefault: () => void (prevented = true) } as Event, prevented: () => prevented }
+  }
+
+  it("reloads the page and keeps the error back, since the daemon serves another build", async () => {
+    await start()
+    const chunk = failure()
+    page.chunkFailed?.(chunk.event)
+    expect(page.reloads).toBe(1)
+    expect(chunk.prevented()).toBe(true)
+  })
+
+  it("lets the error through when the page reloaded for a chunk a moment ago", async () => {
+    await start()
+    page.chunkFailed?.(failure().event)
+    const again = failure()
+    page.chunkFailed?.(again.event)
+    expect(page.reloads).toBe(1)
+    expect(again.prevented()).toBe(false)
+  })
+
+  it("reloads the page even with unsaved work, which the error would drop as well", async () => {
+    page.unsaved = true
+    await start()
+    const chunk = failure()
+    page.chunkFailed?.(chunk.event)
+    expect(page.reloads).toBe(1)
+    expect(chunk.prevented()).toBe(true)
   })
 })
