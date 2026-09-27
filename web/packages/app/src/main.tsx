@@ -24,7 +24,8 @@ import { FlowRoute } from "./routes/flow"
 import { ListRoute } from "./routes/list"
 import { TagsRoute } from "./routes/tags"
 
-import "@fontsource-variable/source-serif-4/index.css"
+import "@fontsource-variable/open-sans/index.css"
+import "@fontsource-variable/open-sans/wght-italic.css"
 import "./index.css"
 
 const router = createBrowserRouter([
