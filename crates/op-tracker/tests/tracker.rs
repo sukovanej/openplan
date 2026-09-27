@@ -270,6 +270,59 @@ fn a_comment_is_appended_to_the_log() {
     assert_eq!(messages(tracker)[0], "OPP-1: comment");
 }
 
+fn assert_references_are_paths(tracker: &Tracker, number: u64) {
+    let raw = tracker.plan().expect("plan").raw(number).expect("raw");
+    assert!(raw.contains("parent: ./00001-parent.md"), "{raw}");
+    assert!(raw.contains("- ./00002-dependency.md"), "{raw}");
+}
+
+fn child_of_parent_and_dependency(tracker: &Tracker) -> u64 {
+    create(tracker, "Parent");
+    create(tracker, "Dependency");
+    let child = create(tracker, "Child");
+    tracker
+        .update_task(&actor(), child, |task| {
+            task.set_parent(Some("1".to_owned()));
+            task.set_dependencies(vec!["2".to_owned()]);
+            task.set_tags(vec!["feature".to_owned()]);
+            Ok(())
+        })
+        .expect("references");
+    assert_references_are_paths(tracker, child);
+    child
+}
+
+#[test]
+fn a_comment_keeps_the_references_as_paths() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    let child = child_of_parent_and_dependency(tracker);
+    tracker
+        .add_comment(
+            &actor(),
+            child,
+            &NewComment {
+                at: stamp(),
+                author: "Ada".to_owned(),
+                agent: None,
+                text: "Noted.".to_owned(),
+            },
+        )
+        .expect("comment");
+    assert_references_are_paths(tracker, child);
+}
+
+#[test]
+fn a_tag_rename_keeps_the_references_as_paths() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    let child = child_of_parent_and_dependency(tracker);
+    tracker
+        .rename_tag(&actor(), "feature", "story")
+        .expect("rename");
+    assert_references_are_paths(tracker, child);
+}
+
 #[test]
 fn a_tag_rename_moves_every_task_in_one_revision() {
     let fixture = started();

@@ -9,7 +9,9 @@ use op_task::conflict::{self, Labels};
 use op_task::doc::Doc;
 use op_task::layout::{self, Document};
 use op_task::reference::relative;
-use op_task::{Abbreviation, Task, merge, parse_partial, three_way};
+use op_task::{Abbreviation, Task, file_spellings, merge, parse_partial, three_way};
+
+use crate::files;
 
 // Sync runs unattended, so every conflict gets an answer and nothing a person wrote is lost. A field
 // or lines that both sides changed differently keep both versions in the task, with the published
@@ -160,9 +162,20 @@ fn merged_file(base: &File, ours: &File, theirs: &File, labels: &Labels) -> File
     let [base, ours, theirs] = [base, ours, theirs].map(|file| String::from_utf8_lossy(&file.1));
     let parse = |text: &str| Task::from_file_string(text).ok();
     let text = match (parse(&base), parse(&ours), parse(&theirs)) {
-        (Some(base), Some(ours), Some(theirs)) => merge::task(&base, &ours, &theirs, labels)
+        (Some(base_task), Some(ours_task), Some(theirs_task)) => {
+            let merged = merge::task(&base_task, &ours_task, &theirs_task, labels);
+            let mut spellings = file_spellings(&base);
+            spellings.extend(file_spellings(&ours));
+            spellings.extend(file_spellings(&theirs));
+            files::references_named(&merged, |reference| {
+                spellings
+                    .get(reference)
+                    .cloned()
+                    .unwrap_or_else(|| reference.to_owned())
+            })
             .to_file_string()
-            .ok(),
+            .ok()
+        }
         _ => None,
     }
     // A version that does not parse as a task still merges line by line, frontmatter included.

@@ -190,7 +190,19 @@ fn reference(text: &str) -> Result<u64, TrackerError> {
 // follow one. A reference to a deleted task keeps its number, and a body reference that names no
 // file is written as the key, so it resolves once that task exists.
 pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
-    let named = |reference: &str| named(plan, reference);
+    let mut task = references_named(task, |reference| named(plan, reference));
+    task.body = body_in_file_form(plan, layout::TASKS, &task.body);
+    task
+}
+
+// `Task::to_file_string` writes a reference as it is in memory, and no file may hold that, so every
+// task write goes through here.
+pub(crate) fn task_text(plan: &Plan, task: &Task) -> Result<String, TrackerError> {
+    Ok(in_file_form(plan, task).to_file_string()?)
+}
+
+pub(crate) fn references_named(task: &Task, named: impl Fn(&str) -> String) -> Task {
+    let named = &named;
     let mut task = task.clone();
     for conflict in &mut task.conflicts {
         conflict.other = match (conflict.field.as_str(), conflict.other.take()) {
@@ -211,7 +223,6 @@ pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
         .iter()
         .map(|reference| named(reference))
         .collect();
-    task.body = body_in_file_form(plan, layout::TASKS, &task.body);
     task
 }
 

@@ -135,7 +135,7 @@ impl Tracker {
                     ))
                 })?,
             };
-            let text = files::in_file_form(plan, task).to_file_string()?;
+            let text = files::task_text(plan, task)?;
             Ok((
                 vec![Op::put(layout::task_path(number, &title), text)],
                 number,
@@ -230,7 +230,7 @@ impl Tracker {
                 Some(&old.frontmatter),
                 &task.frontmatter,
             )?;
-            let text = files::in_file_form(plan, &task).to_file_string()?;
+            let text = files::task_text(plan, &task)?;
             Ok((vec![Op::put(path, text)], task))
         })?;
         Ok(Updated {
@@ -275,7 +275,7 @@ impl Tracker {
                 .to_owned();
             let mut task = plan.task(number)?;
             task.append_comment(comment);
-            Ok((vec![Op::put(path, task.to_file_string()?)], ()))
+            Ok((vec![Op::put(path, files::task_text(plan, &task)?)], ()))
         })?;
         Ok(committed)
     }
@@ -378,7 +378,7 @@ impl Tracker {
                     .collect();
                 task.set_tags(tags);
                 let path = plan.path_of(*number).expect("a tagged task has a path");
-                ops.push(Op::put(path, task.to_file_string()?));
+                ops.push(Op::put(path, files::task_text(plan, &task)?));
             }
             Ok((ops, (renamed, referencing)))
         })?;

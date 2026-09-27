@@ -207,6 +207,66 @@ fn a_reference_to_a_renumbered_task_follows_it() {
 }
 
 #[test]
+fn a_merged_task_keeps_its_references_as_paths() {
+    let team = Team::new();
+    let (alice, bob) = started(&team);
+    alice.create("Parent");
+    alice.create("Dependency");
+    alice.create("Other parent");
+    alice
+        .tracker
+        .update_task(&alice.actor, 1, |task| {
+            task.set_parent(Some("2".to_owned()));
+            task.set_dependencies(vec!["3".to_owned()]);
+            Ok(())
+        })
+        .expect("references");
+    alice.sync();
+    bob.sync();
+    alice
+        .tracker
+        .update_task(&alice.actor, 1, |task| {
+            task.set_status(Status::Done);
+            Ok(())
+        })
+        .expect("status");
+    bob.tracker
+        .update_task(&bob.actor, 1, |task| {
+            task.set_parent(Some("4".to_owned()));
+            Ok(())
+        })
+        .expect("parent");
+    alice.sync();
+    bob.sync();
+    let raw = bob.tracker.plan().expect("plan").raw(1).expect("raw");
+    assert!(raw.contains("parent: ./00004-other-parent.md"), "{raw}");
+    assert!(raw.contains("- ./00003-dependency.md"), "{raw}");
+    assert!(raw.contains("status: done"), "{raw}");
+
+    alice.sync();
+    alice
+        .tracker
+        .update_task(&alice.actor, 1, |task| {
+            task.set_parent(Some("2".to_owned()));
+            Ok(())
+        })
+        .expect("parent");
+    bob.tracker
+        .update_task(&bob.actor, 1, |task| {
+            task.set_parent(None);
+            Ok(())
+        })
+        .expect("no parent");
+    bob.sync();
+    alice.sync();
+    assert_eq!(alice.task(1).conflicts.len(), 1);
+    let raw = alice.tracker.plan().expect("plan").raw(1).expect("raw");
+    assert!(!raw.contains("parent: '"), "{raw}");
+    assert!(raw.contains("./00002-parent.md"), "{raw}");
+    assert!(raw.contains("- ./00003-dependency.md"), "{raw}");
+}
+
+#[test]
 fn edits_to_different_fields_of_one_task_combine() {
     let team = Team::new();
     let (alice, bob) = started(&team);

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -380,6 +382,25 @@ fn deserialize_dependencies<'de, D: serde::Deserializer<'de>>(
                 serde::de::Error::custom(format!("{REFERENCE_EXPECTED}, one per entry"))
             })
         })
+        .collect()
+}
+
+// Sync merges tasks in memory and has no plan to name the files again, so it takes back the
+// spelling each version of the file used.
+pub fn file_spellings(input: &str) -> BTreeMap<String, String> {
+    let Some(frontmatter) = parse_partial(input).frontmatter else {
+        return BTreeMap::new();
+    };
+    let dependencies = frontmatter
+        .get("dependencies")
+        .and_then(serde_yaml::Value::as_sequence)
+        .into_iter()
+        .flatten();
+    frontmatter
+        .get("parent")
+        .into_iter()
+        .chain(dependencies)
+        .filter_map(|value| Some((ref_of(value)?, value.as_str()?.to_owned())))
         .collect()
 }
 
