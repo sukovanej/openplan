@@ -154,8 +154,8 @@ fn task_findings(row: &TaskListItem) -> Vec<Finding> {
                 row.conflicts,
                 plural(row.conflicts)
             ),
-            help: "keep one version of each block and write the task back with `openplan write`, \
-                   or settle a field with `openplan set`",
+            help: "keep one version of each block and write the task back with \
+                   `openplan tasks write`, or settle a field with `openplan tasks set`",
         });
     }
     findings
@@ -208,24 +208,28 @@ fn doc_help(code: ProblemCode) -> &'static str {
 fn help(code: ProblemCode) -> &'static str {
     match code {
         ProblemCode::Field => {
-            "set the field with `openplan set`, or write the task back with `openplan write`"
+            "set the field with `openplan tasks set`, or write the task back with \
+             `openplan tasks write`"
         }
-        ProblemCode::Title => "write the task back with `openplan write` and one `# ` title",
+        ProblemCode::Title => "write the task back with `openplan tasks write` and one `# ` title",
         ProblemCode::Comment => {
-            "repair the comment log with `openplan write`; add entries with `openplan comment`"
+            "repair the comment log with `openplan tasks write`; add entries with \
+             `openplan tasks comment`"
         }
         ProblemCode::Diagram => {
             "repair the `mermaid` fence; the openplan skill lists the Mermaid it accepts"
         }
         ProblemCode::Reference => "name a task or a doc that exists, or remove the reference",
         ProblemCode::ReferencePath => {
-            "write the task back with `openplan write`; a write spells each reference as a path"
+            "write the task back with `openplan tasks write`; a write spells each reference as a \
+             path"
         }
         ProblemCode::Tag => {
-            "register the tag with `openplan tag`, or remove it with `openplan set <key> tags`"
+            "register the tag with `openplan tag`, or remove it with \
+             `openplan tasks set <key> tags`"
         }
         ProblemCode::ParentCycle | ProblemCode::DependencyCycle => {
-            "change one parent or dependency in the cycle with `openplan set`"
+            "change one parent or dependency in the cycle with `openplan tasks set`"
         }
         ProblemCode::DuplicateNumber => {
             "delete the task file that is not read, or give it a free number"

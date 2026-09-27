@@ -70,7 +70,7 @@ fn list_reports_real_status_and_title() {
         "---\nstatus: done\ncreated: 2026-01-01T00:00:00Z\n---\n# Ship it\n",
     );
 
-    let listed = ok(project.run(&["list"]));
+    let listed = ok(project.run(&["tasks", "list"]));
 
     assert!(listed.contains("OPP-1"), "the id is the key: {listed}");
     assert!(
@@ -95,7 +95,7 @@ fn search_finds_a_task_by_its_body() {
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Paint it\n",
     );
 
-    let found = ok(project.run(&["search", "ZEPPELIN"]));
+    let found = ok(project.run(&["tasks", "search", "ZEPPELIN"]));
 
     assert!(found.contains("OPP-1"), "the key: {found}");
     assert!(found.contains("done"), "the status: {found}");
@@ -108,7 +108,7 @@ fn search_reports_no_matches_rather_than_nothing() {
     let project = Project::local();
     project.create("Ship it");
 
-    let found = ok(project.run(&["search", "kubernetes"]));
+    let found = ok(project.run(&["tasks", "search", "kubernetes"]));
 
     assert!(found.contains("no matching tasks"), "{found}");
 }
@@ -117,9 +117,9 @@ fn search_reports_no_matches_rather_than_nothing() {
 fn search_json_carries_the_hit() {
     let project = Project::local();
     let id = project.create("Ship it");
-    ok(project.run(&["set", &id, "status", "done"]));
+    ok(project.run(&["tasks", "set", &id, "status", "done"]));
 
-    let hits = json(project.run(&["search", "ship", "--json"]));
+    let hits = json(project.run(&["tasks", "search", "ship", "--json"]));
 
     let hits = hits.as_array().unwrap();
     assert_eq!(hits.len(), 1, "{hits:?}");
@@ -140,7 +140,7 @@ fn list_finds_the_tasks_from_a_subdirectory() {
         let out = project
             .cmd()
             .current_dir(&nested)
-            .arg("list")
+            .args(["tasks", "list"])
             .output()
             .unwrap();
 
@@ -155,7 +155,7 @@ fn a_write_from_inside_the_project_needs_no_root_flag() {
     let out = project
         .cmd()
         .current_dir(project.path())
-        .args(["create", "Ship login page"])
+        .args(["tasks", "create", "Ship login page"])
         .output()
         .unwrap();
 
@@ -203,6 +203,7 @@ fn the_task_commands_work_the_same_on_a_git_branch() {
     let project = Project::git();
     let parent = project.create("Parent");
     let out = project.run(&[
+        "tasks",
         "create",
         "Kid",
         "--parent",
@@ -211,23 +212,23 @@ fn the_task_commands_work_the_same_on_a_git_branch() {
         "It needs a zeppelin.",
     ]);
     let kid = ok(out).trim().to_owned();
-    ok(project.run(&["set", &kid, "status", "in_progress"]));
-    ok(project.run(&["comment", &kid, "hello"]));
+    ok(project.run(&["tasks", "set", &kid, "status", "in_progress"]));
+    ok(project.run(&["tasks", "comment", &kid, "hello"]));
     ok(project.run(&["tag", "create", "backend"]));
-    ok(project.run(&["set", &kid, "tags", "backend"]));
+    ok(project.run(&["tasks", "set", &kid, "tags", "backend"]));
 
-    let shown = ok(project.run(&["show", &kid]));
+    let shown = ok(project.run(&["tasks", "show", &kid]));
     assert!(shown.contains("status: in_progress"), "{shown}");
     assert!(shown.contains(&format!("parent: {parent}")), "{shown}");
     assert!(shown.contains("tags: backend"), "{shown}");
-    let printed = ok(project.run(&["get", &kid]));
+    let printed = ok(project.run(&["tasks", "get", &kid]));
     assert!(printed.contains("It needs a zeppelin."), "{printed}");
     assert!(printed.contains("> hello"), "{printed}");
-    assert!(ok(project.run(&["search", "zeppelin"])).contains(&kid));
-    assert!(ok(project.run(&["tree", &parent])).contains("Kid"));
+    assert!(ok(project.run(&["tasks", "search", "zeppelin"])).contains(&kid));
+    assert!(ok(project.run(&["tasks", "tree", &parent])).contains("Kid"));
 
-    ok(project.run(&["delete", &kid, "--yes"]));
-    assert!(!ok(project.run(&["list"])).contains("Kid"));
+    ok(project.run(&["tasks", "delete", &kid, "--yes"]));
+    assert!(!ok(project.run(&["tasks", "list"])).contains("Kid"));
 
     assert!(
         !project.path().join(".plan").exists(),
@@ -274,7 +275,9 @@ fn a_linked_worktree_reaches_the_tasks_of_its_repository() {
         .to_owned();
     ok(project.run(&["project", "remove", &name]));
 
-    let from_feature = project.home.run(&feature, &["create", "From the worktree"]);
+    let from_feature = project
+        .home
+        .run(&feature, &["tasks", "create", "From the worktree"]);
     assert!(
         stderr(&from_feature).contains("registered project"),
         "the worktree's first command registers the repository: {}",
@@ -282,7 +285,7 @@ fn a_linked_worktree_reaches_the_tasks_of_its_repository() {
     );
     let id = ok(from_feature).trim().to_owned();
     assert_ne!(id, anchor, "one counter serves every worktree");
-    assert!(ok(project.home.run(&feature, &["list"])).contains("Anchor"));
+    assert!(ok(project.home.run(&feature, &["tasks", "list"])).contains("Anchor"));
     let registry = project.home.registry();
     assert!(
         registry.contains(&format!(
@@ -296,14 +299,14 @@ fn a_linked_worktree_reaches_the_tasks_of_its_repository() {
         project.path(),
         &["worktree", "remove", "--force", feature.to_str().unwrap()],
     );
-    let from_main = project.run(&["create", "From main"]);
+    let from_main = project.run(&["tasks", "create", "From main"]);
     assert!(
         !stderr(&from_main).contains("registered"),
         "the project outlives the worktree that registered it: {}",
         stderr(&from_main)
     );
     ok(from_main);
-    assert!(ok(project.run(&["show", &id])).contains("From the worktree"));
+    assert!(ok(project.run(&["tasks", "show", &id])).contains("From the worktree"));
 }
 
 #[test]
@@ -357,7 +360,13 @@ fn url_refuses_a_key_with_no_task() {
 fn a_write_with_no_reachable_daemon_fails_explicitly() {
     let project = Project::local();
 
-    let out = project.run(&["--daemon", "http://127.0.0.1:1", "create", "Ship login"]);
+    let out = project.run(&[
+        "--daemon",
+        "http://127.0.0.1:1",
+        "tasks",
+        "create",
+        "Ship login",
+    ]);
 
     assert!(!out.status.success(), "an unreachable daemon must not pass");
     assert!(
@@ -365,7 +374,7 @@ fn a_write_with_no_reachable_daemon_fails_explicitly() {
         "stderr: {}",
         stderr(&out)
     );
-    assert!(ok(project.run(&["list"])).contains("no tasks yet"));
+    assert!(ok(project.run(&["tasks", "list"])).contains("no tasks yet"));
 }
 
 #[test]
@@ -373,7 +382,7 @@ fn a_command_where_no_tasks_live_says_how_to_start_them() {
     let home = Home::new();
     let empty = tempfile::tempdir().unwrap();
 
-    for args in [&["create", "Ship login"][..], &["list"]] {
+    for args in [&["tasks", "create", "Ship login"][..], &["tasks", "list"]] {
         let out = home.run(empty.path(), args);
         assert!(!out.status.success(), "{args:?}: {}", stdout(&out));
         assert!(
@@ -398,7 +407,7 @@ fn a_repository_with_tasks_beside_the_code_asks_for_a_migration() {
         "abbreviation = \"OPP\"\n",
     );
 
-    let out = home.run(repo.path(), &["create", "Ship login"]);
+    let out = home.run(repo.path(), &["tasks", "create", "Ship login"]);
 
     assert!(!out.status.success(), "stdout: {}", stdout(&out));
     assert!(
@@ -417,7 +426,9 @@ fn writes_from_two_projects_land_in_their_own_stores() {
     let second = Project::local();
     first.create("Anchor");
 
-    let out = first.home.run(second.path(), &["create", "Ship login"]);
+    let out = first
+        .home
+        .run(second.path(), &["tasks", "create", "Ship login"]);
 
     // Each project has its own id counter, so both first tasks are number one.
     assert_eq!(ok(out).trim(), "OPP-1");
@@ -438,7 +449,7 @@ fn only_the_first_write_from_a_project_reports_a_registration() {
     let home = Home::new();
     let store = unregistered_store("OPP");
 
-    let first = home.run(store.path(), &["create", "Anchor"]);
+    let first = home.run(store.path(), &["tasks", "create", "Anchor"]);
     assert!(first.status.success(), "stderr: {}", stderr(&first));
     assert!(
         stderr(&first).contains("registered project"),
@@ -446,7 +457,7 @@ fn only_the_first_write_from_a_project_reports_a_registration() {
         stderr(&first)
     );
 
-    let second = home.run(store.path(), &["create", "Ship login"]);
+    let second = home.run(store.path(), &["tasks", "create", "Ship login"]);
     assert!(second.status.success(), "stderr: {}", stderr(&second));
     assert!(
         !stderr(&second).contains("registered"),
@@ -491,6 +502,7 @@ fn a_daemon_without_project_routes_asks_for_a_restart() {
     let out = project.run(&[
         "--daemon",
         &format!("http://127.0.0.1:{port}"),
+        "tasks",
         "create",
         "Ship login",
     ]);
@@ -516,6 +528,7 @@ fn a_named_daemon_is_not_registered_into_by_a_write() {
     let out = other.run(&[
         "--daemon",
         &format!("http://127.0.0.1:{port}"),
+        "tasks",
         "create",
         "Ship login",
     ]);
@@ -546,7 +559,7 @@ fn a_home_inside_a_project_never_becomes_the_project_written_to() {
 
     let out = common::openplan(&home)
         .current_dir(project.path())
-        .args(["create", "Ship login page"])
+        .args(["tasks", "create", "Ship login page"])
         .output()
         .unwrap();
     let _ = common::openplan(&home).args(["server", "stop"]).output();
@@ -569,16 +582,16 @@ fn get_show_and_missing_id() {
     let project = Project::local();
     let id = project.create("Ship it");
 
-    let shown = ok(project.run(&["show", &id]));
+    let shown = ok(project.run(&["tasks", "show", &id]));
     assert!(shown.contains("status: backlog"), "{shown}");
     assert!(shown.contains("title:  Ship it"), "{shown}");
 
-    let view = json(project.run(&["get", &id, "--json"]));
+    let view = json(project.run(&["tasks", "get", &id, "--json"]));
     assert_eq!(view["title"], "Ship it");
     assert_eq!(view["metadata"]["status"], "backlog");
 
     for missing in ["does-not-exist", "OPP-99"] {
-        let out = project.run(&["get", missing]);
+        let out = project.run(&["tasks", "get", missing]);
         assert!(
             !out.status.success(),
             "get on a missing id must exit non-zero"
@@ -594,7 +607,7 @@ fn set_updates_only_frontmatter() {
     let path = project.task_file(&id);
     let body_before = task_body(&path);
 
-    ok(project.run(&["set", &id, "status", "in_progress"]));
+    ok(project.run(&["tasks", "set", &id, "status", "in_progress"]));
 
     let contents = std::fs::read_to_string(&path).unwrap();
     assert!(
@@ -607,19 +620,19 @@ fn set_updates_only_frontmatter() {
         "body must be byte-for-byte unchanged"
     );
 
-    let bad_status = project.run(&["set", &id, "status", "bogus"]);
+    let bad_status = project.run(&["tasks", "set", &id, "status", "bogus"]);
     assert!(
         !bad_status.status.success(),
         "invalid status must be rejected"
     );
 
-    let bad_parent = project.run(&["set", &id, "parent", "OPP-99"]);
+    let bad_parent = project.run(&["tasks", "set", &id, "parent", "OPP-99"]);
     assert!(
         !bad_parent.status.success(),
         "non-existent parent must be rejected"
     );
 
-    let bad_field = project.run(&["set", &id, "colour", "red"]);
+    let bad_field = project.run(&["tasks", "set", &id, "colour", "red"]);
     assert!(
         stderr(&bad_field).contains("expected status | parent | dependencies | tags"),
         "stderr: {}",
@@ -633,12 +646,12 @@ fn delete_removes_the_file() {
     let id = project.create("Temporary");
     let path = project.task_file(&id);
 
-    let deleted = ok(project.run(&["delete", &id, "--yes"]));
+    let deleted = ok(project.run(&["tasks", "delete", &id, "--yes"]));
 
     assert!(deleted.contains(&format!("deleted {id}")), "{deleted}");
     assert!(!path.exists(), "delete must remove the file");
     assert!(
-        !ok(project.run(&["list"])).contains(&id),
+        !ok(project.run(&["tasks", "list"])).contains(&id),
         "deleted id must not appear in list"
     );
 }
@@ -652,7 +665,7 @@ fn delete_asks_before_it_deletes() {
         .cmd()
         .arg("--root")
         .arg(project.path())
-        .args(["delete", &id])
+        .args(["tasks", "delete", &id])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -675,7 +688,7 @@ fn delete_of_a_missing_id_fails_before_it_prompts() {
     let project = Project::local();
 
     // No `--yes`: a typo must be refused outright rather than put to the reader as a question.
-    let out = project.run(&["delete", "OPP-99"]);
+    let out = project.run(&["tasks", "delete", "OPP-99"]);
 
     assert!(!out.status.success());
     assert!(
@@ -696,10 +709,10 @@ fn list_json_filters_by_status() {
     let todo = project.create("Still to do");
     let done = project.create("Already done");
     for (id, status) in [(&todo, "todo"), (&done, "done")] {
-        ok(project.run(&["set", id, "status", status]));
+        ok(project.run(&["tasks", "set", id, "status", status]));
     }
 
-    let tasks = json(project.run(&["list", "--json", "--status", "todo"]));
+    let tasks = json(project.run(&["tasks", "list", "--json", "--status", "todo"]));
 
     let tasks = tasks.as_array().unwrap();
     assert_eq!(tasks.len(), 1, "only the todo task should match: {tasks:?}");
@@ -714,7 +727,7 @@ fn list_filters_by_parent() {
     let kid = project.child("Kid", &parent);
     project.create("Loose");
 
-    let listed = ok(project.run(&["list", "--parent", &parent]));
+    let listed = ok(project.run(&["tasks", "list", "--parent", &parent]));
 
     assert!(listed.contains(&kid), "{listed}");
     assert!(!listed.contains("Loose"), "{listed}");
@@ -724,15 +737,15 @@ fn list_filters_by_parent() {
 fn set_status_survives_a_deleted_dependency() {
     let project = Project::local();
     let a = project.create("Task A");
-    let b = ok(project.run(&["create", "Task B", "--dependency", &a]))
+    let b = ok(project.run(&["tasks", "create", "Task B", "--dependency", &a]))
         .trim()
         .to_owned();
 
-    ok(project.run(&["delete", &a, "--yes"]));
+    ok(project.run(&["tasks", "delete", &a, "--yes"]));
 
     // B still lists A as a dependency, but changing B's status is unrelated and must succeed.
-    ok(project.run(&["set", &b, "status", "done"]));
-    assert!(ok(project.run(&["show", &b])).contains("status: done"));
+    ok(project.run(&["tasks", "set", &b, "status", "done"]));
+    assert!(ok(project.run(&["tasks", "show", &b])).contains("status: done"));
 }
 
 #[test]
@@ -745,7 +758,7 @@ fn set_preserves_unknown_frontmatter_keys() {
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nestimate: 3.5\nassignee: milan\n---\n# Task C\n",
     );
 
-    ok(project.run(&["set", &id, "status", "done"]));
+    ok(project.run(&["tasks", "set", &id, "status", "done"]));
 
     let contents = std::fs::read_to_string(&path).unwrap();
     assert!(
@@ -770,7 +783,7 @@ fn get_renders_the_daemons_state_rather_than_the_file() {
         "---\nassignee: milan\nrank:   '7'\ncreated: 2026-01-01T00:00:00Z\nstatus: todo\n---\n# Task D\n\nsome body\n",
     );
 
-    let printed = ok(project.run(&["get", &id]));
+    let printed = ok(project.run(&["tasks", "get", &id]));
 
     assert_eq!(
         printed,
@@ -789,7 +802,7 @@ fn get_refuses_to_render_a_task_missing_a_required_field() {
         "---\nstatus: todo\n---\n# Legacy\n",
     );
 
-    let out = project.run(&["get", "OPP-1"]);
+    let out = project.run(&["tasks", "get", "OPP-1"]);
     assert!(!out.status.success(), "stdout: {}", stdout(&out));
     assert!(
         stdout(&out).is_empty(),
@@ -809,7 +822,7 @@ fn get_refuses_to_render_a_task_missing_a_required_field() {
 
     // `--json` answers with the state the daemon holds, which is exactly what a broken file needs
     // read, so it keeps working.
-    let view = json(project.run(&["get", "OPP-1", "--json"]));
+    let view = json(project.run(&["tasks", "get", "OPP-1", "--json"]));
     assert_eq!(view["metadata"]["created"]["kind"], "missing");
 }
 
@@ -823,7 +836,7 @@ fn get_reports_a_field_it_cannot_render() {
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nrank: [1, 2]\n---\n# Legacy\n",
     );
 
-    let out = project.run(&["get", "OPP-1"]);
+    let out = project.run(&["tasks", "get", "OPP-1"]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert_eq!(
@@ -841,7 +854,7 @@ fn set_on_a_task_without_created_explains_what_to_add() {
         "---\nstatus: todo\n---\n# Legacy\n",
     );
 
-    let out = project.run(&["set", "OPP-2", "status", "done"]);
+    let out = project.run(&["tasks", "set", "OPP-2", "status", "done"]);
 
     assert!(!out.status.success());
     assert!(
@@ -861,6 +874,7 @@ fn create_with_body_places_content_below_title() {
     let project = Project::local();
 
     let out = project.run(&[
+        "tasks",
         "create",
         "Ship login",
         "--body",
@@ -876,10 +890,10 @@ fn create_with_body_places_content_below_title() {
             "---\nstatus: backlog\ncreated: {created}\n---\n# Ship login\n\nSupport OAuth and email login.\n"
         )
     );
-    let view = json(project.run(&["get", &id, "--json"]));
+    let view = json(project.run(&["tasks", "get", &id, "--json"]));
     assert_eq!(view["title"], "Ship login");
     assert_eq!(view["description"], "Support OAuth and email login.\n");
-    assert_eq!(ok(project.run(&["get", &id])), contents);
+    assert_eq!(ok(project.run(&["tasks", "get", &id])), contents);
 }
 
 #[test]
@@ -889,6 +903,7 @@ fn create_with_body_file_reads_the_file() {
     write(&notes, "## Goals\n- OAuth\n- Email + password\n");
 
     let out = project.run(&[
+        "tasks",
         "create",
         "Ship login",
         "--body-file",
@@ -908,7 +923,7 @@ fn create_with_body_file_dash_reads_stdin() {
 
     let out = piped(
         &project,
-        &["create", "Ship login", "--body-file", "-"],
+        &["tasks", "create", "Ship login", "--body-file", "-"],
         b"## Goals\n- OAuth\n- Email + password\n",
     );
 
@@ -939,6 +954,7 @@ fn create_rejects_body_with_body_file() {
     let project = Project::local();
 
     let out = project.run(&[
+        "tasks",
         "create",
         "Ship login",
         "--body",
@@ -951,7 +967,7 @@ fn create_rejects_body_with_body_file() {
         !out.status.success(),
         "--body and --body-file are mutually exclusive"
     );
-    assert!(ok(project.run(&["list"])).contains("no tasks yet"));
+    assert!(ok(project.run(&["tasks", "list"])).contains("no tasks yet"));
 }
 
 #[test]
@@ -959,27 +975,27 @@ fn create_rejects_malformed_title() {
     let project = Project::local();
 
     assert!(
-        !project.run(&["create", ""]).status.success(),
+        !project.run(&["tasks", "create", ""]).status.success(),
         "an empty title must be rejected"
     );
     assert!(
         !project
-            .run(&["create", "line one\n# line two"])
+            .run(&["tasks", "create", "line one\n# line two"])
             .status
             .success(),
         "a title producing two H1 headings must be rejected"
     );
-    assert!(ok(project.run(&["list"])).contains("no tasks yet"));
+    assert!(ok(project.run(&["tasks", "list"])).contains("no tasks yet"));
 }
 
 #[test]
 fn list_distinguishes_empty_store_from_empty_filter() {
     let project = Project::local();
-    assert!(ok(project.run(&["list"])).contains("no tasks yet"));
+    assert!(ok(project.run(&["tasks", "list"])).contains("no tasks yet"));
 
     project.create("A todo");
 
-    let filtered = ok(project.run(&["list", "--status", "done"]));
+    let filtered = ok(project.run(&["tasks", "list", "--status", "done"]));
     assert!(filtered.contains("no matching tasks"), "{filtered}");
     assert!(!filtered.contains("no tasks yet"), "{filtered}");
 }
@@ -994,7 +1010,7 @@ fn list_json_carries_an_unreadable_task_rather_than_dropping_it() {
         "---\nstatus: in_progress\n---\n# Legacy\n",
     );
 
-    let tasks = json(project.run(&["list", "--json"]));
+    let tasks = json(project.run(&["tasks", "list", "--json"]));
 
     let tasks = tasks.as_array().unwrap();
     let by_id = |id: &str| {
@@ -1018,7 +1034,7 @@ fn list_filters_by_status_across_an_unreadable_task() {
     project.edit("tasks/00001-broken.md", "this file has no frontmatter\n");
     let good = project.create("Good one");
 
-    let tasks = json(project.run(&["list", "--json", "--status", "backlog"]));
+    let tasks = json(project.run(&["tasks", "list", "--json", "--status", "backlog"]));
 
     // A task with no readable status matches no status filter, rather than matching the default.
     let tasks = tasks.as_array().unwrap();
@@ -1027,7 +1043,7 @@ fn list_filters_by_status_across_an_unreadable_task() {
 }
 
 fn tree_ids(project: &Project, id: &str) -> Vec<String> {
-    let tree = json(project.run(&["tree", id, "--json"]));
+    let tree = json(project.run(&["tasks", "tree", id, "--json"]));
     tree["children"]
         .as_array()
         .unwrap()
@@ -1042,9 +1058,9 @@ fn set_parent_empty_clears_to_top_level() {
     let parent = project.create("Parent");
     let kid = project.child("Kid", &parent);
 
-    ok(project.run(&["set", &kid, "parent", ""]));
+    ok(project.run(&["tasks", "set", &kid, "parent", ""]));
 
-    let shown = ok(project.run(&["show", &kid]));
+    let shown = ok(project.run(&["tasks", "show", &kid]));
     assert!(shown.contains("parent: -"), "{shown}");
     assert!(
         !std::fs::read_to_string(project.task_file(&kid))
@@ -1061,7 +1077,7 @@ fn tree_bounds_by_depth_and_reports_json() {
     let a = project.child("A", &root);
     project.child("A1", &a);
 
-    let tree = json(project.run(&["tree", &root, "--depth", "1", "--json"]));
+    let tree = json(project.run(&["tasks", "tree", &root, "--depth", "1", "--json"]));
 
     assert_eq!(tree["children"][0]["id"], a.as_str());
     assert!(
@@ -1072,7 +1088,7 @@ fn tree_bounds_by_depth_and_reports_json() {
         "depth 1 must not expand grandchildren"
     );
 
-    let printed = ok(project.run(&["tree", &root]));
+    let printed = ok(project.run(&["tasks", "tree", &root]));
     assert!(
         printed.contains("  OPP-3"),
         "a grandchild is indented: {printed}"
@@ -1087,8 +1103,8 @@ fn move_reorders_siblings_via_before_and_after() {
     let b = project.child("B", &root);
     let c = project.child("C", &root);
 
-    ok(project.run(&["move", &c, "--parent", &root, "--before", &a]));
-    ok(project.run(&["move", &b, "--parent", &root, "--after", &c]));
+    ok(project.run(&["tasks", "move", &c, "--parent", &root, "--before", &a]));
+    ok(project.run(&["tasks", "move", &b, "--parent", &root, "--after", &c]));
 
     assert_eq!(tree_ids(&project, &root), vec![c, b, a]);
 }
@@ -1100,7 +1116,7 @@ fn move_reparents_across_parents() {
     let other = project.create("Other");
     let kid = project.child("Kid", &root);
 
-    ok(project.run(&["move", &kid, "--parent", &other]));
+    ok(project.run(&["tasks", "move", &kid, "--parent", &other]));
 
     assert_eq!(tree_ids(&project, &root), Vec::<String>::new());
     assert_eq!(tree_ids(&project, &other), vec![kid]);
@@ -1113,7 +1129,7 @@ fn move_under_own_descendant_is_refused() {
     let b = project.child("B", &a);
     let c = project.child("C", &b);
 
-    let out = project.run(&["move", &a, "--parent", &c]);
+    let out = project.run(&["tasks", "move", &a, "--parent", &c]);
 
     assert!(!out.status.success(), "cycle must be refused");
     assert!(
@@ -1133,7 +1149,7 @@ fn move_unranked_siblings_then_reorder_lists_in_new_order() {
     assert_eq!(tree_ids(&project, &root), vec![a.clone(), z.clone()]);
 
     // Reorder Z before A; the group migrates to ranks and the new order sticks.
-    ok(project.run(&["move", &z, "--parent", &root, "--before", &a]));
+    ok(project.run(&["tasks", "move", &z, "--parent", &root, "--before", &a]));
 
     assert_eq!(tree_ids(&project, &root), vec![z, a]);
 }
@@ -1167,7 +1183,7 @@ fn move_between_neighbours_naming_the_same_point_rebalances() {
     set_rank(&project, &a, "a");
     set_rank(&project, &b, "a0");
 
-    ok(project.run(&["move", &c, "--parent", &root, "--after", &a]));
+    ok(project.run(&["tasks", "move", &c, "--parent", &root, "--after", &a]));
 
     assert_eq!(tree_ids(&project, &root), vec![a, c, b]);
 }
@@ -1180,7 +1196,7 @@ fn move_within_a_group_holding_a_malformed_rank_rebalances() {
     let b = project.child("B", &root);
     set_rank(&project, &a, "NOT-BASE36");
 
-    ok(project.run(&["move", &b, "--parent", &root, "--before", &a]));
+    ok(project.run(&["tasks", "move", &b, "--parent", &root, "--before", &a]));
 
     assert_eq!(tree_ids(&project, &root), vec![b.clone(), a.clone()]);
     for id in [&a, &b] {
@@ -1204,7 +1220,7 @@ fn a_refused_move_leaves_sibling_ranks_untouched() {
     let sibling = project.child("Sibling", &c);
     let before = rank_of(&project, &sibling);
 
-    let out = project.run(&["move", &a, "--parent", &c]);
+    let out = project.run(&["tasks", "move", &a, "--parent", &c]);
 
     assert!(!out.status.success(), "cycle must be refused");
     assert_eq!(
@@ -1394,7 +1410,7 @@ fn tag_set_rejects_an_unknown_field() {
 fn tag_rename_moves_the_file_and_rewrites_the_tasks_that_carry_it() {
     let project = Project::local();
     create_tag(&project, "backend");
-    let id = ok(project.run(&["create", "Wire the parser", "--tag", "backend"]))
+    let id = ok(project.run(&["tasks", "create", "Wire the parser", "--tag", "backend"]))
         .trim()
         .to_owned();
 
@@ -1410,7 +1426,7 @@ fn tag_rename_moves_the_file_and_rewrites_the_tasks_that_carry_it() {
 fn tag_delete_refuses_a_referenced_tag_until_it_is_forced() {
     let project = Project::local();
     create_tag(&project, "backend");
-    ok(project.run(&["create", "Wire the parser", "--tag", "backend"]));
+    ok(project.run(&["tasks", "create", "Wire the parser", "--tag", "backend"]));
 
     let refused = project.run(&["tag", "delete", "backend", "--yes"]);
     assert!(!refused.status.success(), "stdout: {}", stdout(&refused));
@@ -1436,12 +1452,12 @@ fn tag_names_reach_the_store_as_the_identity_they_normalize_to() {
     let project = Project::local();
     assert_eq!(create_tag(&project, "Front End"), "front-end");
 
-    let id = ok(project.run(&["create", "Wire the parser", "--tag", "Front End"]))
+    let id = ok(project.run(&["tasks", "create", "Wire the parser", "--tag", "Front End"]))
         .trim()
         .to_owned();
     assert_eq!(tags_of(&project, &id), vec!["front-end".to_owned()]);
 
-    ok(project.run(&["set", &id, "tags", "FRONT_END"]));
+    ok(project.run(&["tasks", "set", &id, "tags", "FRONT_END"]));
     assert_eq!(tags_of(&project, &id), vec!["front-end".to_owned()]);
 
     let shown = ok(project.run(&["tag", "show", "Front_End"]));
@@ -1453,7 +1469,7 @@ fn a_name_no_tag_can_have_is_refused_with_the_rule() {
     let project = Project::local();
 
     for args in [
-        vec!["create", "Wire the parser", "--tag", "C++"],
+        vec!["tasks", "create", "Wire the parser", "--tag", "C++"],
         vec!["tag", "show", ""],
         vec!["tag", "delete", ""],
     ] {
@@ -1499,6 +1515,7 @@ fn create_with_tags_writes_a_sorted_set_and_leaves_the_body_alone() {
     create_tag(&project, "wip");
 
     let out = project.run(&[
+        "tasks",
         "create",
         "Wire the parser",
         "--tag",
@@ -1527,7 +1544,7 @@ fn create_with_tags_writes_a_sorted_set_and_leaves_the_body_alone() {
 fn create_with_an_unknown_tag_names_the_command_that_registers_it() {
     let project = Project::local();
 
-    let out = project.run(&["create", "Wire the parser", "--tag", "wip"]);
+    let out = project.run(&["tasks", "create", "Wire the parser", "--tag", "wip"]);
 
     assert!(!out.status.success(), "stdout: {}", stdout(&out));
     // The daemon states the fact and names the refusal; the command that answers it is this
@@ -1539,7 +1556,7 @@ fn create_with_an_unknown_tag_names_the_command_that_registers_it() {
         stderr(&out)
     );
     assert!(
-        !ok(project.run(&["list"])).contains("Wire the parser"),
+        !ok(project.run(&["tasks", "list"])).contains("Wire the parser"),
         "a refused write creates no task"
     );
 }
@@ -1551,16 +1568,16 @@ fn set_tags_replaces_the_whole_set_and_an_empty_value_clears_it() {
     create_tag(&project, "wip");
     let id = project.create("Wire the parser");
 
-    ok(project.run(&["set", &id, "tags", "wip, backend"]));
+    ok(project.run(&["tasks", "set", &id, "tags", "wip, backend"]));
     assert_eq!(
         tags_of(&project, &id),
         vec!["backend".to_owned(), "wip".to_owned()]
     );
 
-    ok(project.run(&["set", &id, "tags", "wip"]));
+    ok(project.run(&["tasks", "set", &id, "tags", "wip"]));
     assert_eq!(tags_of(&project, &id), vec!["wip".to_owned()]);
 
-    ok(project.run(&["set", &id, "tags", ""]));
+    ok(project.run(&["tasks", "set", &id, "tags", ""]));
     assert!(
         tags_of(&project, &id).is_empty(),
         "an empty value clears the set and omits the field"
@@ -1570,7 +1587,7 @@ fn set_tags_replaces_the_whole_set_and_an_empty_value_clears_it() {
             .unwrap()
             .contains("tags:")
     );
-    assert!(ok(project.run(&["show", &id])).contains("tags: -"));
+    assert!(ok(project.run(&["tasks", "show", &id])).contains("tags: -"));
 }
 
 #[test]
@@ -1579,7 +1596,7 @@ fn set_tags_refuses_a_name_the_project_does_not_register() {
     create_tag(&project, "backend");
     let id = project.create("Wire the parser");
 
-    let out = project.run(&["set", &id, "tags", "backend, wip"]);
+    let out = project.run(&["tasks", "set", &id, "tags", "backend, wip"]);
 
     assert!(!out.status.success(), "stdout: {}", stdout(&out));
     assert!(
@@ -1598,7 +1615,7 @@ fn comment_appends_an_entry_and_creates_the_section() {
     let project = Project::local();
     let id = project.create("Ship login");
 
-    let printed = ok(project.run(&["comment", &id, "hello"]));
+    let printed = ok(project.run(&["tasks", "comment", &id, "hello"]));
 
     assert!(printed.starts_with(&format!("{id}: ")), "{printed}");
     assert!(
@@ -1617,9 +1634,9 @@ fn a_comment_holding_markdown_stays_one_entry() {
     let id = project.create("Ship login");
     let text = "# Any heading works\n\n```rust\nfn main() {}\n```\n\n> nested";
 
-    ok(project.run(&["comment", &id, text]));
+    ok(project.run(&["tasks", "comment", &id, text]));
 
-    let comments = json(project.run(&["comments", &id, "--json"]));
+    let comments = json(project.run(&["tasks", "comments", &id, "--json"]));
     assert_eq!(comments.as_array().unwrap().len(), 1);
     assert_eq!(comments[0]["text"], text);
 }
@@ -1628,10 +1645,10 @@ fn a_comment_holding_markdown_stays_one_entry() {
 fn comments_print_oldest_first() {
     let project = Project::local();
     let id = project.create("Ship login");
-    ok(project.run(&["comment", &id, "first"]));
-    ok(project.run(&["comment", &id, "second"]));
+    ok(project.run(&["tasks", "comment", &id, "first"]));
+    ok(project.run(&["tasks", "comment", &id, "second"]));
 
-    let printed = ok(project.run(&["comments", &id]));
+    let printed = ok(project.run(&["tasks", "comments", &id]));
 
     let first = printed.find("first").expect("the first entry");
     let second = printed.find("second").expect("the second entry");
@@ -1646,9 +1663,9 @@ fn comments_print_oldest_first() {
 fn comments_json_carries_the_four_fields() {
     let project = Project::local();
     let id = project.create("Ship login");
-    ok(project.run(&["comment", &id, "hello"]));
+    ok(project.run(&["tasks", "comment", &id, "hello"]));
 
-    let comments = json(project.run(&["comments", &id, "--json"]));
+    let comments = json(project.run(&["tasks", "comments", &id, "--json"]));
 
     let entry = comments[0].as_object().unwrap();
     let mut keys: Vec<&String> = entry.keys().collect();
@@ -1664,7 +1681,7 @@ fn comment_refuses_empty_text() {
     let project = Project::local();
     let id = project.create("Ship login");
 
-    let out = project.run(&["comment", &id, "   \n"]);
+    let out = project.run(&["tasks", "comment", &id, "   \n"]);
 
     assert!(!out.status.success());
     assert!(
@@ -1680,7 +1697,7 @@ fn comment_refuses_an_unsigned_entry() {
     let id = project.create("Ship login");
     git(project.path(), &["config", "--unset", "user.name"]);
 
-    let out = project.run(&["comment", &id, "hello"]);
+    let out = project.run(&["tasks", "comment", &id, "hello"]);
 
     assert!(!out.status.success());
     assert!(
@@ -1697,7 +1714,7 @@ fn comment_reads_its_text_from_stdin() {
 
     ok(piped(
         &project,
-        &["comment", &id, "--body-file", "-"],
+        &["tasks", "comment", &id, "--body-file", "-"],
         b"from a pipe",
     ));
 
@@ -1713,7 +1730,7 @@ fn a_damaged_entry_keeps_its_text_and_reports_the_field() {
          yesterday by Test\n\n> still readable\n",
     );
 
-    let comments = json(project.run(&["comments", "OPP-1", "--json"]));
+    let comments = json(project.run(&["tasks", "comments", "OPP-1", "--json"]));
 
     assert_eq!(comments[0]["text"], "still readable");
     assert_eq!(comments[0]["at"]["kind"], "invalid");
@@ -1725,7 +1742,7 @@ fn a_damaged_entry_keeps_its_text_and_reports_the_field() {
         "the message carries the offending text: {}",
         comments[0]["at"]["message"]
     );
-    let printed = ok(project.run(&["comments", "OPP-1"]));
+    let printed = ok(project.run(&["tasks", "comments", "OPP-1"]));
     assert!(
         printed.contains("\"yesterday\"") && printed.contains("by Test"),
         "the heading names why the time is unreadable: {printed}"
@@ -1736,9 +1753,9 @@ fn a_damaged_entry_keeps_its_text_and_reports_the_field() {
 fn get_renders_the_comment_log_with_the_file() {
     let project = Project::local();
     let id = project.create("Ship login");
-    ok(project.run(&["comment", &id, "hello"]));
+    ok(project.run(&["tasks", "comment", &id, "hello"]));
 
-    let printed = ok(project.run(&["get", &id]));
+    let printed = ok(project.run(&["tasks", "get", &id]));
 
     assert!(printed.contains("## Comments"), "{printed}");
     assert!(printed.contains("> hello"), "{printed}");
@@ -2104,7 +2121,10 @@ fn help_lists_every_status() {
     let home = Home::new();
     let root = tempfile::tempdir().unwrap();
 
-    for command in [&["create", "--help"][..], &["list", "--help"]] {
+    for command in [
+        &["tasks", "create", "--help"][..],
+        &["tasks", "list", "--help"],
+    ] {
         let help = ok(home.run(root.path(), command));
         let expected = format!(
             "[possible values: {}]",

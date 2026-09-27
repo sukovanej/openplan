@@ -193,7 +193,7 @@ impl Tracker {
         if !comment::sections(&text.description).is_empty() {
             return Err(TrackerError::Invalid(format!(
                 "the description cannot hold a `## {}` section; the comment log is append-only, \
-                 so add a comment with `openplan comment`",
+                 so add a comment with `openplan tasks comment`",
                 comment::HEADING
             )));
         }

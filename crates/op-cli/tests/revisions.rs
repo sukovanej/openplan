@@ -44,7 +44,7 @@ fn write_replaces_a_task_with_the_file_get_printed() {
     let project = Project::git();
     let parent = project.create("Parent");
     let kid = project.child("Kid", &parent);
-    let printed = ok(project.run(&["get", &kid]));
+    let printed = ok(project.run(&["tasks", "get", &kid]));
     let edited = format!(
         "{}\nMore detail.\n",
         printed.replace("status: backlog", "status: todo")
@@ -53,16 +53,16 @@ fn write_replaces_a_task_with_the_file_get_printed() {
     let file = scratch.path().join("kid.md");
     write(&file, &edited);
 
-    let written = ok(project.run(&["write", &kid, "--file", file.to_str().unwrap()]));
+    let written = ok(project.run(&["tasks", "write", &kid, "--file", file.to_str().unwrap()]));
 
     assert_eq!(written.trim(), format!("{kid}: Kid"));
-    let shown = ok(project.run(&["show", &kid]));
+    let shown = ok(project.run(&["tasks", "show", &kid]));
     assert!(shown.contains("status: todo"), "{shown}");
     assert!(
         shown.contains(&format!("parent: {parent}")),
         "the parent survives the round trip: {shown}"
     );
-    assert!(ok(project.run(&["get", &kid])).contains("More detail."));
+    assert!(ok(project.run(&["tasks", "get", &kid])).contains("More detail."));
     let last = ok(project.run(&["history", &kid, "--limit", "1"]));
     assert!(
         last.contains(&format!("{kid}: status → todo, description")),
@@ -76,17 +76,21 @@ fn write_of_an_unchanged_task_keeps_its_references() {
     let project = Project::git();
     let parent = project.create("Parent");
     let kid = project.child("Kid", &parent);
-    let dependent = ok(project.run(&["create", "Dependent", "--dependency", &kid]))
+    let dependent = ok(project.run(&["tasks", "create", "Dependent", "--dependency", &kid]))
         .trim()
         .to_owned();
     let revisions = revision_ids(&project, &[]);
 
     for id in [&kid, &dependent] {
-        let printed = ok(project.run(&["get", id]));
-        ok(piped(&project, &["write", id, "--file", "-"], &printed));
+        let printed = ok(project.run(&["tasks", "get", id]));
+        ok(piped(
+            &project,
+            &["tasks", "write", id, "--file", "-"],
+            &printed,
+        ));
     }
 
-    let kid_again = ok(project.run(&["show", &kid]));
+    let kid_again = ok(project.run(&["tasks", "show", &kid]));
     assert!(
         kid_again.contains(&format!("parent: {parent}")),
         "{kid_again}"
@@ -95,7 +99,7 @@ fn write_of_an_unchanged_task_keeps_its_references() {
         !kid_again.contains('!'),
         "no field is unreadable: {kid_again}"
     );
-    let dependent_again = ok(project.run(&["show", &dependent]));
+    let dependent_again = ok(project.run(&["tasks", "show", &dependent]));
     assert!(
         dependent_again.contains(&format!("dependencies: {kid}")),
         "{dependent_again}"
@@ -111,14 +115,14 @@ fn write_of_an_unchanged_task_keeps_its_references() {
 fn write_refuses_a_file_that_drops_a_comment() {
     let project = Project::git();
     let id = project.create("Ship it");
-    ok(project.run(&["comment", &id, "keep me"]));
-    let printed = ok(project.run(&["get", &id]));
+    ok(project.run(&["tasks", "comment", &id, "keep me"]));
+    let printed = ok(project.run(&["tasks", "get", &id]));
     let without = format!(
         "{}\n",
         printed.split("## Comments").next().unwrap().trim_end()
     );
 
-    let out = piped(&project, &["write", &id, "--file", "-"], &without);
+    let out = piped(&project, &["tasks", "write", &id, "--file", "-"], &without);
 
     assert!(!out.status.success(), "{}", stdout(&out));
     assert!(
@@ -126,7 +130,7 @@ fn write_refuses_a_file_that_drops_a_comment() {
         "{}",
         stderr(&out)
     );
-    assert!(ok(project.run(&["comments", &id])).contains("keep me"));
+    assert!(ok(project.run(&["tasks", "comments", &id])).contains("keep me"));
 }
 
 #[test]
@@ -136,18 +140,18 @@ fn write_refuses_text_that_is_not_a_task_file() {
 
     let out = piped(
         &project,
-        &["write", &id, "--file", "-"],
+        &["tasks", "write", &id, "--file", "-"],
         "just some prose\n",
     );
 
     assert!(!out.status.success(), "{}", stdout(&out));
     assert!(stderr(&out).contains("not a task file"), "{}", stderr(&out));
-    assert!(ok(project.run(&["show", &id])).contains("title:  Ship it"));
+    assert!(ok(project.run(&["tasks", "show", &id])).contains("title:  Ship it"));
 
     let missing = piped(
         &project,
-        &["write", "OPP-9", "--file", "-"],
-        &ok(project.run(&["get", &id])),
+        &["tasks", "write", "OPP-9", "--file", "-"],
+        &ok(project.run(&["tasks", "get", &id])),
     );
     assert!(!missing.status.success());
     assert!(
@@ -161,17 +165,17 @@ fn write_refuses_text_that_is_not_a_task_file() {
 fn get_revision_prints_the_task_as_it_stood_then() {
     for project in [Project::git(), Project::local()] {
         let id = project.create("Ship it");
-        ok(project.run(&["set", &id, "status", "done"]));
+        ok(project.run(&["tasks", "set", &id, "status", "done"]));
         let revisions = revision_ids(&project, &[&id]);
         assert_eq!(revisions.len(), 2, "{revisions:?}");
 
-        let then = ok(project.run(&["get", &id, "--revision", &revisions[1]]));
+        let then = ok(project.run(&["tasks", "get", &id, "--revision", &revisions[1]]));
         assert!(then.contains("status: backlog"), "{then}");
         assert!(then.contains("# Ship it"), "{then}");
-        let now = ok(project.run(&["get", &id, "--revision", &revisions[0]]));
+        let now = ok(project.run(&["tasks", "get", &id, "--revision", &revisions[0]]));
         assert!(now.contains("status: done"), "{now}");
 
-        let view = json(project.run(&["get", &id, "--json", "--revision", &revisions[1]]));
+        let view = json(project.run(&["tasks", "get", &id, "--json", "--revision", &revisions[1]]));
         assert_eq!(view["id"], id.as_str());
         assert_eq!(view["revision"], revisions[1].as_str());
         assert_eq!(view["task"]["metadata"]["status"], "backlog");
@@ -191,7 +195,7 @@ fn get_revision_before_the_task_existed_says_so() {
     let start = revision_ids(&project, &[]).remove(0);
     let id = project.create("Ship it");
 
-    let out = project.run(&["get", &id, "--revision", &start]);
+    let out = project.run(&["tasks", "get", &id, "--revision", &start]);
     assert!(!out.status.success(), "{}", stdout(&out));
     assert!(
         stderr(&out).contains(&format!("{id} did not exist at revision {start}")),
@@ -199,10 +203,10 @@ fn get_revision_before_the_task_existed_says_so() {
         stderr(&out)
     );
 
-    let view = json(project.run(&["get", &id, "--json", "--revision", &start]));
+    let view = json(project.run(&["tasks", "get", &id, "--json", "--revision", &start]));
     assert!(view.get("task").is_none(), "{view}");
 
-    let unknown = project.run(&["get", &id, "--revision", &"0".repeat(40)]);
+    let unknown = project.run(&["tasks", "get", &id, "--revision", &"0".repeat(40)]);
     assert!(!unknown.status.success());
     assert!(
         stderr(&unknown).contains("no such revision"),
@@ -215,8 +219,8 @@ fn get_revision_before_the_task_existed_says_so() {
 fn history_prints_the_revisions_newest_first() {
     let project = Project::git();
     let id = project.create("Ship it");
-    ok(project.run(&["set", &id, "status", "done"]));
-    ok(project.run(&["comment", &id, "hello"]));
+    ok(project.run(&["tasks", "set", &id, "status", "done"]));
+    ok(project.run(&["tasks", "comment", &id, "hello"]));
 
     let printed = ok(project.run(&["history"]));
 
@@ -257,7 +261,7 @@ fn history_prints_the_revisions_newest_first() {
 fn a_revision_history_prints_names_a_task_as_it_stood() {
     let project = Project::git();
     let id = project.create("Ship it");
-    ok(project.run(&["set", &id, "status", "done"]));
+    ok(project.run(&["tasks", "set", &id, "status", "done"]));
     let printed = ok(project.run(&["history", &id]));
     let oldest = printed
         .lines()
@@ -268,7 +272,7 @@ fn a_revision_history_prints_names_a_task_as_it_stood() {
         .unwrap()
         .to_owned();
 
-    let then = ok(project.run(&["get", &id, "--revision", &oldest]));
+    let then = ok(project.run(&["tasks", "get", &id, "--revision", &oldest]));
     assert!(then.contains("status: backlog"), "{then}");
 
     let older = ok(project.run(&["history", "--before", &oldest]));
@@ -280,7 +284,7 @@ fn history_of_one_task_leaves_the_others_out() {
     let project = Project::git();
     let alpha = project.create("Alpha");
     let beta = project.create("Beta");
-    ok(project.run(&["set", &alpha, "status", "todo"]));
+    ok(project.run(&["tasks", "set", &alpha, "status", "todo"]));
 
     let printed = ok(project.run(&["history", &alpha]));
 

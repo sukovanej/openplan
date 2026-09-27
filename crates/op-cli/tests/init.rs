@@ -35,10 +35,10 @@ fn init_in_a_repository_starts_the_tasks_on_a_git_branch() {
     );
     assert!(tasks_branch_exists(repo.path()));
     assert_eq!(
-        ok(home.run(repo.path(), &["create", "Ship it"])).trim(),
+        ok(home.run(repo.path(), &["tasks", "create", "Ship it"])).trim(),
         "OPP-1"
     );
-    assert!(ok(home.run(repo.path(), &["list"])).contains("Ship it"));
+    assert!(ok(home.run(repo.path(), &["tasks", "list"])).contains("Ship it"));
     assert!(
         !repo.path().join(".plan").exists(),
         "no task file lands in the checkout"
@@ -74,7 +74,7 @@ fn init_outside_a_repository_starts_a_local_directory() {
         std::fs::read_to_string(store.join("config.toml")).unwrap(),
         "abbreviation = \"LOC\"\n"
     );
-    let id = ok(home.run(dir.path(), &["create", "Ship it"]));
+    let id = ok(home.run(dir.path(), &["tasks", "create", "Ship it"]));
     assert_eq!(id.trim(), "LOC-1");
     assert!(store.join("tasks/00001-ship-it.md").is_file());
     let listed = ok(home.run(dir.path(), &["project", "list"]));
@@ -95,7 +95,7 @@ fn init_with_the_local_backend_keeps_the_tasks_of_a_repository_in_a_directory() 
     assert!(started.contains("/.plan"), "{started}");
     assert!(repo.path().join(".plan/.history.sqlite").is_file());
     assert!(!tasks_branch_exists(repo.path()));
-    ok(home.run(repo.path(), &["create", "Ship it"]));
+    ok(home.run(repo.path(), &["tasks", "create", "Ship it"]));
     let history = ok(home.run(repo.path(), &["history"]));
     assert!(
         history.contains(&format!("Test via {}  OPP-1: create", common::AGENT)),
@@ -127,7 +127,9 @@ fn init_again_keeps_the_abbreviation_the_project_has() {
     git_repo(repo.path());
     for root in [local.path(), repo.path()] {
         ok(home.run(root, &["init", "--abbreviation", "OPP"]));
-        let id = ok(home.run(root, &["create", "Ship it"])).trim().to_owned();
+        let id = ok(home.run(root, &["tasks", "create", "Ship it"]))
+            .trim()
+            .to_owned();
 
         ok(home.run(root, &["init", "--abbreviation", "OPP"]));
         let refused = home.run(root, &["init", "--abbreviation", "XYZ"]);
@@ -138,7 +140,7 @@ fn init_again_keeps_the_abbreviation_the_project_has() {
             "{}",
             stderr(&refused)
         );
-        assert!(ok(home.run(root, &["show", &id])).contains("title:  Ship it"));
+        assert!(ok(home.run(root, &["tasks", "show", &id])).contains("title:  Ship it"));
     }
 }
 
@@ -157,7 +159,7 @@ fn init_without_an_abbreviation_joins_the_tasks_on_the_remote() {
         joined.contains("keeps its OPP tasks in the git ref refs/openplan/tasks"),
         "{joined}"
     );
-    assert!(ok(remote.run(&ben, &["show", &id])).contains("title:  From Ann"));
+    assert!(ok(remote.run(&ben, &["tasks", "show", &id])).contains("title:  From Ann"));
 }
 
 #[test]
@@ -189,7 +191,7 @@ fn init_in_a_clone_joins_the_tasks_on_the_remote() {
         "{joined}"
     );
     assert!(
-        ok(remote.run(&ben, &["show", &id])).contains("title:  From Ann"),
+        ok(remote.run(&ben, &["tasks", "show", &id])).contains("title:  From Ann"),
         "the clone reads the tasks it joined"
     );
 
@@ -202,7 +204,7 @@ fn init_in_a_clone_joins_the_tasks_on_the_remote() {
         stderr(&refused)
     );
     assert!(
-        ok(remote.run(&cat, &["list"])).contains("From Ann"),
+        ok(remote.run(&cat, &["tasks", "list"])).contains("From Ann"),
         "a refused abbreviation leaves the tasks the clone joined"
     );
 }
@@ -241,7 +243,7 @@ fn migrate_copies_the_history_of_the_plan_directory_to_the_tasks_branch() {
         "---\nstatus: done\ncreated: 2001-01-01T00:00:00Z\n---\n# Alpha\n\nEdited by hand.\n",
     );
 
-    let before = home.run(root, &["list"]);
+    let before = home.run(root, &["tasks", "list"]);
     assert!(!before.status.success(), "{}", stdout(&before));
     assert!(
         stderr(&before).contains("openplan migrate"),
@@ -289,7 +291,7 @@ fn migrate_copies_the_history_of_the_plan_directory_to_the_tasks_branch() {
         "a copied revision keeps its author and time: {history}"
     );
 
-    let alpha = ok(home.run(root, &["get", "OPP-1"]));
+    let alpha = ok(home.run(root, &["tasks", "get", "OPP-1"]));
     assert!(alpha.contains("status: done"), "{alpha}");
     assert!(
         alpha.contains("Edited by hand."),
@@ -300,7 +302,7 @@ fn migrate_copies_the_history_of_the_plan_directory_to_the_tasks_branch() {
         .as_str()
         .unwrap()
         .to_owned();
-    let then = ok(home.run(root, &["get", "OPP-1", "--revision", &oldest]));
+    let then = ok(home.run(root, &["tasks", "get", "OPP-1", "--revision", &oldest]));
     assert!(then.contains("status: todo"), "{then}");
 
     assert!(tasks_branch_exists(root));
@@ -322,11 +324,11 @@ fn migrate_keeps_the_date_each_task_last_changed() {
 
     ok(home.run(repo.path(), &["migrate"]));
 
-    let alpha = json(home.run(repo.path(), &["get", "OPP-1", "--json"]));
-    let beta = json(home.run(repo.path(), &["get", "OPP-2", "--json"]));
+    let alpha = json(home.run(repo.path(), &["tasks", "get", "OPP-1", "--json"]));
+    let beta = json(home.run(repo.path(), &["tasks", "get", "OPP-2", "--json"]));
     assert_eq!(alpha["updated"], "2004-11-09T11:33:20Z");
     assert_eq!(beta["updated"], "2001-09-09T01:46:40Z");
-    let listed = json(home.run(repo.path(), &["list", "--json"]));
+    let listed = json(home.run(repo.path(), &["tasks", "list", "--json"]));
     let row = listed
         .as_array()
         .unwrap()
@@ -349,12 +351,15 @@ fn a_migrated_repository_answers_after_plan_leaves_the_code() {
     git(root, &["commit", "-qm", "Move the tasks to their branch"]);
     home.stop();
 
-    let listed = ok(home.run(root, &["list"]));
+    let listed = ok(home.run(root, &["tasks", "list"]));
     assert!(
         listed.contains("Alpha") && listed.contains("Beta"),
         "{listed}"
     );
-    assert_eq!(ok(home.run(root, &["create", "Gamma"])).trim(), "OPP-3");
+    assert_eq!(
+        ok(home.run(root, &["tasks", "create", "Gamma"])).trim(),
+        "OPP-3"
+    );
 }
 
 #[test]
@@ -374,7 +379,7 @@ fn migrate_to_a_local_directory_keeps_the_files_where_they_are() {
     assert!(migrated.contains("git rm -r --cached .plan"), "{migrated}");
     assert!(store.join(".history.sqlite").is_file());
     assert!(!tasks_branch_exists(root));
-    let listed = ok(home.run(root, &["list"]));
+    let listed = ok(home.run(root, &["tasks", "list"]));
     assert!(
         listed.contains("Alpha") && listed.contains("Beta"),
         "{listed}"

@@ -106,7 +106,7 @@ function BoardState({ board, title, action }: { board: UseQueryResult<Board>; ti
         {action !== undefined && <div className="ml-auto">{action}</div>}
       </PanelHeader>
       <PanelBody className="p-6">
-        <EmptyState title="No tasks yet" detail="Create one with `openplan create`." />
+        <EmptyState title="No tasks yet" detail="Create one with `openplan tasks create`." />
       </PanelBody>
     </Panel>
   ) : (

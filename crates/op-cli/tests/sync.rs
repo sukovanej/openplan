@@ -5,7 +5,7 @@ use std::path::Path;
 use common::{Project, Remote, json, ok, stderr, stdout};
 
 fn titles(remote: &Remote, root: &Path) -> Vec<(String, String)> {
-    let mut rows: Vec<(String, String)> = json(remote.run(root, &["list", "--json"]))
+    let mut rows: Vec<(String, String)> = json(remote.run(root, &["tasks", "list", "--json"]))
         .as_array()
         .unwrap()
         .iter()
@@ -42,7 +42,7 @@ fn sync_brings_the_tasks_of_one_clone_to_the_other() {
         stderr(&first)
     );
     assert!(
-        ok(remote.run(&ben, &["show", &from_ann])).contains("title:  From Ann"),
+        ok(remote.run(&ben, &["tasks", "show", &from_ann])).contains("title:  From Ann"),
         "the clone reads what the other one sent"
     );
 
@@ -102,7 +102,7 @@ fn sync_keeps_both_tasks_two_clones_created_under_one_number() {
         "the merge revision tells of the move: {history}"
     );
     assert!(
-        ok(remote.run(&ann, &["comments", "OPP-2"]))
+        ok(remote.run(&ann, &["tasks", "comments", "OPP-2"]))
             .trim()
             .is_empty()
     );

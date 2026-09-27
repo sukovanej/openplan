@@ -408,7 +408,7 @@ async fn an_approval_decision_reaches_the_agent_and_an_unknown_one_does_not() {
             id: ApprovalId("a1".to_owned()),
             item: Some(ItemId("t1".to_owned())),
             tool: "Bash".to_owned(),
-            input: json!({ "command": "openplan create \"A\"" }),
+            input: json!({ "command": "openplan tasks create \"A\"" }),
             reason: None,
         }),
     )

@@ -7,6 +7,14 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.4...main)
 
+### Changed
+
+- The task commands are in the `openplan tasks` group: `create`, `list`,
+  `search`, `get`, `write`, `comment`, `comments`, `show`, `tree`, `move`,
+  `set`, and `delete`. For example, `openplan get OPP-42` is now
+  `openplan tasks get OPP-42`. Run `openplan setup-skills` to update the agent
+  skills in a checkout.
+
 ## [0.0.4](https://github.com/sukovanej/openplan/compare/v0.0.3...v0.0.4) - 2026-09-26
 
 ### Added
