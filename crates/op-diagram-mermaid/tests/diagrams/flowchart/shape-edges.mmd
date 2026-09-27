@@ -1,0 +1,9 @@
+flowchart LR
+  start([Start]) --> check{Is the value set?}
+  check -->|yes| read[/Read it/]
+  check -->|no| ask[\Ask again\]
+  check -->|retry| check
+  ask --> check
+  read --> save[/Save\]
+  save --> note>Log it]
+  note --> done{{Done}}

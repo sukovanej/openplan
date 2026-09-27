@@ -8,6 +8,7 @@ use crate::scene::{
     Anchor, ClusterBox, EdgePath, GuideKind, IconBox, NodeBox, Outline, Point, Rect, Scene, Text,
     TextRole,
 };
+use crate::shape;
 
 const CORNER: f32 = 8.0;
 const ARROW_LENGTH: f32 = 9.0;
@@ -16,7 +17,6 @@ const MARK: f32 = 5.0;
 const RING: f32 = 4.0;
 const ROUNDED: f32 = 10.0;
 const SQUARE: f32 = 3.0;
-const CYLINDER_CAP: f32 = 7.0;
 const DOUBLE_RING: f32 = 5.0;
 const SUBROUTINE_BAR: f32 = 8.0;
 const NOTE_FOLD: f32 = 8.0;
@@ -161,7 +161,7 @@ fn shape_name(outline: &Outline) -> &'static str {
         Outline::Rounded => "rounded",
         Outline::Stadium => "stadium",
         Outline::Subroutine => "subroutine",
-        Outline::Cylinder => "cylinder",
+        Outline::Cylinder { .. } => "cylinder",
         Outline::Circle => "circle",
         Outline::DoubleCircle => "double-circle",
         Outline::Asymmetric => "asymmetric",
@@ -201,6 +201,25 @@ fn write_polygon(out: &mut String, points: &[(f32, f32)]) {
     );
 }
 
+fn write_rounded(out: &mut String, corners: &[Point]) {
+    let bends = shape::bends(corners);
+    let mut path = String::new();
+    for (at, bend) in bends.iter().enumerate() {
+        let _ = write!(
+            path,
+            "{}{} {}A{r} {r} 0 0 {} {} {}",
+            if at == 0 { 'M' } else { 'L' },
+            number(bend.start.x),
+            number(bend.start.y),
+            u8::from(bend.clockwise),
+            number(bend.end.x),
+            number(bend.end.y),
+            r = number(bend.radius),
+        );
+    }
+    let _ = write!(out, r#"<path class="outline" d="{path}Z"/>"#);
+}
+
 fn write_outline(out: &mut String, outline: &Outline, rect: &Rect) {
     let Rect {
         x,
@@ -224,15 +243,17 @@ fn write_outline(out: &mut String, outline: &Outline, rect: &Rect) {
                 );
             }
         }
-        Outline::Cylinder => {
-            let (rx, ry) = (w / 2.0, CYLINDER_CAP);
+        Outline::Cylinder { cap } => {
+            let (rx, ry) = (w / 2.0, *cap);
+            let (top, bottom) = (y + ry, y + h - ry);
             let _ = write!(
                 out,
-                r#"<path class="outline" d="M{x0} {top}A{rx} {ry} 0 0 0 {x1} {top}A{rx} {ry} 0 0 0 {x0} {top}V{bottom}A{rx} {ry} 0 0 0 {x1} {bottom}V{top}"/>"#,
+                r#"<path class="outline" d="M{x0} {top}V{bottom}A{rx} {ry} 0 0 0 {x1} {bottom}V{top}"/><ellipse class="outline lid" cx="{cx}" cy="{top}" rx="{rx}" ry="{ry}"/>"#,
                 x0 = number(x),
                 x1 = number(x + w),
-                top = number(y + ry),
-                bottom = number(y + h - ry),
+                cx = number(x + rx),
+                top = number(top),
+                bottom = number(bottom),
                 rx = number(rx),
                 ry = number(ry),
             );
@@ -256,86 +277,16 @@ fn write_outline(out: &mut String, outline: &Outline, rect: &Rect) {
                 radius -= DOUBLE_RING;
             }
         }
-        Outline::Asymmetric => write_polygon(
-            out,
-            &[
-                (x, y),
-                (x + w, y),
-                (x + w, y + h),
-                (x, y + h),
-                (x + h / 2.0, y + h / 2.0),
-            ],
-        ),
-        Outline::Diamond => write_polygon(
-            out,
-            &[
-                (x + w / 2.0, y),
-                (x + w, y + h / 2.0),
-                (x + w / 2.0, y + h),
-                (x, y + h / 2.0),
-            ],
-        ),
-        Outline::Hexagon => {
-            let side = h / 4.0;
-            write_polygon(
-                out,
-                &[
-                    (x + side, y),
-                    (x + w - side, y),
-                    (x + w, y + h / 2.0),
-                    (x + w - side, y + h),
-                    (x + side, y + h),
-                    (x, y + h / 2.0),
-                ],
-            );
-        }
-        Outline::LeanRight => {
-            let slant = h / 2.0;
-            write_polygon(
-                out,
-                &[
-                    (x + slant, y),
-                    (x + w, y),
-                    (x + w - slant, y + h),
-                    (x, y + h),
-                ],
-            );
-        }
-        Outline::LeanLeft => {
-            let slant = h / 2.0;
-            write_polygon(
-                out,
-                &[
-                    (x, y),
-                    (x + w - slant, y),
-                    (x + w, y + h),
-                    (x + slant, y + h),
-                ],
-            );
-        }
-        Outline::Trapezoid => {
-            let slant = h / 2.0;
-            write_polygon(
-                out,
-                &[
-                    (x + slant, y),
-                    (x + w - slant, y),
-                    (x + w, y + h),
-                    (x, y + h),
-                ],
-            );
-        }
-        Outline::InvertedTrapezoid => {
-            let slant = h / 2.0;
-            write_polygon(
-                out,
-                &[
-                    (x, y),
-                    (x + w, y),
-                    (x + w - slant, y + h),
-                    (x + slant, y + h),
-                ],
-            );
+        Outline::Asymmetric
+        | Outline::Diamond
+        | Outline::Hexagon
+        | Outline::LeanRight
+        | Outline::LeanLeft
+        | Outline::Trapezoid
+        | Outline::InvertedTrapezoid => {
+            if let Some(corners) = shape::corners(outline, rect) {
+                write_rounded(out, &corners);
+            }
         }
         Outline::Actor => {
             let center = x + w / 2.0;

@@ -9,8 +9,8 @@ pub(super) const MAX_LABEL: f32 = 200.0;
 const MAX_HEADER: f32 = 320.0;
 const PAD_X: f32 = 16.0;
 const PAD_Y: f32 = 10.0;
-pub(super) const CYLINDER_CAP: f32 = 7.0;
 const DOUBLE_RING: f32 = 5.0;
+const MAX_DIAMOND_RATIO: f32 = 2.0;
 const SUBROUTINE_BAR: f32 = 8.0;
 const TABLE_PAD_X: f32 = 12.0;
 const TABLE_PAD_Y: f32 = 8.0;
@@ -41,7 +41,10 @@ pub(super) fn node(node: &Node) -> Body {
         Some(caption) => block(std::slice::from_ref(caption), CAPTION, MAX_LABEL),
         None => Block::empty(CAPTION),
     };
-    let label = block(&node.label, LABEL, MAX_LABEL);
+    let label = match node.shape {
+        Shape::Diamond => diamond_label(&node.label, &caption),
+        _ => block(&node.label, LABEL, MAX_LABEL),
+    };
     let text_width = caption.width.max(label.width);
     let text_height = caption.height + label.height;
     let Some(icon) = node.icon else {
@@ -51,7 +54,7 @@ pub(super) fn node(node: &Node) -> Body {
         return Body {
             width: frame.width,
             height: frame.height,
-            outline: outline(&node.shape),
+            outline: outline(&node.shape, frame.width),
             texts,
             icon: None,
         };
@@ -68,7 +71,7 @@ pub(super) fn node(node: &Node) -> Body {
     Body {
         width: frame.width,
         height: frame.height,
-        outline: outline(&node.shape),
+        outline: outline(&node.shape, frame.width),
         texts,
         icon: Some(IconBox {
             icon,
@@ -80,6 +83,23 @@ pub(super) fn node(node: &Node) -> Body {
             },
         }),
     }
+}
+
+// A label on one long line makes a flat diamond, so the label wraps narrower until the diamond is no
+// more than twice as wide as it is high, or until its longest word stops it.
+fn diamond_label(label: &[String], caption: &Block) -> Block {
+    let ratio = |label: &Block| {
+        (caption.width.max(label.width) + PAD_X) / (caption.height + label.height + PAD_Y)
+    };
+    let mut wrapped = block(label, LABEL, MAX_LABEL);
+    while ratio(&wrapped) > MAX_DIAMOND_RATIO {
+        let narrower = block(label, LABEL, wrapped.width - 1.0);
+        if narrower.width >= wrapped.width {
+            break;
+        }
+        wrapped = narrower;
+    }
+    wrapped
 }
 
 struct Frame {
@@ -110,12 +130,13 @@ fn frame(shape: &Shape, text_width: f32, text_height: f32) -> Frame {
             around(text_width + 2.0 * PAD_X + padded_height, padded_height)
         }
         Shape::Cylinder => {
-            let height = padded_height + 3.0 * CYLINDER_CAP;
+            let width = text_width + 2.0 * PAD_X;
+            let cap = cylinder_cap(width);
             Frame {
-                width: text_width + 2.0 * PAD_X,
-                height,
-                text_center: (text_width + 2.0 * PAD_X) / 2.0,
-                text_top: 2.0 * CYLINDER_CAP + PAD_Y,
+                width,
+                height: padded_height + 3.0 * cap,
+                text_center: width / 2.0,
+                text_top: 2.0 * cap + PAD_Y,
             }
         }
         Shape::Circle => {
@@ -141,13 +162,20 @@ fn frame(shape: &Shape, text_width: f32, text_height: f32) -> Frame {
     }
 }
 
-fn outline(shape: &Shape) -> Outline {
+// A fixed cap flattens a wide cylinder into a tray.
+fn cylinder_cap(width: f32) -> f32 {
+    (width * 0.07).clamp(6.0, 12.0)
+}
+
+fn outline(shape: &Shape, width: f32) -> Outline {
     match shape {
         Shape::Rectangle => Outline::Rectangle,
         Shape::Rounded => Outline::Rounded,
         Shape::Stadium => Outline::Stadium,
         Shape::Subroutine => Outline::Subroutine,
-        Shape::Cylinder => Outline::Cylinder,
+        Shape::Cylinder => Outline::Cylinder {
+            cap: cylinder_cap(width),
+        },
         Shape::Circle => Outline::Circle,
         Shape::DoubleCircle => Outline::DoubleCircle,
         Shape::Asymmetric => Outline::Asymmetric,

@@ -3,6 +3,7 @@ mod icon;
 mod measure;
 mod scene;
 mod sequence;
+mod shape;
 mod svg;
 mod text;
 

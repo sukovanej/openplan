@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 1011.84 201.27" width="1011.84" height="201.27" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
+.op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .table-header { fill: #e3e7f0; }
+.op-diagram .code-box { fill: #f6f5f3; stroke: #e2dfda; stroke-width: 1; }
+.op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
+.op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
+.op-diagram .stroke-thick .edge-line { stroke-width: 2.8; }
+.op-diagram .head-arrow path, .op-diagram .head-circle circle { fill: #5f6776; }
+.op-diagram .head-open path, .op-diagram .head-cross path, .op-diagram .head-cardinality path { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .head-ring { fill: #fff; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .edge-label-box { fill: #fff; }
+.op-diagram text { fill: #1f2430; }
+.op-diagram .text-caption { fill: #6b7280; }
+.op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .shape-table .text-header { fill: #1f2430; stroke: none; }
+.op-diagram .text-code { fill: #c4245a; }
+.op-diagram .text-key { fill: #6b7280; }
+.op-diagram .text-comment { fill: #6b7280; font-style: italic; }
+.op-diagram .text-edge-label { fill: #3a4150; }
+.op-diagram .lifeline { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 4 4; }
+.op-diagram .divider { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 5 4; }
+.op-diagram .block .cluster-box { fill: none; stroke: #9aa2b1; }
+.op-diagram .activation .outline { fill: #e6e9f2; stroke: #7b8599; }
+.op-diagram .note .outline { fill: #fdf6d8; stroke: #cbb971; }
+.op-diagram .note .outline-detail { stroke: #cbb971; }
+.op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
+.op-diagram .text-number { fill: #fff; }
+.op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .outline.lid { fill: #e3e7f0; }
+.op-diagram .node[class*="status-"] .outline.lid { fill: color-mix(in srgb, var(--status) 26%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
+</style><g class="edge stroke-solid"><path class="edge-line" d="M91.28 94.02L144.75 94.02"/><g class="head head-arrow"><path d="M152.75 94.02L143.75 98.52L143.75 89.52Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M325.06 94.27L332.78 94.27Q340.5 94.27 340.5 86.27L340.5 36.1Q340.5 28.1 348.5 28.1L430.14 28.1"/><g class="head head-arrow"><path d="M438.14 28.1L429.14 32.6L429.14 23.6Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M325.06 94.27L390.58 94.27Q398.58 94.27 398.58 101.19L398.58 101.19Q398.58 108.1 406.58 108.1L420.58 108.1"/><g class="head head-arrow"><path d="M428.58 108.1L419.58 112.6L419.58 103.6Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M428.58 108.1L416.58 108.1Q408.58 108.1 408.58 114.48L408.58 114.48Q408.58 120.85 400.58 120.85L358.5 120.85Q350.5 120.85 350.5 112.85L350.5 102.27Q350.5 94.27 342.5 94.27L333.06 94.27"/><g class="head head-arrow"><path d="M325.06 94.27L334.06 89.77L334.06 98.77Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M535.66 28.1L613.21 28.1"/><g class="head head-arrow"><path d="M621.21 28.1L612.21 32.6L612.21 23.6Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M706.09 28.08L782.01 28.08"/><g class="head head-arrow"><path d="M790.01 28.08L781.01 32.58L781.01 23.58Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M860.91 28L909.5 28"/><g class="head head-arrow"><path d="M917.5 28L908.5 32.5L908.5 23.5Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M230.89 139.9L230.89 154.27Q230.89 162.27 238.89 162.27L238.89 162.27Q246.89 162.27 246.89 155.09L246.89 147.9"/><g class="head head-arrow"><path d="M246.89 139.9L251.39 148.9L242.39 148.9Z"/></g></g><g class="node shape-stadium"><rect class="outline" x="8" y="74.02" width="83.28" height="40" rx="20"/><text class="text-label" x="49.64" y="99.11" font-size="14" font-weight="400" text-anchor="middle">Start</text></g><g class="node shape-diamond"><path class="outline" d="M236.5 45.58A5 5 0 0 1 241.29 45.58L322.46 89.88A5 5 0 0 1 322.46 98.66L241.29 142.96A5 5 0 0 1 236.5 142.96L155.32 98.66A5 5 0 0 1 155.32 89.88Z"/><text class="text-label" x="238.89" y="89.36" font-size="14" font-weight="400" text-anchor="middle">Is the value</text><text class="text-label" x="238.89" y="109.36" font-size="14" font-weight="400" text-anchor="middle">set?</text></g><g class="node shape-lean-right"><path class="outline" d="M446.76 10.87A5 5 0 0 1 451.23 8.1L537.57 8.1A5 5 0 0 1 542.04 15.34L527.04 45.34A5 5 0 0 1 522.57 48.1L436.23 48.1A5 5 0 0 1 431.76 40.87Z"/><text class="text-label" x="486.9" y="33.2" font-size="14" font-weight="400" text-anchor="middle">Read it</text></g><g class="node shape-lean-left"><path class="outline" d="M422.2 95.34A5 5 0 0 1 426.67 88.1L532.13 88.1A5 5 0 0 1 536.6 90.87L551.6 120.87A5 5 0 0 1 547.13 128.1L441.67 128.1A5 5 0 0 1 437.2 125.34Z"/><text class="text-label" x="486.9" y="113.2" font-size="14" font-weight="400" text-anchor="middle">Ask again</text></g><g class="node shape-trapezoid"><path class="outline" d="M629.84 10.85A5 5 0 0 1 634.31 8.08L693 8.08A5 5 0 0 1 697.48 10.85L712.48 40.85A5 5 0 0 1 708 48.08L619.31 48.08A5 5 0 0 1 614.84 40.85Z"/><text class="text-label" x="663.66" y="33.17" font-size="14" font-weight="400" text-anchor="middle">Save</text></g><g class="node shape-asymmetric"><path class="outline" d="M780.63 16.54A5 5 0 0 1 784.16 8L855.91 8A5 5 0 0 1 860.91 13L860.91 43A5 5 0 0 1 855.91 48L784.16 48A5 5 0 0 1 780.63 39.46L788.56 31.54A5 5 0 0 0 788.56 24.46Z"/><text class="text-label" x="826.5" y="33.09" font-size="14" font-weight="400" text-anchor="middle">Log it</text></g><g class="node shape-hexagon"><path class="outline" d="M925.52 10.76A5 5 0 0 1 930 8L990.75 8A5 5 0 0 1 995.23 10.76L1002.73 25.76A5 5 0 0 1 1002.73 30.24L995.23 45.24A5 5 0 0 1 990.75 48L930 48A5 5 0 0 1 925.52 45.24L918.02 30.24A5 5 0 0 1 918.02 25.76Z"/><text class="text-label" x="960.38" y="33.09" font-size="14" font-weight="400" text-anchor="middle">Done</text></g><g class="edge-label"><rect class="edge-label-box" x="360.5" y="17.6" width="28.08" height="21" rx="3"/><text class="text-edge-label" x="374.54" y="32.47" font-size="12" font-weight="400" text-anchor="middle">yes</text></g><g class="edge-label"><rect class="edge-label-box" x="363.39" y="83.85" width="22.3" height="21" rx="3"/><text class="text-edge-label" x="374.54" y="98.72" font-size="12" font-weight="400" text-anchor="middle">no</text></g><g class="edge-label"><rect class="edge-label-box" x="221.54" y="166.27" width="34.7" height="21" rx="3"/><text class="text-edge-label" x="238.89" y="181.13" font-size="12" font-weight="400" text-anchor="middle">retry</text></g></svg>

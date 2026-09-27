@@ -1,0 +1,149 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/flowchart/shape-edges.mmd
+---
+{
+  "kind": "graph",
+  "direction": "right",
+  "nodes": [
+    {
+      "id": "start",
+      "shape": {
+        "kind": "stadium"
+      },
+      "label": [
+        "Start"
+      ]
+    },
+    {
+      "id": "check",
+      "shape": {
+        "kind": "diamond"
+      },
+      "label": [
+        "Is the value set?"
+      ]
+    },
+    {
+      "id": "read",
+      "shape": {
+        "kind": "lean_right"
+      },
+      "label": [
+        "Read it"
+      ]
+    },
+    {
+      "id": "ask",
+      "shape": {
+        "kind": "lean_left"
+      },
+      "label": [
+        "Ask again"
+      ]
+    },
+    {
+      "id": "save",
+      "shape": {
+        "kind": "trapezoid"
+      },
+      "label": [
+        "Save"
+      ]
+    },
+    {
+      "id": "note",
+      "shape": {
+        "kind": "asymmetric"
+      },
+      "label": [
+        "Log it"
+      ]
+    },
+    {
+      "id": "done",
+      "shape": {
+        "kind": "hexagon"
+      },
+      "label": [
+        "Done"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "check",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "check",
+      "to": "read",
+      "label": [
+        "yes"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "check",
+      "to": "ask",
+      "label": [
+        "no"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "check",
+      "to": "check",
+      "label": [
+        "retry"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "ask",
+      "to": "check",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "read",
+      "to": "save",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "save",
+      "to": "note",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "note",
+      "to": "done",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}
