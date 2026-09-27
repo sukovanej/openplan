@@ -89,7 +89,7 @@ flowchart TD
 ## When sync runs
 
 ```mermaid
-flowchart TD
+flowchart LR
   start["Daemon start"] -->|now| sync(["Sync"])
   write["Local write"] -->|2 s| sync
   button["openplan sync<br/>Sync now in the UI"] -->|now| sync
