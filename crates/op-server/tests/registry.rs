@@ -48,7 +48,7 @@ fn a_repeated_directory_name_gets_a_distinct_project_name() {
 #[test]
 fn a_directory_named_like_a_page_of_the_web_ui_gets_another_project_name() {
     let mut registry = ProjectRegistry::default();
-    for name in ["docs", "flow", "api"] {
+    for name in ["activity", "api", "docs", "flow", "tags"] {
         assert_eq!(
             add(&mut registry, PathBuf::from("/repos").join(name)).name,
             format!("{name}-2")
