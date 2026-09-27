@@ -23,6 +23,13 @@ Do not write an address yourself, because the port and the project name are
 different on each machine. In a task file, a commit message, or a pull request,
 write the key only. Other people cannot open a local address.
 
+After you create or change a task, show its page in the built-in browser of the Codex app.
+Open the address from `openplan url <key>` with `@Browser`.
+When you write more than one task in a row, show the last one. When the browser
+already shows the page, do not open it again, because the page updates itself.
+Skip this step after `openplan delete`, and skip it when the session cannot use
+that browser. Do not open the address in a different browser.
+
 Statuses: `backlog` `todo` `in_progress` `in_review` `done` `cancelled`.
 
 Every write is one revision in the task history. The revision records who wrote
