@@ -51,22 +51,21 @@ erDiagram
 - Accept `214` and `#214` as input too. Resolve the number against the forge of the project remote. When the project has no forge remote, refuse the number.
 - `crates/op-tracker/src/files.rs::validate` refuses a value that `op-forge` does not parse.
 
-Touch the same places as `tags`: `Frontmatter`, `Task::new`, the setter, `PartialFrontmatter` and `extract_fields` in `op-task`; `MODELED` and the diff words in `op-tracker/src/describe.rs` ("linked #214", "unlinked #214"); the six field lists in `op-api/src/metadata.rs`; `render_task_file` in `op-api/src/render.rs`. If `render.rs` does not write the field, `openplan get` then `openplan write` drops it.
+Touch the same places as `tags`: `Frontmatter`, `Task::new`, the setter, `PartialFrontmatter` and `extract_fields` in `op-task`; `MODELED` and the diff words in `op-tracker/src/describe.rs` ("linked #214", "unlinked #214"); the six field lists in `op-api/src/metadata.rs`; `render_task_file` in `op-api/src/render.rs`. If `render.rs` does not write the field, `openplan tasks get` then `openplan tasks write` drops it.
 
 ### CLI
 
 ```sh
-openplan create "Fix the parser" --pr https://github.com/sukovanej/openplan/pull/214
-openplan pr add OPP-42 214                  # adds one; a number resolves against the remote
-openplan pr remove OPP-42 214
-openplan set OPP-42 pull_requests "<url>, <url>"   # replaces the set; "" clears it
-openplan show OPP-42                        # prints each pull request with its state
+openplan tasks create "Fix the parser" --pr https://github.com/sukovanej/openplan/pull/214
+openplan tasks pr add OPP-42 214            # adds one; a number resolves against the remote
+openplan tasks pr remove OPP-42 214
+openplan tasks set OPP-42 pull_requests "<url>, <url>"   # replaces the set; "" clears it
+openplan tasks show OPP-42                  # prints each pull request with its state
 ```
 
-- `pr add` and `pr remove` change one value. Two agents that add at the same time must not drop an entry, so these commands do not read the set and write it back. They send `add_pull_requests` or `remove_pull_requests` in `TaskPatch`, and the server applies them inside `update_task`.
+- Add `pr add` and `pr remove` to `TaskCommand` in `crates/op-cli/src/tasks.rs`. They change one value. Two agents that add at the same time must not drop an entry, so these commands do not read the set and write it back. They send `add_pull_requests` or `remove_pull_requests` in `TaskPatch`, and the server applies them inside `update_task`.
 - `show` prints one line for each pull request: the short form, the state, and the title. When the daemon does not know the state, it prints the address only.
 - `get --json` gets the field through `TaskDetail` with no extra work.
-- If OPP-131 merges first, the commands go in the `tasks` group.
 
 ### API
 
@@ -91,7 +90,7 @@ Three parts keep the field and the states current. The agent links its own pull 
 ```mermaid
 flowchart LR
   agent[Coding agent] -->|gh pr create| forge[(GitHub or GitLab)]
-  agent -->|openplan pr add| daemon[Daemon]
+  agent -->|openplan tasks pr add| daemon[Daemon]
   person[Person] -->|opens PR that names OPP-42| forge
   daemon -->|gh or glab: new PRs since cursor| forge
   daemon -->|gh or glab: state of linked PRs| forge
@@ -101,7 +100,7 @@ flowchart LR
 
 ### The agent links its pull request
 
-Add a step to "Work on a task" in `crates/op-skills/skills/openplan/SKILL.md`: after you open a pull request for a task, run `openplan pr add <key> <url>`. Write the task key in the title of the pull request. This works for each agent that reads the skill, with no hook that is special to one harness. Run `setup-skills` so the installed copies match (OPP-103 lints this).
+Add a step to "Work on a task" in `crates/op-skills/skills/openplan/SKILL.md`: after you open a pull request for a task, run `openplan tasks pr add <key> <url>`. Write the task key in the title of the pull request. This works for each agent that reads the skill, with no hook that is special to one harness. Run `setup-skills` so the installed copies match (OPP-103 lints this).
 
 The "Merge" section then reads the pull requests of the task, and does not guess from the branch name.
 
@@ -139,9 +138,9 @@ In `tests/` directories only:
 
 ## Acceptance
 
-- `openplan pr add OPP-42 214` links the pull request, and `openplan show OPP-42` prints it with its state.
+- `openplan tasks pr add OPP-42 214` links the pull request, and `openplan tasks show OPP-42` prints it with its state.
 - The task page shows the pull requests with their state, and a person adds or removes one there.
-- `openplan get` then `openplan write` keeps the field.
+- `openplan tasks get` then `openplan tasks write` keeps the field.
 - A pull request with `OPP-42` in its title links itself to OPP-42 within one scan.
 - A merged pull request shows as merged within two minutes, with no reload.
 - With no `gh`, everything in Part 1 works and the page says how to enable the states.
