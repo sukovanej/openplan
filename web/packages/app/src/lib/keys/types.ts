@@ -14,6 +14,8 @@ export function isOverlayScope(scope: Scope): scope is OverlayName {
 // answers for, and the tasks a query finds. `search` is the task search alone.
 export type PaletteTarget = "home" | "search"
 
+import type { Page } from "../project-scope"
+
 export type KeySpec = string | ReadonlyArray<string>
 
 export interface OverlayControls {
@@ -49,6 +51,10 @@ export interface DetailControls {
 
 export interface RunContext {
   readonly navigate: (to: string) => void
+  readonly goToPage: (page: Page) => void
+  readonly chooseProject: () => void
+  // 0 is every project, and 1 to 9 are the first nine projects in the order of the list.
+  readonly selectProject: (digit: number) => void
   // Back to where the reader came from, or to the page above this one when it opened the session.
   readonly back: () => void
   readonly overlay: (name: OverlayName) => OverlayControls
@@ -65,5 +71,7 @@ export interface Binding {
   readonly when?: (ctx: RunContext) => boolean
   readonly label: string
   readonly group: string
+  // A run of keys that do one thing for different items takes one line of the help.
+  readonly help?: "hidden" | { readonly keys: KeySpec }
   readonly run: (ctx: RunContext) => void
 }

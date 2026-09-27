@@ -2,6 +2,7 @@ import { Loader2, Search } from "lucide-react"
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react"
 
 import { cn } from "./cn"
+import { CONTROL_HEIGHT } from "./control"
 import { Row } from "./row"
 import { useDismissOnOutsideClick } from "./use-dismiss"
 
@@ -95,7 +96,12 @@ export function Combobox({
   const pending = text !== query
   return (
     <div ref={rootRef} className={cn("relative", className)}>
-      <div className="border-input focus-within:border-foreground/20 bg-background flex h-9 items-center gap-2 rounded-md border px-2.5 transition-colors">
+      <div
+        className={cn(
+          "border-input focus-within:border-foreground/20 bg-background flex items-center gap-2 rounded-md border px-2.5 transition-colors",
+          CONTROL_HEIGHT,
+        )}
+      >
         <Search className="text-muted-foreground size-4 shrink-0" />
         <input
           ref={inputRef}

@@ -20,7 +20,3 @@ export function useProject(name: string): ProjectView | undefined {
 export function useAbbreviation(project: string): string | undefined {
   return useProject(project)?.abbreviation
 }
-
-export function demotedReason(project: ProjectView | undefined): string | undefined {
-  return project?.status.state === "error" ? project.status.reason : undefined
-}

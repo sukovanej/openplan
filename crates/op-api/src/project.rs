@@ -14,7 +14,6 @@ pub struct ProjectView {
     pub git_common_dir: Option<String>,
     pub backend: BackendKind,
     pub abbreviation: String,
-    pub status: ProjectStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub sync: Option<SyncView>,
@@ -32,22 +31,6 @@ impl BackendKind {
         match self {
             Self::Git => "git",
             Self::Local => "local",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum ProjectStatus {
-    Ok,
-    Error { reason: String },
-}
-
-impl ProjectStatus {
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            Self::Ok => None,
-            Self::Error { reason } => Some(reason),
         }
     }
 }

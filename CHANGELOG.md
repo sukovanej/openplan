@@ -12,6 +12,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The openplan-docs skill tells the agent to read and write the project docs
   with `openplan doc` when the user mentions a doc, and to show each doc it
   creates or changes in the built-in browser of the agent app.
+- The web UI header shows a warning control when a project has a fault that
+  you must fix: no git `user.name`, a failed sync, a project root that is gone,
+  tasks that do not parse, or outside changes that the daemon could not read.
+  The control lists each fault with its project, and it changes as faults start
+  and end. `GET /api/faults` lists the faults, and the `faults_changed` event
+  tells a client that the list changed.
 
 ### Changed
 
@@ -20,6 +26,35 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `set`, and `delete`. For example, `openplan get OPP-42` is now
   `openplan tasks get OPP-42`. Run `openplan setup-skills` to update the agent
   skills in a checkout.
+- The web UI selects the project with a menu in the header. The selection
+  applies to the tasks and to the docs. On any page, `0` selects all projects,
+  and `1` to `9` select the first nine projects. `o` opens the menu. The docs
+  of one project are at `/<project>/docs`, not at `/docs?project=<project>`.
+- The header has links with icons to the tasks, the docs, the activity, the
+  tags, and the flow of the selected project, and it highlights the page you
+  are on. These links replace the Docs and Flow links of the header and the
+  Activity and Tags links of the task list.
+- `g t` goes to the tasks of the selected project and replaces `g l`. `g d`
+  goes to the docs, `g a` goes to the activity, `g l` goes to the tags, and
+  `g f` goes to the flow of the selected project.
+- The activity and the tags have a page for all projects, at `/activity` and
+  `/tags`. The activity of all projects shows the revisions of every project,
+  newest first. The tags of all projects show each project in a section of its
+  own.
+- A new project cannot take the name `activity` or `tags`, as it cannot take
+  `docs` or `flow`.
+- The web UI shows a keyboard key, such as the keys in the keyboard help, like
+  inline code in a task body: red monospace type with a border, and smaller
+  than before.
+- The keyboard help (`?`) puts its groups in columns when they do not fit the
+  height of the window. When the window is too narrow for more columns, the
+  help scrolls.
+- Every write needs git `user.name`. openplan no longer signs a write with
+  `$USER` or with `openplan`. With no name, a write fails and tells you how to
+  set one, and a read still works. A local project outside a git repository
+  uses the global git config: `git config --global user.name "Your Name"`.
+- The HTTP API no longer has `ProjectView.status` or `SyncView.error`. Read
+  `GET /api/faults` instead.
 - A cylinder node (`[(text)]`) in a Mermaid diagram has a darker lid. The lid
   gets taller as the node gets wider, from 6 to 12 px, so a wide cylinder no
   longer looks flat.

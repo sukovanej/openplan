@@ -1,11 +1,10 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query"
-import { Activity, MessageSquare, Tags } from "lucide-react"
-import { memo, useMemo, type ReactNode } from "react"
+import { MessageSquare } from "lucide-react"
+import { memo, useMemo } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import type { Board, BoardRow } from "@openplan/api-client"
 import {
-  activityPath,
   ConflictBadge,
   createdOf,
   parentOf,
@@ -15,20 +14,20 @@ import {
   statusField,
   StatusGroupHeader,
   statusGroupLabel,
-  tagsPath,
   taskPath,
   TaskAuthor,
   TaskTags,
   TaskTimes,
 } from "@openplan/task-ui"
-import { EmptyState, MetaItem, MetaLine, Panel, PanelBody, PanelHeader, PanelTitle } from "@openplan/ui"
+import { EmptyState, MetaItem, MetaLine, Panel, PanelBody } from "@openplan/ui"
 
 import { ChildGuide, GridRow, RowGrid, type RowSlot, TreeGuides } from "../components/row-grid"
 import { ListSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { getBoard, getMergedBoard } from "../lib/api"
+import { useDemotedReason } from "../lib/faults"
 import { errorText } from "../lib/format"
-import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { useProject, useProjects } from "../lib/projects"
 import { boardKey, mergedBoardKey } from "../lib/query-client"
 import { abortable } from "../lib/runtime"
 import { type TagsByName, useTagRegistries } from "../lib/tags"
@@ -49,12 +48,13 @@ function MergedBoard() {
   if (projects !== undefined && projects.length === 0) {
     return <EmptyState title="No projects yet" detail="Register a repository with `openplan project add`." />
   }
-  return <BoardState board={board} title="All projects" />
+  return <BoardState board={board} />
 }
 
 function ProjectBoard({ project }: { project: string }) {
   const projects = useProjects()
   const known = useProject(project)
+  const reason = useDemotedReason(project)
   const board = useQuery({
     queryKey: boardKey(project),
     queryFn: abortable(getBoard(project)),
@@ -64,53 +64,23 @@ function ProjectBoard({ project }: { project: string }) {
   if (projects !== undefined && known === undefined) {
     return <EmptyState title="No such project" detail={project} />
   }
-  const reason = demotedReason(known)
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }
-  return (
-    <BoardState
-      board={board}
-      title={project}
-      action={
-        <div className="flex items-center gap-4">
-          <Link
-            to={activityPath(project)}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
-          >
-            <Activity className="size-3.5" />
-            Activity
-          </Link>
-          <Link
-            to={tagsPath(project)}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs normal-case"
-          >
-            <Tags className="size-3.5" />
-            Tags
-          </Link>
-        </div>
-      }
-    />
-  )
+  return <BoardState board={board} />
 }
 
-function BoardState({ board, title, action }: { board: UseQueryResult<Board>; title: string; action?: ReactNode }) {
+function BoardState({ board }: { board: UseQueryResult<Board> }) {
   if (board.isPending) return <ListSkeleton />
   if (board.isError) return <EmptyState title="Could not load tasks" detail={errorText(board.error)} />
-  // A project with no tasks keeps its panel, because the header is the only way to the tag registry
-  // and a project with nothing in it is exactly where the first tag gets registered.
   return board.data.groups.length === 0 ? (
     <Panel>
-      <PanelHeader className="gap-3">
-        <PanelTitle>{title}</PanelTitle>
-        {action !== undefined && <div className="ml-auto">{action}</div>}
-      </PanelHeader>
       <PanelBody className="p-6">
         <EmptyState title="No tasks yet" detail="Create one with `openplan tasks create`." />
       </PanelBody>
     </Panel>
   ) : (
-    <TaskGrid board={board.data} title={title} action={action} />
+    <TaskGrid board={board.data} />
   )
 }
 
@@ -131,7 +101,7 @@ function sizingKeys(rows: ReadonlyArray<BoardRow>): ReadonlyArray<string> {
 const boardPathOf = (row: BoardRow) => taskPath(row.task.project, row.task.id)
 const boardDepthOf = (row: BoardRow) => row.depth
 
-function TaskGrid({ board, title, action }: { board: Board; title: string; action?: ReactNode }) {
+function TaskGrid({ board }: { board: Board }) {
   const rows = useMemo(() => board.groups.flatMap((group) => group.rows), [board])
   const sizers = useMemo(() => sizingKeys(rows), [rows])
   const projects = useMemo(() => [...new Set(rows.map((row) => row.task.project))], [rows])
@@ -149,7 +119,7 @@ function TaskGrid({ board, title, action }: { board: Board; title: string; actio
     [board],
   )
   return (
-    <RowGrid label="Tasks" title={title} action={action} groups={groups} pathOf={boardPathOf} depthOf={boardDepthOf}>
+    <RowGrid label="Tasks" groups={groups} pathOf={boardPathOf} depthOf={boardDepthOf}>
       {(row, slot) => <TaskRow {...slot} row={row} sizers={sizers} tags={tags[row.task.project]} />}
     </RowGrid>
   )

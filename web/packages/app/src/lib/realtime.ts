@@ -68,6 +68,7 @@ function connect(): void {
     // the open, so it reads the projects and everything on screen again.
     if (cursor === undefined) {
       queryInvalidator.refreshProjects()
+      queryInvalidator.refreshFaults()
       queryInvalidator.refreshVisible()
     }
   }

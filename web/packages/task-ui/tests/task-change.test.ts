@@ -9,7 +9,6 @@ describe("fieldChangeText", () => {
     expect(fieldChangeText({ field: "status", from: "in_progress", to: "in_review" })).toBe(
       "Status: In progress → In review",
     )
-    expect(fieldChangeText({ field: "title", from: "Old", to: "New" })).toBe("Title: “Old” → “New”")
     expect(fieldChangeText({ field: "parent", from: "OPP-1", to: "OPP-2" })).toBe("Parent: OPP-1 → OPP-2")
     expect(fieldChangeText({ field: "parent", to: "OPP-2" })).toBe("Parent: OPP-2")
     expect(fieldChangeText({ field: "parent", from: "OPP-1" })).toBe("Parent removed")
@@ -34,6 +33,11 @@ describe("fieldChangeText", () => {
       [{ field: "conflicts", from: 2, to: 0 }, "Conflicts resolved"],
     ]
     for (const [change, text] of counted) expect(fieldChangeText(change)).toBe(text)
+  })
+
+  it("names a changed title or description, and leaves the words to the diff", () => {
+    expect(fieldChangeText({ field: "title", from: "Old", to: "New" })).toBe("Title")
+    expect(fieldChangeText({ field: "description" })).toBe("Description")
   })
 
   it("names a field that openplan does not model", () => {

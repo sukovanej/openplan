@@ -492,7 +492,7 @@ async fn a_write_without_the_headers_is_signed_with_the_project_identity() {
 
     let (_local_dir, local) = local_state();
     create(&local, "Unsigned").await;
-    let machine = project(&local).machine().clone();
+    let machine = project(&local).sign().unwrap();
     let revision = &history(&local, "?limit=1").await[0]["revision"];
     assert_eq!(revision["author"], machine.name.as_str());
 }

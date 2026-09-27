@@ -1,7 +1,20 @@
-import { Skeleton, SkeletonList } from "@openplan/ui"
+import { Panel, PanelBody, Skeleton, SkeletonList } from "@openplan/ui"
 
+import { useRowCursor } from "../lib/row-cursor"
+
+const NO_ROWS: ReadonlyArray<string> = []
+
+// While the list loads, the cursor keeps the rows of the page it left, and `j` then Enter would open
+// one of them.
 export function ListSkeleton() {
-  return <SkeletonList count={5} className="h-14 w-full" />
+  useRowCursor(NO_ROWS)
+  return (
+    <Panel>
+      <PanelBody className="p-6">
+        <SkeletonList count={3} className="h-10 w-full" />
+      </PanelBody>
+    </Panel>
+  )
 }
 
 export function DetailSkeleton() {

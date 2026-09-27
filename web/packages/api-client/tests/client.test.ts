@@ -203,7 +203,6 @@ it.effect("decodes the sync state of a project", () =>
           ahead: 1,
           behind: 0,
           syncing: true,
-          error: "no route",
         }),
       ),
     )
@@ -214,7 +213,6 @@ it.effect("decodes the sync state of a project", () =>
       ahead: 1,
       behind: 0,
       syncing: true,
-      error: "no route",
     })
   }),
 )

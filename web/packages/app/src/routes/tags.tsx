@@ -1,19 +1,18 @@
 import { useQuery } from "@tanstack/react-query"
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react"
-import { useRef, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { type ReactNode, useRef, useState } from "react"
+import { useParams } from "react-router-dom"
 
 import type { Color, TagView } from "@openplan/api-client"
-import { boardPath, ColorDot, ColorPicker, TagChip } from "@openplan/task-ui"
+import { ColorDot, ColorPicker, TagChip } from "@openplan/task-ui"
 import {
   Button,
   cn,
   EmptyState,
   Panel,
   PanelBody,
-  PanelHeader,
-  PanelTitle,
   Row,
+  Section,
   SkeletonList,
   TextInput,
   Tooltip,
@@ -21,8 +20,9 @@ import {
 } from "@openplan/ui"
 
 import { createTag, deleteTag, listTags, patchTag, TaskRejected } from "../lib/api"
+import { demotedReason, useDemotedReason, useFaults } from "../lib/faults"
 import { errorText } from "../lib/format"
-import { demotedReason, useProject, useProjects } from "../lib/projects"
+import { useProject, useProjects } from "../lib/projects"
 import { tagsKey, useProjectMutation } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
@@ -34,58 +34,91 @@ const focusOnMount = (element: HTMLDivElement | null) => element?.focus()
 type ProjectMutation = ReturnType<typeof useProjectMutation>
 
 export function TagsRoute() {
-  const { project = "" } = useParams()
+  const { project } = useParams()
+  useRowCursor(NO_ROWS)
+  return project === undefined ? <EveryProjectTags /> : <OneProjectTags project={project} />
+}
+
+function OneProjectTags({ project }: { project: string }) {
   const projects = useProjects()
   const known = useProject(project)
-  const tags = useQuery({
-    queryKey: tagsKey(project),
-    queryFn: abortable(listTags(project)),
-  })
-  const registration = useProjectMutation(project)
-  useRowCursor(NO_ROWS)
-
+  const reason = useDemotedReason(project)
   // Until the list arrives every name is equally plausible, so an unknown one is only unknown once
   // the daemon has answered.
   if (projects !== undefined && known === undefined) {
     return <EmptyState title="No such project" detail={project} />
   }
-  const reason = demotedReason(known)
   if (reason !== undefined) {
     return <EmptyState title={`${project} is not being served`} detail={reason} />
   }
   return (
+    <TagsPanel>
+      <ProjectTags project={project} />
+    </TagsPanel>
+  )
+}
+
+// Each project keeps a registry of its own, so each has its own section and its own form.
+function EveryProjectTags() {
+  const projects = useProjects()
+  const faults = useFaults()
+  return (
+    <TagsPanel>
+      {projects === undefined ? (
+        <SkeletonList count={3} className="h-10 w-full" />
+      ) : projects.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No projects yet.</p>
+      ) : (
+        projects.map((entry, index) => {
+          const reason = demotedReason(faults, entry.name)
+          return (
+            <Section key={entry.name} title={entry.name} className={cn(index === 0 && "mt-0 border-t-0 pt-0")}>
+              {reason === undefined ? (
+                <ProjectTags project={entry.name} />
+              ) : (
+                <p className="text-muted-foreground text-sm">Not being served: {reason}</p>
+              )}
+            </Section>
+          )
+        })
+      )}
+    </TagsPanel>
+  )
+}
+
+function TagsPanel({ children }: { children: ReactNode }) {
+  return (
     <Panel>
-      <PanelHeader className="gap-3">
-        <PanelTitle>Tags</PanelTitle>
-        <Link to={boardPath(project)} className="text-muted-foreground hover:text-foreground ml-auto text-xs">
-          ← {project}
-        </Link>
-      </PanelHeader>
-      <PanelBody className="p-6">
-        {/* The read and the writes go to the same store, so a registry that cannot be read is a
-            registry that cannot be written either — offering the form would only produce a toast. */}
-        {tags.isError ? (
-          <EmptyState title="Could not load tags" detail={errorText(tags.error)} />
-        ) : tags.isPending ? (
-          <SkeletonList count={3} className="h-10 w-full" />
-        ) : (
-          <>
-            <TagForm project={project} mutation={registration} className="mb-6" />
-            {tags.data.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No tags yet. Register one above.</p>
-            ) : (
-              <ul>
-                {tags.data.map((tag, index) => (
-                  <li key={`${tag.name}:${tag.display}:${tag.description ?? ""}`}>
-                    <TagRow project={project} tag={tag} last={index === tags.data.length - 1} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </PanelBody>
+      <PanelBody className="p-6">{children}</PanelBody>
     </Panel>
+  )
+}
+
+function ProjectTags({ project }: { project: string }) {
+  const tags = useQuery({
+    queryKey: tagsKey(project),
+    queryFn: abortable(listTags(project)),
+  })
+  const registration = useProjectMutation(project)
+  // The read and the writes go to the same store, so a registry that cannot be read is a registry
+  // that cannot be written either — offering the form would only produce a toast.
+  if (tags.isError) return <EmptyState title="Could not load tags" detail={errorText(tags.error)} />
+  if (tags.isPending) return <SkeletonList count={3} className="h-10 w-full" />
+  return (
+    <>
+      <TagForm project={project} mutation={registration} className="mb-6" />
+      {tags.data.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No tags yet. Register one above.</p>
+      ) : (
+        <ul>
+          {tags.data.map((tag, index) => (
+            <li key={`${tag.name}:${tag.display}:${tag.description ?? ""}`}>
+              <TagRow project={project} tag={tag} last={index === tags.data.length - 1} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   )
 }
 
@@ -324,6 +357,7 @@ function TagForm({
       <Button
         type="submit"
         variant="accent"
+        size="md"
         disabled={named === "" || mutation.isPending}
         className="disabled:opacity-40"
       >
@@ -331,7 +365,7 @@ function TagForm({
         {editing ? "Save" : "Register tag"}
       </Button>
       {onClose !== undefined && (
-        <Button onClick={onClose}>
+        <Button size="md" onClick={onClose}>
           <X className="size-3.5" />
           Cancel
         </Button>

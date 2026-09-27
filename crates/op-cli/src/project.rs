@@ -21,6 +21,7 @@ pub fn run(command: ProjectCommand, root: &Path, daemon_url: Option<&str>) -> Re
 
 fn list(client: &Client, base_url: &str) -> Result<()> {
     let views = client.projects(base_url, op_client::WRITE_TIMEOUT)?;
+    let faults = client.faults(base_url)?;
     if views.is_empty() {
         println!("no projects registered");
         return Ok(());
@@ -34,10 +35,10 @@ fn list(client: &Client, base_url: &str) -> Result<()> {
             view.backend.as_str(),
             view.root
         );
-        // A demoted project is still registered and still listed. Its reason is the answer to "why
+        // A demoted project is still registered and still listed. Its fault is the answer to "why
         // does the UI not show this project".
-        if let Some(reason) = view.status.reason() {
-            println!("!       {reason}");
+        for fault in faults.iter().filter(|fault| fault.project == view.name) {
+            println!("!       {}", fault.message);
         }
     }
     Ok(())

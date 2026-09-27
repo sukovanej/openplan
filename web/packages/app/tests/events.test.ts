@@ -6,6 +6,7 @@ import { applyChange, ChangeEvent, coalesced, type Invalidator } from "../src/li
 function spy() {
   const calls: {
     projects: number
+    faults: number
     lists: Array<string>
     tasks: Array<string>
     docs: Array<string>
@@ -13,10 +14,13 @@ function spy() {
     history: Array<string>
     sync: Array<string>
     visible: Array<string | undefined>
-  } = { projects: 0, lists: [], tasks: [], docs: [], pages: [], history: [], sync: [], visible: [] }
+  } = { projects: 0, faults: 0, lists: [], tasks: [], docs: [], pages: [], history: [], sync: [], visible: [] }
   const inv: Invalidator = {
     refreshProjects: () => {
       calls.projects += 1
+    },
+    refreshFaults: () => {
+      calls.faults += 1
     },
     refreshList: (project) => {
       calls.lists.push(project)
@@ -43,7 +47,17 @@ function spy() {
   return { inv, calls }
 }
 
-const quiet = { projects: 0, lists: [], tasks: [], docs: [], pages: [], history: [], sync: [], visible: [] }
+const quiet = {
+  projects: 0,
+  faults: 0,
+  lists: [],
+  tasks: [],
+  docs: [],
+  pages: [],
+  history: [],
+  sync: [],
+  visible: [],
+}
 const decode = Schema.decodeUnknownSync(ChangeEvent)
 
 it("decodes a task_changed event mirroring the Rust ChangeEvent JSON", () => {
@@ -116,6 +130,17 @@ it("sync_changed re-reads only that project's sync state", () => {
   expect(calls).toEqual({ ...quiet, sync: ["openplan"] })
 })
 
+it("decodes a faults_changed event mirroring the Rust ChangeEvent JSON", () => {
+  expect(decode({ kind: "faults_changed" })).toEqual({ kind: "faults_changed" })
+})
+
+// What started or ended a fault sends events of its own, so this re-reads the faults alone.
+it("faults_changed re-reads only the faults", () => {
+  const { inv, calls } = spy()
+  applyChange(inv, { kind: "faults_changed" })
+  expect(calls).toEqual({ ...quiet, faults: 1 })
+})
+
 // The event names no project, and an abbreviation spells every id on screen, so the project list
 // and every read there is are re-read.
 it("projects_changed re-reads the projects and everything on screen", () => {
@@ -125,10 +150,10 @@ it("projects_changed re-reads the projects and everything on screen", () => {
 })
 
 // The stream dropped events and cannot say which, so nothing on screen can be trusted.
-it("resync re-reads the projects and everything on screen", () => {
+it("resync re-reads the projects, the faults, and everything on screen", () => {
   const { inv, calls } = spy()
   applyChange(inv, { kind: "resync" })
-  expect(calls).toEqual({ ...quiet, projects: 1, visible: [undefined] })
+  expect(calls).toEqual({ ...quiet, projects: 1, faults: 1, visible: [undefined] })
 })
 
 it("daemon_stopping changes no read", () => {
@@ -201,13 +226,13 @@ it("lets a refresh of a project's screen cover the narrower refreshes in that pr
   })
 })
 
-it("lets a refresh of every screen cover every other refresh but the projects", () => {
+it("lets a refresh of every screen cover every other refresh but the projects and the faults", () => {
   const { coalescing, calls, flush } = held()
   applyChange(coalescing, { kind: "task_changed", project: "openplan", id: "OPP-1" })
   applyChange(coalescing, { kind: "tags_changed", project: "notes" })
   applyChange(coalescing, { kind: "resync" })
   flush()
-  expect(calls).toEqual({ ...quiet, projects: 1, visible: [undefined] })
+  expect(calls).toEqual({ ...quiet, projects: 1, faults: 1, visible: [undefined] })
 })
 
 // A page the flush reads again by name needs no second read from the refresh of every page.

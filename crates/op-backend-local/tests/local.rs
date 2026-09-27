@@ -1,10 +1,16 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use op_backend::{Actor, Backend, BackendEvent, Edit, LogQuery, Op, Origin};
+use op_backend::{Actor, Backend, BackendError, BackendEvent, Edit, LogQuery, Op, Origin, Signer};
 use op_backend_local::{EXTERNAL_MESSAGE, HISTORY_FILE, LocalBackend, Options};
 
+fn options() -> Options {
+    Options::new(Signer::fixed(Actor::new("filesystem")))
+}
+
 fn open(dir: &std::path::Path) -> LocalBackend {
-    LocalBackend::open(dir, Options::default()).expect("open")
+    LocalBackend::open(dir, options()).expect("open")
 }
 
 fn put(backend: &dyn Backend, path: &str, text: &str) {
@@ -37,14 +43,8 @@ fn documents_are_plain_files_beside_a_hidden_history() {
 fn refresh_records_a_hand_edit_as_an_external_revision() {
     let dir = tempfile::tempdir().expect("tempdir");
     let author = Actor::new("Milan").with_email("milan@example.com");
-    let backend = LocalBackend::open(
-        dir.path(),
-        Options {
-            watch: false,
-            external_author: author.clone(),
-        },
-    )
-    .expect("open");
+    let backend =
+        LocalBackend::open(dir.path(), Options::new(Signer::fixed(author.clone()))).expect("open");
     put(&backend, "a.md", "a");
     std::fs::write(dir.path().join("a.md"), "edited").expect("write");
     std::fs::write(dir.path().join("b.md"), "new").expect("write");
@@ -64,6 +64,30 @@ fn refresh_records_a_hand_edit_as_an_external_revision() {
             .as_deref(),
         Some("edited")
     );
+}
+
+#[test]
+fn a_hand_edit_waits_for_a_name_to_sign_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let named = Arc::new(AtomicBool::new(false));
+    let signer = {
+        let named = Arc::clone(&named);
+        Signer::new(move || match named.load(Ordering::SeqCst) {
+            true => Ok(Actor::new("Milan")),
+            false => Err(BackendError::NoIdentity),
+        })
+    };
+    put(&open(dir.path()), "a.md", "a");
+    std::fs::write(dir.path().join("a.md"), "edited").expect("write");
+    let backend = LocalBackend::open(dir.path(), Options::new(signer)).expect("open");
+
+    assert!(matches!(backend.refresh(), Err(BackendError::NoIdentity)));
+    assert_eq!(backend.log(&LogQuery::default()).expect("log").len(), 1);
+
+    named.store(true, Ordering::SeqCst);
+    let moved = backend.refresh().expect("refresh").expect("a move");
+    assert_eq!(moved.to.author, Actor::new("Milan"));
+    assert_eq!(moved.to.message, EXTERNAL_MESSAGE);
 }
 
 #[test]
@@ -98,7 +122,7 @@ fn the_watch_records_a_hand_edit_by_itself() {
         dir.path(),
         Options {
             watch: true,
-            ..Options::default()
+            ..options()
         },
     )
     .expect("open");
@@ -193,7 +217,7 @@ fn a_new_store_that_several_callers_open_at_the_same_time_keeps_its_files() {
                 .map(|_| {
                     scope.spawn(|| {
                         start.wait();
-                        LocalBackend::open(dir.path(), Options::default()).map(drop)
+                        LocalBackend::open(dir.path(), options()).map(drop)
                     })
                 })
                 .collect();

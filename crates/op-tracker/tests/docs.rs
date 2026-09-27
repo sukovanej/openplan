@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use op_backend::{Actor, Edit, Op};
+use op_backend::{Actor, Edit, Op, Signer};
 use op_backend_local::{LocalBackend, Options};
 use op_task::Timestamp;
 use op_task::doc::Doc;
@@ -22,7 +22,11 @@ fn stamp() -> Timestamp {
 
 fn started() -> Fixture {
     let dir = tempfile::tempdir().expect("tempdir");
-    let backend = LocalBackend::open(dir.path(), Options::default()).expect("open");
+    let backend = LocalBackend::open(
+        dir.path(),
+        Options::new(Signer::fixed(Actor::new("filesystem"))),
+    )
+    .expect("open");
     let tracker = Tracker::new(Arc::new(backend));
     tracker
         .init(&actor(), "OPP".parse().expect("abbreviation"))
@@ -80,7 +84,11 @@ fn a_doc_is_stored_under_its_name() {
 #[test]
 fn a_doc_needs_a_started_project() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let backend = LocalBackend::open(dir.path(), Options::default()).expect("open");
+    let backend = LocalBackend::open(
+        dir.path(),
+        Options::new(Signer::fixed(Actor::new("filesystem"))),
+    )
+    .expect("open");
     let tracker = Tracker::new(Arc::new(backend));
     let doc = Doc::new("Architecture", stamp()).expect("name");
     assert!(matches!(

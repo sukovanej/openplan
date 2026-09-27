@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::Result;
-use op_api::SyncView;
+use op_api::{Fault, FaultKind, SyncView};
 
 use crate::plan::Plan;
 
@@ -53,14 +53,25 @@ pub fn sync(root: &Path, daemon_url: Option<&str>, status: bool, json: bool) -> 
     let plan = Plan::resolve(root, daemon_url)?;
     if status {
         let view = plan.sync_status()?;
+        let failed: Vec<Fault> = plan
+            .faults()?
+            .into_iter()
+            .filter(|fault| fault.kind == FaultKind::SyncFailed)
+            .collect();
         if json {
             println!("{}", serde_json::to_string_pretty(&view)?);
+            for fault in &failed {
+                eprintln!("{}", fault.message);
+            }
         } else {
             print_status(&view);
+            for fault in &failed {
+                println!("!             {}", fault.message);
+            }
         }
-        return Ok(match view.error {
-            Some(_) => ExitCode::FAILURE,
-            None => ExitCode::SUCCESS,
+        return Ok(match failed.is_empty() {
+            true => ExitCode::SUCCESS,
+            false => ExitCode::FAILURE,
         });
     }
     let result = plan.sync()?;
@@ -87,9 +98,6 @@ fn print_status(view: &SyncView) {
     );
     println!("ahead:        {}", view.ahead);
     println!("behind:       {}", view.behind);
-    if let Some(error) = &view.error {
-        println!("!             {error}");
-    }
 }
 
 fn plural(n: usize) -> &'static str {

@@ -1,7 +1,7 @@
 use std::process::Command;
 use std::sync::Arc;
 
-use op_backend::{Backend, PreferTheirs};
+use op_backend::{Actor, Backend, PreferTheirs, Signer};
 use op_backend_conformance::Subject;
 use op_backend_git::{GitBackend, Options};
 
@@ -23,7 +23,14 @@ impl Git {
 impl Subject for Git {
     fn open(&self) -> Arc<dyn Backend> {
         Arc::new(
-            GitBackend::open(self.0.path(), Options::new(Arc::new(PreferTheirs))).expect("open"),
+            GitBackend::open(
+                self.0.path(),
+                Options::new(
+                    Arc::new(PreferTheirs),
+                    Signer::fixed(Actor::new("openplan")),
+                ),
+            )
+            .expect("open"),
         )
     }
 }

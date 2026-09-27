@@ -150,7 +150,7 @@ pub(crate) async fn create_task(
     Json(body): Json<CreateTask>,
 ) -> Result<Response, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let created = op_task::now();
     let id = blocking(move || {
         let abbreviation = project.abbreviation()?;
@@ -218,7 +218,7 @@ pub(crate) async fn patch_task(
     Json(patch): Json<TaskPatch>,
 ) -> Result<Json<TaskDetail>, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let detail = blocking(move || {
         let abbreviation = project.abbreviation()?;
         let number = project.number(&id)?;
@@ -260,7 +260,7 @@ pub(crate) async fn write_task_file(
     Json(body): Json<WriteTaskFile>,
 ) -> Result<Json<TaskDetail>, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let written = Task::from_file_string(&body.text)
         .map_err(|err| ApiError::bad_request(format!("not a task file: {err}")))?;
     let detail = blocking(move || {
@@ -310,7 +310,7 @@ pub(crate) async fn write_text(
     Json(body): Json<WriteTaskText>,
 ) -> Result<Json<TaskDetail>, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let detail = blocking(move || {
         let number = project.number(&id)?;
         let (base, text) = body.into_texts(project.abbreviation()?)?;
@@ -342,7 +342,7 @@ pub(crate) async fn delete_task(
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     blocking(move || {
         let number = project.number(&id)?;
         let committed = project.tracker().delete_task(&actor, number)?;
@@ -462,7 +462,7 @@ pub(crate) async fn add_comment(
     Json(body): Json<CreateComment>,
 ) -> Result<Response, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let entry = new_comment(body)?;
     let written = Comment::from(&entry);
     blocking(move || {
@@ -1034,7 +1034,7 @@ pub(crate) async fn create_tag(
     Json(body): Json<CreateTag>,
 ) -> Result<Response, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let view = blocking(move || {
         let tag = body
             .into_tag()
@@ -1095,7 +1095,7 @@ pub(crate) async fn patch_tag(
     Json(patch): Json<TagPatch>,
 ) -> Result<Json<TagView>, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     let view = blocking(move || {
         let tracker = project.tracker();
         let name = match &patch.name {
@@ -1142,7 +1142,7 @@ pub(crate) async fn delete_tag(
     Query(query): Query<DeleteTagQuery>,
 ) -> Result<StatusCode, ApiError> {
     let project = project_of(&state, &project)?;
-    let actor = actor_of(&headers, &project);
+    let actor = actor_of(&state, &headers, &project)?;
     blocking(move || {
         project.tracker().delete_tag(&actor, &name, query.force)?;
         Ok(())

@@ -2,8 +2,6 @@ import type { DocChange, DocumentChangeKind, FieldChange, TagChange } from "@ope
 
 import { statusLabel } from "./status"
 
-const quoted = (text: string): string => `“${text}”`
-
 const count = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`
 
 // Tags and dependencies are sets to a reader, so the change is what joined and what left.
@@ -40,11 +38,7 @@ export function fieldChangeText(change: FieldChange): string {
     case "tags":
       return setChange("Tags", change.from, change.to)
     case "title":
-      return fromTo(
-        "Title",
-        change.from === undefined ? undefined : quoted(change.from),
-        change.to === undefined ? undefined : quoted(change.to),
-      )
+      return "Title"
     case "description":
       return "Description"
     case "comments":

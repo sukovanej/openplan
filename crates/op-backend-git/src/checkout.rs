@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use op_backend::Actor;
+use op_backend::{Actor, BackendError, Signer};
 
 use crate::TASKS_REF;
 
@@ -45,7 +45,7 @@ fn has_tasks(repo: &gix::Repository) -> bool {
 }
 
 // The name and email the repository signs commits with, or the global ones outside a repository.
-pub fn identity(path: &Path) -> Option<Actor> {
+pub fn identity(path: &Path) -> Result<Actor, BackendError> {
     let (name, email) = match gix::discover(path) {
         Ok(repo) => {
             let config = repo.config_snapshot();
@@ -55,7 +55,9 @@ pub fn identity(path: &Path) -> Option<Actor> {
             )
         }
         Err(_) => {
-            let config = gix::config::File::from_globals().ok()?;
+            let Ok(config) = gix::config::File::from_globals() else {
+                return Err(BackendError::NoIdentity);
+            };
             (
                 config
                     .string_by("user", None, "name")
@@ -66,10 +68,17 @@ pub fn identity(path: &Path) -> Option<Actor> {
             )
         }
     };
-    let name = name.filter(|name| !name.trim().is_empty())?;
+    let name = name
+        .filter(|name| !name.trim().is_empty())
+        .ok_or(BackendError::NoIdentity)?;
     let actor = Actor::new(name.trim());
-    Some(match email.filter(|email| !email.trim().is_empty()) {
+    Ok(match email.filter(|email| !email.trim().is_empty()) {
         Some(email) => actor.with_email(email.trim()),
         None => actor,
     })
+}
+
+pub fn signer(root: &Path) -> Signer {
+    let root = root.to_path_buf();
+    Signer::new(move || identity(&root))
 }

@@ -5,7 +5,8 @@ use std::time::SystemTime;
 
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Change, ChangeKind, Committed, Events, HeadMoved,
-    LogEntry, LogQuery, Op, Origin, Remote, Revision, RevisionId, Snapshot, Write, check_path,
+    LogEntry, LogQuery, Op, Origin, Remote, Revision, RevisionId, Signer, Snapshot, Write,
+    check_path,
 };
 use tokio::sync::broadcast;
 
@@ -26,14 +27,15 @@ const WRITE_ATTEMPTS: usize = 8;
 #[derive(Debug, Clone)]
 pub struct Options {
     pub watch: bool,
-    pub external_author: Actor,
+    // Signs the hand edits it finds on disk, which no write of openplan made.
+    pub signer: Signer,
 }
 
-impl Default for Options {
-    fn default() -> Self {
+impl Options {
+    pub fn new(signer: Signer) -> Self {
         Self {
             watch: false,
-            external_author: Actor::new("filesystem"),
+            signer,
         }
     }
 }
@@ -45,7 +47,7 @@ pub struct LocalBackend {
 
 struct Inner {
     root: PathBuf,
-    external_author: Actor,
+    signer: Signer,
     blobs: Arc<Blobs>,
     state: Mutex<State>,
     events: Events,
@@ -82,7 +84,7 @@ impl LocalBackend {
         let head = Arc::new(history.snapshot(history.latest()?, &blobs)?);
         let inner = Arc::new(Inner {
             root,
-            external_author: options.external_author,
+            signer: options.signer,
             blobs,
             state: Mutex::new(State {
                 history,
@@ -92,7 +94,11 @@ impl LocalBackend {
             events: Events::default(),
         });
         inner.finish_interrupted(&unsettled)?;
-        inner.refresh()?;
+        // A hand edit waits for a name to sign it, and the next refresh records it.
+        match inner.refresh() {
+            Ok(_) | Err(BackendError::NoIdentity) => {}
+            Err(err) => return Err(err),
+        }
         let watcher = match options.watch {
             true => inner.start_watch(),
             false => None,
@@ -217,7 +223,11 @@ impl Inner {
             elsewhere = self.catch_up(state)?.or(elsewhere);
             let from = state.head.revision().cloned();
             let edits = self.hand_edits(state)?;
-            let author = self.external_author.clone();
+            if edits.ops.is_empty() {
+                state.stamps.extend(edits.settled);
+                return Ok(elsewhere);
+            }
+            let author = self.signer.sign()?;
             let applied = self.apply(state, &author, EXTERNAL_MESSAGE, edits.ops, Source::Disk)?;
             if !matches!(applied, Applied::Moved) {
                 state.stamps.extend(edits.settled);

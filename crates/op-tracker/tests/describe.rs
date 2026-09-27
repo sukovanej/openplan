@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use op_backend::{Actor, ChangeKind, Edit, Op};
+use op_backend::{Actor, ChangeKind, Edit, Op, Signer};
 use op_backend_local::{LocalBackend, Options};
 use op_task::comment::NewComment;
 use op_task::tag::Tag;
@@ -26,7 +26,11 @@ fn abbreviation() -> Abbreviation {
 
 fn started() -> Fixture {
     let dir = tempfile::tempdir().expect("tempdir");
-    let backend = LocalBackend::open(dir.path(), Options::default()).expect("open");
+    let backend = LocalBackend::open(
+        dir.path(),
+        Options::new(Signer::fixed(Actor::new("filesystem"))),
+    )
+    .expect("open");
     let tracker = Tracker::new(Arc::new(backend));
     tracker.init(&actor(), abbreviation()).expect("init");
     Fixture { _dir: dir, tracker }

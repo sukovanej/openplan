@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use op_backend::{Actor, LogQuery};
+use op_backend::{Actor, LogQuery, Signer};
 use op_backend_local::{LocalBackend, Options};
 use op_task::comment::NewComment;
 use op_task::tag::Tag;
@@ -22,7 +22,11 @@ fn stamp() -> Timestamp {
 
 fn fresh() -> Fixture {
     let dir = tempfile::tempdir().expect("tempdir");
-    let backend = LocalBackend::open(dir.path(), Options::default()).expect("open");
+    let backend = LocalBackend::open(
+        dir.path(),
+        Options::new(Signer::fixed(Actor::new("filesystem"))),
+    )
+    .expect("open");
     Fixture {
         _dir: dir,
         tracker: Tracker::new(Arc::new(backend)),

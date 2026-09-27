@@ -17,9 +17,10 @@ const AGENTS: &[(&str, &str)] = &[
 
 // Who a write is for: git `user.name` and `user.email`, and the tool that ran this command. There
 // is no flag and no environment override: the CLI signs with the name the repository already knows
-// the writer by.
+// the writer by. With no name, the daemon reads the same git config and refuses the write, and a
+// read needs no name.
 pub fn identity(root: &Path) -> Identity {
-    let actor = op_backend_git::identity(root);
+    let actor = op_backend_git::identity(root).ok();
     Identity {
         name: actor.as_ref().map(|actor| actor.name.clone()),
         email: actor.and_then(|actor| actor.email),
@@ -29,13 +30,7 @@ pub fn identity(root: &Path) -> Identity {
 
 // A comment is signed in the log itself, and an entry no one signed is worse than no entry.
 pub fn author(root: &Path) -> Result<String> {
-    match op_backend_git::identity(root) {
-        Some(actor) => Ok(actor.name),
-        None => anyhow::bail!(
-            "a comment is signed with git `user.name`, and none is set here. Set it with \
-             `git config --global user.name \"Your Name\"`."
-        ),
-    }
+    Ok(op_backend_git::identity(root)?.name)
 }
 
 // The tool that typed the entry, as a claim rather than a proof: every signal below is spoofable,

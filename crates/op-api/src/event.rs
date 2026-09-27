@@ -14,6 +14,8 @@ pub enum ChangeEvent {
     ProjectsChanged,
     // A sync with the remote ran, whether it moved anything or failed.
     SyncChanged { project: String },
+    // A fault started or ended. A client reads the list of faults again.
+    FaultsChanged,
     // The stream dropped events and cannot say which, so the client reads everything on screen again.
     Resync,
     DaemonStopping { reason: StopReason },

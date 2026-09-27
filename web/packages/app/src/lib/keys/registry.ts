@@ -16,14 +16,14 @@ export function helpGroups(bindings: ReadonlyArray<Binding>): ReadonlyArray<Help
   const order: Array<string> = []
   const byGroup = new Map<string, Array<HelpEntry>>()
   for (const binding of bindings) {
-    if (isOverlayScope(binding.scope)) continue
+    if (isOverlayScope(binding.scope) || binding.help === "hidden") continue
     let entries = byGroup.get(binding.group)
     if (entries === undefined) {
       entries = []
       byGroup.set(binding.group, entries)
       order.push(binding.group)
     }
-    entries.push({ id: binding.id, keys: chordOf(binding.keys), label: binding.label })
+    entries.push({ id: binding.id, keys: chordOf(binding.help?.keys ?? binding.keys), label: binding.label })
   }
   return order.map((name) => ({ name, entries: byGroup.get(name)! }))
 }

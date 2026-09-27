@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
-use op_backend::{Actor, Backend};
+use op_backend::{Actor, Backend, Signer};
 use op_backend_git::{GitBackend, Options};
 use op_task::comment::NewComment;
 use op_task::content::Text;
@@ -50,7 +50,13 @@ impl Team {
         );
         let path: PathBuf = self.root.path().join(name);
         let policy = Arc::new(TaskMergePolicy);
-        let backend = Arc::new(GitBackend::open(&path, Options::new(policy)).expect("open"));
+        let backend = Arc::new(
+            GitBackend::open(
+                &path,
+                Options::new(policy, Signer::fixed(Actor::new("openplan"))),
+            )
+            .expect("open"),
+        );
         Member {
             tracker: Tracker::new(backend.clone()),
             backend,
