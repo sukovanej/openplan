@@ -10,7 +10,6 @@ import {
   DocRefChip,
   referenced,
   referencePath,
-  TaskBody,
   TaskRefChip,
 } from "@openplan/task-ui"
 import { Button } from "@openplan/ui"
@@ -19,7 +18,7 @@ import { type Portals, portals, useEditorScope } from "./portals"
 
 const owners = new WeakMap<HTMLElement, Portals>()
 
-abstract class ReactWidget extends WidgetType {
+export abstract class ReactWidget extends WidgetType {
   protected abstract readonly block: boolean
   protected abstract render(view: EditorView, element: HTMLElement): ReactNode
 
@@ -36,6 +35,13 @@ abstract class ReactWidget extends WidgetType {
 
   destroy(element: HTMLElement): void {
     owners.get(element)?.unmount(element)
+  }
+
+  protected remount(element: HTMLElement, view: EditorView): boolean {
+    const host = owners.get(element)
+    if (host === undefined) return false
+    host.mount(element, this.render(view, element))
+    return true
   }
 }
 
@@ -68,12 +74,12 @@ export class TaskRefWidget extends ReactWidget {
 }
 
 // The caret lands where the rendered block starts, which shows the source for editing.
-function editAt(view: EditorView, element: HTMLElement) {
+export function editAt(view: EditorView, element: HTMLElement) {
   view.dispatch({ selection: { anchor: view.posAtDOM(element) } })
   view.focus()
 }
 
-function EditButton({ onEdit }: { onEdit: () => void }) {
+export function EditButton({ onEdit }: { onEdit: () => void }) {
   return (
     <Button
       size="icon"
@@ -85,31 +91,6 @@ function EditButton({ onEdit }: { onEdit: () => void }) {
       <Pencil className="size-3.5" />
     </Button>
   )
-}
-
-function MarkdownBlockView({ source, onEdit }: { source: string; onEdit: () => void }) {
-  const { project, abbreviation, refs, docRefs } = useEditorScope()
-  return (
-    <div className="cursor-text" onMouseDown={onEdit}>
-      <TaskBody project={project} abbreviation={abbreviation} refs={refs} docRefs={docRefs} markdown={source} />
-    </div>
-  )
-}
-
-export class MarkdownBlockWidget extends ReactWidget {
-  protected readonly block = true
-
-  constructor(private readonly source: string) {
-    super()
-  }
-
-  eq(other: MarkdownBlockWidget): boolean {
-    return other.source === this.source
-  }
-
-  protected render(view: EditorView, element: HTMLElement): ReactNode {
-    return <MarkdownBlockView source={this.source} onEdit={() => editAt(view, element)} />
-  }
 }
 
 export class DiagramWidget extends ReactWidget {

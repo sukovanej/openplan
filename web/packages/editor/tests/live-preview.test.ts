@@ -4,7 +4,8 @@ import type { DecorationSet } from "@codemirror/view"
 import { describe, expect, it } from "vitest"
 
 import { previewOf } from "../src/live-preview"
-import { CheckboxWidget, ConflictWidget, DiagramWidget, MarkdownBlockWidget, TaskRefWidget } from "../src/widgets"
+import { TableWidget } from "../src/table-view"
+import { CheckboxWidget, ConflictWidget, DiagramWidget, TaskRefWidget } from "../src/widgets"
 
 interface Found {
   readonly from: number
@@ -110,9 +111,15 @@ describe("the live preview", () => {
   it("renders a table away from the caret", () => {
     const doc = "| a | b |\n|---|---|\n| 1 | 2 |\n"
     const [table] = widgets(doc)
-    expect(table.widget).toBeInstanceOf(MarkdownBlockWidget)
+    expect(table.widget).toBeInstanceOf(TableWidget)
     expect(table.block).toBe(true)
     expect(widgets(doc, 3)).toEqual([])
+  })
+
+  it("renders a table that holds a task reference", () => {
+    const doc = "| a | b |\n|---|---|\n| [[DEM-1]] | 2 |\n"
+    expect(widgets(doc).map((found) => found.widget)).toEqual([expect.any(TableWidget)])
+    expect(widgets(doc, doc.indexOf(" 2 ")).map((found) => found.widget)).toEqual([expect.any(TaskRefWidget)])
   })
 
   it("renders a conflict block whole, even at the caret, and keeps the caret out of it", () => {
