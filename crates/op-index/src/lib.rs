@@ -12,10 +12,13 @@ use op_task::reference::{self, Target};
 use op_task::{Abbreviation, FieldError, layout};
 use op_tracker::{Plan, TrackerError, doc_moves};
 
+use crate::problems::{Place, Unpathed};
+
 #[derive(Debug, Default)]
 pub struct Index {
     abbreviation: Option<Abbreviation>,
     tasks: BTreeMap<u64, Entry>,
+    task_paths: BTreeMap<u64, String>,
     updated: HashMap<u64, Timestamp>,
     authors: HashMap<u64, Author>,
     problems: HashMap<u64, Vec<Problem>>,
@@ -36,8 +39,7 @@ struct Entry {
     // The tasks and the docs the text names with `[[…]]`, found or not.
     body_refs: Vec<u64>,
     doc_refs: Vec<String>,
-    // References the file spells as a key, a number, or a name rather than as a path.
-    unpathed: Vec<(String, Target)>,
+    unpathed: Vec<Unpathed>,
     comment_problems: Vec<String>,
     diagram_problems: Vec<String>,
     haystack: Haystack,
@@ -91,6 +93,7 @@ impl Index {
             }
             self.tasks.insert(number, Entry::parse(text, abbreviation));
         }
+        self.task_paths = plan.paths().clone();
         self.problems = self.find_problems(plan.tag_names(), plan.shadowed());
         Ok(())
     }
@@ -120,6 +123,7 @@ impl Index {
                 self.tasks.insert(number, Entry::parse(text, abbreviation));
             }
         }
+        self.task_paths = plan.paths().clone();
         self.problems = self.find_problems(plan.tag_names(), plan.shadowed());
         Ok(())
     }
@@ -401,14 +405,28 @@ impl Entry {
             .into_iter()
             .filter_map(|(_, inner)| op_task::body_ref_id(abbreviation, layout::TASKS, inner))
             .collect();
-        let mut unpathed = reference::unpathed(Some(abbreviation), layout::TASKS, &text);
+        let mut unpathed = Unpathed::in_text(Some(abbreviation), layout::TASKS, &text);
+        let spellings = reference::frontmatter_spellings(&raw);
+        let fields = spellings
+            .parent
+            .into_iter()
+            .map(|spelled| (Place::Parent, spelled))
+            .chain(
+                spellings
+                    .dependencies
+                    .into_iter()
+                    .map(|spelled| (Place::Dependency, spelled)),
+            );
         unpathed.extend(
-            reference::frontmatter_spellings(&raw)
-                .into_iter()
-                .filter(|spelled| !reference::is_path(layout::TASKS, spelled))
-                .filter_map(|spelled| {
+            fields
+                .filter(|(_, spelled)| !reference::is_path(layout::TASKS, spelled))
+                .filter_map(|(place, spelled)| {
                     let number = op_task::ref_id(&spelled)?;
-                    Some((spelled, Target::Task(number)))
+                    Some(Unpathed {
+                        place,
+                        spelled,
+                        target: Target::Task(number),
+                    })
                 }),
         );
         let metadata = Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation);

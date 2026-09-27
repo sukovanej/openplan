@@ -10,6 +10,7 @@ use op_task::{Abbreviation, FieldError, FieldResult, layout};
 use op_tracker::{Plan, TrackerError};
 
 use crate::Index;
+use crate::problems::Unpathed;
 
 #[derive(Debug, Clone)]
 pub(crate) struct DocEntry {
@@ -22,7 +23,7 @@ pub(crate) struct DocEntry {
     // What the published text names, found or not.
     task_refs: Vec<u64>,
     doc_refs: Vec<String>,
-    unpathed: Vec<(String, Target)>,
+    unpathed: Vec<Unpathed>,
 }
 
 impl DocEntry {
@@ -53,7 +54,7 @@ impl DocEntry {
                     Target::Task(_) => None,
                 })
                 .collect(),
-            unpathed: reference::unpathed(abbreviation, layout::DOCS, &text),
+            unpathed: Unpathed::in_text(abbreviation, layout::DOCS, &text),
             raw,
         }
     }
@@ -140,8 +141,8 @@ impl Index {
                 format!("the text names the doc {doc}, which does not exist"),
             );
         }
-        for (spelled, target) in &entry.unpathed {
-            if let Some(message) = self.unpathed_message(spelled, target) {
+        for unpathed in &entry.unpathed {
+            if let Some(message) = self.unpathed_message(layout::DOCS, unpathed) {
                 push(ProblemCode::ReferencePath, message);
             }
         }

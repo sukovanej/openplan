@@ -2,11 +2,41 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use op_api::{Problem, ProblemCode};
 
-use op_task::reference::Target;
+use op_task::Abbreviation;
+use op_task::layout;
+use op_task::reference::{self, Target};
 
 use crate::Index;
 
 type Found = HashMap<u64, Vec<Problem>>;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Place {
+    Parent,
+    Dependency,
+    Text,
+}
+
+// A reference that a file spells as a key, a number, or a name rather than as a path.
+#[derive(Debug, Clone)]
+pub(crate) struct Unpathed {
+    pub(crate) place: Place,
+    pub(crate) spelled: String,
+    pub(crate) target: Target,
+}
+
+impl Unpathed {
+    pub(crate) fn in_text(abbreviation: Option<Abbreviation>, dir: &str, text: &str) -> Vec<Self> {
+        reference::unpathed(abbreviation, dir, text)
+            .into_iter()
+            .map(|(spelled, target)| Self {
+                place: Place::Text,
+                spelled,
+                target,
+            })
+            .collect()
+    }
+}
 
 impl Index {
     pub(crate) fn find_problems(
@@ -80,8 +110,8 @@ impl Index {
                     format!("the text names the doc {name}, which does not exist"),
                 );
             }
-            for (spelled, target) in &entry.unpathed {
-                if let Some(message) = self.unpathed_message(spelled, target) {
+            for unpathed in &entry.unpathed {
+                if let Some(message) = self.unpathed_message(layout::TASKS, unpathed) {
                     push(&mut found, number, ProblemCode::ReferencePath, message);
                 }
             }
@@ -117,20 +147,28 @@ impl Index {
 
     // A reference to a task or a doc that does not exist is a problem of its own, and its fix is not
     // a path.
-    pub(crate) fn unpathed_message(&self, spelled: &str, target: &Target) -> Option<String> {
-        let (what, path) = match target {
-            Target::Task(number) if self.tasks.contains_key(number) => {
-                (self.key(*number), "the task file")
+    pub(crate) fn unpathed_message(&self, dir: &str, unpathed: &Unpathed) -> Option<String> {
+        let Unpathed {
+            place,
+            spelled,
+            target,
+        } = unpathed;
+        let path = match target {
+            Target::Task(number) => {
+                reference::task_file_ref(dir, self.task_paths.get(number)?, spelled)
             }
-            Target::Task(_) => return None,
             Target::Doc(name) if self.docs.contains_key(name) => {
-                (format!("the doc {name}"), "the doc file")
+                reference::doc_ref(dir, name, spelled)
             }
             Target::Doc(_) => return None,
         };
-        Some(format!(
-            "`{spelled}` names {what}; a file names it by the path to {path}"
-        ))
+        Some(match place {
+            Place::Parent => format!("the parent `{spelled}` is not a path; write `{path}`"),
+            Place::Dependency => {
+                format!("the dependency `{spelled}` is not a path; write `{path}`")
+            }
+            Place::Text => format!("the link `[[{spelled}]]` is not a path; write `[[{path}]]`"),
+        })
     }
 
     fn existing(&self, key: &str) -> Option<u64> {
