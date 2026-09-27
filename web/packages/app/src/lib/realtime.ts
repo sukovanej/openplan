@@ -13,6 +13,8 @@ const decodeDaemon = Schema.decodeUnknownSync(DaemonInfo)
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_CAP_MS = 8000
 const STOPPED_POLL_MS = 10000
+const CHUNK_RELOAD_KEY = "openplan:chunk-reload"
+const CHUNK_RELOAD_GAP_MS = 60_000
 // The events of one change arrive back to back, well inside this.
 const COALESCE_MS = 50
 
@@ -139,9 +141,26 @@ function meetNewRelease(): void {
   window.location.reload()
 }
 
+// A daemon built again at the same version serves its chunks under new names, and the version check
+// cannot see that, so the first chunk this page fails to load tells it instead. The error would
+// replace the whole page, so a reload loses nothing more, even with unsaved work on the page. A page
+// that reloaded for this a minute ago lets the error through: the chunk is then missing from the new
+// build too.
+function meetStaleChunk(event: Event): void {
+  try {
+    if (Date.now() - Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) ?? 0) < CHUNK_RELOAD_GAP_MS) return
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()))
+  } catch {
+    return
+  }
+  event.preventDefault()
+  window.location.reload()
+}
+
 export function startRealtime(): void {
   if (started) return
   started = true
+  window.addEventListener("vite:preloadError", meetStaleChunk)
   void readHealth().then((health) => {
     if (health !== "down") loadedVersion ??= health.version
   })

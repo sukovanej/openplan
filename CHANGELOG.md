@@ -13,6 +13,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with `openplan doc` when the user mentions a doc, and to show each doc it
   creates or changes in the built-in browser of the agent app.
 
+### Fixed
+
+- An open web UI page reloads when it cannot load a part of the app, such as the
+  diff view, after the daemon starts again on a new build of the same version.
+  Before, it showed "Failed to fetch dynamically imported module".
+
 ## [0.0.4](https://github.com/sukovanej/openplan/compare/v0.0.3...v0.0.4) - 2026-09-26
 
 ### Added
