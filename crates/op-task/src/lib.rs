@@ -385,9 +385,9 @@ fn deserialize_dependencies<'de, D: serde::Deserializer<'de>>(
         .collect()
 }
 
-// Sync merges tasks in memory and has no plan to name the files again, so it takes back the
-// spelling each version of the file used.
-pub fn file_spellings(input: &str) -> BTreeMap<String, String> {
+// Sync merges tasks in memory, where a reference is a task number, and it has no plan to find the
+// file of each task. So it takes each path from the files it merges.
+pub fn reference_paths(input: &str) -> BTreeMap<String, String> {
     let Some(frontmatter) = parse_partial(input).frontmatter else {
         return BTreeMap::new();
     };

@@ -190,7 +190,7 @@ fn reference(text: &str) -> Result<u64, TrackerError> {
 // follow one. A reference to a deleted task keeps its number, and a body reference that names no
 // file is written as the key, so it resolves once that task exists.
 pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
-    let mut task = references_named(task, |reference| named(plan, reference));
+    let mut task = with_reference_paths(task, |reference| named(plan, reference));
     task.body = body_in_file_form(plan, layout::TASKS, &task.body);
     task
 }
@@ -201,27 +201,27 @@ pub(crate) fn task_text(plan: &Plan, task: &Task) -> Result<String, TrackerError
     Ok(in_file_form(plan, task).to_file_string()?)
 }
 
-pub(crate) fn references_named(task: &Task, named: impl Fn(&str) -> String) -> Task {
-    let named = &named;
+pub(crate) fn with_reference_paths(task: &Task, path_of: impl Fn(&str) -> String) -> Task {
+    let path_of = &path_of;
     let mut task = task.clone();
     for conflict in &mut task.conflicts {
         conflict.other = match (conflict.field.as_str(), conflict.other.take()) {
-            ("parent", Some(value)) => Some(reference_value(value, named)),
+            ("parent", Some(value)) => Some(reference_value(value, path_of)),
             ("dependencies", Some(serde_yaml::Value::Sequence(items))) => Some(
                 items
                     .into_iter()
-                    .map(|item| reference_value(item, named))
+                    .map(|item| reference_value(item, path_of))
                     .collect(),
             ),
             (_, other) => other,
         };
     }
-    task.frontmatter.parent = task.frontmatter.parent.as_deref().map(named);
+    task.frontmatter.parent = task.frontmatter.parent.as_deref().map(path_of);
     task.frontmatter.dependencies = task
         .frontmatter
         .dependencies
         .iter()
-        .map(|reference| named(reference))
+        .map(|reference| path_of(reference))
         .collect();
     task
 }

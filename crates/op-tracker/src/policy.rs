@@ -9,7 +9,7 @@ use op_task::conflict::{self, Labels};
 use op_task::doc::Doc;
 use op_task::layout::{self, Document};
 use op_task::reference::relative;
-use op_task::{Abbreviation, Task, file_spellings, merge, parse_partial, three_way};
+use op_task::{Abbreviation, Task, merge, parse_partial, reference_paths, three_way};
 
 use crate::files;
 
@@ -164,11 +164,11 @@ fn merged_file(base: &File, ours: &File, theirs: &File, labels: &Labels) -> File
     let text = match (parse(&base), parse(&ours), parse(&theirs)) {
         (Some(base_task), Some(ours_task), Some(theirs_task)) => {
             let merged = merge::task(&base_task, &ours_task, &theirs_task, labels);
-            let mut spellings = file_spellings(&base);
-            spellings.extend(file_spellings(&ours));
-            spellings.extend(file_spellings(&theirs));
-            files::references_named(&merged, |reference| {
-                spellings
+            let mut paths = reference_paths(&base);
+            paths.extend(reference_paths(&ours));
+            paths.extend(reference_paths(&theirs));
+            files::with_reference_paths(&merged, |reference| {
+                paths
                     .get(reference)
                     .cloned()
                     .unwrap_or_else(|| reference.to_owned())
