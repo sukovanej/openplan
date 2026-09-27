@@ -1,13 +1,10 @@
 import { Check } from "lucide-react"
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react"
 
 import type { Status } from "@openplan/api-client"
-import { cn, Kbd, Row } from "@openplan/ui"
+import { cn, Kbd, Menu, type MenuItem } from "@openplan/ui"
 
 import { STATUSES, statusIcon, statusLabel, statusMark, statusOfShortcut, statusShortcut } from "./status"
 
-// The list holds the focus, so the keys it answers reach it rather than the page behind it, and
-// `data-keys-ignore` keeps the app's own single-key bindings off them while it is open.
 export function StatusMenu({
   current,
   onPick,
@@ -19,86 +16,34 @@ export function StatusMenu({
   onClose: () => void
   className?: string
 }) {
-  const list = useRef<HTMLUListElement>(null)
-  const listId = useId()
-  const [active, setActive] = useState(() => Math.max(current === undefined ? 0 : STATUSES.indexOf(current), 0))
-
-  useEffect(() => list.current?.focus(), [])
-
-  const move = (delta: number) => setActive((at) => (at + delta + STATUSES.length) % STATUSES.length)
-
-  const onKeyDown = (event: KeyboardEvent) => {
-    switch (event.key) {
-      case "ArrowDown":
-      case "j":
-        event.preventDefault()
-        move(1)
-        break
-      case "ArrowUp":
-      case "k":
-        event.preventDefault()
-        move(-1)
-        break
-      case "Enter":
-      case " ":
-        event.preventDefault()
-        onPick(STATUSES[active])
-        break
-      case "Escape":
-        event.preventDefault()
-        onClose()
-        break
-      default: {
-        const status = statusOfShortcut(event.key)
-        if (status === undefined || event.ctrlKey || event.metaKey || event.altKey) break
-        event.preventDefault()
-        onPick(status)
-      }
+  const items: ReadonlyArray<MenuItem> = STATUSES.map((status) => {
+    const Icon = statusIcon(status)
+    return {
+      key: status,
+      shortcut: statusShortcut(status),
+      content: (
+        <>
+          <Icon className={cn("size-4 shrink-0", statusMark(status))} aria-hidden />
+          <span className="grow">{statusLabel(status)}</span>
+          {status === current && <Check className="text-muted-foreground size-3.5 shrink-0" aria-label="Current" />}
+          <Kbd token={statusShortcut(status)} className="h-5 min-w-5 px-1" />
+        </>
+      ),
     }
+  })
+  const indexOfShortcut = (key: string) => {
+    const status = statusOfShortcut(key)
+    return status === undefined ? undefined : STATUSES.indexOf(status)
   }
-
   return (
-    <ul
-      ref={list}
-      tabIndex={-1}
-      role="listbox"
-      aria-label="Status"
-      aria-activedescendant={`${listId}-${active}`}
-      data-keys-ignore
-      onKeyDown={onKeyDown}
-      // The header it opens under sets its own case, weight and tracking, and the menu is not a
-      // header, so it states the whole of its own type rather than inheriting any of that.
-      className={cn(
-        "bg-popover text-foreground w-48 rounded-md border p-1 text-sm font-normal tracking-normal normal-case shadow-md outline-none",
-        className,
-      )}
-    >
-      {STATUSES.map((status, index) => {
-        const Icon = statusIcon(status)
-        return (
-          <Row
-            key={status}
-            as="li"
-            id={`${listId}-${index}`}
-            variant="option"
-            role="option"
-            aria-selected={index === active}
-            aria-keyshortcuts={statusShortcut(status)}
-            active={index === active}
-            onMouseMove={() => setActive(index)}
-            onMouseDown={(event) => {
-              event.preventDefault()
-              onPick(status)
-            }}
-            className="cursor-pointer"
-          >
-            <Icon className={cn("size-4 shrink-0", statusMark(status))} aria-hidden />
-            <span className="grow">{statusLabel(status)}</span>
-            {status === current && <Check className="text-muted-foreground size-3.5 shrink-0" aria-label="Current" />}
-            <Kbd token={statusShortcut(status)} className="h-5 min-w-5 px-1" />
-          </Row>
-        )
-      })}
-    </ul>
+    <Menu
+      label="Status"
+      items={items}
+      initial={current === undefined ? 0 : STATUSES.indexOf(current)}
+      onPick={(index) => onPick(STATUSES[index])}
+      onClose={onClose}
+      indexOfShortcut={indexOfShortcut}
+      className={className}
+    />
   )
 }

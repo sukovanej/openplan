@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react"
 import { useNavigate } from "react-router-dom"
 
-import { cn, Panel, PanelBody, PanelHeader, PanelTitle, Row } from "@openplan/ui"
+import { cn, Panel, PanelBody, Row } from "@openplan/ui"
 
 import { rowCursor, useRowCursor } from "../lib/row-cursor"
 import { hoveredRow } from "../lib/row-target"
@@ -32,10 +32,11 @@ const rowDomId = (path: string) => `grid-row-${path}`
 
 const NO_GUIDES: RowGuides = { columns: [], opensChildren: false }
 
+const FIRST_ROW_OUTLINE =
+  "[&>[role=rowgroup]:first-child>[role=row]:first-child]:after:top-0 [&>[role=rowgroup]:first-child>[role=row]:first-child]:after:rounded-t-lg"
+
 export function RowGrid<T>({
   label,
-  title,
-  action,
   groups,
   lead,
   pathOf,
@@ -43,8 +44,6 @@ export function RowGrid<T>({
   children,
 }: {
   label: string
-  title: ReactNode
-  action?: ReactNode
   groups: ReadonlyArray<RowGroup<T>>
   // Rendered above the first group, inside the scrolling body.
   lead?: ReactNode
@@ -88,14 +87,15 @@ export function RowGrid<T>({
       tabIndex={0}
       className="text-sm focus:outline-none"
     >
-      <PanelHeader className="gap-3">
-        <PanelTitle>{title}</PanelTitle>
-        {action !== undefined && <div className="ml-auto flex min-w-0 items-center">{action}</div>}
-      </PanelHeader>
       {/* The pointer only marks a row while the keyboard cursor is idle, so the two never claim one
           at once. The rows read that from this attribute, and a cursor that starts or stops draws
-          none of them again. */}
-      <PanelBody onMouseLeave={hoveredRow.clear} data-pointer={index === -1 ? "free" : "held"}>
+          none of them again. A row's outline starts on the separator above it, and the first row
+          has none: its outline starts at the panel's rounded top instead. */}
+      <PanelBody
+        onMouseLeave={hoveredRow.clear}
+        data-pointer={index === -1 ? "free" : "held"}
+        className={FIRST_ROW_OUTLINE}
+      >
         {lead}
         {groups.map((group, groupIndex) => {
           const lastGroup = groupIndex === groups.length - 1

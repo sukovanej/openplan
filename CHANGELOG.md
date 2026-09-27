@@ -20,6 +20,29 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `set`, and `delete`. For example, `openplan get OPP-42` is now
   `openplan tasks get OPP-42`. Run `openplan setup-skills` to update the agent
   skills in a checkout.
+- The web UI selects the project with a menu in the header. The selection
+  applies to the tasks and to the docs. On any page, `0` selects all projects,
+  and `1` to `9` select the first nine projects. `o` opens the menu. The docs
+  of one project are at `/<project>/docs`, not at `/docs?project=<project>`.
+- The header has links with icons to the tasks, the docs, the activity, the
+  tags, and the flow of the selected project, and it highlights the page you
+  are on. These links replace the Docs and Flow links of the header and the
+  Activity and Tags links of the task list.
+- `g t` goes to the tasks of the selected project and replaces `g l`. `g d`
+  goes to the docs, `g a` goes to the activity, `g l` goes to the tags, and
+  `g f` goes to the flow of the selected project.
+- The activity and the tags have a page for all projects, at `/activity` and
+  `/tags`. The activity of all projects shows the revisions of every project,
+  newest first. The tags of all projects show each project in a section of its
+  own.
+- A new project cannot take the name `activity` or `tags`, as it cannot take
+  `docs` or `flow`.
+- The web UI shows a keyboard key, such as the keys in the keyboard help, like
+  inline code in a task body: red monospace type with a border, and smaller
+  than before.
+- The keyboard help (`?`) puts its groups in columns when they do not fit the
+  height of the window. When the window is too narrow for more columns, the
+  help scrolls.
 
 ### Fixed
 
