@@ -1,6 +1,6 @@
 use op_diagram::{Head, Icon, Stroke};
 
-use crate::measure::Weight;
+use crate::measure::Font;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Point {
@@ -68,6 +68,9 @@ pub enum TextRole {
     Caption,
     Header,
     Cell,
+    Code,
+    Key,
+    Comment,
     EdgeLabel,
     Number,
 }
@@ -78,7 +81,7 @@ pub struct Text {
     pub x: f32,
     pub baseline: f32,
     pub size: f32,
-    pub weight: Weight,
+    pub font: Font,
     pub anchor: Anchor,
     pub role: TextRole,
 }
@@ -99,7 +102,7 @@ pub enum Outline {
     LeanLeft,
     Trapezoid,
     InvertedTrapezoid,
-    Table { dividers: Vec<f32> },
+    Table { header: f32, codes: Vec<Rect> },
     Actor,
     Note,
 }

@@ -11,37 +11,31 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-71.mmd
       "id": "sessions",
       "shape": {
         "kind": "table",
-        "rows": [
+        "attributes": [
           {
-            "cells": [
-              "BLOB",
-              "token_hash",
-              "PK",
-              "32 bytes"
-            ]
+            "data_type": "BLOB",
+            "name": "token_hash",
+            "keys": [
+              "PK"
+            ],
+            "comment": "32 bytes"
           },
           {
-            "cells": [
-              "INTEGER",
-              "user_id",
+            "data_type": "INTEGER",
+            "name": "user_id",
+            "keys": [
               "FK"
             ]
           },
           {
-            "cells": [
-              "INTEGER",
-              "created_at",
-              "",
-              "seconds"
-            ]
+            "data_type": "INTEGER",
+            "name": "created_at",
+            "comment": "seconds"
           },
           {
-            "cells": [
-              "INTEGER",
-              "expires_at",
-              "",
-              "seconds"
-            ]
+            "data_type": "INTEGER",
+            "name": "expires_at",
+            "comment": "seconds"
           }
         ]
       },
@@ -53,11 +47,11 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-71.mmd
       "id": "users",
       "shape": {
         "kind": "table",
-        "rows": [
+        "attributes": [
           {
-            "cells": [
-              "INTEGER",
-              "id",
+            "data_type": "INTEGER",
+            "name": "id",
+            "keys": [
               "PK"
             ]
           }

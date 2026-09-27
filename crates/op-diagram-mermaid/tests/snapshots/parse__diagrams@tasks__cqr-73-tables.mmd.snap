@@ -11,45 +11,34 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-73-tables.mmd
       "id": "question_reports",
       "shape": {
         "kind": "table",
-        "rows": [
+        "attributes": [
           {
-            "cells": [
-              "INTEGER",
-              "id",
+            "data_type": "INTEGER",
+            "name": "id",
+            "keys": [
               "PK"
             ]
           },
           {
-            "cells": [
-              "INTEGER",
-              "user_id"
-            ]
+            "data_type": "INTEGER",
+            "name": "user_id"
           },
           {
-            "cells": [
-              "INTEGER",
-              "question_id"
-            ]
+            "data_type": "INTEGER",
+            "name": "question_id"
           },
           {
-            "cells": [
-              "TEXT",
-              "language"
-            ]
+            "data_type": "TEXT",
+            "name": "language"
           },
           {
-            "cells": [
-              "TEXT",
-              "problem_kind"
-            ]
+            "data_type": "TEXT",
+            "name": "problem_kind"
           },
           {
-            "cells": [
-              "INTEGER",
-              "created_at",
-              "",
-              "seconds"
-            ]
+            "data_type": "INTEGER",
+            "name": "created_at",
+            "comment": "seconds"
           }
         ]
       },
@@ -61,14 +50,14 @@ input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/cqr-73-tables.mmd
       "id": "questions",
       "shape": {
         "kind": "table",
-        "rows": [
+        "attributes": [
           {
-            "cells": [
-              "INTEGER",
-              "id",
-              "PK",
-              "stable"
-            ]
+            "data_type": "INTEGER",
+            "name": "id",
+            "keys": [
+              "PK"
+            ],
+            "comment": "stable"
           }
         ]
       },

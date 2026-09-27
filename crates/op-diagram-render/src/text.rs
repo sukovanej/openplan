@@ -1,61 +1,76 @@
-use crate::measure::{Weight, line_metrics, text_width};
+use crate::measure::{Font, line_metrics, text_width};
 use crate::scene::{Anchor, Text, TextRole};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Style {
     pub(crate) size: f32,
-    pub(crate) weight: Weight,
+    pub(crate) font: Font,
     pub(crate) role: TextRole,
 }
 
 pub(crate) const LABEL: Style = Style {
     size: 14.0,
-    weight: Weight::Regular,
+    font: Font::Regular,
     role: TextRole::Label,
 };
 pub(crate) const CAPTION: Style = Style {
     size: 12.0,
-    weight: Weight::Regular,
+    font: Font::Regular,
     role: TextRole::Caption,
 };
 pub(crate) const HEADER: Style = Style {
     size: 13.0,
-    weight: Weight::SemiBold,
+    font: Font::SemiBold,
     role: TextRole::Header,
 };
 pub(crate) const TABLE_HEADER: Style = Style {
     size: 14.0,
-    weight: Weight::SemiBold,
+    font: Font::SemiBold,
     role: TextRole::Header,
 };
 pub(crate) const CELL: Style = Style {
     size: 13.0,
-    weight: Weight::Regular,
+    font: Font::Regular,
     role: TextRole::Cell,
+};
+pub(crate) const CODE: Style = Style {
+    size: 12.0,
+    font: Font::Mono,
+    role: TextRole::Code,
+};
+pub(crate) const KEY: Style = Style {
+    size: 11.0,
+    font: Font::SemiBold,
+    role: TextRole::Key,
+};
+pub(crate) const COMMENT: Style = Style {
+    size: 12.0,
+    font: Font::Regular,
+    role: TextRole::Comment,
 };
 pub(crate) const MESSAGE: Style = Style {
     size: 13.0,
-    weight: Weight::Regular,
+    font: Font::Regular,
     role: TextRole::EdgeLabel,
 };
 pub(crate) const NOTE: Style = Style {
     size: 13.0,
-    weight: Weight::Regular,
+    font: Font::Regular,
     role: TextRole::Label,
 };
 pub(crate) const BLOCK_LABEL: Style = Style {
     size: 12.0,
-    weight: Weight::Regular,
+    font: Font::Regular,
     role: TextRole::Caption,
 };
 pub(crate) const NUMBER: Style = Style {
     size: 11.0,
-    weight: Weight::SemiBold,
+    font: Font::SemiBold,
     role: TextRole::Number,
 };
 pub(crate) const EDGE_LABEL: Style = Style {
     size: 12.0,
-    weight: Weight::Regular,
+    font: Font::Regular,
     role: TextRole::EdgeLabel,
 };
 
@@ -65,12 +80,24 @@ impl Style {
     }
 
     pub(crate) fn width(self, text: &str) -> f32 {
-        text_width(text, self.size, self.weight)
+        text_width(text, self.size, self.font)
     }
 
-    fn baseline(self, top: f32) -> f32 {
+    pub(crate) fn baseline(self, top: f32) -> f32 {
         let metrics = line_metrics(self.size);
         top + (self.line_height() - metrics.ascent - metrics.descent) / 2.0 + metrics.ascent
+    }
+
+    pub(crate) fn text(self, content: &str, x: f32, baseline: f32, anchor: Anchor) -> Text {
+        Text {
+            content: content.to_owned(),
+            x,
+            baseline,
+            size: self.size,
+            font: self.font,
+            anchor,
+            role: self.role,
+        }
     }
 }
 
@@ -145,16 +172,11 @@ impl Block {
         self.lines
             .iter()
             .enumerate()
-            .map(|(at, line)| Text {
-                content: line.clone(),
-                x,
-                baseline: self
+            .map(|(at, line)| {
+                let baseline = self
                     .style
-                    .baseline(top + at as f32 * self.style.line_height()),
-                size: self.style.size,
-                weight: self.style.weight,
-                anchor,
-                role: self.style.role,
+                    .baseline(top + at as f32 * self.style.line_height());
+                self.style.text(line, x, baseline, anchor)
             })
             .collect()
     }

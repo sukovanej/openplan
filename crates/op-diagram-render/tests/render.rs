@@ -181,7 +181,7 @@ fn icons(scene: &Scene) -> Vec<String> {
 }
 
 fn text_box(text: &Text) -> Rect {
-    let width = text_width(&text.content, text.size, text.weight);
+    let width = text_width(&text.content, text.size, text.font);
     let metrics = line_metrics(text.size);
     Rect {
         x: match text.anchor {
@@ -249,8 +249,7 @@ fn problems(scene: &Scene) -> Vec<String> {
     }
     for (at, first) in scene.clusters.iter().enumerate() {
         for text in &first.texts {
-            if text.x + text_width(&text.content, text.size, text.weight) > first.rect.right() + 0.5
-            {
+            if text.x + text_width(&text.content, text.size, text.font) > first.rect.right() + 0.5 {
                 problems.push(format!(
                     "the header of the cluster {} runs out of it",
                     first.id

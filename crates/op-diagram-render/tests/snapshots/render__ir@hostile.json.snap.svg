@@ -1,6 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 744.61 112" width="744.61" height="112" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
 .op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
 .op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .table-header { fill: #e3e7f0; }
+.op-diagram .code-box { fill: #f6f5f3; stroke: #e2dfda; stroke-width: 1; }
 .op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
 .op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
 .op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
@@ -12,6 +14,10 @@
 .op-diagram text { fill: #1f2430; }
 .op-diagram .text-caption { fill: #6b7280; }
 .op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .shape-table .text-header { fill: #1f2430; stroke: none; }
+.op-diagram .text-code { fill: #c4245a; }
+.op-diagram .text-key { fill: #6b7280; }
+.op-diagram .text-comment { fill: #6b7280; font-style: italic; }
 .op-diagram .text-edge-label { fill: #3a4150; }
 .op-diagram .lifeline { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 4 4; }
 .op-diagram .divider { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 5 4; }

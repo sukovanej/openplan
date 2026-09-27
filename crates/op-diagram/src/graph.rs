@@ -92,13 +92,18 @@ pub enum Shape {
     Trapezoid,
     InvertedTrapezoid,
     Table {
-        rows: Vec<Row>,
+        attributes: Vec<Attribute>,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Row {
-    pub cells: Vec<String>,
+pub struct Attribute {
+    pub data_type: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 // The icons are Lucide's, named as Lucide names them. A producer picks what an icon means; the

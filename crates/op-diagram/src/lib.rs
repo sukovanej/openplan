@@ -3,7 +3,7 @@ mod sequence;
 
 use serde::{Deserialize, Serialize};
 
-pub use graph::{Cluster, Edge, Graph, Icon, Node, Page, Row, Shape};
+pub use graph::{Attribute, Cluster, Edge, Graph, Icon, Node, Page, Shape};
 pub use sequence::{
     Block, Message, Note, NotePlacement, Operator, Participant, ParticipantKind, Section, Sequence,
     SequenceItem,

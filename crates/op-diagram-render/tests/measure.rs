@@ -1,4 +1,4 @@
-use op_diagram_render::{Weight, line_metrics, text_width};
+use op_diagram_render::{Font, line_metrics, text_width};
 
 const SIZE: f32 = 14.0;
 
@@ -11,8 +11,8 @@ fn text_widths() {
             .map(|label| {
                 format!(
                     "{:>9.3} {:>9.3}  {label}",
-                    text_width(label, SIZE, Weight::Regular),
-                    text_width(label, SIZE, Weight::SemiBold),
+                    text_width(label, SIZE, Font::Regular),
+                    text_width(label, SIZE, Font::SemiBold),
                 )
             })
             .collect();

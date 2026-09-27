@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use op_diagram::{Direction, Edge, Graph, Head, Node, Row, Shape, Stroke};
+use op_diagram::{Attribute, Direction, Edge, Graph, Head, Node, Shape, Stroke};
 
 use crate::ParseError;
 use crate::flowchart::direction;
@@ -245,7 +245,9 @@ impl<'a> Chart<'a> {
         self.entity_at.insert(name.to_owned(), at);
         self.graph.nodes.push(Node {
             id: name.to_owned(),
-            shape: Shape::Table { rows: Vec::new() },
+            shape: Shape::Table {
+                attributes: Vec::new(),
+            },
             label: vec![name.to_owned()],
             ..Node::default()
         });
@@ -258,40 +260,38 @@ impl<'a> Chart<'a> {
             match self.next() {
                 Kind::Newline => {}
                 Kind::Close => return self.end_of_line(),
-                Kind::Word(kind) => {
+                Kind::Word(data_type) => {
                     let Kind::Word(name) = self.next() else {
                         self.at -= 1;
                         return Err(self.error("expected the name of the attribute after its type"));
                     };
-                    let mut cells = vec![
-                        kind.to_owned(),
-                        name.to_owned(),
-                        String::new(),
-                        String::new(),
-                    ];
                     let mut keys = Vec::new();
                     while let Kind::Word(key) = self.peek() {
                         if !KEYS.contains(&key) {
                             return Err(self
                                 .error(format!("`{key}` is not a key; use `PK`, `FK`, or `UK`")));
                         }
-                        keys.push(key);
+                        keys.push(key.to_owned());
                         self.at += 1;
                         if self.peek() != Kind::Comma {
                             break;
                         }
                         self.at += 1;
                     }
-                    cells[2] = keys.join(", ");
-                    if let Kind::Quoted(comment) = self.peek() {
-                        cells[3] = comment.to_owned();
-                        self.at += 1;
-                    }
-                    while cells.last().is_some_and(String::is_empty) {
-                        cells.pop();
-                    }
-                    if let Shape::Table { rows } = &mut self.graph.nodes[entity].shape {
-                        rows.push(Row { cells });
+                    let comment = match self.peek() {
+                        Kind::Quoted(comment) => {
+                            self.at += 1;
+                            Some(comment.to_owned())
+                        }
+                        _ => None,
+                    };
+                    if let Shape::Table { attributes } = &mut self.graph.nodes[entity].shape {
+                        attributes.push(Attribute {
+                            data_type: data_type.to_owned(),
+                            name: name.to_owned(),
+                            keys,
+                            comment,
+                        });
                     }
                     match self.peek() {
                         Kind::Newline => self.at += 1,
