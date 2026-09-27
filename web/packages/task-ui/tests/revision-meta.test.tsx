@@ -30,7 +30,11 @@ describe("RevisionMeta", () => {
   })
 
   it("names the agent that wrote the revision for the author, and nothing when a person wrote it", () => {
-    expect(render(<RevisionMeta revision={revision({ agent: "claude_code" })} />).textContent).toContain("claude_code")
+    expect(
+      render(<RevisionMeta revision={revision({ agent: "claude_code" })} />).querySelector(
+        "[aria-label='via claude_code']",
+      ),
+    ).not.toBeNull()
     expect(render(<RevisionMeta revision={revision()} />).querySelector("svg")).toBeNull()
   })
 })

@@ -1,9 +1,10 @@
-import { Bot, FileText, Tag as TagIcon } from "lucide-react"
+import { FileText, Tag as TagIcon } from "lucide-react"
 import { memo, type MouseEvent, useMemo } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 
 import type { DocChange, HistoryEntry, RevisionView, TagChange, TagView, TaskRef } from "@openplan/api-client"
 import {
+  AgentMark,
   AgentTag,
   DocChangeView,
   DocumentChangeView,
@@ -327,9 +328,7 @@ function Who({ revision, compact }: { revision: RevisionView; compact: boolean }
   const author = <span className="text-foreground/90 whitespace-nowrap">{revision.author}</span>
   const agent =
     revision.agent === undefined ? undefined : compact ? (
-      <Tooltip content={`via ${revision.agent}`}>
-        <Bot aria-label={`via ${revision.agent}`} className="text-muted-foreground size-3.5 shrink-0" />
-      </Tooltip>
+      <AgentMark agent={revision.agent} />
     ) : (
       <AgentTag agent={revision.agent} />
     )

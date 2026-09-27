@@ -25,11 +25,11 @@ describe("CommentThread", () => {
     const entries = root.querySelectorAll("li")
     expect(entries).toHaveLength(2)
     expect(entries[0].textContent).toContain("Milan Suk")
-    expect(entries[0].textContent).toContain("claude-code")
+    expect(entries[0].querySelector("[aria-label='via claude-code']")).not.toBeNull()
     expect(entries[0].querySelector("time")?.getAttribute("datetime")).toBe("2026-08-24T09:12:04Z")
     expect(entries[0].querySelector("time")?.textContent).toBe(absoluteTime("2026-08-24T09:12:04Z"))
     expect(entries[1].textContent).toContain("Ada")
-    expect(entries[1].textContent).not.toContain("claude-code")
+    expect(entries[1].querySelector("[aria-label^='via ']")).toBeNull()
   })
 
   it("renders the comment text as markdown", () => {

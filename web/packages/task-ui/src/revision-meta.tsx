@@ -1,7 +1,7 @@
 import type { RevisionView } from "@openplan/api-client"
 import { cn, MetaLine, TimeAgo, Tooltip } from "@openplan/ui"
 
-import { AgentTag } from "./agent-tag"
+import { AgentMark } from "./agent-tag"
 
 const SHORT_REVISION = 7
 
@@ -12,7 +12,7 @@ export function RevisionMeta({ revision, className }: { revision: RevisionView; 
   return (
     <MetaLine className={cn("gap-x-2", className)}>
       {revision.email === undefined ? author : <Tooltip content={revision.email}>{author}</Tooltip>}
-      {revision.agent !== undefined && <AgentTag agent={revision.agent} />}
+      {revision.agent !== undefined && <AgentMark agent={revision.agent} />}
       <TimeAgo iso={revision.at} label="Changed" />
       <span className="font-mono">{shortRevision(revision.id)}</span>
     </MetaLine>
