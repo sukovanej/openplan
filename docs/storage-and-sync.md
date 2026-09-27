@@ -64,17 +64,24 @@ The daemon keeps `op-index`, a read model of the head: list rows, task details, 
 A sync makes the local reference and the remote reference equal. It fetches the remote tip, joins it into the local tip, and pushes the result. Only one sync runs at a time for each backend.
 
 ```mermaid
-flowchart LR
-  fetch["Fetch<br/>git fetch the ref into<br/>refs/openplan/remotes/origin/tasks"]
-  integrate["Integrate<br/>remote ahead: fast-forward<br/>both moved: merge with TaskMergePolicy"]
-  push["Push<br/>git push --no-verify<br/>local tip to refs/openplan/tasks"]
-  record["Record<br/>move the tracking ref<br/>to the pushed tip"]
+flowchart TD
+  fetch["Fetch the remote ref into<br/>refs/openplan/remotes/origin/tasks"]
+  integrate{"Integrate"}
+  ff["Fast-forward"]
+  merge["Merge commit<br/>with TaskMergePolicy"]
+  push["Push the local tip<br/>to refs/openplan/tasks"]
+  record["Move the tracking ref<br/>to the pushed tip"]
   done(["Done"])
   fetch --> integrate
+  integrate -- "remote ahead" --> ff
+  integrate -- "both moved" --> merge
+  integrate -- "local ahead" --> push
   integrate -- "tips equal" --> done
-  integrate --> push
+  ff --> done
+  merge --> push
   push -- "accepted" --> record
   push -- "rejected, at most 5 times" --> fetch
+  record --> done
 ```
 
 **Fetch.** Git fetches no reference outside `refs/heads/` and `refs/tags/` by itself. Thus openplan fetches with an explicit refspec, `+refs/openplan/tasks:refs/openplan/remotes/origin/tasks`. A remote with no tasks ref is not an error. In that case the sync pushes the local tasks, if there are local tasks.
