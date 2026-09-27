@@ -36,3 +36,9 @@ Change each text that names an old form:
 - the messages that name `openplan comment` in `crates/op-server/src/tasks.rs` and `crates/op-tracker/src/lib.rs`
 - the empty-list text in `web/packages/app/src/routes/list.tsx`
 - the README, the CHANGELOG, the CLI tests, and the source comments that name `openplan get`
+
+## Comments
+
+### 2026-09-27T14:11:13Z by Milan Suk via claude-code
+
+> The CHANGELOG keeps the old forms in the released entries, because those versions shipped them. An Unreleased entry names the move.
