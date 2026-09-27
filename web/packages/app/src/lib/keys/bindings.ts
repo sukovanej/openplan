@@ -1,5 +1,3 @@
-import { DOCS_ROUTE, FLOW_ROUTE } from "@openplan/task-ui"
-
 import type { Binding } from "./types"
 
 export const bindings: ReadonlyArray<Binding> = [
@@ -55,12 +53,12 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.back(),
   },
   {
-    id: "go.list",
-    keys: ["g", "l"],
+    id: "go.tasks",
+    keys: ["g", "t"],
     scope: "global",
-    label: "Go to list",
+    label: "Go to tasks",
     group: "Navigation",
-    run: (ctx) => ctx.navigate("/"),
+    run: (ctx) => ctx.goToPage("tasks"),
   },
   {
     id: "go.flow",
@@ -68,7 +66,7 @@ export const bindings: ReadonlyArray<Binding> = [
     scope: "global",
     label: "Go to the flow",
     group: "Navigation",
-    run: (ctx) => ctx.navigate(FLOW_ROUTE),
+    run: (ctx) => ctx.goToPage("flow"),
   },
   {
     id: "go.docs",
@@ -76,8 +74,49 @@ export const bindings: ReadonlyArray<Binding> = [
     scope: "global",
     label: "Go to the docs",
     group: "Navigation",
-    run: (ctx) => ctx.navigate(DOCS_ROUTE),
+    run: (ctx) => ctx.goToPage("docs"),
   },
+  {
+    id: "go.activity",
+    keys: ["g", "a"],
+    scope: "global",
+    label: "Go to the activity",
+    group: "Navigation",
+    run: (ctx) => ctx.goToPage("activity"),
+  },
+  {
+    id: "go.tags",
+    keys: ["g", "l"],
+    scope: "global",
+    label: "Go to the tags",
+    group: "Navigation",
+    run: (ctx) => ctx.goToPage("tags"),
+  },
+  {
+    id: "project.choose",
+    keys: "o",
+    scope: "global",
+    label: "Open the project menu",
+    group: "Navigation",
+    run: (ctx) => ctx.chooseProject(),
+  },
+  {
+    id: "project.all",
+    keys: "0",
+    scope: "global",
+    label: "Select all projects",
+    group: "Navigation",
+    run: (ctx) => ctx.selectProject(0),
+  },
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit): Binding => ({
+    id: `project.${digit}`,
+    keys: String(digit),
+    scope: "global",
+    label: "Select one of the first nine projects",
+    group: "Navigation",
+    help: digit === 1 ? { keys: "1–9" } : "hidden",
+    run: (ctx) => ctx.selectProject(digit),
+  })),
   {
     id: "go.parent",
     keys: ["g", "p"],

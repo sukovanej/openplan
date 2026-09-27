@@ -2,6 +2,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import type * as React from "react"
 
 import { cn } from "./cn"
+import { CONTROL_HEIGHT } from "./control"
 
 const button = cva(
   "focus-visible:ring-ring inline-flex shrink-0 items-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none",
@@ -14,6 +15,7 @@ const button = cva(
       },
       size: {
         sm: "gap-1.5 px-2 py-1 text-xs",
+        md: `${CONTROL_HEIGHT} gap-1.5 px-2.5 text-sm`,
         icon: "size-7 justify-center",
       },
     },

@@ -25,6 +25,8 @@ export const projectsKey = ["projects"] as const
 export const mergedKey = ["merged"] as const
 export const projectMutationsKey = ["mutation", "project"] as const
 export const mergedBoardKey = [...mergedKey, "board"] as const
+export const mergedHistoriesKey = [...mergedKey, "history"] as const
+export const mergedHistoryKey = (projects: ReadonlyArray<string>) => [...mergedHistoriesKey, ...projects] as const
 // The flow spans every project a query names, so it lives beside the merged board rather than under
 // one project.
 export const flowsKey = [...mergedKey, "flow"] as const
@@ -118,6 +120,7 @@ function refreshScreen(client: QueryClient, project?: string): Promise<unknown> 
   return Promise.all([
     invalidate(client, { queryKey: projectKey(project), predicate: changeable }),
     invalidate(client, { queryKey: mergedBoardKey }),
+    invalidate(client, { queryKey: mergedHistoriesKey }),
     invalidate(client, { queryKey: allDocsKey() }),
     invalidate(client, flowsShowing(project)),
   ])
@@ -161,7 +164,10 @@ export const queryInvalidator: Invalidator = {
       queryKey: projectKey(project),
       predicate: (query) => isPage(query) && !refreshedAlready(query, refreshed),
     }),
-  refreshHistory: (project) => refresh({ queryKey: historyKey(project) }),
+  refreshHistory: (project) => {
+    refresh({ queryKey: historyKey(project) })
+    refresh({ queryKey: mergedHistoriesKey })
+  },
   refreshSync: (project) => refresh({ queryKey: syncKey(project) }),
   refreshVisible: (project) => {
     void refreshScreen(queryClient, project)
