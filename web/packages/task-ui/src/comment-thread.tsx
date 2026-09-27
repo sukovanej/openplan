@@ -3,7 +3,7 @@ import { CircleAlert } from "lucide-react"
 import type { Comment, DocRef, Field_Rfc3339, Field_String, TaskRef } from "@openplan/api-client"
 import { absoluteTime, MetaLine, Section, Tooltip } from "@openplan/ui"
 
-import { AgentTag } from "./agent-tag"
+import { AgentMark } from "./agent-tag"
 import { fieldFailure, fieldMessage, fieldValue } from "./metadata"
 import { TaskBody } from "./task-body"
 
@@ -35,7 +35,7 @@ export function CommentThread({
                   <Damaged field={comment.author}>{(author) => author}</Damaged>
                 </span>
                 <Damaged field={comment.at}>{(at) => <time dateTime={at}>{absoluteTime(at)}</time>}</Damaged>
-                {comment.agent !== undefined && comment.agent !== null && <AgentTag agent={comment.agent} />}
+                {comment.agent !== undefined && comment.agent !== null && <AgentMark agent={comment.agent} />}
               </MetaLine>
               <TaskBody
                 project={project}
