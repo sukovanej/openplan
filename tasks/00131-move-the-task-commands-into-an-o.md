@@ -6,7 +6,7 @@ tags:
 - docs
 - feature
 ---
-# Move the task commands into an `openplan tasks` group
+# Move the task commands into an openplan tasks group
 
 The top level of `openplan --help` mixes the task commands with the project commands. Move each task command into a new `openplan tasks` group, as `openplan doc` holds the doc commands.
 
@@ -26,8 +26,6 @@ The top level of `openplan --help` mixes the task commands with the project comm
 | `openplan delete` | `openplan tasks delete` |
 
 These commands stay at the top level: `init`, `migrate`, `setup-skills`, `history`, `sync`, `open`, `url`, `lint`, `doc`, `tag`, `project`, `update`, `server`. Each one works on the whole project, works on tasks and docs together, or is a group already.
-
-An old form such as `openplan get` fails with an error that names the new form. The CLI updates itself before the skill copies in other checkouts change, so an agent can still read the old forms for some time.
 
 Change each text that names an old form:
 
