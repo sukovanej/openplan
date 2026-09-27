@@ -155,28 +155,24 @@ afterEach(() => {
 })
 
 describe("the agent", () => {
-  it("opens the prompt bar with e from every route, and a new prompt with n", () => {
+  it("starts a new prompt with n from every route", () => {
     const h = mount()
-    press("e")
-    expect(h.overlay.open).toBe(1)
+    press("n")
     h.setScope("detail")
     h.setPath(path("OPP-3"))
-    press("e")
-    expect(h.overlay.open).toBe(2)
     press("n")
-    expect(h.agent.newPrompts).toBe(1)
+    expect(h.agent.newPrompts).toBe(2)
     expect(h.navigations).toEqual([])
   })
 
-  it("hides the bar with e or Escape, and keeps the page's keys out of it", () => {
+  it("hides the bar with Escape, and keeps the page's keys out of it", () => {
     const h = mount()
     rowCursor.setRows(paths("a", "b"))
     h.setOverlay("prompt")
     press("j")
     expect(rowCursor.getSnapshot().index).toBe(-1)
-    press("e")
     press("Escape")
-    expect(h.closed).toEqual(["prompt", "prompt"])
+    expect(h.closed).toEqual(["prompt"])
     press("n")
     expect(h.agent.newPrompts).toBe(1)
   })
@@ -480,7 +476,6 @@ describe("scope resolution", () => {
     transcript.setAttribute("aria-modal", "true")
     document.body.append(transcript)
 
-    press("e")
     press("n")
     press("?")
     press("/")
@@ -489,8 +484,8 @@ describe("scope resolution", () => {
     expect(h.opened).toEqual([])
 
     transcript.remove()
-    press("e")
-    expect(h.overlay.open).toBe(1)
+    press("n")
+    expect(h.agent.newPrompts).toBe(1)
   })
 
   it("suppresses route and global bindings while the help overlay is open", () => {
