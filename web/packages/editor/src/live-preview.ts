@@ -74,6 +74,8 @@ class Builder {
   readonly out: Range<Decoration>[] = []
   readonly atomic: Range<Decoration>[] = []
   private readonly taken: Span[] = []
+  // A run of blank lines between two headings is one run, and it gives up only one line.
+  private readonly collapsedRuns = new Set<number>()
 
   constructor(
     private readonly state: EditorState,
@@ -114,6 +116,28 @@ class Builder {
       const current = doc.line(at)
       this.out.push(line(className).range(current.from))
     }
+  }
+
+  // A heading carries its own space above and below it, so one blank line beside it takes none.
+  // Never the caret's line: each new line typed there shows as one more line.
+  collapseBlankLinesAround(from: number, to: number): void {
+    const doc = this.state.doc
+    const blank = (number: number) => number >= 1 && number <= doc.lines && doc.line(number).text.trim() === ""
+    const collapseOne = (next: number, step: number) => {
+      let first = next
+      while (blank(first)) first += step
+      const run = step > 0 ? [next, first - 1] : [first + 1, next]
+      if (run[0] > run[1] || this.collapsedRuns.has(run[0])) return
+      for (let number = run[0]; number <= run[1]; number++) {
+        const current = doc.line(number)
+        if (this.touches(current.from, current.to)) continue
+        this.collapsedRuns.add(run[0])
+        this.out.push(line("cm-blank-collapsed").range(current.from))
+        return
+      }
+    }
+    collapseOne(doc.lineAt(from).number - 1, -1)
+    collapseOne(doc.lineAt(to).number + 1, 1)
   }
 
   // A mark and the one space after it go together, as `## ` or `> `.
@@ -230,6 +254,7 @@ export function previewOf(state: EditorState, focused: boolean, abbreviation: st
       const heading = /^(?:ATX|Setext)Heading(\d)$/.exec(name)
       if (heading !== null) {
         builder.out.push(line(`cm-h${heading[1]}`).range(state.doc.lineAt(node.from).from))
+        builder.collapseBlankLinesAround(node.from, node.to)
         return true
       }
       if (name in INLINE_STYLES) {
