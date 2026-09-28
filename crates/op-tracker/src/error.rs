@@ -21,8 +21,6 @@ pub enum TrackerError {
     DocExists { name: String },
     #[error("tag {name} is not registered")]
     TagUnregistered { name: String },
-    #[error("not a task reference: {reference:?}; {}", op_task::REFERENCE_EXPECTED)]
-    InvalidRef { reference: String },
     #[error("{0}")]
     Invalid(String),
     #[error(

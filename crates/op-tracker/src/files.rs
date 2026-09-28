@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use op_task::doc::Doc;
 use op_task::layout;
 use op_task::reference::{self, Target};
-use op_task::{FieldConflict, Frontmatter, Task, conflict, parse_id, rank, ref_id, ref_target};
+use op_task::{FieldConflict, Frontmatter, Task, TaskLink, conflict, parse_id, rank, ref_target};
 
 use crate::{Plan, TrackerError};
 
@@ -100,9 +100,9 @@ pub(crate) fn validate(
     new: &Frontmatter,
 ) -> Result<(), TrackerError> {
     if let Some(parent) = &new.parent
-        && old.and_then(|old| old.parent.as_deref()) != Some(parent.as_str())
+        && old.and_then(|old| old.parent.as_ref()).map(TaskLink::id) != Some(parent.id())
     {
-        let target = reference(parent)?;
+        let target = parent.number;
         if Some(target) == number {
             return Err(TrackerError::Invalid(format!(
                 "task {} cannot be its own parent",
@@ -128,10 +128,14 @@ pub(crate) fn validate(
         )));
     }
     for dependency in &new.dependencies {
-        if old.is_some_and(|old| old.dependencies.contains(dependency)) {
+        if old.is_some_and(|old| {
+            old.dependencies
+                .iter()
+                .any(|held| held.id() == dependency.id())
+        }) {
             continue;
         }
-        let target = reference(dependency)?;
+        let target = dependency.number;
         if Some(target) == number {
             return Err(TrackerError::Invalid(format!(
                 "task cannot depend on itself: {}",
@@ -172,7 +176,7 @@ fn refuse_parent_cycle(plan: &Plan, number: u64, parent: u64) -> Result<(), Trac
             break;
         }
         cursor = match plan.task(current) {
-            Ok(task) => task.frontmatter.parent.as_deref().and_then(ref_id),
+            Ok(task) => task.frontmatter.parent.map(|parent| parent.number),
             Err(TrackerError::NotFound { .. }) => None,
             Err(err) => return Err(err),
         };
@@ -180,36 +184,36 @@ fn refuse_parent_cycle(plan: &Plan, number: u64, parent: u64) -> Result<(), Trac
     Ok(())
 }
 
-fn reference(text: &str) -> Result<u64, TrackerError> {
-    ref_id(text).ok_or_else(|| TrackerError::InvalidRef {
-        reference: ref_target(text).to_owned(),
-    })
-}
-
-// References as the file carries them: the target's file name, so a plain markdown reader can
-// follow one. A reference to a deleted task keeps its number, and a body reference that names no
-// file is written as the key, so it resolves once that task exists.
+// A link that a write sets names only the number, and the file names the target by its path. A link
+// to a deleted task keeps its number.
 pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
-    let named = |reference: &str| named(plan, reference);
+    let with_path = |link: &TaskLink| match plan.path_of(link.number) {
+        Some(path) if link.slug.is_none() => link.clone().with_file_name(layout::file_name(path)),
+        _ => link.clone(),
+    };
+    // `tasks get` prints the other version of a field conflict with ids too, so a text written back
+    // from it holds them.
+    let value_with_path = |value: serde_yaml::Value| {
+        TaskLink::from_value(&value)
+            .and_then(|link| serde_yaml::to_value(with_path(&link)).ok())
+            .unwrap_or(value)
+    };
     let mut task = task.clone();
     for conflict in &mut task.conflicts {
         conflict.other = match (conflict.field.as_str(), conflict.other.take()) {
-            ("parent", Some(value)) => Some(reference_value(value, named)),
-            ("dependencies", Some(serde_yaml::Value::Sequence(items))) => Some(
-                items
-                    .into_iter()
-                    .map(|item| reference_value(item, named))
-                    .collect(),
-            ),
+            ("parent", Some(value)) => Some(value_with_path(value)),
+            ("dependencies", Some(serde_yaml::Value::Sequence(items))) => {
+                Some(items.into_iter().map(value_with_path).collect())
+            }
             (_, other) => other,
         };
     }
-    task.frontmatter.parent = task.frontmatter.parent.as_deref().map(named);
+    task.frontmatter.parent = task.frontmatter.parent.as_ref().map(with_path);
     task.frontmatter.dependencies = task
         .frontmatter
         .dependencies
         .iter()
-        .map(|reference| named(reference))
+        .map(with_path)
         .collect();
     task.body = body_in_file_form(plan, layout::TASKS, &task.body);
     task
@@ -259,22 +263,6 @@ pub(crate) fn doc_in_file_form(plan: &Plan, doc: &Doc) -> Doc {
     let mut doc = doc.clone();
     doc.body = body_in_file_form(plan, layout::DOCS, &doc.body);
     doc
-}
-
-fn named(plan: &Plan, reference: &str) -> String {
-    match ref_id(reference).and_then(|number| plan.path_of(number)) {
-        None => reference.to_owned(),
-        Some(path) => with_section(&op_task::task_ref(layout::file_name(path)), reference),
-    }
-}
-
-// A reference YAML reads as a number is one all the same.
-fn reference_value(value: serde_yaml::Value, named: impl Fn(&str) -> String) -> serde_yaml::Value {
-    match &value {
-        serde_yaml::Value::String(text) => named(text).into(),
-        serde_yaml::Value::Number(number) => named(&number.to_string()).into(),
-        _ => value,
-    }
 }
 
 fn with_section(target: &str, reference: &str) -> String {

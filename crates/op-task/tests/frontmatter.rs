@@ -1,4 +1,4 @@
-use op_task::{Frontmatter, Status, Task, Timestamp};
+use op_task::{Frontmatter, Status, Task, TaskLink, Timestamp};
 
 fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().unwrap()
@@ -18,9 +18,9 @@ fn frontmatter_roundtrips() {
         Frontmatter {
             status: Status::InProgress,
             created: stamp(),
-            parent: Some("42".to_owned()),
+            parent: Some(TaskLink::to(42)),
             rank: Some("m".to_owned()),
-            dependencies: vec!["1".to_owned(), "2#Design".to_owned()],
+            dependencies: vec![TaskLink::to(1), TaskLink::from_id("2#Design").unwrap()],
             tags: vec!["backend".to_owned(), "wip".to_owned()],
             extra: Default::default(),
         },
@@ -111,26 +111,41 @@ fn task_file_roundtrips_with_title() {
 }
 
 #[test]
-fn a_reference_names_the_target_file_and_reads_back_as_its_id() {
+fn a_reference_reads_back_as_its_id_and_writes_back_its_path() {
     let text = "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00042-ship-login.md\ndependencies:\n- ./00007-write-the-parser.md\n- ./00008-store-dtos.md#Design\n---\n# Title\n";
     let parsed = Task::from_file_string(text).unwrap();
-    assert_eq!(parsed.frontmatter.parent.as_deref(), Some("42"));
-    assert_eq!(parsed.frontmatter.dependencies, vec!["7", "8#Design"]);
+    assert_eq!(parent_id(&parsed), Some("42".to_owned()));
+    assert_eq!(dependency_ids(&parsed), ["7", "8#Design"]);
+    assert_eq!(parsed.to_file_string().unwrap(), text);
 
     // The slug is a snapshot of the target's title, so a stale one still resolves.
     let stale = Task::from_file_string(
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: ./00042-the-old-title.md\n---\n# Title\n",
     )
     .unwrap();
-    assert_eq!(stale.frontmatter.parent.as_deref(), Some("42"));
+    assert_eq!(parent_id(&stale), Some("42".to_owned()));
 
     // A hand-written reference may still be the bare id, in either YAML spelling.
     let bare = Task::from_file_string(
         "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\nparent: 42\ndependencies:\n- '7'\n- 8#Design\n---\n# Title\n",
     )
     .unwrap();
-    assert_eq!(bare.frontmatter.parent.as_deref(), Some("42"));
-    assert_eq!(bare.frontmatter.dependencies, vec!["7", "8#Design"]);
+    assert_eq!(parent_id(&bare), Some("42".to_owned()));
+    assert_eq!(dependency_ids(&bare), ["7", "8#Design"]);
+    let written = bare.to_file_string().unwrap();
+    assert!(written.contains("parent: 42\n"), "{written}");
+}
+
+fn parent_id(task: &Task) -> Option<String> {
+    task.frontmatter.parent.as_ref().map(TaskLink::id)
+}
+
+fn dependency_ids(task: &Task) -> Vec<String> {
+    task.frontmatter
+        .dependencies
+        .iter()
+        .map(TaskLink::id)
+        .collect()
 }
 
 #[test]

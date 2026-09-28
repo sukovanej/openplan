@@ -6,7 +6,7 @@ use op_backend::{Actor, Backend, Signer};
 use op_backend_git::{GitBackend, Options};
 use op_task::comment::NewComment;
 use op_task::content::Text;
-use op_task::{Status, Task, Timestamp};
+use op_task::{Status, Task, TaskLink, Timestamp};
 use op_tracker::{HistoryQuery, TaskMergePolicy, Tracker, TrackerError};
 
 fn git(dir: &Path, args: &[&str]) {
@@ -185,7 +185,7 @@ fn a_reference_to_a_renumbered_task_follows_it() {
     let child = bob.create("Child");
     bob.tracker
         .update_task(&bob.actor, child, |task| {
-            task.set_parent(Some(target.to_string()));
+            task.set_parent(Some(TaskLink::to(target)));
             Ok(())
         })
         .expect("parent");
@@ -203,7 +203,73 @@ fn a_reference_to_a_renumbered_task_follows_it() {
         .find(|(_, title)| title == "Child")
         .expect("child")
         .0;
-    assert_eq!(bob.task(child).frontmatter.parent, Some(target.to_string()));
+    assert_eq!(
+        bob.task(child)
+            .frontmatter
+            .parent
+            .map(|parent| parent.number),
+        Some(target)
+    );
+}
+
+#[test]
+fn a_merged_task_keeps_its_references_as_paths() {
+    let team = Team::new();
+    let (alice, bob) = started(&team);
+    alice.create("Parent");
+    alice.create("Dependency");
+    alice.create("Other parent");
+    alice
+        .tracker
+        .update_task(&alice.actor, 1, |task| {
+            task.set_parent(Some(TaskLink::to(2)));
+            task.set_dependencies(vec![TaskLink::to(3)]);
+            Ok(())
+        })
+        .expect("references");
+    alice.sync();
+    bob.sync();
+    alice
+        .tracker
+        .update_task(&alice.actor, 1, |task| {
+            task.set_status(Status::Done);
+            Ok(())
+        })
+        .expect("status");
+    bob.tracker
+        .update_task(&bob.actor, 1, |task| {
+            task.set_parent(Some(TaskLink::to(4)));
+            Ok(())
+        })
+        .expect("parent");
+    alice.sync();
+    bob.sync();
+    let raw = bob.tracker.plan().expect("plan").raw(1).expect("raw");
+    assert!(raw.contains("parent: ./00004-other-parent.md"), "{raw}");
+    assert!(raw.contains("- ./00003-dependency.md"), "{raw}");
+    assert!(raw.contains("status: done"), "{raw}");
+
+    alice.sync();
+    alice
+        .tracker
+        .update_task(&alice.actor, 1, |task| {
+            task.set_parent(Some(TaskLink::to(2)));
+            Ok(())
+        })
+        .expect("parent");
+    bob.tracker
+        .update_task(&bob.actor, 1, |task| {
+            task.set_parent(None);
+            Ok(())
+        })
+        .expect("no parent");
+    bob.sync();
+    alice.sync();
+    assert_eq!(alice.task(1).conflicts.len(), 1);
+    let raw = alice.tracker.plan().expect("plan").raw(1).expect("raw");
+    assert!(!raw.contains("parent: '"), "{raw}");
+    assert!(raw.contains("./00002-parent.md"), "{raw}");
+    assert!(raw.contains("- ./00003-dependency.md"), "{raw}");
 }
 
 #[test]

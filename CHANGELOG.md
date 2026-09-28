@@ -72,6 +72,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A comment, a tag rename, and a sync merge of a task no longer write the
+  parent and the dependencies as bare numbers, such as `parent: '1'`. They
+  keep the path to each task file, as every other write does. Before, `openplan
+  lint` then reported a `reference_path` problem that no person had made.
 - An open web UI page reloads when it cannot load a part of the app, such as the
   diff view, after the daemon starts again on a new build of the same version.
   Before, it showed "Failed to fetch dynamically imported module".

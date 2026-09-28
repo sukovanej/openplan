@@ -1,5 +1,5 @@
 use op_api::{CreateTask, KeyError, Metadata, Status, TaskPatch, TaskSummary, id_cmp};
-use op_task::{Abbreviation, Task, Timestamp};
+use op_task::{Abbreviation, Task, TaskLink, Timestamp};
 
 fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().unwrap()
@@ -23,8 +23,11 @@ fn create(parent: Option<&str>, dependencies: &[&str], body: Option<&str>) -> Cr
 #[test]
 fn a_read_renders_references_as_keys() {
     let mut task = Task::new("T", Status::Todo, stamp());
-    task.set_parent(Some("7".to_owned()));
-    task.set_dependencies(vec!["8".to_owned(), "9#Design".to_owned()]);
+    task.set_parent(Some(TaskLink::to(7)));
+    task.set_dependencies(vec![
+        TaskLink::to(8),
+        TaskLink::from_id("9#Design").unwrap(),
+    ]);
 
     let metadata = Metadata::from_frontmatter(&task.frontmatter, abbreviation());
     assert_eq!(metadata.parent(), Some("OPP-7"));
@@ -49,8 +52,11 @@ fn a_write_takes_keys_and_hands_the_file_layer_numbers() {
     let task = create(Some("OPP-7"), &["OPP-8", "OPP-9#Design"], None)
         .into_task(stamp(), abbreviation())
         .unwrap();
-    assert_eq!(task.frontmatter.parent.as_deref(), Some("7"));
-    assert_eq!(task.frontmatter.dependencies, ["8", "9#Design"]);
+    assert_eq!(task.frontmatter.parent, Some(TaskLink::to(7)));
+    assert_eq!(
+        task.frontmatter.dependencies,
+        [TaskLink::to(8), TaskLink::from_id("9#Design").unwrap()]
+    );
 }
 
 #[test]
