@@ -121,6 +121,19 @@
   color: var(--prose-marker);
 }
 
+.op-editor .cm-hang {
+  padding-left: var(--hang);
+  text-indent: calc(-1 * var(--hang));
+}
+
+.op-editor .cm-hang * {
+  text-indent: 0;
+}
+
+.op-editor .cm-quote.cm-hang {
+  padding-left: calc(1em + var(--hang)) !important;
+}
+
 .op-editor .cm-list-number {
   color: var(--prose-marker);
 }

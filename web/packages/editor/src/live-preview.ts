@@ -14,6 +14,7 @@ import {
   watchHighlighter,
 } from "@openplan/task-ui"
 
+import { hangingIndent } from "./hanging-indent"
 import { isInCode } from "./syntax"
 import { tableAt, tableKeys, TableWidget } from "./table-view"
 import {
@@ -355,6 +356,7 @@ export function livePreview(abbreviation: string): Extension {
     focused,
     preview,
     highlighter,
+    hangingIndent,
     tableKeys,
     EditorView.domEventHandlers({
       focus: (_event, view) => view.dispatch({ effects: setFocused.of(true) }),
