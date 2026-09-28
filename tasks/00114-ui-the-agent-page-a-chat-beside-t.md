@@ -16,7 +16,6 @@ page. It talks to the sessions from
 [[./00113-agent-sessions-the-daemon-runs-a.md]].
 
 ## Routes
-
 - `AGENT_ROUTE = /:project/agent` opens the page for a task that does not
   exist yet.
 - `AGENT_TASK_ROUTE = /:project/agent/:id` opens it for an existing task.
