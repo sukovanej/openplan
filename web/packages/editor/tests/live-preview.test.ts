@@ -64,6 +64,31 @@ describe("the live preview", () => {
     expect(hidden("## Plan\n\ntext\n", 5)).toEqual([])
   })
 
+  it("collapses one blank line under a heading", () => {
+    expect(lineClasses("## Plan\n\n\ntext\n")).toEqual(["cm-h2", "cm-blank-collapsed"])
+  })
+
+  it("collapses one blank line above a heading", () => {
+    expect(lineClasses("text\n\n\n## Plan")).toEqual(["cm-blank-collapsed", "cm-h2"])
+  })
+
+  it("collapses one blank line between two headings", () => {
+    expect(lineClasses("## One\n\n## Two")).toEqual(["cm-h2", "cm-blank-collapsed", "cm-h2"])
+  })
+
+  it("shows the blank line the caret is on", () => {
+    expect(lineClasses("## Plan\n\ntext\n", 8)).toEqual(["cm-h2"])
+  })
+
+  it("collapses another blank line than the caret's", () => {
+    const found = list(preview("## Plan\n\n\ntext\n", 8).decorations)
+    expect(found.filter((each) => each.className === "cm-blank-collapsed").map((each) => each.from)).toEqual([9])
+  })
+
+  it("keeps a blank line between paragraphs", () => {
+    expect(lineClasses("one\n\ntwo")).toEqual([])
+  })
+
   it("shows a link as its text", () => {
     expect(hidden("see [docs](https://example.com) now\n")).toEqual(["[", "](https://example.com)"])
   })

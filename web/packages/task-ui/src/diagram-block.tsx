@@ -27,7 +27,7 @@ function useDiagram(source: string): { outcome: DiagramOutcome | null; retry: ()
   }
 }
 
-const frameClass = "my-3"
+const frameClass = "not-prose my-3"
 
 // The full view holds the focus, and `data-keys-ignore` keeps the page's single-key bindings off it
 // while it is open.

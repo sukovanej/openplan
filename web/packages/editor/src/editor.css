@@ -45,31 +45,29 @@
   color: var(--prose-heading);
 }
 
-.op-editor .cm-h1 {
-  font-size: 24px;
-  padding-top: 20px;
-}
-
 /* CodeMirror finds the line under the pointer from the border box of each line and block widget.
    A margin falls outside that box and moves every line below it away from where a click lands, so
-   the rule above a heading is a background inside the padding. */
+   the space above a heading is padding. */
+.op-editor .cm-h1 {
+  font-size: var(--prose-h1-size);
+  padding: 16px 0;
+}
+
 .op-editor .cm-h2 {
   font-size: var(--prose-h2-size);
-  padding-top: 34px;
-  padding-bottom: 4px;
-  background: linear-gradient(var(--border), var(--border)) 0 18px / 100% 1px no-repeat;
+  padding: 16px 0;
 }
 
 .op-editor .cm-h3 {
   font-size: var(--prose-h3-size);
-  padding-top: 14px;
+  padding: 12px 0;
 }
 
 .op-editor .cm-h4,
 .op-editor .cm-h5,
 .op-editor .cm-h6 {
   font-size: var(--prose-h4-size);
-  padding-top: 10px;
+  padding: 8px 0;
 }
 
 .op-editor .cm-strong {
@@ -133,6 +131,11 @@
   text-indent: 0;
 }
 
+.op-editor .cm-list-indent {
+  display: inline-block;
+  width: var(--indent);
+}
+
 .op-editor .cm-quote.cm-hang {
   padding-left: calc(1em + var(--hang)) !important;
 }
@@ -164,6 +167,11 @@
 .op-editor .cm-image {
   max-width: 100%;
   border-radius: 0.375rem;
+}
+
+.op-editor .cm-blank-collapsed {
+  font-size: 0;
+  line-height: 0;
 }
 
 .op-editor .cm-code-line,
