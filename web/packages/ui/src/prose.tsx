@@ -6,8 +6,8 @@ const proseColors =
   "[--tw-prose-body:var(--prose-body)] [--tw-prose-bold:var(--prose-body)] [--tw-prose-headings:var(--prose-heading)] [--tw-prose-code:var(--prose-code)] [--tw-prose-bullets:var(--prose-marker)] [--tw-prose-counters:var(--prose-marker)] dark:[--tw-prose-invert-body:var(--prose-body)] dark:[--tw-prose-invert-bold:var(--prose-body)] dark:[--tw-prose-invert-headings:var(--prose-heading)] dark:[--tw-prose-invert-code:var(--prose-code)] dark:[--tw-prose-invert-bullets:var(--prose-marker)] dark:[--tw-prose-invert-counters:var(--prose-marker)]"
 
 // Light text reads thin against the dark ground at 400, so the body spends one step of the variable
-// face there.
-const proseBody = "font-prose text-[15px] leading-6 max-w-none dark:[font-weight:450]"
+// face there. Safari on a phone zooms into an editor whose text is under 16px when it takes the focus.
+const proseBody = "font-prose text-[15px] max-md:text-base leading-6 max-w-none dark:[font-weight:450]"
 
 // The rule above an h2 is what gives a task with a dozen `##` sections visible breaks, which
 // margin alone did not.

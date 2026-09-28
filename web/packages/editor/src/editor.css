@@ -18,7 +18,10 @@
   overflow: visible;
 }
 
+/* The scroller is a flex row, so without this the content grows to fit its widest chip and a narrow
+   page cuts its lines at the right edge instead of wrapping them. */
 .op-editor .cm-content {
+  min-width: 0;
   min-height: 6rem;
   padding: 0;
   caret-color: var(--foreground);

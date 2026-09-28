@@ -40,7 +40,7 @@ export function FaultStatus() {
         </Button>
       </Tooltip>
       {open && (
-        <ul className="bg-popover absolute top-full right-0 z-30 mt-1.5 flex w-[28rem] max-w-[calc(100vw-1rem)] flex-col gap-2 rounded-md border p-2 shadow-md">
+        <ul className="bg-popover absolute top-full right-0 z-30 mt-1.5 flex w-[28rem] max-w-[calc(100vw-1rem)] max-md:fixed max-md:inset-x-2 max-md:top-14 max-md:w-auto flex-col gap-2 rounded-md border p-2 shadow-md">
           {faults.map((fault) => (
             <li
               key={`${fault.project} ${fault.kind}`}

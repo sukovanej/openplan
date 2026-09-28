@@ -89,7 +89,7 @@ function EveryProjectTags() {
 function TagsPanel({ children }: { children: ReactNode }) {
   return (
     <Panel>
-      <PanelBody className="p-6">{children}</PanelBody>
+      <PanelBody className="p-6 max-md:p-4">{children}</PanelBody>
     </Panel>
   )
 }
@@ -157,7 +157,9 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
           <TagChip name={tag.name} tag={tag} />
           <span className="text-muted-foreground/70 font-mono text-xs">{tag.name}</span>
           {tag.description !== undefined && (
-            <span className="text-muted-foreground min-w-0 truncate text-sm">{tag.description}</span>
+            <span className="text-muted-foreground min-w-0 truncate text-sm max-sm:order-last max-sm:basis-full max-sm:whitespace-normal">
+              {tag.description}
+            </span>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-1">
             {editing === "deleting" || editing === "forcing" ? (
@@ -346,13 +348,13 @@ function TagForm({
         value={name}
         onChange={(event) => setName(event.target.value)}
         placeholder="Tag name"
-        className="w-48"
+        className="w-48 max-sm:w-full"
       />
       <TextInput
         value={description}
         onChange={(event) => setDescription(event.target.value)}
         placeholder="What it marks (optional)"
-        className="min-w-0 flex-1"
+        className="min-w-0 flex-1 max-sm:basis-full"
       />
       <Button
         type="submit"

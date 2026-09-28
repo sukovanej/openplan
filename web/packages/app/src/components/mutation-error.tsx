@@ -27,7 +27,7 @@ export function MutationError() {
       tone="danger"
       shape="card"
       onDismiss={() => setDismissed(latest?.id)}
-      className="fixed inset-x-0 bottom-4 z-50 mx-auto w-fit max-w-xl"
+      className="fixed inset-x-0 bottom-4 z-50 mx-auto w-fit max-w-xl max-md:bottom-20 max-md:px-2"
     >
       {error === undefined ? undefined : errorText(error)}
     </Toast>

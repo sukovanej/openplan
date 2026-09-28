@@ -10,7 +10,7 @@ export function ListSkeleton() {
   useRowCursor(NO_ROWS)
   return (
     <Panel>
-      <PanelBody className="p-6">
+      <PanelBody className="p-6 max-md:p-4">
         <SkeletonList count={3} className="h-10 w-full" />
       </PanelBody>
     </Panel>

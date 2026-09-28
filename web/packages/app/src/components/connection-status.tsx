@@ -27,7 +27,7 @@ export function ConnectionStatus() {
       </Tooltip>
       {state === "outdated" ? (
         <span className="text-muted-foreground inline-flex shrink-0 items-center gap-1 text-xs">
-          New version
+          <span className="max-md:hidden">New version</span>
           <Button variant="accent" onClick={() => window.location.reload()}>
             <RefreshCw className="size-3.5" />
             Reload

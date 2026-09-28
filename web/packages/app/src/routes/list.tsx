@@ -75,7 +75,7 @@ function BoardState({ board }: { board: UseQueryResult<Board> }) {
   if (board.isError) return <EmptyState title="Could not load tasks" detail={errorText(board.error)} />
   return board.data.groups.length === 0 ? (
     <Panel>
-      <PanelBody className="p-6">
+      <PanelBody className="p-6 max-md:p-4">
         <EmptyState title="No tasks yet" detail="Create one with `openplan tasks create`." />
       </PanelBody>
     </Panel>
