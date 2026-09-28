@@ -68,7 +68,7 @@ export function BodyConflict({
             onChange={(event) => setDraft(event.target.value)}
             rows={Math.max(4, draft.split("\n").length + 1)}
             spellCheck={false}
-            className="border-input focus:border-foreground/20 bg-background block w-full resize-y rounded-md border p-2.5 font-mono text-sm outline-none"
+            className="border-input focus:border-foreground/20 bg-background block w-full resize-y rounded-md border p-2.5 font-mono text-sm outline-none max-md:text-base"
           />
         </div>
       )}

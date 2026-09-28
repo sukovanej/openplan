@@ -86,7 +86,7 @@ export function EditButton({ onEdit }: { onEdit: () => void }) {
       aria-label="Edit the markdown"
       onMouseDown={(event) => event.preventDefault()}
       onClick={onEdit}
-      className="bg-background absolute top-1 right-1 border opacity-0 group-hover:opacity-100"
+      className="bg-background absolute top-1 right-1 border opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100"
     >
       <Pencil className="size-3.5" />
     </Button>

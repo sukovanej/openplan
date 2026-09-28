@@ -1,6 +1,8 @@
+import { Search } from "lucide-react"
 import { Link, Outlet } from "react-router-dom"
 
 import { DiagramDrawer } from "@openplan/task-ui"
+import { Button } from "@openplan/ui"
 
 import { CommandPalette } from "./components/command-palette"
 import { ConnectionStatus } from "./components/connection-status"
@@ -8,41 +10,50 @@ import { FaultStatus } from "./components/fault-status"
 import { Flash } from "./components/flash"
 import { HelpOverlay } from "./components/help-overlay"
 import { MutationError } from "./components/mutation-error"
-import { PageNav } from "./components/page-nav"
+import { PageNav, TabBar } from "./components/page-nav"
 import { ProjectSelect } from "./components/project-select"
 import { SyncStatus } from "./components/sync-status"
-import { ThemeToggle } from "./components/theme-toggle"
+import { ThemeButton, ThemeToggle } from "./components/theme-toggle"
 import { drawDiagramOnce } from "./lib/diagrams"
 import { useKeyboard } from "./lib/keys"
 
 export function App() {
-  const { activeOverlay, paletteTarget, closeOverlay } = useKeyboard()
+  const { activeOverlay, paletteTarget, openPalette, closeOverlay } = useKeyboard()
   return (
-    <div className="bg-background text-foreground flex h-screen flex-col">
+    // A phone's browser bar comes and goes, and `dvh` follows it where `vh` would hide the tab bar
+    // under it.
+    <div className="bg-background text-foreground flex h-dvh flex-col">
       <header className="shrink-0 border-b">
-        <div className="flex flex-wrap items-center gap-3 px-6 py-4">
-          <Link to="/" className="shrink-0 text-2xl font-semibold tracking-tight">
-            Open Plan
+        <div className="flex items-center gap-3 px-6 py-4 max-md:gap-2 max-md:px-3 max-md:py-2">
+          <Link to="/" aria-label="Open Plan" className="shrink-0 text-2xl font-semibold tracking-tight">
+            <img src="/icon.svg" alt="" className="size-8 md:hidden" />
+            <span className="max-md:hidden">Open Plan</span>
           </Link>
-          {/* A narrow window has no room for one row, and the project and its pages take a second. */}
-          <div aria-hidden className="basis-full max-md:order-1 md:hidden" />
-          {/* A row wraps before its items shrink, so the menu starts from no width and grows back to
-              its own. At full width it would push the row onto two lines where it fits on one. */}
-          <ProjectSelect className="max-w-fit grow basis-0 max-md:order-2 max-md:max-w-none" />
-          <PageNav className="max-md:order-2" />
+          <ProjectSelect className="max-w-fit grow basis-0" />
+          <PageNav className="max-md:hidden" />
           <ConnectionStatus />
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-3 max-md:gap-1">
             <FaultStatus />
             <SyncStatus />
-            <ThemeToggle />
+            <Button
+              size="icon"
+              aria-label="Search"
+              onClick={() => openPalette("home")}
+              className="text-muted-foreground size-9 md:hidden"
+            >
+              <Search className="size-5" aria-hidden />
+            </Button>
+            <ThemeButton className="md:hidden" />
+            <ThemeToggle className="max-md:hidden" />
           </div>
         </div>
       </header>
-      <main className="min-h-0 flex-1 overflow-hidden px-4 py-4">
+      <main className="min-h-0 flex-1 overflow-hidden p-4 max-md:p-2">
         <DiagramDrawer value={drawDiagramOnce}>
           <Outlet />
         </DiagramDrawer>
       </main>
+      <TabBar className="md:hidden" />
       <HelpOverlay open={activeOverlay === "help"} onClose={closeOverlay} />
       <CommandPalette open={activeOverlay === "palette"} target={paletteTarget} onClose={closeOverlay} />
       <MutationError />

@@ -9,7 +9,7 @@ export function Flash() {
       role="status"
       live="polite"
       tone={message?.tone === "error" ? "danger" : "ok"}
-      className="pointer-events-none fixed right-7 bottom-7 z-50"
+      className="pointer-events-none fixed right-7 bottom-7 z-50 max-md:right-4 max-md:bottom-20"
     >
       {message?.text}
     </Toast>

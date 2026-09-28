@@ -114,7 +114,7 @@ export function Combobox({
           role="combobox"
           aria-expanded
           aria-controls={listId}
-          className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
+          className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none max-md:text-base"
         />
         {pending && <Loader2 className="text-muted-foreground size-3.5 shrink-0 animate-spin" />}
       </div>

@@ -157,7 +157,7 @@ function OpenPalette({
             aria-expanded
             aria-controls={listId}
             aria-activedescendant={items.length > 0 ? `${listId}-${active}` : undefined}
-            className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
+            className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none max-md:text-base"
           />
           {text !== query && <Loader2 className="text-muted-foreground size-3.5 shrink-0 animate-spin" />}
         </div>

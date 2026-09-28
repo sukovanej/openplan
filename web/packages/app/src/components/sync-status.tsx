@@ -66,7 +66,7 @@ export function SyncStatus() {
         </Button>
       </Tooltip>
       {open && (
-        <ul className="bg-popover absolute top-full right-0 z-30 mt-1.5 flex w-[24rem] max-w-[calc(100vw-1rem)] flex-col gap-1 rounded-md border p-2 shadow-md">
+        <ul className="bg-popover absolute top-full right-0 z-30 mt-1.5 flex w-[24rem] max-w-[calc(100vw-1rem)] max-md:fixed max-md:inset-x-2 max-md:top-14 max-md:w-auto flex-col gap-1 rounded-md border p-2 shadow-md">
           {syncs.map((sync) => (
             <ProjectSyncRow
               key={sync.project}

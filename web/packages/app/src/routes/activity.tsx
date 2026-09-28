@@ -128,7 +128,7 @@ function MergedActivity({ projects }: { projects: ReadonlyArray<string> }) {
 function ActivityPanel({ children }: { children: ReactNode }) {
   return (
     <Panel>
-      <PanelBody className="p-6">{children}</PanelBody>
+      <PanelBody className="p-6 max-md:p-4">{children}</PanelBody>
     </Panel>
   )
 }

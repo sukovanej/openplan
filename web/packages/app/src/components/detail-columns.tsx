@@ -10,7 +10,7 @@ import { Panel } from "@openplan/ui"
 export function DetailColumns({ main, aside }: { main: ReactNode; aside: ReactNode }) {
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
-      <Panel className="dark:[--surface:color-mix(in_srgb,var(--muted)_25%,var(--background))] h-auto min-w-0 lg:h-full lg:w-[59rem]">
+      <Panel className="dark:[--surface:color-mix(in_srgb,var(--muted)_25%,var(--background))] h-auto min-w-0 max-lg:shrink-0 lg:h-full lg:w-[59rem]">
         {main}
       </Panel>
       <aside className="min-w-0 lg:min-w-80 lg:flex-1 lg:overflow-y-auto [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">

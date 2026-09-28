@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react"
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import {
@@ -43,6 +43,7 @@ function pageAbove(pathname: string): string {
 export interface Keyboard {
   readonly activeOverlay: OverlayName | null
   readonly paletteTarget: PaletteTarget
+  readonly openPalette: (target: PaletteTarget) => void
   readonly closeOverlay: () => void
 }
 
@@ -55,6 +56,10 @@ export function useKeyboard(): Keyboard {
   const { pathname, search } = location
   const scope = routeScope(pathname)
   const projects = useProjects()
+  const openPalette = useCallback((target: PaletteTarget) => {
+    setPaletteTarget(target)
+    setActiveOverlay("palette")
+  }, [])
   const live = useEffectEvent(() => ({ navigate, pathname, search, scope, activeOverlay, projects }))
 
   // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
@@ -98,12 +103,7 @@ export function useKeyboard(): Keyboard {
         close: () => setActiveOverlay((open) => (open === name ? null : open)),
         toggle: () => setActiveOverlay((open) => (open === name ? null : name)),
       }),
-      palette: {
-        open: (target) => {
-          setPaletteTarget(target)
-          setActiveOverlay("palette")
-        },
-      },
+      palette: { open: openPalette },
       cursor: {
         // The mouse clears the keyboard cursor (the row lists do that on mousemove); moving the
         // cursor hands the selection back, so it resumes from the hovered row and drops the hover.
@@ -158,7 +158,7 @@ export function useKeyboard(): Keyboard {
       context,
     })
     return dispatcher.attach()
-  }, [])
+  }, [openPalette])
 
-  return { activeOverlay, paletteTarget, closeOverlay: () => setActiveOverlay(null) }
+  return { activeOverlay, paletteTarget, openPalette, closeOverlay: () => setActiveOverlay(null) }
 }

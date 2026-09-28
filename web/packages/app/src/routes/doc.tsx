@@ -84,7 +84,7 @@ function Doc({ project, name }: { project: string; name: string }) {
   if (doc.data === undefined) {
     return (
       <Panel>
-        <PanelBody className="p-6">
+        <PanelBody className="p-6 max-md:p-4">
           <SkeletonList count={4} className="h-5 w-full" />
         </PanelBody>
       </Panel>
@@ -116,7 +116,7 @@ function DocView({ doc, project }: { doc: DocDetail; project: string }) {
     <DetailColumns
       main={
         <>
-          <PanelHeader className="gap-2">
+          <PanelHeader className="gap-2 max-md:h-auto max-md:min-h-11 max-md:flex-wrap max-md:py-2">
             <PanelTitle>{doc.title || doc.name}</PanelTitle>
             <Link
               to={docsPath(project)}
@@ -136,7 +136,7 @@ function DocView({ doc, project }: { doc: DocDetail; project: string }) {
               <HeaderParent project={project} doc={doc} />
             </div>
           </PanelHeader>
-          <PanelBody className="p-6">
+          <PanelBody className="p-6 max-md:p-4">
             <DocConflictBanner project={project} name={doc.name} metadata={doc.metadata} count={doc.conflicts} />
             {abbreviation === undefined ? (
               <>
@@ -169,11 +169,11 @@ function DocAtRevision({ project, name, revision }: { project: string; name: str
     <DetailColumns
       main={
         <>
-          <PanelHeader className="gap-2">
+          <PanelHeader className="gap-2 max-md:h-auto max-md:min-h-11 max-md:flex-wrap max-md:py-2">
             <PanelTitle>{doc?.title || name}</PanelTitle>
             <CurrentVersionLink project={project} name={name} />
           </PanelHeader>
-          <PanelBody className="p-6">
+          <PanelBody className="p-6 max-md:p-4">
             <div
               role="note"
               className="border-info/40 bg-info/5 mb-5 flex flex-col gap-1 rounded-md border px-3 py-2 text-xs"

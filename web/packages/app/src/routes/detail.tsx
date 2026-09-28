@@ -162,7 +162,7 @@ function TaskDetailView({
     <DetailColumns
       main={
         <>
-          <PanelHeader className="gap-2">
+          <PanelHeader className="gap-2 max-md:h-auto max-md:min-h-11 max-md:flex-wrap max-md:py-2">
             <PanelTitle>
               <TaskIdentity
                 variant="header"
@@ -206,7 +206,7 @@ function TaskDetailView({
               />
             </div>
           </PanelHeader>
-          <PanelBody className="p-6">
+          <PanelBody className="p-6 max-md:p-4">
             <ConflictBanner project={project} id={task.id} metadata={task.metadata} count={task.conflicts} />
             {detail === null || abbreviation === undefined ? (
               <>
@@ -279,7 +279,7 @@ function TaskAtRevision({ project, id, revision }: { project: string; id: string
     <DetailColumns
       main={
         <>
-          <PanelHeader className="gap-2">
+          <PanelHeader className="gap-2 max-md:h-auto max-md:min-h-11 max-md:flex-wrap max-md:py-2">
             <PanelTitle>
               <TaskIdentity
                 variant="header"
@@ -291,7 +291,7 @@ function TaskAtRevision({ project, id, revision }: { project: string; id: string
             </PanelTitle>
             <CurrentVersionLink project={project} id={id} />
           </PanelHeader>
-          <PanelBody className="p-6">
+          <PanelBody className="p-6 max-md:p-4">
             <RevisionNotice project={project} id={id} revision={revision} entry={entry} />
             {snapshot.isPending ? (
               <BodySkeleton />
@@ -793,8 +793,10 @@ function TaskTitle({ title }: { title: string }) {
 
 // As tall as a tag chip, so the body does not move when the tags load or the last one goes.
 function TimesAndTags({ children }: { children: ReactNode }) {
-  return <div className="mb-4 flex min-h-8 items-center justify-between gap-4">{children}</div>
+  return (
+    <div className="mb-4 flex min-h-8 items-center justify-between gap-4 max-md:flex-wrap max-md:gap-2">{children}</div>
+  )
 }
 
 const timesLine = "shrink-0"
-const tagsBox = "min-w-0 justify-end"
+const tagsBox = "min-w-0 justify-end max-md:basis-full max-md:justify-start"
