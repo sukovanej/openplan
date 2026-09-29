@@ -19,7 +19,7 @@ flow of the task. Remove the link from the header.
 
 ## Check
 
-- The task box header shows no Flow link.
+- The task box header shows no Flow link.f
 - The `f` key on a task opens the flow of that task.
 - The header layout stays correct on desktop and on a phone. `FlowAction` set
   `ml-auto`, so check the position of the items that follow it.
