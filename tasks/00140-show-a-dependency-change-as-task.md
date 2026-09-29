@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in_progress
 created: 2026-09-27T21:37:32Z
 tags:
 - feature
