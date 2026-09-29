@@ -11,8 +11,18 @@ const CHIP =
   "not-prose relative -top-px mx-0.5 inline-flex max-w-full items-center rounded-md border px-1.5 py-0.5 align-middle text-sm font-medium leading-5 no-underline transition-colors"
 
 // A reference the store cannot resolve has no status and no title to show; it renders dashed, with
-// its key as all there is to name it.
-export function TaskRefChip({ to, id, task }: { to: string; id: string; task: TaskRef | undefined }) {
+// its key as all there is to name it. `sign` marks a task that joined or left a set.
+export function TaskRefChip({
+  to,
+  id,
+  task,
+  sign,
+}: {
+  to: string
+  id: string
+  task: TaskRef | undefined
+  sign?: "+" | "−"
+}) {
   return (
     <Link
       to={to}
@@ -23,6 +33,7 @@ export function TaskRefChip({ to, id, task }: { to: string; id: string; task: Ta
           : "border-border bg-muted/40 text-foreground hover:bg-muted",
       )}
     >
+      {sign !== undefined && <span className="mr-1 font-semibold">{sign}</span>}
       <TaskIdentity
         variant="chip"
         status={task?.status}

@@ -22,6 +22,7 @@ vi.mock("../src/lib/api", async () => {
   const { Effect } = await import("effect")
   return {
     listTags: () => Effect.sync(() => []),
+    getBoard: () => Effect.sync(() => ({ groups: [] })),
     getRevisionDiff: (...target: Array<unknown>) =>
       Effect.sync(() => {
         served.diffs(...target)
