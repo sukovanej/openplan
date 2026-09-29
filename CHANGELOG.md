@@ -5,7 +5,9 @@ All notable changes to openplan are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.4...main)
+## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.5...main)
+
+## [0.0.5](https://github.com/sukovanej/openplan/compare/v0.0.4...v0.0.5) - 2026-09-29
 
 ### Added
 
@@ -21,6 +23,11 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The control lists each fault with its project, and it changes as faults start
   and end. `GET /api/faults` lists the faults, and the `faults_changed` event
   tells a client that the list changed.
+- On a phone (narrower than 768 px), the web UI has a tab bar at the bottom
+  with Tasks, Docs, Activity, Tags, and Flow. The header is one row. Its search
+  button opens the command palette, and its theme button steps through light,
+  dark, and system. The edit button of a table or a diagram shows on a touch
+  screen.
 
 ### Changed
 
@@ -69,6 +76,24 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   box: at the rounded tip of a diamond, and at the slanted side of a lean,
   trapezoid, or asymmetric node in a `LR` or `RL` flowchart. Before, a gap
   could stay between the edge and the node.
+- The entity tables of an `erDiagram` show the type of an attribute as inline
+  code, and the comment in faint italic. A column that no attribute fills
+  takes no space.
+- The task body and its headings use Open Sans, which the app bundles. Before,
+  the body used Source Serif 4 and the headings used the system font.
+- The task body has no line above a level 2 heading. The heading sizes follow
+  the size of the body text. In the body editor, a nested list item starts
+  under the text of its parent item.
+- The activity view, the task page, and the comments show the agent as an
+  icon. The tooltip of the icon gives the name of the agent.
+- The activity view shows a title change as "Title", as it shows a description
+  change as "Description". The diff card of the change shows the two titles.
+- A tooltip shows when the pointer enters. Before, it showed after 300 ms.
+- A task key with the prefix of another project, such as `CQR-97`, gets the
+  message `CQR-97 is in another project; this project's keys start with OPP-`.
+  Before, the message said that it was not a task key.
+- The `reference_path` lint names the field and gives the path to write, for
+  example: ``the parent `2` is not a path; write `./00002-two.md` ``.
 
 ### Fixed
 
@@ -79,6 +104,15 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - An open web UI page reloads when it cannot load a part of the app, such as the
   diff view, after the daemon starts again on a new build of the same version.
   Before, it showed "Failed to fetch dynamically imported module".
+- In the body editor, a wrapped line of a list item starts under the text of
+  the first line, not under the marker.
+- The word mark in a diff stops at the last changed word. Before, it also
+  marked the space after the word and the indent before the first word.
+- A task or doc reference chip no longer cuts off the bottom of letters such as
+  "g" and "y".
+- Below 1024 px, the task and doc body no longer collapses to zero height. A
+  long task reference chip no longer makes the body editor wider than its
+  panel.
 
 ## [0.0.4](https://github.com/sukovanej/openplan/compare/v0.0.3...v0.0.4) - 2026-09-26
 
