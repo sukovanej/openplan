@@ -2,13 +2,11 @@ import { Section, SkeletonList } from "@openplan/ui"
 
 import { errorText } from "../lib/format"
 import { useTaskHistory } from "../lib/history"
-import { useTaskRefs } from "../lib/task-refs"
 import { OlderRevisions } from "./older-revisions"
 import { RevisionList } from "./revision-list"
 
 export function TaskHistory({ project, id, selected }: { project: string; id: string; selected: string | undefined }) {
   const history = useTaskHistory(project, id)
-  const refs = useTaskRefs(project)
   return (
     <Section title="History">
       {history.isPending ? (
@@ -19,7 +17,7 @@ export function TaskHistory({ project, id, selected }: { project: string; id: st
         <p className="text-muted-foreground text-sm">No revision holds this task.</p>
       ) : (
         <>
-          <RevisionList project={project} entries={history.data} refs={refs} task={id} selected={selected} />
+          <RevisionList project={project} entries={history.data} task={id} selected={selected} />
           <OlderRevisions history={history} className="mt-2" />
         </>
       )}

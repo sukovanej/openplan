@@ -70,7 +70,6 @@ import { hoveredRow } from "../lib/row-target"
 import { abortable } from "../lib/runtime"
 import { NO_ROW } from "../lib/status-requests"
 import { useTags } from "../lib/tags"
-import { useTaskRefs } from "../lib/task-refs"
 import { taskMatches } from "../lib/task-search"
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
@@ -348,7 +347,6 @@ function RevisionNotice({
 }) {
   const change = entry === undefined ? undefined : taskChangeOf(entry, id)
   const { byName: tags } = useTags(project)
-  const refs = useTaskRefs(project)
   return (
     <div role="note" className="border-info/40 bg-info/5 mb-5 flex flex-col gap-1 rounded-md border px-3 py-2 text-xs">
       <p className="text-info">
@@ -362,7 +360,7 @@ function RevisionNotice({
               project={project}
               change={change}
               tags={tags}
-              refs={refs}
+              refs={undefined}
               className="text-foreground/90 text-sm"
             />
           )}

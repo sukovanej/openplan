@@ -2,24 +2,37 @@ import { type UseInfiniteQueryResult, useQuery } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { useParams } from "react-router-dom"
 
-import type { DocListItem } from "@openplan/api-client"
+import type { Board, DocListItem, FieldError, TaskRef } from "@openplan/api-client"
+import { statusField } from "@openplan/task-ui"
 import { EmptyState, Panel, PanelBody, SkeletonList } from "@openplan/ui"
 
 import { OlderRevisions } from "../components/older-revisions"
 import { MergedRevisionList, RevisionList } from "../components/revision-list"
-import { getMergedBoard, listAllDocs } from "../lib/api"
+import { getBoard, getMergedBoard, listAllDocs } from "../lib/api"
 import { demotedReason, useDemotedReason, useFaults } from "../lib/faults"
 import { errorText } from "../lib/format"
 import { useMergedHistory, useProjectHistory } from "../lib/history"
 import { useProject, useProjects } from "../lib/projects"
-import { allDocsKey, mergedBoardKey } from "../lib/query-client"
+import { allDocsKey, boardKey, mergedBoardKey } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
-import { refsByProject, useTaskRefs } from "../lib/task-refs"
 
 // This page holds no task rows, and the cursor is the board's — left as it was, `j` then Enter here
 // would open a task the reader can no longer see.
 const NO_ROWS: ReadonlyArray<string> = []
+const UNREAD: FieldError = { kind: "missing" }
+
+// The revisions name tasks by key alone, and the board holds each one's title and status. Two
+// projects can hold the same key, so each project has a map of its own.
+const refsByProject = (board: Board): ReadonlyMap<string, ReadonlyMap<string, TaskRef>> => {
+  const refs = new Map<string, Map<string, TaskRef>>()
+  for (const { task } of board.groups.flatMap((group) => group.rows)) {
+    const held = refs.get(task.project) ?? new Map<string, TaskRef>()
+    held.set(task.id, { id: task.id, title: task.title, status: statusField(task.metadata) ?? UNREAD })
+    refs.set(task.project, held)
+  }
+  return refs
+}
 
 const titlesByProject = (docs: ReadonlyArray<DocListItem>): ReadonlyMap<string, ReadonlyMap<string, string>> => {
   const titles = new Map<string, Map<string, string>>()
@@ -54,7 +67,11 @@ function ProjectActivity({ project }: { project: string }) {
 
 export function Activity({ project }: { project: string }) {
   const history = useProjectHistory(project)
-  const refs = useTaskRefs(project)
+  const refs = useQuery({
+    queryKey: boardKey(project),
+    queryFn: abortable(getBoard(project)),
+    select: (board: Board) => refsByProject(board).get(project) ?? new Map<string, TaskRef>(),
+  }).data
   const docTitles = useQuery({
     queryKey: allDocsKey(project),
     queryFn: abortable(listAllDocs([project])),
