@@ -18,31 +18,17 @@ import {
 } from "lucide-react"
 import { Fragment, type ReactNode } from "react"
 
-import type {
-  DocChange,
-  DocumentChangeKind,
-  FieldChange,
-  TagChange,
-  TagView,
-  TaskChange,
-  TaskRef,
-} from "@openplan/api-client"
+import type { DocChange, DocumentChangeKind, FieldChange, TagChange, TagView, TaskChange } from "@openplan/api-client"
 import { cn } from "@openplan/ui"
 
 import { StatusBadge } from "./status"
 import { TagChip } from "./tag-chip"
 import { documentChangeText, fieldChangeText, renameText, setDifference } from "./task-change"
-import { taskPath } from "./task-path"
-import { TaskRefChip } from "./task-ref-chip"
 
 // The project's tag registry by name, or `undefined` while it is still being read. Until it arrives
 // a name the registry holds looks like one it does not, so the change keeps its words instead of
 // showing every chip as dangling.
 type Registry = ReadonlyMap<string, TagView> | undefined
-
-// The project's tasks by key, or `undefined` while the board is still being read, for the same
-// reason as the registry.
-type Refs = ReadonlyMap<string, TaskRef> | undefined
 
 const fieldIcons: Record<Exclude<FieldChange["field"], "status">, LucideIcon> = {
   number: Hash,
@@ -85,6 +71,10 @@ function Marked({
 
 type Sign = "+" | "−"
 
+// The chip of a task that joined or left a set. The caller draws it, because only the caller can
+// read the task.
+type TaskChip = (id: string, sign: Sign) => ReactNode
+
 function SetChange({
   icon: Icon,
   change,
@@ -108,17 +98,7 @@ function SetChange({
 }
 
 // A status change is its two badges: the words would only repeat them.
-function FieldChangeView({
-  project,
-  change,
-  tags,
-  refs,
-}: {
-  project: string
-  change: FieldChange
-  tags: Registry
-  refs: Refs
-}) {
+function FieldChangeView({ change, tags, taskChip }: { change: FieldChange; tags: Registry; taskChip: TaskChip }) {
   if (change.field === "tags" && tags !== undefined) {
     return (
       <SetChange
@@ -128,15 +108,7 @@ function FieldChangeView({
       />
     )
   }
-  if (change.field === "dependencies" && refs !== undefined) {
-    return (
-      <SetChange
-        icon={Link2}
-        change={change}
-        chip={(id, sign) => <TaskRefChip to={taskPath(project, id)} id={id} task={refs.get(id)} sign={sign} />}
-      />
-    )
-  }
+  if (change.field === "dependencies") return <SetChange icon={Link2} change={change} chip={taskChip} />
   if (change.field === "status") {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">
@@ -150,7 +122,7 @@ function FieldChangeView({
 }
 
 function Changes({ className, children }: { className?: string; children: ReactNode }) {
-  return <span className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", className)}>{children}</span>
+  return <span className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1", className)}>{children}</span>
 }
 
 export function DocumentChangeView({ kind, className }: { kind: DocumentChangeKind; className?: string }) {
@@ -165,16 +137,14 @@ export function DocumentChangeView({ kind, className }: { kind: DocumentChangeKi
 }
 
 export function TaskChangeView({
-  project,
   change,
   tags,
-  refs,
+  taskChip,
   className,
 }: {
-  project: string
   change: TaskChange
   tags: Registry
-  refs: Refs
+  taskChip: TaskChip
   className?: string
 }) {
   const fields = change.fields ?? []
@@ -186,10 +156,9 @@ export function TaskChangeView({
       {fields.map((field) => (
         <FieldChangeView
           key={field.field === "other" ? `other:${field.name}` : field.field}
-          project={project}
           change={field}
           tags={tags}
-          refs={refs}
+          taskChip={taskChip}
         />
       ))}
     </Changes>

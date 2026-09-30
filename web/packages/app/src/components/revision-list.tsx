@@ -29,6 +29,7 @@ import {
 import { type RevisionNavigation, revisionNavigation } from "../lib/revision-navigation"
 import { useTagRegistries, useTags } from "../lib/tags"
 import { ChangeDiff } from "./change-diff"
+import { TaskChip } from "./task-chip"
 
 // With `task` or `doc`, the list is the history of that one task or doc: a line needs not name it,
 // and each revision opens it as that revision left it.
@@ -271,7 +272,12 @@ function ChangeLine({
     case "task":
       return (
         <>
-          <TaskChangeView project={project} change={line.change} tags={tags} refs={refs} className={change} />
+          <TaskChangeView
+            change={line.change}
+            tags={tags}
+            taskChip={(id, sign) => <TaskChip project={project} id={id} sign={sign} />}
+            className={change}
+          />
           {withWhat && <TaskName project={project} entry={entry} line={line} refs={refs} />}
         </>
       )

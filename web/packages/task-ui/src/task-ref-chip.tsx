@@ -11,24 +11,28 @@ const CHIP =
   "not-prose relative -top-px mx-0.5 inline-flex max-w-full items-center rounded-md border px-1.5 py-0.5 align-middle text-sm font-medium leading-5 no-underline transition-colors"
 
 // A reference the store cannot resolve has no status and no title to show; it renders dashed, with
-// its key as all there is to name it. `sign` marks a task that joined or left a set.
+// its key as all there is to name it. A reference still being read is neither yet, so it holds the
+// place of its mark and claims nothing. `sign` marks a task that joined or left a set.
 export function TaskRefChip({
   to,
   id,
   task,
+  loading = false,
   sign,
 }: {
   to: string
   id: string
   task: TaskRef | undefined
+  loading?: boolean
   sign?: "+" | "−"
 }) {
+  const unresolved = task === undefined && !loading
   return (
     <Link
       to={to}
       className={cn(
         CHIP,
-        task === undefined
+        unresolved
           ? "border-border border-dashed text-muted-foreground hover:bg-muted/40"
           : "border-border bg-muted/40 text-foreground hover:bg-muted",
       )}
@@ -37,10 +41,14 @@ export function TaskRefChip({
       <TaskIdentity
         variant="chip"
         status={task?.status}
-        mark={task === undefined ? <UnresolvedMark /> : undefined}
+        mark={unresolved ? <UnresolvedMark /> : task === undefined ? <LoadingMark /> : undefined}
         id={id}
         title={task?.title}
       />
     </Link>
   )
+}
+
+function LoadingMark() {
+  return <span aria-hidden className="bg-muted-foreground/20 size-4 shrink-0 rounded-full" />
 }

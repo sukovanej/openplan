@@ -54,6 +54,7 @@ import { ConflictBanner, FieldConflictControl } from "../components/field-confli
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { TagsField } from "../components/tags-field"
+import { TaskChip } from "../components/task-chip"
 import { TaskContent } from "../components/task-content"
 import { TaskHistory } from "../components/task-history"
 import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
@@ -357,10 +358,9 @@ function RevisionNotice({
         <>
           {change !== undefined && (
             <TaskChangeView
-              project={project}
               change={change}
               tags={tags}
-              refs={undefined}
+              taskChip={(key, sign) => <TaskChip project={project} id={key} sign={sign} />}
               className="text-foreground/90 text-sm"
             />
           )}
