@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { TagView } from "@openplan/api-client"
 
-import { tagMatches, tagSpelled, tagsWith, tagsWithout } from "../src/lib/tags"
+import { described, renamed, tagMatches, tagSpelled, tagsWith, tagsWithout } from "../src/lib/tags"
 
 const view = (name: string, over: Partial<TagView> = {}): TagView => ({
   name,
@@ -70,5 +70,31 @@ describe("the tag a typed name already spells", () => {
 
   it("finds nothing for a name the registry does not hold", () => {
     expect(tagSpelled(all, "backend")).toBeUndefined()
+  })
+})
+
+describe("the patch an edit in place sends", () => {
+  const bug = view("bug", { display: "Bug", description: "Something is broken" })
+
+  it("sends the new name alone", () => {
+    expect(renamed(bug, "  Defect ")).toEqual({ name: "Defect" })
+  })
+
+  it("sends no rename for the same name or an empty one", () => {
+    expect(renamed(bug, "Bug")).toBeUndefined()
+    expect(renamed(bug, "   ")).toBeUndefined()
+  })
+
+  it("sends the new description alone", () => {
+    expect(described(bug, "It fails ")).toEqual({ description: "It fails" })
+  })
+
+  it("clears the description with an empty one", () => {
+    expect(described(bug, " ")).toEqual({ description: null })
+  })
+
+  it("sends no description that did not change", () => {
+    expect(described(bug, "Something is broken")).toBeUndefined()
+    expect(described(view("wip"), "")).toBeUndefined()
   })
 })
