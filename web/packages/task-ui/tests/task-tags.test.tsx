@@ -13,6 +13,7 @@ const metadata = (tags: Field_Vec_String): Metadata => ({
   rank: null,
   dependencies: [],
   tags,
+  pull_requests: [],
 })
 
 const registry = (...tags: ReadonlyArray<TagView>) => new Map(tags.map((tag) => [tag.name, tag]))

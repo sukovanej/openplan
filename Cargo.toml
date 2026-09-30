@@ -20,6 +20,7 @@ op-diagram = { path = "crates/op-diagram" }
 op-diagram-mermaid = { path = "crates/op-diagram-mermaid" }
 op-diagram-render = { path = "crates/op-diagram-render" }
 op-task = { path = "crates/op-task" }
+op-forge = { path = "crates/op-forge" }
 op-backend = { path = "crates/op-backend" }
 op-backend-git = { path = "crates/op-backend-git" }
 op-backend-local = { path = "crates/op-backend-local" }

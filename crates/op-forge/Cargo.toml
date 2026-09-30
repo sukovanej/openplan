@@ -1,6 +1,6 @@
 [package]
-name = "op-api"
-description = "Shared wire types: DTOs, history, sync, and change events"
+name = "op-forge"
+description = "GitHub and GitLab addresses: the repository of a git remote, and the pull requests and merge requests of a task"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,17 +9,9 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-op-diagram.workspace = true
-op-forge.workspace = true
-op-task.workspace = true
 serde.workspace = true
-serde_yaml.workspace = true
 thiserror.workspace = true
 utoipa.workspace = true
-
-[dev-dependencies]
-insta.workspace = true
-serde_json.workspace = true
 
 [lints]
 workspace = true

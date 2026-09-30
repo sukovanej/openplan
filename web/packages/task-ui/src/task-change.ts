@@ -1,4 +1,4 @@
-import type { DocChange, DocumentChangeKind, FieldChange, TagChange } from "@openplan/api-client"
+import type { DocChange, DocumentChangeKind, FieldChange, PullRequestView, TagChange } from "@openplan/api-client"
 
 import { statusLabel } from "./status"
 
@@ -16,6 +16,13 @@ function setChange(name: string, from: ReadonlyArray<string>, to: ReadonlyArray<
   const { added, removed } = setDifference(from, to)
   const moved = [...added.map((item) => `+${item}`), ...removed.map((item) => `−${item}`)]
   return moved.length === 0 ? `${name} reordered` : `${name}: ${moved.join(" ")}`
+}
+
+function linkChange(from: ReadonlyArray<PullRequestView>, to: ReadonlyArray<PullRequestView>): string {
+  const short = (list: ReadonlyArray<PullRequestView>) => list.map((each) => each.short)
+  const { added, removed } = setDifference(short(from), short(to))
+  const moved = [...added.map((item) => `linked ${item}`), ...removed.map((item) => `unlinked ${item}`)].join(", ")
+  return moved === "" ? "Pull requests" : moved.charAt(0).toUpperCase() + moved.slice(1)
 }
 
 function fromTo(name: string, from: string | undefined, to: string | undefined): string {
@@ -37,6 +44,8 @@ export function fieldChangeText(change: FieldChange): string {
       return setChange("Dependencies", change.from, change.to)
     case "tags":
       return setChange("Tags", change.from, change.to)
+    case "pull_requests":
+      return linkChange(change.from, change.to)
     case "title":
       return "Title"
     case "description":

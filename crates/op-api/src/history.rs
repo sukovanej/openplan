@@ -5,6 +5,7 @@ use crate::Status;
 use crate::comment::Comment;
 use crate::field::Rfc3339;
 use crate::metadata::Metadata;
+use crate::task::PullRequestView;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct RevisionView {
@@ -104,6 +105,10 @@ pub enum FieldChange {
     Tags {
         from: Vec<String>,
         to: Vec<String>,
+    },
+    PullRequests {
+        from: Vec<PullRequestView>,
+        to: Vec<PullRequestView>,
     },
     Title {
         #[serde(default, skip_serializing_if = "Option::is_none")]

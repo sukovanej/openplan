@@ -9,7 +9,7 @@ use crate::doc::{Doc, DocFrontmatter};
 use crate::{FieldConflict, Frontmatter, Task, names, sorted_set, three_way};
 
 // Both sides may add to and remove from a set, so the two edits compose and never conflict.
-const SETS: [&str; 2] = ["dependencies", "tags"];
+const SETS: [&str; 3] = ["dependencies", "tags", "pull_requests"];
 
 // A field or lines that both sides changed differently become a conflict that keeps both versions,
 // with the published one (`theirs`) in force until someone picks.
@@ -81,6 +81,11 @@ fn frontmatter(
     let [base, ours, theirs] = tasks.map(|task| &task.frontmatter);
     frontmatter.dependencies = names(&base.dependencies, &ours.dependencies, &theirs.dependencies);
     frontmatter.tags = sorted_set(names(&base.tags, &ours.tags, &theirs.tags));
+    frontmatter.pull_requests = sorted_set(names(
+        &base.pull_requests,
+        &ours.pull_requests,
+        &theirs.pull_requests,
+    ));
     (frontmatter, conflicts)
 }
 

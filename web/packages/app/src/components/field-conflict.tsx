@@ -40,6 +40,7 @@ export const FIELD_LABELS: Record<FieldName, string> = {
   rank: "Rank",
   dependencies: "Dependencies",
   tags: "Tags",
+  pull_requests: "Pull requests",
 }
 
 function Nothing({ children }: { children: ReactNode }) {
@@ -139,6 +140,13 @@ function fieldChoices(
         (names) => (names.length === 0 ? <Nothing>No tags</Nothing> : <TagList names={names} tags={tags} />),
         keep,
         (names) => ({ tags: names }),
+      )
+    case "pull_requests":
+      return choicesOf(
+        fieldConflict(fields.pull_requests),
+        (addresses) => (addresses.length === 0 ? <Nothing>No pull requests</Nothing> : <Keys keys={addresses} />),
+        keep,
+        (addresses) => ({ pull_requests: addresses }),
       )
   }
 }

@@ -19,6 +19,8 @@ export { CONFLICT_TINT, ConflictBadge, conflictCount } from "./conflict-mark"
 export { type DiagramOutcome, DiagramDrawer, type DrawDiagram } from "./diagram-drawer"
 export { DiagramViewport } from "./diagram-viewport"
 export { type ConflictChoice, FieldConflict } from "./field-conflict"
+export { ForgeIcon } from "./forge-icon"
+export { ForgeLink } from "./forge-link"
 export {
   conflictedFields,
   createdOf,
@@ -37,6 +39,7 @@ export {
 } from "./metadata"
 export { DocParentLink, ParentLink } from "./parent-link"
 export { ProblemBadge, ProblemBanner, withoutTextProblems } from "./problem-mark"
+export { PullRequestsMark } from "./pull-requests-mark"
 export { RevisionMeta, shortRevision } from "./revision-meta"
 export { StatusMenu } from "./status-menu"
 export {

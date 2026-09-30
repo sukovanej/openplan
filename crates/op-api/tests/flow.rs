@@ -60,12 +60,14 @@ impl Build {
                 rank: Field::Value(self.rank),
                 dependencies: Field::Value(self.dependencies),
                 tags: Field::Value(self.tags),
+                pull_requests: Field::Value(Vec::new()),
             }),
             comment_count: 0,
             conflicts: 0,
             problems: Vec::new(),
             updated: Field::Error(op_api::FieldError::Missing),
             author: None,
+            pull_requests: Vec::new(),
         }
     }
 }

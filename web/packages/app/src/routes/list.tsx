@@ -11,6 +11,7 @@ import {
   ParentLink,
   ProblemBadge,
   problems,
+  PullRequestsMark,
   statusField,
   StatusGroupHeader,
   statusGroupLabel,
@@ -186,6 +187,7 @@ const TaskRow = memo(function TaskRow({
               {task.comment_count}
             </MetaItem>
           )}
+          <PullRequestsMark pullRequests={task.pull_requests} />
           <TaskTags metadata={task.metadata} tags={tags} />
         </MetaLine>
       </div>

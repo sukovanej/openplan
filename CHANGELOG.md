@@ -7,6 +7,17 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.5...main)
 
+### Added
+
+- A task records its pull requests and merge requests in the front matter
+  field `pull_requests`. `openplan tasks pr add <key> <address>` links one,
+  `openplan tasks pr remove` unlinks one, `openplan tasks create --pr` links
+  one at creation, and `openplan tasks show` prints each address. A number
+  names a pull request in the GitHub or GitLab repository of the project
+  remote. The task page has a "Pull requests" section, the task list marks a
+  task that has pull requests, and the activity view shows each link. The
+  openplan skill tells the agent to link the pull request that it opens.
+
 ## [0.0.5](https://github.com/sukovanej/openplan/compare/v0.0.4...v0.0.5) - 2026-09-29
 
 ### Added

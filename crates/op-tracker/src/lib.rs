@@ -4,6 +4,7 @@ use op_backend::{
     Actor, Backend, BackendError, BackendExt as _, ChangeKind, Committed, Edit, LogEntry, LogQuery,
     Op, RevisionId, Snapshot,
 };
+use op_forge::Forge;
 use op_task::comment::{self, NewComment};
 use op_task::config::Config;
 use op_task::conflict::{self, Labels};
@@ -29,6 +30,7 @@ pub use policy::TaskMergePolicy;
 #[derive(Clone)]
 pub struct Tracker {
     backend: Arc<dyn Backend>,
+    forge: Option<Forge>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +60,20 @@ pub struct HistoryQuery {
 
 impl Tracker {
     pub fn new(backend: Arc<dyn Backend>) -> Self {
-        Self { backend }
+        Self {
+            backend,
+            forge: None,
+        }
+    }
+
+    // The repository of the project, so a revision names a pull request of it by the number alone.
+    pub fn with_forge(mut self, forge: Option<Forge>) -> Self {
+        self.forge = forge;
+        self
+    }
+
+    pub fn forge(&self) -> Option<&Forge> {
+        self.forge.as_ref()
     }
 
     pub fn backend(&self) -> &Arc<dyn Backend> {
@@ -81,7 +96,7 @@ impl Tracker {
         self.backend.transact(actor, |snapshot: Arc<dyn Snapshot>| {
             let plan = Plan::read(snapshot)?;
             let (ops, value) = write(&plan)?;
-            let message = message::of(&plan, &ops)?;
+            let message = message::of(&plan, &ops, self.forge.as_ref())?;
             Ok((Edit::new(message, ops), value))
         })
     }
@@ -123,6 +138,7 @@ impl Tracker {
     pub fn create_task(&self, actor: &Actor, task: &Task) -> Result<Created, TrackerError> {
         let title = files::single_title(&task.body)?;
         files::keeps_conflicts(None, task)?;
+        let task = &files::with_canonical_pull_requests(task);
         let (committed, number) = self.write(actor, |plan| {
             plan.config()?;
             files::validate(plan, None, None, &task.frontmatter)?;
@@ -158,6 +174,7 @@ impl Tracker {
             let old = plan.task(number)?;
             let mut task = old.clone();
             mutate(&mut task)?;
+            let task = files::with_canonical_pull_requests(&task);
             if task.body != old.body {
                 files::single_title(&task.body)?;
             }

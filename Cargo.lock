@@ -3883,6 +3883,7 @@ version = "0.0.5"
 dependencies = [
  "insta",
  "op-diagram",
+ "op-forge",
  "op-task",
  "serde",
  "serde_json",
@@ -4020,6 +4021,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "op-forge"
+version = "0.0.5"
+dependencies = [
+ "serde",
+ "thiserror 2.0.20",
+ "utoipa",
+]
+
+[[package]]
 name = "op-index"
 version = "0.0.5"
 dependencies = [
@@ -4058,6 +4068,7 @@ dependencies = [
  "op-diagram",
  "op-diagram-mermaid",
  "op-diagram-render",
+ "op-forge",
  "op-index",
  "op-task",
  "op-tracker",
@@ -4106,6 +4117,7 @@ dependencies = [
  "op-backend",
  "op-backend-git",
  "op-backend-local",
+ "op-forge",
  "op-md",
  "op-task",
  "serde_yaml",

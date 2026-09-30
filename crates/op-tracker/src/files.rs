@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use op_forge::PullRequest;
 use op_task::doc::Doc;
 use op_task::layout;
 use op_task::reference::{self, Target};
@@ -156,7 +157,26 @@ pub(crate) fn validate(
             return Err(TrackerError::TagUnregistered { name: tag.clone() });
         }
     }
+    for address in &new.pull_requests {
+        PullRequest::parse(address).map_err(|err| TrackerError::Invalid(err.to_string()))?;
+    }
     Ok(())
+}
+
+// Every page of a pull request names it, and the task keeps the one address of the pull request
+// itself. An address that names none stays as it is, and `validate` refuses it.
+pub(crate) fn with_canonical_pull_requests(task: &Task) -> Task {
+    let mut task = task.clone();
+    task.frontmatter.pull_requests = op_task::sorted_set(
+        task.frontmatter
+            .pull_requests
+            .iter()
+            .map(|address| {
+                PullRequest::parse(address).map_or_else(|_| address.clone(), |found| found.url())
+            })
+            .collect(),
+    );
+    task
 }
 
 // Walks up from the new parent; reaching the task itself would close a cycle. The visited set

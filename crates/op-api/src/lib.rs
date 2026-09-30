@@ -38,5 +38,6 @@ pub use task::*;
 pub use tree::*;
 pub use write::*;
 
+pub use op_forge::{Forge, ForgeKind, PullRequestError};
 pub use op_task::tag::Color;
 pub use op_task::{Abbreviation, Status, Timestamp};

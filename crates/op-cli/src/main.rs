@@ -186,6 +186,10 @@ enum TaskCommand {
         /// Assign a registered tag; repeat for more
         #[arg(long = "tag")]
         tags: Vec<String>,
+        /// Link a pull request or merge request, by its address or by its number in the
+        /// repository of this project; repeat for more
+        #[arg(long = "pr")]
+        pull_requests: Vec<String>,
         /// Markdown content placed below the title heading
         #[arg(long, conflicts_with = "body_file")]
         body: Option<String>,
@@ -240,8 +244,13 @@ enum TaskCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Print a task's metadata (status, parent, dependencies, tags)
+    /// Print a task's metadata (status, parent, dependencies, tags, pull requests)
     Show { id: String },
+    /// Link and unlink the pull requests and merge requests of a task
+    Pr {
+        #[command(subcommand)]
+        command: PullRequestCommand,
+    },
     /// Print the subtask hierarchy rooted at a task
     Tree {
         id: String,
@@ -264,7 +273,7 @@ enum TaskCommand {
         #[arg(long)]
         after: Option<String>,
     },
-    /// Set a validated field: status | parent | dependencies | tags
+    /// Set a validated field: status | parent | dependencies | tags | pull_requests
     Set {
         id: String,
         field: String,
@@ -275,6 +284,22 @@ enum TaskCommand {
         id: String,
         #[arg(long)]
         yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum PullRequestCommand {
+    /// Link a pull request to a task
+    Add {
+        id: String,
+        /// The address, or the number in the repository of this project
+        pull_request: String,
+    },
+    /// Unlink a pull request from a task
+    Remove {
+        id: String,
+        /// The address, or the number in the repository of this project
+        pull_request: String,
     },
 }
 

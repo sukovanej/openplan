@@ -6,10 +6,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use op_api::{
     ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask, DocChange, DocumentChange,
-    DocumentChangeKind, FieldChange, Flow, FlowQuery, HistoryEntry, KeyError, Metadata,
-    RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch, TagView,
-    TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot, TaskSummary,
-    TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
+    DocumentChangeKind, FieldChange, Flow, FlowQuery, Forge, HistoryEntry, KeyError, Metadata,
+    PullRequestView, RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch,
+    TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot,
+    TaskSummary, TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
 };
 use op_backend::{Change, ChangeKind, Committed, LogEntry, RevisionId};
 use op_task::{Abbreviation, Task, layout};
@@ -154,7 +154,7 @@ pub(crate) async fn create_task(
     let created = op_task::now();
     let id = blocking(move || {
         let abbreviation = project.abbreviation()?;
-        let task = body.into_task(created, abbreviation)?;
+        let task = body.into_task(created, abbreviation, project.forge())?;
         let created = project.tracker().create_task(&actor, &task)?;
         project.written(created.committed.as_ref());
         Ok(abbreviation.format_key(created.number))
@@ -225,7 +225,7 @@ pub(crate) async fn patch_task(
         let updated = project.tracker().update_task(&actor, number, |task| {
             patch
                 .clone()
-                .apply(task, abbreviation)
+                .apply(task, abbreviation, project.forge())
                 .map_err(|err| TrackerError::Invalid(err.to_string()))
         })?;
         project.written(updated.committed.as_ref());
@@ -633,11 +633,11 @@ pub(crate) fn history(
             let described = project.tracker().describe(&entry)?;
             Ok(HistoryEntry {
                 revision: revision_view(&entry.revision),
-                summary: described.lines(abbreviation),
+                summary: described.lines(abbreviation, project.forge()),
                 tasks: described
                     .tasks
                     .into_iter()
-                    .map(|task| task_change(task, &key))
+                    .map(|task| task_change(task, &key, project.forge()))
                     .collect(),
                 tags: described.tags.into_iter().map(tag_change).collect(),
                 docs: described.docs.into_iter().map(doc_change).collect(),
@@ -681,7 +681,11 @@ fn change_kind(kind: ChangeKind) -> DocumentChangeKind {
     }
 }
 
-fn task_change(task: op_tracker::TaskChange, key: &dyn Fn(u64) -> String) -> TaskChange {
+fn task_change(
+    task: op_tracker::TaskChange,
+    key: &dyn Fn(u64) -> String,
+    forge: Option<&Forge>,
+) -> TaskChange {
     TaskChange {
         task: key(task.number),
         kind: change_kind(task.kind),
@@ -689,12 +693,16 @@ fn task_change(task: op_tracker::TaskChange, key: &dyn Fn(u64) -> String) -> Tas
         fields: task
             .fields
             .into_iter()
-            .map(|field| field_change(field, key))
+            .map(|field| field_change(field, key, forge))
             .collect(),
     }
 }
 
-fn field_change(field: op_tracker::FieldChange, key: &dyn Fn(u64) -> String) -> FieldChange {
+fn field_change(
+    field: op_tracker::FieldChange,
+    key: &dyn Fn(u64) -> String,
+    forge: Option<&Forge>,
+) -> FieldChange {
     use op_tracker::FieldChange as Field;
     let keys = |numbers: Vec<u64>| numbers.into_iter().map(key).collect();
     match field {
@@ -713,6 +721,10 @@ fn field_change(field: op_tracker::FieldChange, key: &dyn Fn(u64) -> String) -> 
             to: keys(to),
         },
         Field::Tags { from, to } => FieldChange::Tags { from, to },
+        Field::PullRequests { from, to } => FieldChange::PullRequests {
+            from: PullRequestView::of_addresses(&from, forge),
+            to: PullRequestView::of_addresses(&to, forge),
+        },
         Field::Title { from, to } => FieldChange::Title { from, to },
         Field::Description => FieldChange::Description,
         Field::Comments { added, removed } => FieldChange::Comments { added, removed },

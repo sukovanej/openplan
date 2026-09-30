@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use op_forge::Forge;
+
 use crate::history::SyncView;
 
 // One project the daemon serves. `git_common_dir` is what a client matches its own checkout against:
@@ -17,6 +19,11 @@ pub struct ProjectView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub sync: Option<SyncView>,
+    // The repository of the remote the project syncs with; absent when the remote is not on GitHub
+    // or GitLab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub forge: Option<Forge>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

@@ -99,10 +99,19 @@ pub struct Frontmatter {
     #[serde(
         default,
         skip_serializing_if = "Vec::is_empty",
-        serialize_with = "serialize_tags",
+        serialize_with = "serialize_sorted_set",
         deserialize_with = "deserialize_tags"
     )]
     pub tags: Vec<String>,
+    // Only the address: the state and the title change on the forge, and a copy here would make a
+    // revision and a sync conflict for each change.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_sorted_set",
+        deserialize_with = "deserialize_pull_requests"
+    )]
+    pub pull_requests: Vec<String>,
     // Fields the model does not name are preserved verbatim across a read-modify-write
     // so a `set` never silently drops them.
     #[serde(flatten)]
@@ -466,8 +475,11 @@ pub fn sorted_set(mut names: Vec<String>) -> Vec<String> {
     names
 }
 
-fn serialize_tags<S: serde::Serializer>(tags: &[String], serializer: S) -> Result<S::Ok, S::Error> {
-    sorted_set(tags.to_vec()).serialize(serializer)
+fn serialize_sorted_set<S: serde::Serializer>(
+    names: &[String],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    sorted_set(names.to_vec()).serialize(serializer)
 }
 
 // A hand-written `tags: [7, on-hold]` means two names, not a type error: the entry is whatever the
@@ -490,6 +502,25 @@ fn deserialize_tags<'de, D: serde::Deserializer<'de>>(
         .map(|value| tag_name_of(value).ok_or_else(|| serde::de::Error::custom(TAGS_EXPECTED)))
         .collect::<Result<Vec<String>, D::Error>>()
         .map(sorted_set)
+}
+
+pub const PULL_REQUESTS_EXPECTED: &str = "expected a list of pull request addresses";
+
+fn pull_requests_of(items: &[serde_yaml::Value]) -> Option<Vec<String>> {
+    items
+        .iter()
+        .map(|item| item.as_str().map(str::to_owned))
+        .collect::<Option<Vec<String>>>()
+        .map(sorted_set)
+}
+
+fn deserialize_pull_requests<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<String>, D::Error> {
+    Vec::<serde_yaml::Value>::deserialize(deserializer)
+        .ok()
+        .and_then(|items| pull_requests_of(&items))
+        .ok_or_else(|| serde::de::Error::custom(PULL_REQUESTS_EXPECTED))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -545,6 +576,7 @@ impl Task {
                 rank: None,
                 dependencies: Vec::new(),
                 tags: Vec::new(),
+                pull_requests: Vec::new(),
                 extra: serde_yaml::Mapping::new(),
             },
             conflicts: Vec::new(),
@@ -584,6 +616,11 @@ impl Task {
     pub fn set_tags(&mut self, tags: Vec<String>) {
         self.frontmatter.tags = sorted_set(tags);
         self.resolve("tags");
+    }
+
+    pub fn set_pull_requests(&mut self, pull_requests: Vec<String>) {
+        self.frontmatter.pull_requests = sorted_set(pull_requests);
+        self.resolve("pull_requests");
     }
 
     fn resolve(&mut self, field: &str) {
@@ -639,6 +676,7 @@ pub struct PartialFrontmatter {
     pub rank: FieldResult<Option<String>>,
     pub dependencies: FieldResult<Vec<String>>,
     pub tags: FieldResult<Vec<String>>,
+    pub pull_requests: FieldResult<Vec<String>>,
 }
 
 // The frontmatter parsed as far as it can be: `Fields` when the YAML is a mapping (each field then
@@ -823,6 +861,17 @@ fn extract_fields(map: &serde_yaml::Mapping) -> PartialFrontmatter {
             ))),
         },
         tags: extract_tags(map),
+        pull_requests: extract_pull_requests(map),
+    }
+}
+
+fn extract_pull_requests(map: &serde_yaml::Mapping) -> FieldResult<Vec<String>> {
+    match map.get("pull_requests") {
+        None => Ok(Vec::new()),
+        Some(value) => value
+            .as_sequence()
+            .and_then(|items| pull_requests_of(items))
+            .ok_or_else(|| FieldError::Invalid(PULL_REQUESTS_EXPECTED.to_owned())),
     }
 }
 

@@ -51,6 +51,7 @@ import {
 
 import { DetailColumns } from "../components/detail-columns"
 import { ConflictBanner, FieldConflictControl } from "../components/field-conflict"
+import { PullRequestsSection } from "../components/pull-requests-section"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { TagsField } from "../components/tags-field"
@@ -246,6 +247,12 @@ function TaskDetailView({
               />
             }
             shown={dependenciesConflict(task.metadata)}
+          />
+          <PullRequestsSection
+            project={project}
+            id={task.id}
+            metadata={task.metadata}
+            pullRequests={task.pull_requests}
           />
           <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
           <SubtasksSection project={project} id={task.id} rows={rows.subtasks} cursor={index} ready={detail !== null} />

@@ -8,8 +8,8 @@ use op_api::{
 };
 use op_task::{Status, rank};
 
-use crate::TaskCommand;
 use crate::plan::Plan;
+use crate::{PullRequestCommand, TaskCommand};
 use crate::{author, tag};
 
 pub fn run(command: TaskCommand, root: &Path, daemon_url: Option<&str>) -> Result<()> {
@@ -20,6 +20,7 @@ pub fn run(command: TaskCommand, root: &Path, daemon_url: Option<&str>) -> Resul
             status,
             dependencies,
             tags,
+            pull_requests,
             body,
             body_file,
         } => {
@@ -34,6 +35,7 @@ pub fn run(command: TaskCommand, root: &Path, daemon_url: Option<&str>) -> Resul
                     parent,
                     dependencies,
                     tags,
+                    pull_requests,
                     body,
                 },
             )
@@ -61,6 +63,26 @@ pub fn run(command: TaskCommand, root: &Path, daemon_url: Option<&str>) -> Resul
         }
         TaskCommand::Comments { id, json } => comments(root, daemon_url, &id, json),
         TaskCommand::Show { id } => show(root, daemon_url, &id),
+        TaskCommand::Pr { command } => {
+            let (id, patch) = match command {
+                PullRequestCommand::Add { id, pull_request } => (
+                    id,
+                    TaskPatch {
+                        add_pull_requests: vec![pull_request],
+                        ..TaskPatch::default()
+                    },
+                ),
+                PullRequestCommand::Remove { id, pull_request } => (
+                    id,
+                    TaskPatch {
+                        remove_pull_requests: vec![pull_request],
+                        ..TaskPatch::default()
+                    },
+                ),
+            };
+            Plan::resolve(root, daemon_url)?.patch(&id, &patch)?;
+            Ok(())
+        }
         TaskCommand::Tree { id, depth, json } => tree(root, daemon_url, &id, depth, json),
         TaskCommand::Move {
             id,
@@ -267,6 +289,9 @@ fn show(root: &Path, daemon_url: Option<&str>, id: &str) -> Result<()> {
             tags.join(", ")
         }
     );
+    for address in metadata.pull_requests() {
+        println!("pull request: {address}");
+    }
     for problem in &detail.problems {
         println!("!       {}", problem.message);
     }
@@ -358,7 +383,14 @@ fn parse_field(field: &str, value: &str) -> Result<TaskPatch> {
             tags: Some(tag::identities(comma_separated(value))?),
             ..TaskPatch::default()
         },
-        other => bail!("unknown field {other:?}; expected status | parent | dependencies | tags"),
+        "pull_requests" => TaskPatch {
+            pull_requests: Some(comma_separated(value)),
+            ..TaskPatch::default()
+        },
+        other => bail!(
+            "unknown field {other:?}; expected status | parent | dependencies | tags | \
+             pull_requests"
+        ),
     })
 }
 

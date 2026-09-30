@@ -44,6 +44,15 @@ fn has_tasks(repo: &gix::Repository) -> bool {
     remotes.any(|reference| reference.is_ok())
 }
 
+// The address as the configuration names it, before any `url.<base>.insteadOf` rewrite: a rewrite
+// says how to reach the remote, and the address says where the repository lives.
+pub fn remote_url(path: &Path, remote: &str) -> Option<String> {
+    let repo = gix::discover(path).ok()?;
+    let key = format!("remote.{remote}.url");
+    let url = repo.config_snapshot().string(&key)?;
+    Some(url.to_string())
+}
+
 // The name and email the repository signs commits with, or the global ones outside a repository.
 pub fn identity(path: &Path) -> Result<Actor, BackendError> {
     let (name, email) = match gix::discover(path) {

@@ -10,7 +10,15 @@ export type FieldConflictOf<F> = Extract<F, AnyConflict>
 
 export type FieldName = keyof FrontmatterFields
 
-const FIELD_NAMES: ReadonlyArray<FieldName> = ["status", "created", "parent", "rank", "dependencies", "tags"]
+const FIELD_NAMES: ReadonlyArray<FieldName> = [
+  "status",
+  "created",
+  "parent",
+  "rank",
+  "dependencies",
+  "tags",
+  "pull_requests",
+]
 
 // Both `Metadata` and `Field<T>` are untagged unions: a value is its bare JSON, and a failure or a
 // conflict is an object carrying `kind`. No value in the schema is an object with a `kind`, so that

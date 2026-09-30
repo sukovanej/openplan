@@ -634,10 +634,68 @@ fn set_updates_only_frontmatter() {
 
     let bad_field = project.run(&["tasks", "set", &id, "colour", "red"]);
     assert!(
-        stderr(&bad_field).contains("expected status | parent | dependencies | tags"),
+        stderr(&bad_field)
+            .contains("expected status | parent | dependencies | tags | pull_requests"),
         "stderr: {}",
         stderr(&bad_field)
     );
+}
+
+#[test]
+fn a_pull_request_is_linked_shown_and_unlinked() {
+    let project = Project::local();
+    let own = "https://github.com/acme/widgets/pull/214";
+    let other = "https://github.com/rust-lang/cargo/pull/1234";
+    let id = ok(project.run(&["tasks", "create", "Parser", "--pr", other]))
+        .trim()
+        .to_owned();
+
+    ok(project.run(&["tasks", "pr", "add", &id, &format!("{own}/files")]));
+    let shown = ok(project.run(&["tasks", "show", &id]));
+    assert!(
+        shown.contains(&format!("pull request: {own}\npull request: {other}\n")),
+        "{shown}"
+    );
+
+    let printed = ok(project.run(&["tasks", "get", &id]));
+    ok(piped(
+        &project,
+        &["tasks", "write", &id, "--file", "-"],
+        printed.as_bytes(),
+    ));
+    let view = json(project.run(&["tasks", "get", &id, "--json"]));
+    assert_eq!(
+        view["metadata"]["pull_requests"],
+        serde_json::json!([own, other])
+    );
+    assert_eq!(view["pull_requests"][0]["short"], "acme/widgets#214");
+
+    ok(project.run(&["tasks", "pr", "remove", &id, other]));
+    let shown = ok(project.run(&["tasks", "show", &id]));
+    assert!(!shown.contains(other), "{shown}");
+
+    let by_number = project.run(&["tasks", "pr", "add", &id, "214"]);
+    assert!(!by_number.status.success());
+    assert!(
+        stderr(&by_number).contains("no GitHub or GitLab remote"),
+        "stderr: {}",
+        stderr(&by_number)
+    );
+
+    ok(project.run(&[
+        "tasks",
+        "set",
+        &id,
+        "pull_requests",
+        &format!("{other}, {own}"),
+    ]));
+    let contents = std::fs::read_to_string(project.task_file(&id)).unwrap();
+    assert!(
+        contents.contains(&format!("pull_requests:\n- {own}\n- {other}\n")),
+        "{contents}"
+    );
+    ok(project.run(&["tasks", "set", &id, "pull_requests", ""]));
+    assert!(!ok(project.run(&["tasks", "show", &id])).contains("pull request"));
 }
 
 #[test]
