@@ -1,26 +1,17 @@
 import { describe, expect, it } from "vitest"
 
-import type { TagView, TaskRef } from "@openplan/api-client"
+import type { TagView } from "@openplan/api-client"
 
 import { DocChangeView, DocumentChangeView, TagChangeView, TaskChangeView } from "../src/change-view"
-import { taskPath } from "../src/task-path"
-import { TaskRefChip } from "../src/task-ref-chip"
+import { RefReader } from "../src/ref-reader"
+import { holding } from "./refs"
 import { render } from "./render"
-
-const tasks: ReadonlyMap<string, TaskRef> = new Map([
-  ["OPP-2", { id: "OPP-2", status: "in_progress", title: "Ship login" }],
-  ["OPP-3", { id: "OPP-3", status: "done", title: "Add schema" }],
-])
-
-const taskChip = (id: string, sign: "+" | "−") => (
-  <TaskRefChip to={taskPath("openplan", id)} id={id} task={tasks.get(id)} sign={sign} />
-)
 
 describe("TaskChangeView", () => {
   it("shows a status change as the two status badges and an arrow, and nothing more", () => {
     const shown = render(
       <TaskChangeView
-        taskChip={taskChip}
+        project="openplan"
         tags={undefined}
         change={{ task: "OPP-1", kind: "modified", fields: [{ field: "status", from: "todo", to: "in_review" }] }}
       />,
@@ -32,7 +23,7 @@ describe("TaskChangeView", () => {
   it("gives every other field an icon beside its words", () => {
     const shown = render(
       <TaskChangeView
-        taskChip={taskChip}
+        project="openplan"
         tags={undefined}
         change={{
           task: "OPP-1",
@@ -47,11 +38,11 @@ describe("TaskChangeView", () => {
 
   it("names a task that came or went", () => {
     expect(
-      render(<TaskChangeView change={{ task: "OPP-1", kind: "added" }} tags={undefined} taskChip={taskChip} />)
+      render(<TaskChangeView change={{ task: "OPP-1", kind: "added" }} tags={undefined} project="openplan" />)
         .textContent,
     ).toBe("Created")
     expect(
-      render(<TaskChangeView change={{ task: "OPP-1", kind: "removed" }} tags={undefined} taskChip={taskChip} />)
+      render(<TaskChangeView change={{ task: "OPP-1", kind: "removed" }} tags={undefined} project="openplan" />)
         .textContent,
     ).toBe("Deleted")
   })
@@ -95,7 +86,7 @@ describe("tag changes with the registry", () => {
   it("show each tag that joined or left a task as a chip that carries its sign", () => {
     const shown = render(
       <TaskChangeView
-        taskChip={taskChip}
+        project="openplan"
         tags={registry}
         change={{ task: "OPP-1", kind: "modified", fields: [{ field: "tags", from: ["gone", "x"], to: ["x", "bug"] }] }}
       />,
@@ -110,7 +101,7 @@ describe("tag changes with the registry", () => {
   it("keep the words for tags that only changed order", () => {
     const shown = render(
       <TaskChangeView
-        taskChip={taskChip}
+        project="openplan"
         tags={registry}
         change={{ task: "OPP-1", kind: "modified", fields: [{ field: "tags", from: ["a", "b"], to: ["b", "a"] }] }}
       />,
@@ -133,11 +124,13 @@ describe("tag changes with the registry", () => {
 describe("dependency changes", () => {
   const dependencies = (from: ReadonlyArray<string>, to: ReadonlyArray<string>) =>
     render(
-      <TaskChangeView
-        tags={undefined}
-        taskChip={taskChip}
-        change={{ task: "OPP-1", kind: "modified", fields: [{ field: "dependencies", from, to }] }}
-      />,
+      <RefReader value={holding({ "OPP-2": "in_progress", "OPP-3": "done" })}>
+        <TaskChangeView
+          project="openplan"
+          tags={undefined}
+          change={{ task: "OPP-1", kind: "modified", fields: [{ field: "dependencies", from, to }] }}
+        />
+      </RefReader>,
     )
 
   it("show each task that joined or left as a linked chip with its sign and key", () => {
@@ -152,20 +145,10 @@ describe("dependency changes", () => {
       { text: "+OPP-2", to: "/openplan/task/OPP-2", dangling: false },
       { text: "−OPP-9", to: "/openplan/task/OPP-9", dangling: true },
     ])
-    expect(shown.querySelector("a svg.lucide-circle-dashed")).not.toBeNull()
+    expect(shown.querySelector("a [aria-label='In progress']")).not.toBeNull()
   })
 
   it("keep the words for dependencies that only changed order", () => {
     expect(dependencies(["OPP-2", "OPP-3"], ["OPP-3", "OPP-2"]).textContent).toBe("Dependencies reordered")
-  })
-})
-
-describe("TaskRefChip", () => {
-  it("claims neither a status nor a missing task while its task is being read", () => {
-    const chip = render(<TaskRefChip to="/openplan/task/OPP-2" id="OPP-2" task={undefined} loading sign="+" />)
-    const link = chip.querySelector("a")!
-    expect(link.textContent).toBe("+OPP-2")
-    expect(link.classList.contains("border-dashed")).toBe(false)
-    expect(link.querySelector("svg")).toBeNull()
   })
 })

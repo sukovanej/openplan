@@ -1,16 +1,12 @@
 import { Facet } from "@codemirror/state"
 import { createContext, type ReactNode, useContext } from "react"
 
-import type { DocRef, TaskRef } from "@openplan/api-client"
-
 export interface EditorScope {
   readonly project: string
   readonly abbreviation: string
-  readonly refs: ReadonlyArray<TaskRef>
-  readonly docRefs: ReadonlyArray<DocRef>
 }
 
-export const EditorScopeContext = createContext<EditorScope>({ project: "", abbreviation: "", refs: [], docRefs: [] })
+export const EditorScopeContext = createContext<EditorScope>({ project: "", abbreviation: "" })
 
 export const useEditorScope = (): EditorScope => useContext(EditorScopeContext)
 

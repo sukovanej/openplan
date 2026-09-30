@@ -56,7 +56,6 @@ struct Haystack {
 pub struct HierarchyContext {
     pub parent_title: Option<String>,
     pub children: Vec<TaskChild>,
-    pub refs: Vec<TaskRef>,
     pub depends_on: Vec<TaskRef>,
     pub blocks: Vec<TaskRef>,
 }
@@ -246,7 +245,7 @@ impl Index {
         let entry = self.tasks.get(&number)?;
         let partial = op_task::parse_partial(&entry.raw);
         let id = self.key(number);
-        let hierarchy = self.hierarchy(project, &id, &entry.metadata, &partial.body);
+        let hierarchy = self.hierarchy(project, &id, &entry.metadata);
         Some(TaskDetail {
             project: project.to_owned(),
             id,
@@ -260,8 +259,6 @@ impl Index {
             author: self.authors.get(&number).cloned(),
             parent_title: hierarchy.parent_title,
             children: hierarchy.children,
-            refs: hierarchy.refs,
-            doc_refs: self.doc_refs_in(layout::TASKS, &partial.body),
             depends_on: hierarchy.depends_on,
             blocks: hierarchy.blocks,
         })
@@ -314,14 +311,8 @@ impl Index {
     }
 
     // The immediate neighbourhood of a task: the parent's title, the direct children in sibling
-    // order, every `[[id]]` in the body, and both directions of its dependencies.
-    pub fn hierarchy(
-        &self,
-        project: &str,
-        id: &str,
-        metadata: &Metadata,
-        body: &str,
-    ) -> HierarchyContext {
+    // order, and both directions of its dependencies.
+    pub fn hierarchy(&self, project: &str, id: &str, metadata: &Metadata) -> HierarchyContext {
         let rows = self.list(project);
         let by_id: HashMap<&str, &TaskListItem> =
             rows.iter().map(|row| (row.id.as_str(), row)).collect();
@@ -357,10 +348,6 @@ impl Index {
         HierarchyContext {
             parent_title,
             children,
-            refs: match self.abbreviation {
-                Some(abbreviation) => body_refs(abbreviation, layout::TASKS, body, &by_id),
-                None => Vec::new(),
-            },
             depends_on,
             blocks: blocked.into_iter().map(task_ref).collect(),
         }
@@ -502,29 +489,6 @@ fn depends_on_id(row: &TaskListItem, id: &str) -> bool {
         .dependencies()
         .iter()
         .any(|entry| op_task::ref_target(entry) == id)
-}
-
-// Every `[[…]]` in `body` that resolves to a known task, once each, in first-seen order.
-fn body_refs(
-    abbreviation: Abbreviation,
-    dir: &str,
-    body: &str,
-    by_id: &HashMap<&str, &TaskListItem>,
-) -> Vec<TaskRef> {
-    let mut refs = Vec::new();
-    let mut seen = HashSet::new();
-    for (_, inner) in op_task::body_ref_spans(body) {
-        let Some(number) = op_task::body_ref_id(abbreviation, dir, inner) else {
-            continue;
-        };
-        let key = abbreviation.format_key(number);
-        if let Some(row) = by_id.get(key.as_str())
-            && seen.insert(key)
-        {
-            refs.push(task_ref(row));
-        }
-    }
-    refs
 }
 
 pub fn comments_of(body: &str) -> Vec<Comment> {

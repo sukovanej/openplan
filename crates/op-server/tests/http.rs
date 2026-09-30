@@ -438,11 +438,6 @@ async fn task_detail_carries_parent_title_children_and_resolved_refs() {
     );
     assert_eq!(children[0]["title"], "A");
 
-    let refs = detail["refs"].as_array().unwrap();
-    assert_eq!(refs.len(), 1, "one task under two spellings: {refs:?}");
-    assert_eq!(refs[0]["id"], "OPP-1");
-    assert_eq!(refs[0]["title"], "Epic");
-
     let epic = json_of(&state, "/api/projects/test/tasks/OPP-1").await;
     assert!(epic.get("parent_title").is_none());
     assert_eq!(epic["children"][0]["id"], "OPP-2");

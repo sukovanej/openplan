@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { Check, FileText, Pencil, Plus, Trash2, Undo2, X } from "lucide-react"
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom"
@@ -191,7 +191,7 @@ function DocAtRevision({ project, name, revision }: { project: string; name: str
             ) : doc === undefined ? (
               <EmptyState title="The doc did not exist at this revision" detail={name} />
             ) : (
-              <DocSnapshotView project={project} name={name} doc={doc} at={entry?.revision.at} />
+              <DocSnapshotView project={project} doc={doc} at={entry?.revision.at} />
             )}
           </PanelBody>
         </>
@@ -201,21 +201,8 @@ function DocAtRevision({ project, name, revision }: { project: string; name: str
   )
 }
 
-// The revision names tasks and docs alone. The live doc has them resolved to titles, which is the
-// best a chip can show.
-function DocSnapshotView({
-  project,
-  name,
-  doc,
-  at,
-}: {
-  project: string
-  name: string
-  doc: DocSnapshot
-  at: string | undefined
-}) {
+function DocSnapshotView({ project, doc, at }: { project: string; doc: DocSnapshot; at: string | undefined }) {
   const abbreviation = useAbbreviation(project)
-  const live = useQueryClient().getQueryData<DocDetail>(docKey(project, name))
   const segments = useMemo(() => bodySegments(doc.body), [doc.body])
   return (
     <>
@@ -223,14 +210,7 @@ function DocSnapshotView({
       <MetaLine className="mb-4 h-4">
         <TaskTimes created={docCreatedOf(doc.metadata)} updated={at} problems={docProblems(doc.metadata)} />
       </MetaLine>
-      <TaskBodyWithConflicts
-        segments={segments}
-        project={project}
-        refs={live?.refs}
-        docRefs={live?.doc_refs}
-        abbreviation={abbreviation}
-        data-keys-ignore
-      />
+      <TaskBodyWithConflicts segments={segments} project={project} abbreviation={abbreviation} data-keys-ignore />
     </>
   )
 }

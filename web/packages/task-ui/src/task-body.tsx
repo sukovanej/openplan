@@ -1,10 +1,9 @@
 import { Square, SquareCheckBig } from "lucide-react"
-import { type ComponentProps, createContext, memo, useContext, useMemo } from "react"
+import { type ComponentProps, memo, useMemo } from "react"
 import Markdown, { type Components } from "react-markdown"
 import { Link } from "react-router-dom"
 import remarkGfm from "remark-gfm"
 
-import type { DocRef, TaskRef } from "@openplan/api-client"
 import { cn, Prose } from "@openplan/ui"
 
 import { CodeBlock } from "./code-block"
@@ -13,32 +12,19 @@ import { taskLinkPlugins } from "./task-links"
 import { docRouteOf, taskRouteOf } from "./task-path"
 import { TaskRefChip } from "./task-ref-chip"
 
-const RefsContext = createContext<ReadonlyMap<string, TaskRef>>(new Map())
-const DocRefsContext = createContext<ReadonlyMap<string, DocRef>>(new Map())
-
 const linkClass =
   "font-medium text-foreground underline decoration-1 decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
-
-function BodyTaskRef({ href, id }: { href: string; id: string }) {
-  const refs = useContext(RefsContext)
-  return <TaskRefChip to={href} id={id} task={refs.get(id)} />
-}
-
-function BodyDocRef({ href, name }: { href: string; name: string }) {
-  const refs = useContext(DocRefsContext)
-  return <DocRefChip to={href} name={name} doc={refs.get(name)} />
-}
 
 const components: Components = {
   pre: CodeBlock,
   a({ href, children }) {
     const task = href === undefined ? undefined : taskRouteOf(href)
     if (href !== undefined && task !== undefined) {
-      return <BodyTaskRef href={href} id={task.id} />
+      return <TaskRefChip to={href} project={task.project} id={task.id} />
     }
     const doc = href === undefined ? undefined : docRouteOf(href)
     if (href !== undefined && doc !== undefined) {
-      return <BodyDocRef href={href} name={doc.name} />
+      return <DocRefChip to={href} project={doc.project} name={doc.name} />
     }
     if (href !== undefined && href.startsWith("/")) {
       return (
@@ -81,23 +67,15 @@ const inlineComponents: Components = { ...components, p: ({ children }) => <>{ch
 interface BodyScope {
   project: string
   markdown: string
-  refs?: ReadonlyArray<TaskRef>
-  docRefs?: ReadonlyArray<DocRef>
   abbreviation: string | undefined
 }
 
-function Rendered({ project, markdown, refs, docRefs, abbreviation, parts }: BodyScope & { parts: Components }) {
-  const refMap = useMemo(() => new Map((refs ?? []).map((ref) => [ref.id, ref])), [refs])
-  const docRefMap = useMemo(() => new Map((docRefs ?? []).map((ref) => [ref.name, ref])), [docRefs])
+function Rendered({ project, markdown, abbreviation, parts }: BodyScope & { parts: Components }) {
   const plugins = useMemo(() => [remarkGfm, taskLinkPlugins({ project, abbreviation })], [project, abbreviation])
   return (
-    <RefsContext.Provider value={refMap}>
-      <DocRefsContext.Provider value={docRefMap}>
-        <Markdown remarkPlugins={plugins} components={parts}>
-          {markdown}
-        </Markdown>
-      </DocRefsContext.Provider>
-    </RefsContext.Provider>
+    <Markdown remarkPlugins={plugins} components={parts}>
+      {markdown}
+    </Markdown>
   )
 }
 
@@ -106,21 +84,12 @@ function Rendered({ project, markdown, refs, docRefs, abbreviation, parts }: Bod
 export const TaskBody = memo(function TaskBody({
   project,
   markdown,
-  refs,
-  docRefs,
   abbreviation,
   ...props
 }: ComponentProps<typeof Prose> & BodyScope) {
   return (
     <Prose {...props}>
-      <Rendered
-        project={project}
-        markdown={markdown}
-        refs={refs}
-        docRefs={docRefs}
-        abbreviation={abbreviation}
-        parts={components}
-      />
+      <Rendered project={project} markdown={markdown} abbreviation={abbreviation} parts={components} />
     </Prose>
   )
 })

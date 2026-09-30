@@ -54,7 +54,6 @@ import { ConflictBanner, FieldConflictControl } from "../components/field-confli
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { TagsField } from "../components/tags-field"
-import { TaskChip } from "../components/task-chip"
 import { TaskContent } from "../components/task-content"
 import { TaskHistory } from "../components/task-history"
 import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
@@ -222,9 +221,7 @@ function TaskDetailView({
                 id={task.id}
                 title={detail.title}
                 description={detail.description}
-                refs={detail.refs}
                 problems={task.problems}
-                docRefs={detail.doc_refs}
                 abbreviation={abbreviation}
                 meta={meta}
               />
@@ -253,13 +250,7 @@ function TaskDetailView({
           <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
           <SubtasksSection project={project} id={task.id} rows={rows.subtasks} cursor={index} ready={detail !== null} />
           {detail !== null && (
-            <CommentThread
-              project={project}
-              comments={detail.comments ?? NO_COMMENTS}
-              refs={detail.refs}
-              docRefs={detail.doc_refs}
-              abbreviation={abbreviation}
-            />
+            <CommentThread project={project} comments={detail.comments ?? NO_COMMENTS} abbreviation={abbreviation} />
           )}
           {detail !== null && <TaskHistory project={project} id={task.id} selected={undefined} />}
         </>
@@ -301,7 +292,7 @@ function TaskAtRevision({ project, id, revision }: { project: string; id: string
             ) : task === undefined ? (
               <EmptyState title="The task did not exist at this revision" detail={id} />
             ) : (
-              <Snapshot project={project} id={id} task={task} entry={entry} />
+              <Snapshot project={project} task={task} entry={entry} />
             )}
           </PanelBody>
         </>
@@ -357,12 +348,7 @@ function RevisionNotice({
       {entry !== undefined && (
         <>
           {change !== undefined && (
-            <TaskChangeView
-              change={change}
-              tags={tags}
-              taskChip={(key, sign) => <TaskChip project={project} id={key} sign={sign} />}
-              className="text-foreground/90 text-sm"
-            />
+            <TaskChangeView project={project} change={change} tags={tags} className="text-foreground/90 text-sm" />
           )}
           <RevisionMeta revision={entry.revision} />
         </>
@@ -371,24 +357,9 @@ function RevisionNotice({
   )
 }
 
-function Snapshot({
-  project,
-  id,
-  task,
-  entry,
-}: {
-  project: string
-  id: string
-  task: TaskSnapshot
-  entry: HistoryEntry | undefined
-}) {
+function Snapshot({ project, task, entry }: { project: string; task: TaskSnapshot; entry: HistoryEntry | undefined }) {
   const abbreviation = useAbbreviation(project)
   const { byName: tags } = useTags(project)
-  // The revision names tasks by key alone. The live task has them resolved to a title and a status,
-  // which is the best a chip can show; a key it no longer holds reads as unresolved.
-  const live = useQueryClient().getQueryData<TaskDetail>(taskKey(project, id))
-  const refs = live?.refs
-  const docRefs = live?.doc_refs
   return (
     <>
       <TaskTitle title={task.title} />
@@ -405,20 +376,12 @@ function Snapshot({
       <TaskBodyWithConflicts
         segments={bodySegments(task.description)}
         project={project}
-        refs={refs}
-        docRefs={docRefs}
         abbreviation={abbreviation}
         proseClassName={PROSE}
         data-keys-ignore
       />
       {task.comments !== undefined && (
-        <CommentThread
-          project={project}
-          comments={task.comments}
-          refs={refs}
-          docRefs={docRefs}
-          abbreviation={abbreviation}
-        />
+        <CommentThread project={project} comments={task.comments} abbreviation={abbreviation} />
       )}
     </>
   )

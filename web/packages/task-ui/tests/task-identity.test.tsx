@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 
+import { DocRefChip } from "../src/doc-ref-chip"
+import { RefReader } from "../src/ref-reader"
 import { TaskIdentity } from "../src/task-identity"
 import { TaskRefChip } from "../src/task-ref-chip"
+import { holding } from "./refs"
 import { render } from "./render"
 
 describe("TaskIdentity", () => {
@@ -25,20 +28,56 @@ describe("TaskIdentity", () => {
   })
 })
 
+const store = holding({ "OPP-42": "done" }, ["storage"])
+
 describe("TaskRefChip", () => {
-  it("names the referenced task by its key alone", () => {
-    const task = { id: "OPP-42", status: "done" as const, title: "Ship login page" }
-    const root = render(<TaskRefChip to="/task/OPP-42" id="OPP-42" task={task} />)
+  it("shows the status and the key of the task it reads", () => {
+    const root = render(
+      <RefReader value={store}>
+        <TaskRefChip to="/openplan/task/OPP-42" project="openplan" id="OPP-42" />
+      </RefReader>,
+    )
     const link = root.querySelector("a")!
-    expect(link.getAttribute("href")).toBe("/task/OPP-42")
+    expect(link.getAttribute("href")).toBe("/openplan/task/OPP-42")
     expect(link.className).not.toContain("border-dashed")
+    expect(link.querySelector("[aria-label='Done']")).not.toBeNull()
     expect(link.textContent).toBe("OPP-42")
   })
 
-  it("renders a reference it cannot resolve dashed, with its key alone", () => {
-    const root = render(<TaskRefChip to="/task/OPP-99" id="OPP-99" task={undefined} />)
+  it("renders a task the store does not hold dashed", () => {
+    const root = render(
+      <RefReader value={store}>
+        <TaskRefChip to="/openplan/task/OPP-99" project="openplan" id="OPP-99" />
+      </RefReader>,
+    )
     const link = root.querySelector("a")!
     expect(link.className).toContain("border-dashed")
     expect(link.textContent).toBe("OPP-99")
+  })
+
+  it("claims neither a status nor a missing task while its task is being read", () => {
+    const link = render(<TaskRefChip to="/openplan/task/OPP-2" project="openplan" id="OPP-2" sign="+" />).querySelector(
+      "a",
+    )!
+    expect(link.textContent).toBe("+OPP-2")
+    expect(link.className).not.toContain("border-dashed")
+    expect(link.querySelector("svg")).toBeNull()
+  })
+})
+
+describe("DocRefChip", () => {
+  it("shows the name of the doc, and renders a doc the store does not hold dashed", () => {
+    const root = render(
+      <RefReader value={store}>
+        <DocRefChip to="/openplan/doc/storage" project="openplan" name="storage" />
+        <DocRefChip to="/openplan/doc/gone" project="openplan" name="gone" />
+      </RefReader>,
+    )
+    expect(
+      [...root.querySelectorAll("a")].map((link) => [link.textContent, link.className.includes("border-dashed")]),
+    ).toEqual([
+      ["storage", false],
+      ["gone", true],
+    ])
   })
 })

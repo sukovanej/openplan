@@ -8,17 +8,16 @@ import {
 import { EditorSelection, type Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 
-import type { DocRef, TaskRef } from "@openplan/api-client"
+import type { DocListItem, TaskRef } from "@openplan/api-client"
 
 import { isInCode } from "./syntax"
 
 export type RefOption =
   | { readonly kind: "task"; readonly task: TaskRef; readonly indices: ReadonlyArray<number> }
-  | { readonly kind: "doc"; readonly doc: DocRef; readonly indices: ReadonlyArray<number> }
+  | { readonly kind: "doc"; readonly doc: Pick<DocListItem, "name" | "title">; readonly indices: ReadonlyArray<number> }
 
 export interface RefSearch {
   readonly search: (query: string) => ReadonlyArray<RefOption>
-  readonly picked: (option: RefOption) => void
 }
 
 const spelled = (option: RefOption) =>
@@ -45,7 +44,6 @@ const references =
           detail,
           type: option.kind,
           apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
-            search.picked(option)
             const closing = view.state.sliceDoc(to, to + 2) === "]]" ? 2 : 0
             const insert = `[[${target}]] `
             view.dispatch({
