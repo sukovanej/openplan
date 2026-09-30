@@ -123,7 +123,7 @@ pub(crate) async fn draw_diagram(
     path = "/api/flow/drawing",
     params(
         ("project" = Option<Vec<String>>, Query, description = "Project name; omit to take every project the daemon serves"),
-        ("status" = Option<Vec<Status>>, Query, description = "Seed status; omit it to seed every task that is not done or cancelled"),
+        ("status" = Option<Vec<Status>>, Query, description = "Seed status; omit it to seed every task that is not in the backlog, done, or cancelled"),
         ("task" = Option<Vec<String>>, Query, description = "Task key; it needs a project"),
         ("tag" = Option<Vec<String>>, Query, description = "Tag name"),
         ("width" = Option<u32>, Query, description = "Width of the page in CSS pixels. With the height, each part of the flow that no edge joins to another is laid out on its own, and the parts fill the shape of the page"),

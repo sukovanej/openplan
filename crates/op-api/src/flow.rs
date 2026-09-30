@@ -30,12 +30,13 @@ impl FlowQuery {
     fn selects(&self, task: &TaskListItem) -> bool {
         let by_project =
             self.projects.is_empty() || self.projects.iter().any(|name| name == &task.project);
-        // With no status named, every task that somebody can still implement is a seed. A finished
-        // task seeds nothing, because the flow orders the work that is left; a file whose status
-        // does not parse is work, and it stays visible. A key names one task on purpose, so that
-        // task seeds the flow whatever its status.
+        // With no status named, every task that is ready for work is a seed. A finished task seeds
+        // nothing, because the flow orders the work that is left. A backlog task is not ready, so it
+        // enters only when growth pulls it in for a shown task. A file whose status does not
+        // parse is work, and it stays visible. A key names one task on purpose, so that task seeds
+        // the flow whatever its status.
         let by_status = match (self.statuses.is_empty(), self.tasks.is_empty()) {
-            (true, true) => is_remaining(task),
+            (true, true) => is_remaining(task) && task.metadata.status() != Some(Status::Backlog),
             (true, false) => true,
             (false, _) => task
                 .metadata

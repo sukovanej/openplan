@@ -1,8 +1,8 @@
 use op_diagram::{Attribute, Cluster, Icon, Node, Shape};
 
-use crate::scene::{Anchor, IconBox, Outline, Rect, Text};
+use crate::scene::{Anchor, IconBox, Outline, Rect, Text, move_texts};
 use crate::text::{
-    Block, CAPTION, CELL, CODE, COMMENT, EDGE_LABEL, HEADER, KEY, LABEL, TABLE_HEADER, block,
+    Block, CAPTION, CELL, CODE, COMMENT, EDGE_LABEL, HEADER, KEY, LABEL, Style, TABLE_HEADER, block,
 };
 
 pub(super) const MAX_LABEL: f32 = 200.0;
@@ -24,6 +24,7 @@ const ICON: f32 = 16.0;
 const ICON_GAP: f32 = 10.0;
 const HEADER_ICON: f32 = 14.0;
 const HEADER_ICON_GAP: f32 = 8.0;
+const CAPTION_GAP: f32 = 8.0;
 
 pub(super) struct Body {
     pub(super) width: f32,
@@ -37,6 +38,9 @@ pub(super) fn node(node: &Node) -> Body {
     if let Shape::Table { attributes } = &node.shape {
         return table(&node.label, attributes);
     }
+    if let Some(icon) = node.icon {
+        return card(node, icon);
+    }
     let caption = match &node.caption {
         Some(caption) => block(std::slice::from_ref(caption), CAPTION, MAX_LABEL),
         None => Block::empty(CAPTION),
@@ -45,43 +49,46 @@ pub(super) fn node(node: &Node) -> Body {
         Shape::Diamond => diamond_label(&node.label, &caption),
         _ => block(&node.label, LABEL, MAX_LABEL),
     };
-    let text_width = caption.width.max(label.width);
-    let text_height = caption.height + label.height;
-    let Some(icon) = node.icon else {
-        let frame = frame(&node.shape, text_width, text_height);
-        let mut texts = caption.centered(frame.text_center, frame.text_top);
-        texts.extend(label.centered(frame.text_center, frame.text_top + caption.height));
-        return Body {
-            width: frame.width,
-            height: frame.height,
-            outline: outline(&node.shape, frame.width),
-            texts,
-            icon: None,
-        };
-    };
-    // Beside an icon the text starts at its left edge, as it does on a task card. All cards take the
-    // width of the longest line a label can have, so the cards of a flow line up in columns.
-    let content_width = ICON + ICON_GAP + MAX_LABEL.max(text_width);
-    let content_height = text_height.max(ICON);
-    let frame = frame(&node.shape, content_width, content_height);
-    let left = frame.text_center - content_width / 2.0;
-    let text_top = frame.text_top + (content_height - text_height) / 2.0;
-    let mut texts = caption.left_aligned(left + ICON + ICON_GAP, text_top);
-    texts.extend(label.left_aligned(left + ICON + ICON_GAP, text_top + caption.height));
+    let frame = frame(
+        &node.shape,
+        caption.width.max(label.width),
+        caption.height + label.height,
+    );
+    let mut texts = caption.centered(frame.text_center, frame.text_top);
+    texts.extend(label.centered(frame.text_center, frame.text_top + caption.height));
     Body {
         width: frame.width,
         height: frame.height,
         outline: outline(&node.shape, frame.width),
         texts,
-        icon: Some(IconBox {
+        icon: None,
+    }
+}
+
+// All cards take the width of the longest line a label can have beside the icon, so the cards of a
+// flow line up in columns.
+fn card(node: &Node, icon: Icon) -> Body {
+    let width = ICON + ICON_GAP + MAX_LABEL;
+    let title = title(
+        Some(Mark {
             icon,
-            rect: Rect {
-                x: left,
-                y: frame.text_top + (content_height - ICON) / 2.0,
-                width: ICON,
-                height: ICON,
-            },
+            size: ICON,
+            gap: ICON_GAP,
         }),
+        node.caption.as_deref(),
+        &node.label,
+        LABEL,
+        width,
+    );
+    let content_width = width.max(title.width);
+    let frame = frame(&node.shape, content_width, title.height);
+    let left = frame.text_center - content_width / 2.0;
+    Body {
+        width: frame.width,
+        height: frame.height,
+        outline: outline(&node.shape, frame.width),
+        texts: title.texts(left, frame.text_top),
+        icon: title.icon(left, frame.text_top),
     }
 }
 
@@ -269,66 +276,101 @@ fn key_list(attribute: &Attribute) -> String {
     attribute.keys.join(", ")
 }
 
-pub(super) struct Header {
-    pub(super) caption: Block,
-    pub(super) label: Block,
-    pub(super) icon: Option<Icon>,
+struct Mark {
+    icon: Icon,
+    size: f32,
+    gap: f32,
 }
 
-impl Header {
-    pub(super) fn width(&self) -> f32 {
-        self.indent() + self.caption.width.max(self.label.width)
-    }
+// The line of the key takes the line height of the label too, so the height stays a whole number.
+pub(super) struct Title {
+    pub(super) width: f32,
+    pub(super) height: f32,
+    texts: Vec<Text>,
+    icon: Option<IconBox>,
+}
 
-    pub(super) fn height(&self) -> f32 {
-        let text_height = self.text_height();
-        match self.icon {
-            Some(_) => text_height.max(HEADER_ICON),
-            None => text_height,
+fn title(
+    mark: Option<Mark>,
+    caption: Option<&str>,
+    label: &[String],
+    style: Style,
+    width: f32,
+) -> Title {
+    let line = style.line_height();
+    let caption_left = mark.as_ref().map_or(0.0, |mark| mark.size + mark.gap);
+    let (lead_end, label_left) = match (&mark, caption) {
+        (_, Some(caption)) => {
+            let end = caption_left + CAPTION.width(caption);
+            (end, end + CAPTION_GAP)
         }
+        (Some(mark), None) => (mark.size, caption_left),
+        (None, None) => {
+            let label = block(label, style, width);
+            return Title {
+                width: label.width,
+                height: label.height,
+                texts: label.left_aligned(0.0, 0.0),
+                icon: None,
+            };
+        }
+    };
+    let mut texts: Vec<Text> = caption
+        .map(|caption| CAPTION.text(caption, caption_left, style.baseline(0.0), Anchor::Start))
+        .into_iter()
+        .collect();
+    let icon = mark.map(|mark| IconBox {
+        icon: mark.icon,
+        rect: Rect {
+            x: 0.0,
+            y: (line - mark.size) / 2.0,
+            width: mark.size,
+            height: mark.size,
+        },
+    });
+    let beside = block(label, style, width - label_left);
+    let (width, height) = if beside.lines.len() <= 1 && label_left + beside.width <= width {
+        texts.extend(beside.left_aligned(label_left, 0.0));
+        (label_left + beside.width, line)
+    } else {
+        let below = block(label, style, width);
+        texts.extend(below.left_aligned(0.0, line));
+        (lead_end.max(below.width), line + below.height)
+    };
+    Title {
+        width,
+        height,
+        texts,
+        icon,
     }
+}
 
+impl Title {
     pub(super) fn texts(&self, left: f32, top: f32) -> Vec<Text> {
-        let left = left + self.indent();
-        let top = top + (self.height() - self.text_height()) / 2.0;
-        let mut texts = self.caption.left_aligned(left, top);
-        texts.extend(self.label.left_aligned(left, top + self.caption.height));
+        let mut texts = self.texts.clone();
+        move_texts(&mut texts, left, top);
         texts
     }
 
     pub(super) fn icon(&self, left: f32, top: f32) -> Option<IconBox> {
-        self.icon.map(|icon| IconBox {
-            icon,
-            rect: Rect {
-                x: left,
-                y: top + (self.height() - HEADER_ICON) / 2.0,
-                width: HEADER_ICON,
-                height: HEADER_ICON,
-            },
-        })
-    }
-
-    fn text_height(&self) -> f32 {
-        self.caption.height + self.label.height
-    }
-
-    fn indent(&self) -> f32 {
-        match self.icon {
-            Some(_) => HEADER_ICON + HEADER_ICON_GAP,
-            None => 0.0,
-        }
+        self.icon.map(|icon| icon.moved(left, top))
     }
 }
 
-pub(super) fn header(cluster: &Cluster) -> Header {
-    Header {
-        caption: match &cluster.caption {
-            Some(caption) => block(std::slice::from_ref(caption), CAPTION, MAX_HEADER),
-            None => Block::empty(CAPTION),
-        },
-        label: block(&cluster.label, HEADER, MAX_HEADER),
-        icon: cluster.icon,
-    }
+pub(super) fn header(cluster: &Cluster) -> Title {
+    let mark = cluster.icon.map(|icon| Mark {
+        icon,
+        size: HEADER_ICON,
+        gap: HEADER_ICON_GAP,
+    });
+    let width = mark.as_ref().map_or(0.0, |mark| mark.size + mark.gap) + MAX_HEADER;
+    title(
+        mark,
+        cluster.caption.as_deref(),
+        &cluster.label,
+        HEADER,
+        width,
+    )
 }
 
 pub(super) struct Label {

@@ -52,5 +52,5 @@ export function describeSelection(selection: FlowSelection): string {
     ...selection.tags.map((tag) => `#${tag}`),
     ...selection.statuses.map(statusText),
   ]
-  return parts.length === 0 ? "Every task that is not finished" : parts.join(" · ")
+  return parts.length === 0 ? "Every task that is not in the backlog or finished" : parts.join(" · ")
 }

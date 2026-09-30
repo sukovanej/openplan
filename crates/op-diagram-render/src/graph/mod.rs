@@ -248,10 +248,10 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
         })
         .collect();
     let bodies: Vec<size::Body> = graph.nodes.iter().map(size::node).collect();
-    let headers: Vec<size::Header> = graph.clusters.iter().map(size::header).collect();
+    let headers: Vec<size::Title> = graph.clusters.iter().map(size::header).collect();
     let pads: Vec<Pad> = headers
         .iter()
-        .map(|header| cluster_pad(direction, header.height()))
+        .map(|header| cluster_pad(direction, header.height))
         .collect();
 
     // A cluster with no node and no cluster inside still needs a place, so it gets an empty vertex.
@@ -550,7 +550,7 @@ pub(crate) fn layout(graph: &Graph) -> Scene {
         .iter()
         .map(|header| {
             if orient.vertical() {
-                header.width() + 2.0 * CLUSTER_PAD
+                header.width + 2.0 * CLUSTER_PAD
             } else {
                 0.0
             }
@@ -1043,7 +1043,7 @@ impl Rows {
     // span enough depth for it. Its last row grows until it does.
     fn fit_headers(
         mut self,
-        headers: &[size::Header],
+        headers: &[size::Title],
         span: &[(usize, usize)],
         vertical: bool,
         vertices: &[Vertex],
@@ -1057,7 +1057,7 @@ impl Rows {
             let depths = self.group_depths(vertices, parents, pads, headers.len());
             let mut grew = false;
             for (group, header) in headers.iter().enumerate() {
-                let need = header.width() + 2.0 * CLUSTER_PAD;
+                let need = header.width + 2.0 * CLUSTER_PAD;
                 let have = depths[group].1 - depths[group].0;
                 if have + 0.5 < need {
                     self.row[span[group].1] += need - have;
