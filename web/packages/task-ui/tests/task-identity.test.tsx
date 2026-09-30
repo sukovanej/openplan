@@ -26,13 +26,13 @@ describe("TaskIdentity", () => {
 })
 
 describe("TaskRefChip", () => {
-  it("shows the referenced task's status and title", () => {
+  it("names the referenced task by its key alone", () => {
     const task = { id: "OPP-42", status: "done" as const, title: "Ship login page" }
     const root = render(<TaskRefChip to="/task/OPP-42" id="OPP-42" task={task} />)
     const link = root.querySelector("a")!
     expect(link.getAttribute("href")).toBe("/task/OPP-42")
     expect(link.className).not.toContain("border-dashed")
-    expect(link.textContent).toBe("OPP-42Ship login page")
+    expect(link.textContent).toBe("OPP-42")
   })
 
   it("renders a reference it cannot resolve dashed, with its key alone", () => {

@@ -10,8 +10,8 @@ import { TaskIdentity, UnresolvedMark } from "./task-identity"
 const CHIP =
   "not-prose relative -top-px mx-0.5 inline-flex max-w-full items-center rounded-md border px-1.5 py-0.5 align-middle text-sm font-medium leading-5 no-underline transition-colors"
 
-// A reference the store cannot resolve has no status and no title to show; it renders dashed, with
-// its key as all there is to name it. A reference still being read is neither yet, so it holds the
+// A chip names its task by the key alone. A reference the store cannot resolve has no status to show;
+// it renders dashed. A reference still being read is neither yet, so it holds the
 // place of its mark and claims nothing. `sign` marks a task that joined or left a set.
 export function TaskRefChip({
   to,
@@ -43,7 +43,6 @@ export function TaskRefChip({
         status={task?.status}
         mark={unresolved ? <UnresolvedMark /> : task === undefined ? <LoadingMark /> : undefined}
         id={id}
-        title={task?.title}
       />
     </Link>
   )

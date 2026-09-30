@@ -89,7 +89,7 @@ describe("a task chip", () => {
     served.tasks.set("OPP-2", { title: "Ship login", status: "in_progress" })
     const root = await show("OPP-2", "OPP-2")
 
-    const chip = { text: "+OPP-2Ship login", to: "/openplan/task/OPP-2", dangling: false }
+    const chip = { text: "+OPP-2", to: "/openplan/task/OPP-2", dangling: false }
     expect(chips(root)).toEqual([chip, chip])
     expect(served.reads).toEqual(["OPP-2"])
   })
@@ -101,11 +101,11 @@ describe("a task chip", () => {
   it("follows a change to its task", async () => {
     served.tasks.set("OPP-2", { title: "Ship login", status: "in_progress" })
     const root = await show("OPP-2")
-    served.tasks.set("OPP-2", { title: "Ship the login page", status: "done" })
+    served.tasks.delete("OPP-2")
 
     queryInvalidator.refreshTask("openplan", "OPP-2")
     await tick()
 
-    expect(chips(root)[0].text).toBe("+OPP-2Ship the login page")
+    expect(chips(root)[0].dangling).toBe(true)
   })
 })

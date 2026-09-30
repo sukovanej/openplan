@@ -140,7 +140,7 @@ describe("dependency changes", () => {
       />,
     )
 
-  it("show each task that joined or left as a linked chip with its sign, status, and title", () => {
+  it("show each task that joined or left as a linked chip with its sign and key", () => {
     const shown = dependencies(["OPP-3", "OPP-9"], ["OPP-3", "OPP-2"])
     expect(
       [...shown.querySelectorAll("a")].map((chip) => ({
@@ -149,7 +149,7 @@ describe("dependency changes", () => {
         dangling: chip.classList.contains("border-dashed"),
       })),
     ).toEqual([
-      { text: "+OPP-2Ship login", to: "/openplan/task/OPP-2", dangling: false },
+      { text: "+OPP-2", to: "/openplan/task/OPP-2", dangling: false },
       { text: "−OPP-9", to: "/openplan/task/OPP-9", dangling: true },
     ])
     expect(shown.querySelector("a svg.lucide-circle-dashed")).not.toBeNull()
