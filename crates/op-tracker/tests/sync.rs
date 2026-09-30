@@ -155,7 +155,7 @@ fn two_new_tasks_under_one_number_both_survive() {
         .expect("a merge");
     let described = bob.tracker.describe(merge).expect("describe");
     assert_eq!(
-        described.lines(Some("OPP".parse().expect("abbr"))),
+        described.lines(Some("OPP".parse().expect("abbr")), None),
         ["OPP-3: moved from OPP-2"],
         "the history finds the move in the documents too"
     );

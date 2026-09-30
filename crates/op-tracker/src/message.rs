@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use op_backend::{Change, ChangeKind, Op, Overlay, Snapshot as _};
+use op_forge::Forge;
 use op_task::config::Config;
 use op_task::layout;
 
@@ -9,7 +10,7 @@ use crate::{Plan, TrackerError};
 
 // A write says what it changes in the words the history uses for every revision, so `git log` and
 // `openplan history` agree.
-pub(crate) fn of(plan: &Plan, ops: &[Op]) -> Result<String, TrackerError> {
+pub(crate) fn of(plan: &Plan, ops: &[Op], forge: Option<&Forge>) -> Result<String, TrackerError> {
     let before = &**plan.snapshot();
     let mut after = Overlay::new(before);
     after.apply(ops.iter().cloned());
@@ -33,7 +34,7 @@ pub(crate) fn of(plan: &Plan, ops: &[Op]) -> Result<String, TrackerError> {
         .read(layout::CONFIG)?
         .and_then(|bytes| Config::parse(&String::from_utf8_lossy(&bytes)).ok())
         .map(|config| config.abbreviation);
-    let mut lines = described.lines(abbreviation).into_iter();
+    let mut lines = described.lines(abbreviation, forge).into_iter();
     let subject = lines.next().unwrap_or_default();
     let rest: Vec<String> = lines.collect();
     Ok(match rest.is_empty() {

@@ -22,6 +22,7 @@ const fields = (over: Partial<FrontmatterFields> = {}): Metadata => ({
   rank: null,
   dependencies: [],
   tags: [],
+  pull_requests: [],
   ...over,
 })
 

@@ -1,4 +1,4 @@
-use op_api::{CreateTask, KeyError, Metadata, Status, TaskPatch, TaskSummary, id_cmp};
+use op_api::{CreateTask, KeyError, Metadata, Status, TaskPatch, TaskSummary, WriteError, id_cmp};
 use op_task::{Abbreviation, Task, TaskLink, Timestamp};
 
 fn stamp() -> Timestamp {
@@ -16,6 +16,7 @@ fn create(parent: Option<&str>, dependencies: &[&str], body: Option<&str>) -> Cr
         parent: parent.map(str::to_owned),
         dependencies: dependencies.iter().map(|d| (*d).to_owned()).collect(),
         tags: Vec::new(),
+        pull_requests: Vec::new(),
         body: body.map(str::to_owned),
     }
 }
@@ -50,7 +51,7 @@ fn a_lenient_read_renders_references_as_keys_too() {
 #[test]
 fn a_write_takes_keys_and_hands_the_file_layer_numbers() {
     let task = create(Some("OPP-7"), &["OPP-8", "OPP-9#Design"], None)
-        .into_task(stamp(), abbreviation())
+        .into_task(stamp(), abbreviation(), None)
         .unwrap();
     assert_eq!(task.frontmatter.parent, Some(TaskLink::to(7)));
     assert_eq!(
@@ -62,12 +63,12 @@ fn a_write_takes_keys_and_hands_the_file_layer_numbers() {
 #[test]
 fn a_write_in_any_other_spelling_is_refused() {
     for spelling in ["7", "opp-7", "OPP-007", "WEB-7", "epic-1"] {
-        let parent = create(Some(spelling), &[], None).into_task(stamp(), abbreviation());
+        let parent = create(Some(spelling), &[], None).into_task(stamp(), abbreviation(), None);
         assert!(
-            matches!(&parent, Err(err) if err.got() == spelling),
+            matches!(&parent, Err(WriteError::Key(err)) if err.got() == spelling),
             "parent {spelling:?} must be refused: {parent:?}"
         );
-        let dependency = create(None, &[spelling], None).into_task(stamp(), abbreviation());
+        let dependency = create(None, &[spelling], None).into_task(stamp(), abbreviation(), None);
         assert!(
             dependency.is_err(),
             "dependency {spelling:?} must be refused"
@@ -79,7 +80,7 @@ fn a_write_in_any_other_spelling_is_refused() {
         };
         let mut task = Task::new("T", Status::Todo, stamp());
         assert!(
-            patch.apply(&mut task, abbreviation()).is_err(),
+            patch.apply(&mut task, abbreviation(), None).is_err(),
             "patching a dependency to {spelling:?} must be refused"
         );
     }
@@ -104,7 +105,7 @@ fn a_refused_key_of_another_project_says_so() {
 #[test]
 fn a_body_reference_written_as_a_key_reaches_the_file_layer_as_a_number() {
     let task = create(None, &[], Some("see [[OPP-42]] and [[OPP-7#Design]]"))
-        .into_task(stamp(), abbreviation())
+        .into_task(stamp(), abbreviation(), None)
         .unwrap();
     assert!(
         task.body.contains("see [[42]] and [[7#Design]]"),

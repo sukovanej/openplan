@@ -1,11 +1,35 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use op_forge::{Forge, PullRequest, PullRequestError};
 use op_task::content::Text;
 use op_task::{Abbreviation, Status, Task, Timestamp};
 
 use crate::field::FieldUpdate;
 use crate::keys::{KeyError, body_from_keys, body_from_keys_keeping, link_of};
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum WriteError {
+    #[error(transparent)]
+    Key(#[from] KeyError),
+    #[error(transparent)]
+    PullRequest(#[from] PullRequestError),
+}
+
+// An entry is an address, or the number of a pull request in the repository of the project.
+fn pull_requests_of(
+    entries: &[String],
+    forge: Option<&Forge>,
+) -> Result<Vec<PullRequest>, PullRequestError> {
+    entries
+        .iter()
+        .map(|entry| PullRequest::resolve(entry, forge))
+        .collect()
+}
+
+fn addresses(pull_requests: &[PullRequest]) -> Vec<String> {
+    pull_requests.iter().map(PullRequest::url).collect()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CreateTask {
@@ -18,6 +42,8 @@ pub struct CreateTask {
     pub dependencies: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pull_requests: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 }
@@ -27,7 +53,8 @@ impl CreateTask {
         self,
         created: Timestamp,
         abbreviation: Abbreviation,
-    ) -> Result<Task, KeyError> {
+        forge: Option<&Forge>,
+    ) -> Result<Task, WriteError> {
         let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Backlog), created);
         task.set_parent(
             self.parent
@@ -39,9 +66,10 @@ impl CreateTask {
             self.dependencies
                 .iter()
                 .map(|dependency| link_of(abbreviation, dependency))
-                .collect::<Result<_, _>>()?,
+                .collect::<Result<_, KeyError>>()?,
         );
         task.set_tags(self.tags);
+        task.set_pull_requests(addresses(&pull_requests_of(&self.pull_requests, forge)?));
         if let Some(body) = &self.body {
             task.append_body(&body_from_keys(abbreviation, body)?);
         }
@@ -68,10 +96,24 @@ pub struct TaskPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub pull_requests: Option<Vec<String>>,
+    // Each changes the set as the write finds it, so two writers that add at the same time both
+    // keep their entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub add_pull_requests: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remove_pull_requests: Vec<String>,
 }
 
 impl TaskPatch {
-    pub fn apply(self, task: &mut Task, abbreviation: Abbreviation) -> Result<(), KeyError> {
+    pub fn apply(
+        self,
+        task: &mut Task,
+        abbreviation: Abbreviation,
+        forge: Option<&Forge>,
+    ) -> Result<(), WriteError> {
         if let Some(status) = self.status {
             task.set_status(status);
         }
@@ -88,11 +130,28 @@ impl TaskPatch {
                 dependencies
                     .iter()
                     .map(|dependency| link_of(abbreviation, dependency))
-                    .collect::<Result<_, _>>()?,
+                    .collect::<Result<_, KeyError>>()?,
             );
         }
         if let Some(tags) = self.tags {
             task.set_tags(tags);
+        }
+        if let Some(pull_requests) = self.pull_requests {
+            task.set_pull_requests(addresses(&pull_requests_of(&pull_requests, forge)?));
+        }
+        if !(self.add_pull_requests.is_empty() && self.remove_pull_requests.is_empty()) {
+            let added = pull_requests_of(&self.add_pull_requests, forge)?;
+            let removed = pull_requests_of(&self.remove_pull_requests, forge)?;
+            // A forge compares a repository without case, so an address that differs only in case
+            // names a pull request the set already holds.
+            let named_by = |address: &str, named: &[PullRequest]| {
+                PullRequest::parse(address)
+                    .is_ok_and(|held| named.iter().any(|other| other.is(&held)))
+            };
+            let mut held = task.frontmatter.pull_requests.clone();
+            held.retain(|address| !named_by(address, &removed) && !named_by(address, &added));
+            held.extend(addresses(&added));
+            task.set_pull_requests(held);
         }
         Ok(())
     }

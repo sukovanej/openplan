@@ -6,7 +6,7 @@ import type { Board, DocListItem, FieldError, TaskRef } from "@openplan/api-clie
 import { statusField } from "@openplan/task-ui"
 import { EmptyState, Panel, PanelBody, SkeletonList } from "@openplan/ui"
 
-import { OlderRevisions } from "../components/older-revisions"
+import { OlderRevisionsOnScroll } from "../components/older-revisions-on-scroll"
 import { MergedRevisionList, RevisionList } from "../components/revision-list"
 import { getBoard, getMergedBoard, listAllDocs } from "../lib/api"
 import { demotedReason, useDemotedReason, useFaults } from "../lib/faults"
@@ -141,12 +141,14 @@ function Revisions<T>({
   children: (entries: ReadonlyArray<T>) => ReactNode
 }) {
   if (history.isPending) return <SkeletonList count={5} className="h-16 w-full" />
-  if (history.isError) return <EmptyState title="Could not load the activity" detail={errorText(history.error)} />
+  if (history.isLoadingError || history.isRefetchError) {
+    return <EmptyState title="Could not load the activity" detail={errorText(history.error)} />
+  }
   if (history.data.length === 0) return <p className="text-muted-foreground text-sm">No revisions yet.</p>
   return (
     <>
       {children(history.data)}
-      <OlderRevisions history={history} className="mt-3" />
+      <OlderRevisionsOnScroll history={history} className="mt-3" />
     </>
   )
 }

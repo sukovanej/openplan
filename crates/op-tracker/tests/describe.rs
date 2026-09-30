@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use op_backend::{Actor, ChangeKind, Edit, Op, Signer};
 use op_backend_local::{LocalBackend, Options};
+use op_forge::{Forge, ForgeKind};
 use op_task::comment::NewComment;
 use op_task::tag::Tag;
 use op_task::{Abbreviation, Status, Task, Timestamp};
@@ -116,11 +117,61 @@ fn a_revision_another_tool_wrote_is_described_from_its_documents() {
         }]
     );
     assert_eq!(
-        described.lines(Some(abbreviation())),
+        described.lines(Some(abbreviation()), None),
         vec![
             "OPP-2: status → done, dependencies → OPP-1, tags → bug, title → \"New title\", \
              description"
         ]
+    );
+}
+
+fn github(repo: &str) -> Forge {
+    Forge {
+        kind: ForgeKind::Github,
+        host: "github.com".to_owned(),
+        repo: repo.to_owned(),
+    }
+}
+
+#[test]
+fn a_pull_request_is_linked_and_unlinked_by_its_short_form() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let backend = LocalBackend::open(
+        dir.path(),
+        Options::new(Signer::fixed(Actor::new("filesystem"))),
+    )
+    .expect("open");
+    let tracker = Tracker::new(Arc::new(backend)).with_forge(Some(github("sukovanej/openplan")));
+    tracker.init(&actor(), abbreviation()).expect("init");
+    let number = create(&tracker, "Parser");
+    let own = "https://github.com/sukovanej/openplan/pull/214".to_owned();
+    let other = "https://github.com/rust-lang/cargo/pull/1234".to_owned();
+    let set = |addresses: Vec<String>| {
+        tracker
+            .update_task(&actor(), number, |task| {
+                task.set_pull_requests(addresses.clone());
+                Ok(())
+            })
+            .expect("update");
+    };
+
+    set(vec![own.clone(), other.clone()]);
+    let (message, described) = newest(&tracker);
+    assert_eq!(message, "OPP-1: linked rust-lang/cargo#1234, linked #214");
+    assert_eq!(
+        described.tasks[0].fields,
+        vec![FieldChange::PullRequests {
+            from: Vec::new(),
+            to: vec![other.clone(), own.clone()],
+        }]
+    );
+
+    set(vec![other]);
+    let (message, described) = newest(&tracker);
+    assert_eq!(message, "OPP-1: unlinked #214");
+    assert_eq!(
+        described.lines(Some(abbreviation()), None),
+        vec!["OPP-1: unlinked sukovanej/openplan#214"]
     );
 }
 

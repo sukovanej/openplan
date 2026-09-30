@@ -16,9 +16,10 @@ fn create(title: &str, body: Option<&str>) -> op_task::Task {
         parent: None,
         dependencies: Vec::new(),
         tags: Vec::new(),
+        pull_requests: Vec::new(),
         body: body.map(str::to_owned),
     }
-    .into_task(stamp(), abbreviation())
+    .into_task(stamp(), abbreviation(), None)
     .unwrap()
 }
 
@@ -65,9 +66,10 @@ fn into_task_carries_the_tags_it_was_given_as_a_sorted_set() {
         parent: None,
         dependencies: Vec::new(),
         tags: vec!["wip".to_owned(), "backend".to_owned(), "wip".to_owned()],
+        pull_requests: Vec::new(),
         body: None,
     }
-    .into_task(stamp(), abbreviation())
+    .into_task(stamp(), abbreviation(), None)
     .unwrap();
 
     assert_eq!(task.frontmatter.tags, vec!["backend", "wip"]);

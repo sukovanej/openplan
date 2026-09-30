@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use op_forge::{Forge, ForgeKind, PullRequest};
 use op_task::{Abbreviation, Status, Task, Timestamp};
 
 use crate::comment::Comment;
@@ -106,6 +107,38 @@ pub struct TaskRef {
     pub status: Field<Status>,
 }
 
+// One pull request or merge request of a task. `short` is `#214` in the repository of the project,
+// and `owner/repo#214` in every other one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PullRequestView {
+    pub url: String,
+    pub forge: ForgeKind,
+    pub repo: String,
+    pub number: u64,
+    pub short: String,
+}
+
+impl PullRequestView {
+    pub fn of(pull_request: &PullRequest, project: Option<&Forge>) -> Self {
+        Self {
+            url: pull_request.url(),
+            forge: pull_request.forge.kind,
+            repo: pull_request.forge.repo.clone(),
+            number: pull_request.number,
+            short: pull_request.short(project),
+        }
+    }
+
+    // An address that names no pull request has no view; `metadata` still carries it.
+    pub fn of_addresses(addresses: &[String], project: Option<&Forge>) -> Vec<Self> {
+        addresses
+            .iter()
+            .filter_map(|address| PullRequest::parse(address).ok())
+            .map(|pull_request| Self::of(&pull_request, project))
+            .collect()
+    }
+}
+
 // Something wrong with a task that no single write caught. Sync joins two versions that were each
 // fine, and a hand edit in a local store passes no check, so the index looks at every task after
 // each change.
@@ -177,6 +210,8 @@ pub struct TaskDetail {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocks: Vec<TaskRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pull_requests: Vec<PullRequestView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>,
 }
 
@@ -198,6 +233,8 @@ pub struct TaskListItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub author: Option<Author>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pull_requests: Vec<PullRequestView>,
 }
 
 // Who wrote the revision that created the task. Absent where the daemon did not read back as far as

@@ -16,7 +16,7 @@ mod import;
 mod objects;
 mod sync;
 
-pub use checkout::{Checkout, identity, inspect, signer};
+pub use checkout::{Checkout, identity, inspect, remote_url, signer};
 pub use import::{Imported, UNCOMMITTED_MESSAGE};
 pub use sync::fetch_tasks;
 

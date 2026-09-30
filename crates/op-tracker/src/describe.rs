@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use op_backend::{BackendError, Change, ChangeKind, Snapshot};
+use op_forge::{Forge, PullRequest};
 use op_task::layout::{self, Document};
 use op_task::{
     Abbreviation, FieldResult, PartialFrontmatter, PartialMetadata, PartialTask, Status, comment,
@@ -66,6 +67,10 @@ pub enum FieldChange {
         from: Vec<String>,
         to: Vec<String>,
     },
+    PullRequests {
+        from: Vec<String>,
+        to: Vec<String>,
+    },
     Title {
         from: Option<String>,
         to: Option<String>,
@@ -86,7 +91,14 @@ pub enum FieldChange {
     Frontmatter,
 }
 
-const MODELED: [&str; 5] = ["status", "parent", "rank", "dependencies", "tags"];
+const MODELED: [&str; 6] = [
+    "status",
+    "parent",
+    "rank",
+    "dependencies",
+    "tags",
+    "pull_requests",
+];
 
 // `changes` names the documents that differ; `before` and `after` read one of them on each side.
 // `moved_from` is the first parent of a sync merge: a merge moves a task that another task took the
@@ -214,6 +226,7 @@ fn fields(old: &PartialTask, new: &PartialTask) -> Vec<FieldChange> {
             modeled("rank", Some(Some(FieldChange::Order)));
             modeled("dependencies", dependencies(old_fields, new_fields));
             modeled("tags", tags(old_fields, new_fields));
+            modeled("pull_requests", pull_requests(old_fields, new_fields));
             let keys: BTreeSet<&str> = old_map
                 .keys()
                 .chain(new_map.keys())
@@ -295,6 +308,17 @@ fn dependencies(old: &PartialFrontmatter, new: &PartialFrontmatter) -> Modeled {
 fn tags(old: &PartialFrontmatter, new: &PartialFrontmatter) -> Modeled {
     let (from, to) = (old.tags.as_ref().ok()?, new.tags.as_ref().ok()?);
     Some((from != to).then(|| FieldChange::Tags {
+        from: from.clone(),
+        to: to.clone(),
+    }))
+}
+
+fn pull_requests(old: &PartialFrontmatter, new: &PartialFrontmatter) -> Modeled {
+    let (from, to) = (
+        old.pull_requests.as_ref().ok()?,
+        new.pull_requests.as_ref().ok()?,
+    );
+    Some((from != to).then(|| FieldChange::PullRequests {
         from: from.clone(),
         to: to.clone(),
     }))
@@ -424,7 +448,7 @@ fn tag_content(read: Read<'_>, name: &str) -> Result<Option<String>, BackendErro
 
 impl Described {
     // One line for each document, in the words of the commit messages that openplan writes.
-    pub fn lines(&self, abbreviation: Option<Abbreviation>) -> Vec<String> {
+    pub fn lines(&self, abbreviation: Option<Abbreviation>, forge: Option<&Forge>) -> Vec<String> {
         let key = |number: u64| match abbreviation {
             Some(abbreviation) => abbreviation.format_key(number),
             None => number.to_string(),
@@ -446,7 +470,11 @@ impl Described {
             });
         }
         for task in &self.tasks {
-            lines.push(format!("{}: {}", key(task.number), task_words(task, &key)));
+            lines.push(format!(
+                "{}: {}",
+                key(task.number),
+                task_words(task, &key, forge)
+            ));
         }
         for doc in &self.docs {
             lines.push(match &doc.renamed_from {
@@ -469,7 +497,7 @@ fn verb(kind: ChangeKind) -> &'static str {
     }
 }
 
-fn task_words(task: &TaskChange, key: &dyn Fn(u64) -> String) -> String {
+fn task_words(task: &TaskChange, key: &dyn Fn(u64) -> String, forge: Option<&Forge>) -> String {
     let title = task.title.as_deref().unwrap_or_default();
     match task.kind {
         ChangeKind::Added => format!("create \"{title}\""),
@@ -478,13 +506,13 @@ fn task_words(task: &TaskChange, key: &dyn Fn(u64) -> String) -> String {
         ChangeKind::Modified => task
             .fields
             .iter()
-            .map(|field| field_words(field, key))
+            .map(|field| field_words(field, key, forge))
             .collect::<Vec<_>>()
             .join(", "),
     }
 }
 
-fn field_words(field: &FieldChange, key: &dyn Fn(u64) -> String) -> String {
+fn field_words(field: &FieldChange, key: &dyn Fn(u64) -> String, forge: Option<&Forge>) -> String {
     let list = |name: &str, items: Vec<String>| match items.is_empty() {
         true => format!("no {name}"),
         false => format!("{name} → {}", items.join(", ")),
@@ -500,6 +528,17 @@ fn field_words(field: &FieldChange, key: &dyn Fn(u64) -> String) -> String {
             to.iter().map(|number| key(*number)).collect(),
         ),
         FieldChange::Tags { to, .. } => list("tags", to.clone()),
+        FieldChange::PullRequests { from, to } => {
+            let moved = |verb: &str, held: &[String], now: &[String]| {
+                now.iter()
+                    .filter(|address| !held.contains(address))
+                    .map(|address| format!("{verb} {}", short(address, forge)))
+                    .collect::<Vec<_>>()
+            };
+            [moved("linked", from, to), moved("unlinked", to, from)]
+                .concat()
+                .join(", ")
+        }
         FieldChange::Title { to: Some(to), .. } => format!("title → \"{to}\""),
         FieldChange::Title { to: None, .. } => "no title".to_owned(),
         FieldChange::Description => "description".to_owned(),
@@ -514,4 +553,9 @@ fn field_words(field: &FieldChange, key: &dyn Fn(u64) -> String) -> String {
         FieldChange::Other(name) => name.clone(),
         FieldChange::Frontmatter => "frontmatter".to_owned(),
     }
+}
+
+// An address that names no pull request reads as it is written.
+fn short(address: &str, forge: Option<&Forge>) -> String {
+    PullRequest::parse(address).map_or_else(|_| address.to_owned(), |found| found.short(forge))
 }

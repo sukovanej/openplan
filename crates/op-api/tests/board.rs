@@ -12,6 +12,7 @@ fn fields(status: Field<Status>, parent: Option<&str>, rank: Option<&str>) -> Me
         rank: Field::Value(rank.map(str::to_owned)),
         dependencies: Field::Value(Vec::new()),
         tags: Field::Value(Vec::new()),
+        pull_requests: Field::Value(Vec::new()),
     })
 }
 
@@ -26,6 +27,7 @@ fn with_metadata(id: &str, metadata: Metadata) -> TaskListItem {
         problems: Vec::new(),
         updated: op_api::Field::Error(op_api::FieldError::Missing),
         author: None,
+        pull_requests: Vec::new(),
     }
 }
 
@@ -55,6 +57,7 @@ fn dated(id: &str, status: Status, parent: Option<&str>, at: &str) -> TaskListIt
     TaskListItem {
         updated: Field::Value(op_api::Rfc3339(at.parse().unwrap())),
         author: None,
+        pull_requests: Vec::new(),
         ..item(id, status, parent, None)
     }
 }

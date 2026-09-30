@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 op-diagram.workspace = true
+op-forge.workspace = true
 op-task.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true

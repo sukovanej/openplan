@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { HistoryEntry } from "@openplan/api-client"
 
+import { PROJECT_HISTORY_PAGE } from "../src/lib/history"
 import { queryClient } from "../src/lib/query-client"
 import { Activity } from "../src/routes/activity"
 
@@ -20,12 +21,19 @@ const revision = (id: string, agent?: string): HistoryEntry["revision"] => ({
   message: `Set it to done in ${id}`,
 })
 
-const served = vi.hoisted(() => ({ entries: [] as Array<unknown>, diffs: vi.fn() }))
+const served = vi.hoisted(() => ({
+  entries: [] as Array<unknown>,
+  older: vi.fn<(before: string) => Promise<Array<unknown>>>(),
+  diffs: vi.fn(),
+}))
 
 vi.mock("../src/lib/api", async () => {
   const { Effect } = await import("effect")
   return {
-    getProjectHistory: () => Effect.sync(() => served.entries),
+    getProjectHistory: (_project: string, page: { before?: string }) =>
+      page.before === undefined
+        ? Effect.sync(() => served.entries)
+        : Effect.tryPromise({ try: () => served.older(page.before!), catch: (error) => error }),
     getRevisionDiff: (...target: Array<unknown>) =>
       Effect.sync(() => {
         served.diffs(...target)
@@ -70,6 +78,26 @@ vi.mock("../src/lib/api", async () => {
   }
 })
 
+const observers = new Set<(entries: Array<{ isIntersecting: boolean }>) => void>()
+
+vi.stubGlobal(
+  "IntersectionObserver",
+  class {
+    constructor(private readonly callback: (entries: Array<{ isIntersecting: boolean }>) => void) {}
+    observe() {
+      observers.add(this.callback)
+    }
+    disconnect() {
+      observers.delete(this.callback)
+    }
+  },
+)
+
+const intersect = () =>
+  act(async () => {
+    for (const callback of observers) callback([{ isIntersecting: true }])
+  })
+
 let mounted: { root: Root; container: HTMLElement } | undefined
 
 afterEach(async () => {
@@ -80,6 +108,7 @@ afterEach(async () => {
     held.container.remove()
   }
   served.entries = []
+  served.older.mockReset()
   served.diffs.mockClear()
   queryClient.clear()
 })
@@ -277,5 +306,86 @@ describe("the diff of a change", () => {
     expect(changes.at(-1)?.textContent).toBe("and 1 more")
     expect(changes.at(-1)?.querySelector("[aria-haspopup]")).toBeNull()
     expect(changes[0].querySelector("[aria-haspopup]")).not.toBeNull()
+  })
+})
+
+describe("the older revisions", () => {
+  const page = (from: number, count: number): Array<HistoryEntry> =>
+    Array.from({ length: count }, (_, at) => ({
+      revision: revision(`r${from + at}`),
+      changes: [],
+      summary: [],
+      tasks: [{ task: "OPP-1", kind: "modified", title: "Ship it" }],
+      tags: [],
+      docs: [],
+    }))
+
+  const pending = () => {
+    let resolve: (entries: Array<unknown>) => void = () => {}
+    served.older.mockReturnValueOnce(new Promise((settled) => (resolve = settled)))
+    return { resolve: (entries: Array<unknown>) => resolve(entries) }
+  }
+
+  const settle = async (root: HTMLElement, count: number) => {
+    for (let attempt = 0; attempt < 20 && revisions(root).length !== count; attempt++) await tick()
+  }
+
+  it("loads the next page when the end of the list comes near, and only once while it loads", async () => {
+    served.entries = page(0, PROJECT_HISTORY_PAGE)
+    const read = pending()
+    const root = await show()
+    expect(served.older).not.toHaveBeenCalled()
+
+    await intersect()
+    await tick()
+    await intersect()
+    await tick()
+
+    expect(served.older).toHaveBeenCalledExactlyOnceWith(`r${PROJECT_HISTORY_PAGE - 1}`)
+    expect(root.querySelector(".animate-pulse")).not.toBeNull()
+
+    read.resolve(page(PROJECT_HISTORY_PAGE, 1))
+    await settle(root, PROJECT_HISTORY_PAGE + 1)
+
+    expect(revisions(root)).toHaveLength(PROJECT_HISTORY_PAGE + 1)
+    expect(root.querySelector(".animate-pulse")).toBeNull()
+    expect(served.older).toHaveBeenCalledOnce()
+  })
+
+  it("reads on while the end of the list stays in reach", async () => {
+    served.entries = page(0, PROJECT_HISTORY_PAGE)
+    served.older.mockResolvedValueOnce(page(PROJECT_HISTORY_PAGE, PROJECT_HISTORY_PAGE))
+    served.older.mockResolvedValueOnce(page(2 * PROJECT_HISTORY_PAGE, 1))
+    const root = await show()
+
+    await intersect()
+    await settle(root, 2 * PROJECT_HISTORY_PAGE + 1)
+
+    expect(served.older.mock.calls).toEqual([[`r${PROJECT_HISTORY_PAGE - 1}`], [`r${2 * PROJECT_HISTORY_PAGE - 1}`]])
+  })
+
+  it("shows a failed read with a Retry that reads the page again", async () => {
+    served.entries = page(0, PROJECT_HISTORY_PAGE)
+    served.older.mockRejectedValueOnce(new Error("The daemon is gone"))
+    const root = await show()
+
+    await intersect()
+    let retry: HTMLButtonElement | undefined
+    for (let attempt = 0; attempt < 20 && retry === undefined; attempt++) {
+      await tick()
+      retry = Array.from(root.querySelectorAll("button")).find((button) => button.textContent === "Retry")
+    }
+
+    expect(root.querySelector("[role=alert]")?.textContent).toBe("The daemon is gone")
+    expect(revisions(root)).toHaveLength(PROJECT_HISTORY_PAGE)
+    expect(served.older).toHaveBeenCalledOnce()
+
+    served.older.mockResolvedValueOnce(page(PROJECT_HISTORY_PAGE, 1))
+    await act(async () => retry!.click())
+    await settle(root, PROJECT_HISTORY_PAGE + 1)
+
+    expect(served.older).toHaveBeenCalledTimes(2)
+    expect(revisions(root)).toHaveLength(PROJECT_HISTORY_PAGE + 1)
+    expect(root.textContent).not.toContain("Retry")
   })
 })

@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, Weak};
 use std::time::Duration;
 
-use op_api::{BackendKind, ChangeEvent, Fault, FaultKind, ProjectView, Rfc3339, SyncView};
+use op_api::{BackendKind, ChangeEvent, Fault, FaultKind, Forge, ProjectView, Rfc3339, SyncView};
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Change, HeadMoved, LogQuery, Origin, RevisionId,
     Schedule, Signer, SyncLoop, SyncStatus,
@@ -208,13 +208,14 @@ impl Project {
     pub fn open(name: impl Into<String>, location: Location) -> Result<Self, OpenError> {
         let signer = op_backend_git::signer(&location.root);
         let backend = open_backend(&location, &signer, true)?;
+        let forge = crate::forge::of_project(&location);
         let project = Self {
             name: RwLock::new(name.into()),
             path: location.root.clone(),
             location,
             signer,
-            tracker: Tracker::new(backend),
-            index: Mutex::new(Index::new()),
+            tracker: Tracker::new(backend).with_forge(forge.clone()),
+            index: Mutex::new(Index::new().with_forge(forge)),
             loaded: Mutex::new(None),
             sync: Mutex::new(None),
             health: Mutex::new(Health::default()),
@@ -259,6 +260,10 @@ impl Project {
         &self.tracker
     }
 
+    pub fn forge(&self) -> Option<&Forge> {
+        self.tracker.forge()
+    }
+
     // The git identity of the project, read now, so a name set after the project opened signs the
     // next write. Whether it is set is a fault of the project.
     pub fn sign(&self) -> Result<Actor, BackendError> {
@@ -300,6 +305,7 @@ impl Project {
                 .map(|abbreviation| abbreviation.to_string())
                 .unwrap_or_default(),
             sync: self.sync_status().as_ref().map(sync_view),
+            forge: self.forge().cloned(),
         }
     }
 

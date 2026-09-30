@@ -1,0 +1,17 @@
+[package]
+name = "op-forge"
+description = "GitHub and GitLab addresses: the repository of a git remote, and the pull requests and merge requests of a task"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+utoipa.workspace = true
+
+[lints]
+workspace = true

@@ -42,7 +42,7 @@ openplan tasks list                       # id / status / title
 openplan tasks list --status in_progress  # filter by status
 openplan tasks list --parent <key>        # children of a task
 openplan tasks list --json                # [{id,title,status,parent?}]
-openplan tasks show <key>                 # metadata: id, title, status, parent, dependencies
+openplan tasks show <key>                 # metadata: id, title, status, parent, dependencies, pull requests
 openplan tasks get  <key>                 # the whole task file
 openplan tasks get  <key> --json          # {id,title,metadata,description,comments}
 openplan history <key>                    # the revisions of the task, newest first
@@ -100,6 +100,8 @@ openplan tasks set <key> status in_progress
 openplan tasks set <key> parent <parent-key>
 openplan tasks set <key> dependencies "<key1>, <key2>"   # empty string clears them
 openplan tasks set <key> tags "bug, daemon"              # empty string clears them
+openplan tasks pr add <key> <url>                        # link a pull request or merge request
+openplan tasks pr remove <key> <url>
 ```
 
 To change the body, write the whole file back:
@@ -152,6 +154,13 @@ the repository, plan, or start a subagent:
 1. `openplan tasks get <key>` reads the task.
 2. `openplan tasks set <key> status in_progress`.
 
+When you open a pull request for the task, write the task key in its title.
+Then link the pull request to the task:
+
+```sh
+openplan tasks pr add <key> <url>
+```
+
 Set `in_review` when the work is complete. A human sets `done`. The one
 exception is a merge: read the `Merge` section below.
 
@@ -190,8 +199,10 @@ openplan tasks comment  <key> "One short line."  # append; --body-file - for mar
 
 A merge does not change the status of a task. Only `openplan tasks set` changes
 it. When the user asks you to merge the work of a task, do these steps. Take the
-task key from the conversation or from the branch name. Work with no task key
-has no status to change.
+task key from the conversation or from the title of the pull request.
+`openplan tasks show <key>` prints the pull requests of the task. Merge those,
+and do not guess a pull request from a branch name. Work with no task key has
+no status to change.
 
 1. Decide the status before the merge. Answer from your own context, and do not
    re-read the diff. Does this work finish everything the task asks for?

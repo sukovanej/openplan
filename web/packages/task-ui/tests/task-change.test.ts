@@ -24,6 +24,21 @@ describe("fieldChangeText", () => {
     )
   })
 
+  it("says which pull request a revision linked or unlinked", () => {
+    const view = (short: string) => ({
+      url: `https://github.com/acme/widgets/pull/${short.slice(1)}`,
+      forge: "github" as const,
+      repo: "acme/widgets",
+      number: Number(short.slice(1)),
+      short,
+    })
+    expect(fieldChangeText({ field: "pull_requests", from: [], to: [view("#214")] })).toBe("Linked #214")
+    expect(fieldChangeText({ field: "pull_requests", from: [view("#214")], to: [] })).toBe("Unlinked #214")
+    expect(
+      fieldChangeText({ field: "pull_requests", from: [view("#7"), view("#214")], to: [view("#214"), view("#9")] }),
+    ).toBe("Linked #9, unlinked #7")
+  })
+
   it("counts comments and conflicts", () => {
     const counted: ReadonlyArray<[FieldChange, string]> = [
       [{ field: "comments", added: 1, removed: 0 }, "1 comment"],

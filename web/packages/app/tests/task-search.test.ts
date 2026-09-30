@@ -15,6 +15,7 @@ function task(id: string, title: string): TaskListItem {
       rank: null,
       dependencies: [],
       tags: [],
+      pull_requests: [],
     },
     updated: { kind: "missing" },
   } as unknown as TaskListItem

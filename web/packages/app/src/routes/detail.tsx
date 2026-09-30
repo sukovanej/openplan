@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Undo2, Waypoints, X } from "lucide-react"
+import { Pencil, Plus, Undo2, X } from "lucide-react"
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
@@ -51,6 +51,7 @@ import {
 
 import { DetailColumns } from "../components/detail-columns"
 import { ConflictBanner, FieldConflictControl } from "../components/field-conflict"
+import { PullRequestsSection } from "../components/pull-requests-section"
 import { BodySkeleton, DetailSkeleton } from "../components/states"
 import { StatusControl } from "../components/status-control"
 import { TagsField } from "../components/tags-field"
@@ -59,7 +60,6 @@ import { TaskHistory } from "../components/task-history"
 import { createTask, getTask, listTasks, patchTask, TaskNotFound } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
-import { taskFlowPath } from "../lib/flow-selection"
 import { errorText } from "../lib/format"
 import { taskChangeOf, useTaskHistory, useTaskRevision } from "../lib/history"
 import { useAbbreviation } from "../lib/projects"
@@ -187,8 +187,7 @@ function TaskDetailView({
               field="status"
               trigger="Status conflict"
             />
-            <FlowAction project={project} id={task.id} />
-            <div className="flex min-w-0 items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
               <FieldConflictControl
                 project={project}
                 id={task.id}
@@ -246,6 +245,12 @@ function TaskDetailView({
               />
             }
             shown={dependenciesConflict(task.metadata)}
+          />
+          <PullRequestsSection
+            project={project}
+            id={task.id}
+            metadata={task.metadata}
+            pullRequests={task.pull_requests}
           />
           <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
           <SubtasksSection project={project} id={task.id} rows={rows.subtasks} cursor={index} ready={detail !== null} />
@@ -384,19 +389,6 @@ function Snapshot({ project, task, entry }: { project: string; task: TaskSnapsho
         <CommentThread project={project} comments={task.comments} abbreviation={abbreviation} />
       )}
     </>
-  )
-}
-
-// The flow of this task alone, which grows to hold everything the task waits for.
-function FlowAction({ project, id }: { project: string; id: string }) {
-  return (
-    <Link
-      to={taskFlowPath(project, id)}
-      className="text-muted-foreground hover:text-foreground ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs"
-    >
-      <Waypoints className="size-3.5" />
-      Flow
-    </Link>
   )
 }
 

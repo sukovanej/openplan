@@ -18,7 +18,7 @@ use axum::{
 };
 use op_api::{
     ApiErrorBody, ChangeEvent, DaemonInfo, Fault, FlowCycles, KeyError, ProjectView, Refusal,
-    RegisterProject, RenameProject, SourcePosition, StopReason,
+    RegisterProject, RenameProject, SourcePosition, StopReason, WriteError,
 };
 use op_backend::{Actor, BackendError};
 use op_tracker::TrackerError;
@@ -39,6 +39,7 @@ use utoipa_swagger_ui::SwaggerUi;
 pub mod agent;
 mod docs;
 mod drawing;
+mod forge;
 mod project;
 mod registry;
 mod revision_diff;
@@ -1181,6 +1182,12 @@ impl From<op_diagram_mermaid::ParseError> for ApiError {
 
 impl From<KeyError> for ApiError {
     fn from(err: KeyError) -> Self {
+        Self::bad_request(err.to_string())
+    }
+}
+
+impl From<WriteError> for ApiError {
+    fn from(err: WriteError) -> Self {
         Self::bad_request(err.to_string())
     }
 }
