@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: done
 created: 2026-09-27T18:23:01Z
 tags:
 - daemon
