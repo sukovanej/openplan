@@ -18,6 +18,8 @@ pub struct FrontmatterFields {
     // Tag names, not keys: a tag is identified by the name a task file spells, so nothing here is
     // translated the way a reference is.
     pub tags: Field<Vec<String>>,
+    // Addresses as the task file holds them. `TaskDetail.pull_requests` reads each one.
+    pub pull_requests: Field<Vec<String>>,
 }
 
 // The task's metadata as parsed: `Fields` when the YAML is a mapping (each field carries its own
@@ -72,6 +74,11 @@ impl Metadata {
                                 .in_conflict(other.dependencies, conflict)
                         }
                         "tags" => fields.tags = fields.tags.in_conflict(other.tags, conflict),
+                        "pull_requests" => {
+                            fields.pull_requests = fields
+                                .pull_requests
+                                .in_conflict(other.pull_requests, conflict)
+                        }
                         _ => {}
                     }
                 }
@@ -107,6 +114,7 @@ fn fields_of(fields: op_task::PartialFrontmatter, abbreviation: Abbreviation) ->
                 .collect()
         }),
         tags: fields.tags.into(),
+        pull_requests: fields.pull_requests.into(),
     }
 }
 
@@ -124,6 +132,7 @@ impl Metadata {
                     .collect(),
             ),
             tags: Field::Value(fm.tags.clone()),
+            pull_requests: Field::Value(fm.pull_requests.clone()),
         })
     }
 
@@ -188,6 +197,7 @@ impl Metadata {
         push("rank", fields.rank.as_error());
         push("dependencies", fields.dependencies.as_error());
         push("tags", fields.tags.as_error());
+        push("pull_requests", fields.pull_requests.as_error());
         out
     }
 
@@ -202,6 +212,7 @@ impl Metadata {
             ("rank", fields.rank.is_conflict()),
             ("dependencies", fields.dependencies.is_conflict()),
             ("tags", fields.tags.is_conflict()),
+            ("pull_requests", fields.pull_requests.is_conflict()),
         ]
         .into_iter()
         .filter_map(|(name, conflicted)| conflicted.then_some(name))
@@ -220,6 +231,12 @@ impl Metadata {
             Some(Field::Value(tags)) => tags,
             _ => &[],
         }
+    }
+
+    pub fn pull_requests(&self) -> &[String] {
+        self.fields()
+            .and_then(|fields| fields.pull_requests.as_value())
+            .map_or(&[], Vec::as_slice)
     }
 }
 

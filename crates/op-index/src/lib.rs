@@ -4,8 +4,8 @@ mod docs;
 mod problems;
 
 use op_api::{
-    Author, Comment, Metadata, Problem, SearchHit, SearchMatch, TaskChild, TaskDetail,
-    TaskListItem, TaskRef, hit_cmp, list_item_cmp, updated_field,
+    Author, Comment, Forge, Metadata, Problem, PullRequestView, SearchHit, SearchMatch, TaskChild,
+    TaskDetail, TaskListItem, TaskRef, hit_cmp, list_item_cmp, updated_field,
 };
 use op_backend::{Actor, Change, ChangeKind, LogEntry, Timestamp};
 use op_task::reference::{self, Target};
@@ -17,6 +17,7 @@ use crate::problems::{Place, Unpathed};
 #[derive(Debug, Default)]
 pub struct Index {
     abbreviation: Option<Abbreviation>,
+    forge: Option<Forge>,
     tasks: BTreeMap<u64, Entry>,
     task_paths: BTreeMap<u64, String>,
     updated: HashMap<u64, Timestamp>,
@@ -64,6 +65,12 @@ pub struct HierarchyContext {
 impl Index {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    // The repository of the project, so a pull request of it reads as the number alone.
+    pub fn with_forge(mut self, forge: Option<Forge>) -> Self {
+        self.forge = forge;
+        self
     }
 
     // Parses again only the tasks whose text changed since the last load.
@@ -264,6 +271,7 @@ impl Index {
             doc_refs: self.doc_refs_in(layout::TASKS, &partial.body),
             depends_on: hierarchy.depends_on,
             blocks: hierarchy.blocks,
+            pull_requests: self.pull_requests_of(entry),
         })
     }
 
@@ -377,7 +385,12 @@ impl Index {
             problems: self.problems_of(number),
             updated: self.updated_of(number, entry),
             author: self.authors.get(&number).cloned(),
+            pull_requests: self.pull_requests_of(entry),
         }
+    }
+
+    fn pull_requests_of(&self, entry: &Entry) -> Vec<PullRequestView> {
+        PullRequestView::of_addresses(entry.metadata.pull_requests(), self.forge.as_ref())
     }
 
     fn updated_of(&self, number: u64, entry: &Entry) -> op_api::Field<op_api::Rfc3339> {
@@ -478,8 +491,12 @@ fn haystack(title: &str, body: &str, metadata: &Metadata) -> Haystack {
         rest.push_str(parent);
         rest.push('\n');
     }
-    for dependency in metadata.dependencies() {
-        rest.push_str(dependency);
+    for entry in metadata
+        .dependencies()
+        .iter()
+        .chain(metadata.pull_requests())
+    {
+        rest.push_str(entry);
         rest.push('\n');
     }
     Haystack {

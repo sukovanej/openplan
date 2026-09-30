@@ -25,6 +25,8 @@ export const projectsKey = ["projects"] as const
 export const faultsKey = ["faults"] as const
 export const mergedKey = ["merged"] as const
 export const projectMutationsKey = ["mutation", "project"] as const
+// A write whose refusal the control shows beside itself, so the error toast leaves it alone.
+const inlineMutationsKey = ["mutation", "inline"] as const
 export const mergedBoardKey = [...mergedKey, "board"] as const
 export const mergedHistoriesKey = [...mergedKey, "history"] as const
 export const mergedHistoryKey = (projects: ReadonlyArray<string>) => [...mergedHistoriesKey, ...projects] as const
@@ -127,10 +129,10 @@ function refreshScreen(client: QueryClient, project?: string): Promise<unknown> 
   ])
 }
 
-export function useProjectMutation(project: string) {
+export function useProjectMutation(project: string, refusal: "toast" | "inline" = "toast") {
   const client = useQueryClient()
   return useMutation({
-    mutationKey: [...projectMutationsKey, project],
+    mutationKey: [...(refusal === "toast" ? projectMutationsKey : inlineMutationsKey), project],
     mutationFn: (effect: Write) => runtime.runPromise(effect),
     // A live stream brings a write back as the events of the change, and they re-read what it changed.
     // A second re-read here would read the same things again. A refusal changes nothing and sends no

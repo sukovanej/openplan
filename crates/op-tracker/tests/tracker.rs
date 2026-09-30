@@ -450,3 +450,58 @@ fn create_refuses_when_no_number_is_left() {
     );
     assert_eq!(fixture.tracker.plan().expect("plan").numbers().count(), 1);
 }
+
+#[test]
+fn a_pull_request_is_kept_by_its_canonical_address() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    let number = create(tracker, "Parser");
+
+    let updated = tracker
+        .update_task(&actor(), number, |task| {
+            task.set_pull_requests(vec![
+                "https://github.com/sukovanej/openplan/pull/214/files?diff=split".to_owned(),
+                "https://github.com/sukovanej/openplan/pull/214".to_owned(),
+            ]);
+            Ok(())
+        })
+        .expect("update");
+
+    let canonical = vec!["https://github.com/sukovanej/openplan/pull/214".to_owned()];
+    assert_eq!(updated.value.frontmatter.pull_requests, canonical);
+    assert_eq!(
+        tracker
+            .plan()
+            .expect("plan")
+            .task(number)
+            .expect("task")
+            .frontmatter
+            .pull_requests,
+        canonical
+    );
+}
+
+#[test]
+fn an_address_that_names_no_pull_request_is_refused() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    let number = create(tracker, "Parser");
+
+    let mut unlinked = Task::new("Lexer", Status::Todo, stamp());
+    unlinked.set_pull_requests(vec![
+        "https://github.com/sukovanej/openplan/issues/214".to_owned(),
+    ]);
+    assert!(matches!(
+        tracker.create_task(&actor(), &unlinked),
+        Err(TrackerError::Invalid(_))
+    ));
+
+    let refused = tracker.update_task(&actor(), number, |task| {
+        task.set_pull_requests(vec!["214".to_owned()]);
+        Ok(())
+    });
+    assert!(
+        matches!(&refused, Err(TrackerError::Invalid(message)) if message.contains("\"214\"")),
+        "{refused:?}"
+    );
+}

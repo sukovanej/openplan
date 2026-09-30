@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 op-backend.workspace = true
+op-forge.workspace = true
 op-md.workspace = true
 op-task.workspace = true
 serde_yaml.workspace = true

@@ -22,6 +22,7 @@ fn summary(id: &str, parent: Option<&str>, rank: Option<&str>) -> TaskSummary {
             rank: Field::Value(rank.map(str::to_owned)),
             dependencies: Field::Value(Vec::new()),
             tags: Field::Value(Vec::new()),
+            pull_requests: Field::Value(Vec::new()),
         }),
     }
 }
@@ -99,7 +100,7 @@ fn patch_parent_absent_leaves_it_unchanged() {
     assert_eq!(patch.parent, FieldUpdate::Keep);
     let mut task = Task::new("T", Status::Todo, stamp());
     task.set_parent(Some(TaskLink::to(7)));
-    patch.apply(&mut task, abbreviation()).unwrap();
+    patch.apply(&mut task, abbreviation(), None).unwrap();
     assert_eq!(task.frontmatter.parent, Some(TaskLink::to(7)));
 }
 
@@ -109,7 +110,7 @@ fn patch_parent_null_clears_it() {
     assert_eq!(patch.parent, FieldUpdate::Clear);
     let mut task = Task::new("T", Status::Todo, stamp());
     task.set_parent(Some(TaskLink::to(7)));
-    patch.apply(&mut task, abbreviation()).unwrap();
+    patch.apply(&mut task, abbreviation(), None).unwrap();
     assert_eq!(task.frontmatter.parent, None);
 }
 
@@ -119,7 +120,7 @@ fn patch_parent_id_sets_it() {
         serde_json::from_value(serde_json::json!({ "parent": "OPP-1" })).unwrap();
     assert_eq!(patch.parent, FieldUpdate::Set("OPP-1".to_owned()));
     let mut task = Task::new("T", Status::Todo, stamp());
-    patch.apply(&mut task, abbreviation()).unwrap();
+    patch.apply(&mut task, abbreviation(), None).unwrap();
     assert_eq!(
         task.frontmatter.parent,
         Some(TaskLink::to(1)),

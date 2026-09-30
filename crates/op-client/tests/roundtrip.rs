@@ -91,6 +91,7 @@ fn new_task(title: &str) -> CreateTask {
         parent: None,
         dependencies: Vec::new(),
         tags: Vec::new(),
+        pull_requests: Vec::new(),
         body: None,
     }
 }

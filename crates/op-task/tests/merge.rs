@@ -163,6 +163,31 @@ fn comments_from_both_sides_are_kept_in_time_order() {
 }
 
 #[test]
+fn pull_requests_merge_to_the_union_of_both_sides() {
+    let with =
+        |addresses: &str| BASE.replace("status: todo", &format!("status: todo\n{addresses}"));
+    let base =
+        with("pull_requests:\n- https://github.com/o/r/pull/1\n- https://github.com/o/r/pull/2");
+    let ours = with(
+        "pull_requests:\n- https://github.com/o/r/pull/1\n- https://github.com/o/r/pull/2\n- https://github.com/o/r/pull/9",
+    );
+    let theirs =
+        with("pull_requests:\n- https://github.com/o/r/pull/2\n- https://github.com/o/r/pull/3");
+
+    let task = merged(&base, &ours, &theirs);
+
+    assert_eq!(
+        task.frontmatter.pull_requests,
+        vec![
+            "https://github.com/o/r/pull/2",
+            "https://github.com/o/r/pull/3",
+            "https://github.com/o/r/pull/9",
+        ]
+    );
+    assert_eq!(task.conflict_count(), 0);
+}
+
+#[test]
 fn tags_and_dependencies_merge_as_sets() {
     let base = BASE.replace("status: todo", "status: todo\ntags: [a]");
     let ours = BASE.replace("status: todo", "status: todo\ntags: [a, b]");

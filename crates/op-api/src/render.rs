@@ -44,10 +44,15 @@ fn conflicts_of(fields: &FrontmatterFields) -> Vec<op_task::FieldConflict> {
         rank.as_deref().map(Into::into)
     });
     conflict(&mut out, "dependencies", &fields.dependencies, references);
-    conflict(&mut out, "tags", &fields.tags, |tags| {
-        (!tags.is_empty()).then(|| tags.iter().map(String::as_str).collect::<Vec<_>>().into())
+    conflict(&mut out, "tags", &fields.tags, |tags| names(tags));
+    conflict(&mut out, "pull_requests", &fields.pull_requests, |held| {
+        names(held)
     });
     out
+}
+
+fn names(list: &[String]) -> Option<serde_yaml::Value> {
+    (!list.is_empty()).then(|| list.iter().map(String::as_str).collect::<Vec<_>>().into())
 }
 
 fn conflict<T>(
@@ -119,12 +124,11 @@ pub fn render_task_file(
             ),
             _ => {}
         }
-        match fields.tags.as_value() {
-            Some(tags) if !tags.is_empty() => put(
-                "tags",
-                tags.iter().map(String::as_str).collect::<Vec<_>>().into(),
-            ),
-            _ => {}
+        if let Some(tags) = fields.tags.as_value().and_then(|tags| names(tags)) {
+            put("tags", tags);
+        }
+        if let Some(pull_requests) = fields.pull_requests.as_value().and_then(|held| names(held)) {
+            put("pull_requests", pull_requests);
         }
     }
     let yaml = serde_yaml::to_string(&frontmatter).map_err(|_| RenderError)?;
