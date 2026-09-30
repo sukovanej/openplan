@@ -5,6 +5,8 @@ tags:
 - daemon
 - feature
 - ui
+pull_requests:
+- https://github.com/sukovanej/openplan/pull/237
 ---
 # Hide standalone backlog tasks from the flow and put the key and title of a card on one line
 
