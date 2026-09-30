@@ -43,6 +43,57 @@ fn ir() {
     });
 }
 
+// No order of the ranks removes some crossings, for example when two nodes both link to the same
+// two nodes. The snapshot names each crossing, so a new crossing shows in its diff.
+#[test]
+fn crossings() {
+    let mut found = Vec::new();
+    let mut record = |path: &Path, diagram: Diagram| {
+        let name = path.iter().rev().take(2).collect::<Vec<_>>();
+        let name = format!("{}/{}", name[1].display(), name[0].display());
+        let scene = layout(&diagram);
+        for (at, first) in scene.edges.iter().enumerate() {
+            for second in &scene.edges[at + 1..] {
+                for a in first.points.windows(2) {
+                    for b in second.points.windows(2) {
+                        if segments_cross((a[0], a[1]), (b[0], b[1])) {
+                            found.push(format!(
+                                "{name}: {} -> {} crosses {} -> {}",
+                                first.from, first.to, second.from, second.to
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    };
+    insta::glob!(
+        "../../op-diagram-mermaid/tests/diagrams",
+        "**/*.mmd",
+        |path| {
+            let diagram = parse(path);
+            if matches!(diagram, Diagram::Graph(_)) {
+                record(path, diagram);
+            }
+        }
+    );
+    insta::glob!("ir/*.json", |path| {
+        let json = std::fs::read_to_string(path).unwrap();
+        record(path, serde_json::from_str(&json).unwrap());
+    });
+    insta::assert_snapshot!(found.join("\n"));
+}
+
+// Two segments that only touch, or run along one line, do not cross.
+fn segments_cross(first: (Point, Point), second: (Point, Point)) -> bool {
+    let side = |(from, to): (Point, Point), point: Point| {
+        (to.x - from.x) * (point.y - from.y) - (to.y - from.y) * (point.x - from.x)
+    };
+    let apart = |a: f32, b: f32| a * b < 0.0 && a.abs() > 0.01 && b.abs() > 0.01;
+    apart(side(second, first.0), side(second, first.1))
+        && apart(side(first, second.0), side(first, second.1))
+}
+
 fn parse(path: &Path) -> Diagram {
     let source = std::fs::read_to_string(path).unwrap();
     op_diagram_mermaid::parse(&source).unwrap()

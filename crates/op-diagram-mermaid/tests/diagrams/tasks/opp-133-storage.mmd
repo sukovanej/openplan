@@ -1,0 +1,6 @@
+flowchart TD
+  ref["refs/openplan/tasks"] --> tip["commit<br/>OPP-131: status → in_progress<br/>author + Via: claude-code"]
+  track["refs/openplan/remotes/origin/tasks<br/>last tip seen on origin"] --> older["older commits"]
+  tip -- parent --> older
+  tip --> tree["tree"]
+  tree --> files["config.toml<br/>tasks/00120-stop-a-hung-git-fetch.md<br/>tags/bug.md<br/>docs/storage-and-sync.md<br/>assets/…"]

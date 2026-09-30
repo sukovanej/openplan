@@ -1,0 +1,176 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/opp-133-components.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "ui",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Web UI / CLI"
+      ]
+    },
+    {
+      "id": "daemon",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Daemon",
+        "op-server"
+      ]
+    },
+    {
+      "id": "index",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "op-index",
+        "read model of the head"
+      ]
+    },
+    {
+      "id": "backend",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "GitBackend",
+        "op-backend-git"
+      ]
+    },
+    {
+      "id": "loop",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "SyncLoop",
+        "one per project"
+      ]
+    },
+    {
+      "id": "odb",
+      "shape": {
+        "kind": "cylinder"
+      },
+      "label": [
+        "Local object database",
+        "refs/openplan/tasks"
+      ]
+    },
+    {
+      "id": "origin",
+      "shape": {
+        "kind": "cylinder"
+      },
+      "label": [
+        "origin",
+        "refs/openplan/tasks"
+      ]
+    },
+    {
+      "id": "policy",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "TaskMergePolicy",
+        "op-tracker"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "ui",
+      "to": "daemon",
+      "label": [
+        "HTTP"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "daemon",
+      "to": "index",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "daemon",
+      "to": "backend",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "daemon",
+      "to": "loop",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "loop",
+      "to": "backend",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "backend",
+      "to": "odb",
+      "label": [
+        "gix"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "backend",
+      "to": "origin",
+      "label": [
+        "git CLI"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "backend",
+      "to": "daemon",
+      "label": [
+        "HeadMoved events"
+      ],
+      "stroke": "dotted",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "policy",
+      "to": "backend",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

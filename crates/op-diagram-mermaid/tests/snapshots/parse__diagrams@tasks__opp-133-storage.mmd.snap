@@ -1,0 +1,117 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/opp-133-storage.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "ref",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "refs/openplan/tasks"
+      ]
+    },
+    {
+      "id": "tip",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "commit",
+        "OPP-131: status → in_progress",
+        "author + Via: claude-code"
+      ]
+    },
+    {
+      "id": "track",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "refs/openplan/remotes/origin/tasks",
+        "last tip seen on origin"
+      ]
+    },
+    {
+      "id": "older",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "older commits"
+      ]
+    },
+    {
+      "id": "tree",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "tree"
+      ]
+    },
+    {
+      "id": "files",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "config.toml",
+        "tasks/00120-stop-a-hung-git-fetch.md",
+        "tags/bug.md",
+        "docs/storage-and-sync.md",
+        "assets/…"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "ref",
+      "to": "tip",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "track",
+      "to": "older",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "tip",
+      "to": "older",
+      "label": [
+        "parent"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "tip",
+      "to": "tree",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "tree",
+      "to": "files",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

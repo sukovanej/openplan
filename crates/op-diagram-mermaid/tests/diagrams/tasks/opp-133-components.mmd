@@ -1,0 +1,10 @@
+flowchart TD
+  ui["Web UI / CLI"] -->|HTTP| daemon["Daemon<br/>op-server"]
+  daemon --> index["op-index<br/>read model of the head"]
+  daemon --> backend["GitBackend<br/>op-backend-git"]
+  daemon --> loop["SyncLoop<br/>one per project"]
+  loop --> backend
+  backend -->|gix| odb[("Local object database<br/>refs/openplan/tasks")]
+  backend -->|git CLI| origin[("origin<br/>refs/openplan/tasks")]
+  backend -. "HeadMoved events" .-> daemon
+  policy["TaskMergePolicy<br/>op-tracker"] --> backend
