@@ -4,6 +4,8 @@ created: 2026-09-27T14:46:48Z
 tags:
 - bug
 - daemon
+pull_requests:
+- https://github.com/sukovanej/openplan/pull/238
 ---
 # Draw diagram edges with no crossing that the layout can avoid
 
