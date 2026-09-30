@@ -1,0 +1,199 @@
+---
+source: crates/op-diagram-mermaid/tests/parse.rs
+expression: diagram
+input_file: crates/op-diagram-mermaid/tests/diagrams/tasks/opp-133-write.mmd
+---
+{
+  "kind": "graph",
+  "direction": "down",
+  "nodes": [
+    {
+      "id": "start",
+      "shape": {
+        "kind": "stadium"
+      },
+      "label": [
+        "Edit from the API"
+      ]
+    },
+    {
+      "id": "lock",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Take the writing lock"
+      ]
+    },
+    {
+      "id": "tip",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Read the tip of refs/openplan/tasks"
+      ]
+    },
+    {
+      "id": "fn",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Run the write function",
+        "on the snapshot of the tip"
+      ]
+    },
+    {
+      "id": "objs",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Write blobs, tree, commit",
+        "parent = tip"
+      ]
+    },
+    {
+      "id": "empty",
+      "shape": {
+        "kind": "diamond"
+      },
+      "label": [
+        "Tree changed?"
+      ]
+    },
+    {
+      "id": "nothing",
+      "shape": {
+        "kind": "stadium"
+      },
+      "label": [
+        "No commit"
+      ]
+    },
+    {
+      "id": "cas",
+      "shape": {
+        "kind": "diamond"
+      },
+      "label": [
+        "Move the ref",
+        "only if it still = tip"
+      ]
+    },
+    {
+      "id": "wait",
+      "shape": {
+        "kind": "rectangle"
+      },
+      "label": [
+        "Sleep 1–20 ms"
+      ]
+    },
+    {
+      "id": "event",
+      "shape": {
+        "kind": "stadium"
+      },
+      "label": [
+        "HeadMoved, origin Local",
+        "index reloads, sync in 2 s"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "lock",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "lock",
+      "to": "tip",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "tip",
+      "to": "fn",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "fn",
+      "to": "objs",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "objs",
+      "to": "empty",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "empty",
+      "to": "nothing",
+      "label": [
+        "no"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "empty",
+      "to": "cas",
+      "label": [
+        "yes"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "cas",
+      "to": "wait",
+      "label": [
+        "moved by another process"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "wait",
+      "to": "tip",
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    },
+    {
+      "from": "cas",
+      "to": "event",
+      "label": [
+        "ok"
+      ],
+      "stroke": "solid",
+      "tail": "none",
+      "head": "arrow",
+      "min_length": 1
+    }
+  ]
+}

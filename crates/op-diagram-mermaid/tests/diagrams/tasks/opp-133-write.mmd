@@ -1,0 +1,10 @@
+flowchart TD
+  start(["Edit from the API"]) --> lock["Take the writing lock"]
+  lock --> tip["Read the tip of refs/openplan/tasks"]
+  tip --> fn["Run the write function<br/>on the snapshot of the tip"]
+  fn --> objs["Write blobs, tree, commit<br/>parent = tip"]
+  objs --> empty{"Tree changed?"}
+  empty -- no --> nothing(["No commit"])
+  empty -- yes --> cas{"Move the ref<br/>only if it still = tip"}
+  cas -- "moved by another process" --> wait["Sleep 1–20 ms"] --> tip
+  cas -- ok --> event(["HeadMoved, origin Local<br/>index reloads, sync in 2 s"])

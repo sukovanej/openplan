@@ -26,19 +26,39 @@ const SWEEPS: usize = 12;
 
 pub(super) fn order(structure: &Structure<'_>, initial_keys: Vec<f32>) -> Ordering {
     let tree = Tree::new(structure);
-    let mut keys = initial_keys;
-    let mut arranged = tree.arrange_all(&mut keys);
-    let mut best = (
-        crossings(structure, &arranged.ranks),
-        arranged.ranks.clone(),
-        keys.clone(),
-    );
-    let mut above = vec![Vec::new(); keys.len()];
-    let mut below = vec![Vec::new(); keys.len()];
+    let mut above = vec![Vec::new(); initial_keys.len()];
+    let mut below = vec![Vec::new(); initial_keys.len()];
     for &(upper, lower) in structure.links {
         below[upper].push(lower);
         above[lower].push(upper);
     }
+    let neighbors = [above.as_slice(), below.as_slice()];
+    let mut best = search(structure, &tree, neighbors, initial_keys.clone());
+    // A sweep moves a vertex to the mean position of its neighbors on one side. Two vertices with
+    // the same neighbors there tie, for example the next vertices of two edges from one node.
+    // Their first order then holds on every rank below. A start that transposition settled
+    // breaks the tie.
+    if best.0 > 0 {
+        let mut keys = initial_keys;
+        tree.transpose(&mut keys, neighbors);
+        let settled = search(structure, &tree, neighbors, keys);
+        if settled.0 < best.0 {
+            best = settled;
+        }
+    }
+    let mut keys = best.1;
+    tree.arrange_all(&mut keys)
+}
+
+fn search(
+    structure: &Structure<'_>,
+    tree: &Tree<'_>,
+    neighbors: [&[Vec<usize>]; 2],
+    mut keys: Vec<f32>,
+) -> (usize, Vec<f32>) {
+    let [above, below] = neighbors;
+    let mut arranged = tree.arrange_all(&mut keys);
+    let mut best = (crossings(structure, &arranged.ranks), keys.clone());
     for sweep in 0..SWEEPS {
         let downward = sweep % 2 == 0;
         let ranks: Vec<usize> = if downward {
@@ -47,7 +67,7 @@ pub(super) fn order(structure: &Structure<'_>, initial_keys: Vec<f32>) -> Orderi
             (0..structure.ranks.saturating_sub(1)).rev().collect()
         };
         for rank in ranks {
-            let neighbors = if downward { &above } else { &below };
+            let neighbors = if downward { above } else { below };
             let position = positions(keys.len(), &arranged.ranks);
             for &vertex in &arranged.ranks[rank] {
                 let adjacent = &neighbors[vertex];
@@ -58,13 +78,13 @@ pub(super) fn order(structure: &Structure<'_>, initial_keys: Vec<f32>) -> Orderi
             }
             arranged = tree.arrange_all(&mut keys);
         }
+        arranged = tree.transpose(&mut keys, neighbors);
         let count = crossings(structure, &arranged.ranks);
         if count < best.0 {
-            best = (count, arranged.ranks.clone(), keys.clone());
+            best = (count, keys.clone());
         }
     }
-    let mut keys = best.2;
-    tree.arrange_all(&mut keys)
+    best
 }
 
 fn positions(count: usize, ranks: &[Vec<usize>]) -> Vec<f32> {
@@ -95,6 +115,18 @@ fn crossings(structure: &Structure<'_>, ranks: &[Vec<usize>]) -> usize {
                 }
             }
             count
+        })
+        .sum()
+}
+
+fn crossings_between(first: &[usize], second: &[usize], position: &[f32]) -> usize {
+    first
+        .iter()
+        .map(|end| {
+            second
+                .iter()
+                .filter(|other| position[*end] > position[**other])
+                .count()
         })
         .sum()
 }
@@ -158,6 +190,44 @@ impl<'a> Tree<'a> {
             }
         }
         Ordering { ranks, levels }
+    }
+
+    // Each swap removes at least one crossing, so the passes end.
+    fn transpose(&self, keys: &mut [f32], neighbors: [&[Vec<usize>]; 2]) -> Ordering {
+        loop {
+            let arranged = self.arrange_all(keys);
+            let mut position = positions(keys.len(), &arranged.ranks);
+            // A swap changes the crossings that the next swap counts, and the order of a HashMap
+            // changes from run to run.
+            let mut rows: Vec<(&(Level, usize), &Vec<Entry>)> = arranged.levels.iter().collect();
+            rows.sort_by_key(|(at, _)| **at);
+            let mut swapped = false;
+            for (_, entries) in rows {
+                let mut entries = entries.clone();
+                for at in 1..entries.len() {
+                    let (Entry::Vertex(left), Entry::Vertex(right)) =
+                        (entries[at - 1], entries[at])
+                    else {
+                        continue;
+                    };
+                    let crossing = |left: usize, right: usize, position: &[f32]| {
+                        neighbors
+                            .iter()
+                            .map(|near| crossings_between(&near[left], &near[right], position))
+                            .sum::<usize>()
+                    };
+                    if crossing(right, left, &position) < crossing(left, right, &position) {
+                        entries.swap(at - 1, at);
+                        keys.swap(left, right);
+                        position.swap(left, right);
+                        swapped = true;
+                    }
+                }
+            }
+            if !swapped {
+                return arranged;
+            }
+        }
     }
 
     fn arrange(

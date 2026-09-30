@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="op-diagram" viewBox="0 0 526.64 507" width="526.64" height="507" font-family="Inter Diagram, sans-serif" text-rendering="geometricPrecision"><style>.op-diagram { background: #fff; font-family: "Inter Diagram", Inter, "Helvetica Neue", Arial, sans-serif; }
+.op-diagram .outline { fill: #f3f5fa; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .outline-detail { fill: none; stroke: #7b8599; stroke-width: 1.2; }
+.op-diagram .table-header { fill: #e3e7f0; }
+.op-diagram .code-box { fill: #f6f5f3; stroke: #e2dfda; stroke-width: 1; }
+.op-diagram .cluster-box { fill: #f7f8fb; stroke: #b3bacb; stroke-width: 1; }
+.op-diagram .edge-line { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .stroke-dotted .edge-line { stroke-dasharray: 4 3; }
+.op-diagram .stroke-thick .edge-line { stroke-width: 2.8; }
+.op-diagram .head-arrow path, .op-diagram .head-circle circle { fill: #5f6776; }
+.op-diagram .head-open path, .op-diagram .head-cross path, .op-diagram .head-cardinality path { fill: none; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .head-ring { fill: #fff; stroke: #5f6776; stroke-width: 1.4; }
+.op-diagram .edge-label-box { fill: #fff; }
+.op-diagram text { fill: #1f2430; }
+.op-diagram .text-caption { fill: #6b7280; }
+.op-diagram .text-header { fill: #454c5c; paint-order: stroke; stroke: #f7f8fb; stroke-width: 5px; stroke-linejoin: round; }
+.op-diagram .shape-table .text-header { fill: #1f2430; stroke: none; }
+.op-diagram .text-code { fill: #c4245a; }
+.op-diagram .text-key { fill: #6b7280; }
+.op-diagram .text-comment { fill: #6b7280; font-style: italic; }
+.op-diagram .text-edge-label { fill: #3a4150; }
+.op-diagram .lifeline { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 4 4; }
+.op-diagram .divider { stroke: #9aa2b1; stroke-width: 1; stroke-dasharray: 5 4; }
+.op-diagram .block .cluster-box { fill: none; stroke: #9aa2b1; }
+.op-diagram .activation .outline { fill: #e6e9f2; stroke: #7b8599; }
+.op-diagram .note .outline { fill: #fdf6d8; stroke: #cbb971; }
+.op-diagram .note .outline-detail { stroke: #cbb971; }
+.op-diagram .sequence-number .outline { fill: #5f6776; stroke: none; }
+.op-diagram .text-number { fill: #fff; }
+.op-diagram .actor-figure { fill: none; stroke: #7b8599; stroke-width: 1.4; }
+.op-diagram .icon { color: #6b7280; }
+.op-diagram .status-backlog, .op-diagram .status-cancelled { --status: oklch(0.551 0.027 264.364); }
+.op-diagram .status-todo { --status: oklch(0.546 0.245 262.881); }
+.op-diagram .status-in-progress { --status: oklch(0.666 0.179 58.318); }
+.op-diagram .status-in-review, .op-diagram .status-unreadable { --status: oklch(0.637 0.237 25.331); }
+.op-diagram .status-done { --status: oklch(0.596 0.145 163.225); }
+.op-diagram .node[class*="status-"] .outline { stroke: var(--status); fill: color-mix(in srgb, var(--status) 12%, #fff); }
+.op-diagram .outline.lid { fill: #e3e7f0; }
+.op-diagram .node[class*="status-"] .outline.lid { fill: color-mix(in srgb, var(--status) 26%, #fff); }
+.op-diagram .cluster[class*="status-"] .cluster-box { stroke: var(--status); fill: color-mix(in srgb, var(--status) 6%, #fff); }
+.op-diagram [class*="status-"] .icon { color: var(--status); }
+.op-diagram .unresolved .outline { fill: #fff; stroke: #9aa2b1; stroke-dasharray: 4 3; }
+</style><g class="edge stroke-solid"><path class="edge-line" d="M416.38 48L416.38 96"/><g class="head head-arrow"><path d="M416.38 104L411.88 95L420.88 95Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M141.06 184L141.06 261Q141.06 269 149.06 269L180.24 269Q188.24 269 188.24 272L188.24 275"/><g class="head head-arrow"><path d="M188.24 283L183.74 274L192.74 274Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M410.38 204L410.38 209Q410.38 214 402.38 214L296.3 214Q288.3 214 288.3 222L288.3 261Q288.3 269 280.3 269L208.24 269Q200.24 269 200.24 272L200.24 275"/><g class="head head-arrow"><path d="M200.24 283L195.74 274L204.74 274Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M422.38 204L422.38 216Q422.38 224 414.38 224L334.61 224Q326.61 224 326.61 232L326.61 275"/><g class="head head-arrow"><path d="M326.61 283L322.11 274L331.11 274Z"/></g></g><g class="edge stroke-solid"><path class="edge-line" d="M326.48 323L326.48 371"/><g class="head head-arrow"><path d="M326.48 379L321.98 370L330.98 370Z"/></g></g><g class="node shape-rectangle"><rect class="outline" x="334.13" y="8" width="164.5" height="40" rx="3"/><text class="text-label" x="416.38" y="33.09" font-size="14" font-weight="400" text-anchor="middle">refs/openplan/tasks</text></g><g class="node shape-rectangle"><rect class="outline" x="314.13" y="104" width="204.52" height="100" rx="3"/><text class="text-label" x="416.38" y="129.09" font-size="14" font-weight="400" text-anchor="middle">commit</text><text class="text-label" x="416.38" y="149.09" font-size="14" font-weight="400" text-anchor="middle">OPP-131: status →</text><text class="text-label" x="416.38" y="169.09" font-size="14" font-weight="400" text-anchor="middle">in_progress</text><text class="text-label" x="416.38" y="189.09" font-size="14" font-weight="400" text-anchor="middle">author + Via: claude-code</text></g><g class="node shape-rectangle"><rect class="outline" x="8" y="124" width="266.13" height="60" rx="3"/><text class="text-label" x="141.06" y="149.09" font-size="14" font-weight="400" text-anchor="middle">refs/openplan/remotes/origin/tasks</text><text class="text-label" x="141.06" y="169.09" font-size="14" font-weight="400" text-anchor="middle">last tip seen on origin</text></g><g class="node shape-rectangle"><rect class="outline" x="131.24" y="283" width="126.02" height="40" rx="3"/><text class="text-label" x="194.24" y="308.09" font-size="14" font-weight="400" text-anchor="middle">older commits</text></g><g class="node shape-rectangle"><rect class="outline" x="297.39" y="283" width="58.19" height="40" rx="3"/><text class="text-label" x="326.48" y="308.09" font-size="14" font-weight="400" text-anchor="middle">tree</text></g><g class="node shape-rectangle"><rect class="outline" x="181.12" y="379" width="290.72" height="120" rx="3"/><text class="text-label" x="326.48" y="404.09" font-size="14" font-weight="400" text-anchor="middle">config.toml</text><text class="text-label" x="326.48" y="424.09" font-size="14" font-weight="400" text-anchor="middle">tasks/00120-stop-a-hung-git-fetch.md</text><text class="text-label" x="326.48" y="444.09" font-size="14" font-weight="400" text-anchor="middle">tags/bug.md</text><text class="text-label" x="326.48" y="464.09" font-size="14" font-weight="400" text-anchor="middle">docs/storage-and-sync.md</text><text class="text-label" x="326.48" y="484.09" font-size="14" font-weight="400" text-anchor="middle">assets/…</text></g><g class="edge-label"><rect class="edge-label-box" x="265.99" y="234" width="44.63" height="21" rx="3"/><text class="text-edge-label" x="288.3" y="248.87" font-size="12" font-weight="400" text-anchor="middle">parent</text></g></svg>
