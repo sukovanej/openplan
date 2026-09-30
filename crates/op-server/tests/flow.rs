@@ -64,7 +64,7 @@ async fn a_project_parameter_leaves_the_other_project_out() {
 }
 
 #[tokio::test]
-async fn the_seeds_are_every_unfinished_task_until_a_status_narrows_them() {
+async fn the_seeds_are_every_ready_task_until_a_status_narrows_them() {
     let (_alpha, _beta, state) = two_projects();
     todo(&state, "alpha", "alpha one", &[]).await;
     create_in(&state, "alpha", json!({ "title": "alpha two" })).await;
@@ -79,9 +79,9 @@ async fn the_seeds_are_every_unfinished_task_until_a_status_narrows_them() {
     assert_eq!(closed.status(), StatusCode::OK);
 
     assert_eq!(
-        pages(&state, "").await.len(),
-        2,
-        "the todo task and the backlog task seed, the done task does not"
+        pages(&state, "").await,
+        vec!["/alpha/task/AAA-1"],
+        "the todo task seeds, the backlog task and the done task do not"
     );
     assert_eq!(
         pages(&state, "?status=backlog").await,

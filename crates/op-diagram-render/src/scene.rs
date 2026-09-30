@@ -197,7 +197,7 @@ impl Rect {
     }
 }
 
-fn move_texts(texts: &mut [Text], dx: f32, dy: f32) {
+pub(crate) fn move_texts(texts: &mut [Text], dx: f32, dy: f32) {
     for text in texts {
         text.x += dx;
         text.baseline += dy;

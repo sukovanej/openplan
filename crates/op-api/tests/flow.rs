@@ -326,16 +326,64 @@ fn the_key_orders_the_rest_by_its_number() {
 }
 
 #[test]
-fn no_parameter_seeds_every_unfinished_task_of_every_project() {
+fn no_parameter_seeds_every_ready_task_of_every_project() {
     let flow = flow(vec![
         task("OPP-1", Status::Todo),
         task("OPP-2", Status::InProgress),
         task("OPP-3", Status::Done),
         task("OPP-4", Status::Cancelled),
-        task("WEB-1", Status::Backlog).project("two"),
+        task("OPP-5", Status::Backlog),
+        task("WEB-1", Status::InReview).project("two"),
     ]);
 
     assert_eq!(ids(&flow), ["OPP-1", "WEB-1", "OPP-2"]);
+}
+
+#[test]
+fn no_parameter_takes_a_backlog_task_that_a_shown_task_needs() {
+    let flow = flow(vec![
+        task("OPP-1", Status::Todo).needs(&["OPP-2"]),
+        task("OPP-2", Status::Backlog),
+        task("OPP-3", Status::Todo).parent("OPP-4"),
+        task("OPP-4", Status::Backlog),
+        task("OPP-5", Status::Backlog).parent("OPP-4"),
+        task("OPP-6", Status::Backlog),
+    ]);
+
+    assert_eq!(
+        kinds(&flow),
+        [
+            ("OPP-2", "leaf"),
+            ("OPP-4", "box"),
+            ("OPP-3", "leaf"),
+            ("OPP-5", "leaf"),
+            ("OPP-1", "leaf"),
+        ]
+    );
+}
+
+#[test]
+fn a_named_backlog_status_or_key_takes_a_backlog_task() {
+    let named = |query: FlowQuery| {
+        let flow =
+            Flow::build(&tasks(vec![task("OPP-1", Status::Backlog)]), &query).expect("no cycle");
+        ids(&flow).len()
+    };
+
+    assert_eq!(
+        named(FlowQuery {
+            statuses: vec![Status::Backlog],
+            ..FlowQuery::default()
+        }),
+        1
+    );
+    assert_eq!(
+        named(FlowQuery {
+            tasks: vec![("one".to_owned(), "OPP-1".to_owned())],
+            ..FlowQuery::default()
+        }),
+        1
+    );
 }
 
 #[test]

@@ -69,6 +69,7 @@ fn checked(diagram: &Diagram, path: &Path) -> String {
             let mut problems = problems(&scene);
             problems.extend(waves(graph, &scene));
             problems.extend(lost_labels(graph, &scene));
+            problems.extend(fractional_cards(&scene));
             problems
         }
         Diagram::Sequence(_) => sequence_problems(&scene),
@@ -149,6 +150,16 @@ fn root<'a>(up: &HashMap<&'a str, &'a str>, mut at: &'a str) -> &'a str {
         at = next;
     }
     at
+}
+
+// A card with a fractional height puts its border on half a pixel, which a Retina display blurs.
+fn fractional_cards(scene: &Scene) -> Vec<String> {
+    scene
+        .nodes
+        .iter()
+        .filter(|node| node.icon.is_some() && node.rect.height.fract() != 0.0)
+        .map(|node| format!("the card {} is {} high", node.id, node.rect.height))
+        .collect()
 }
 
 // An icon stays inside the box that carries it and clear of the text beside it.

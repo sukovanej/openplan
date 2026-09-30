@@ -34,7 +34,7 @@ describe("the selection in the URL", () => {
     const selection = readSelection(new URLSearchParams(""))
     expect(selection).toEqual(EVERY_TASK)
     expect(selectsEveryTask(selection)).toBe(true)
-    expect(describeSelection(selection)).toBe("Every task that is not finished")
+    expect(describeSelection(selection)).toBe("Every task that is not in the backlog or finished")
   })
 
   it("sends a named task with the project that spells its key", () => {
