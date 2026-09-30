@@ -1,7 +1,6 @@
 import { Pencil, TriangleAlert } from "lucide-react"
 import { type ComponentProps, useState } from "react"
 
-import type { DocRef, TaskRef } from "@openplan/api-client"
 import { Button, cn } from "@openplan/ui"
 
 import type { BodySegment, ConflictBlock, ConflictVersion } from "./body-segments"
@@ -10,8 +9,6 @@ import { TaskBody } from "./task-body"
 
 interface Markdown {
   readonly project: string
-  readonly refs?: ReadonlyArray<TaskRef>
-  readonly docRefs?: ReadonlyArray<DocRef>
   readonly abbreviation: string | undefined
 }
 
@@ -109,8 +106,6 @@ export function BodyConflict({
 export function TaskBodyWithConflicts({
   segments,
   project,
-  refs,
-  docRefs,
   abbreviation,
   onResolve,
   pending,
@@ -123,7 +118,7 @@ export function TaskBodyWithConflicts({
     pending?: boolean
     proseClassName?: string
   }) {
-  const markdown = { project, refs, docRefs, abbreviation }
+  const markdown = { project, abbreviation }
   return (
     <div {...attributes}>
       {segments.map((segment, at) =>

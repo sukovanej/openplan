@@ -1,6 +1,6 @@
 import { CircleAlert } from "lucide-react"
 
-import type { Comment, DocRef, Field_Rfc3339, Field_String, TaskRef } from "@openplan/api-client"
+import type { Comment, Field_Rfc3339, Field_String } from "@openplan/api-client"
 import { absoluteTime, MetaLine, Section, Tooltip } from "@openplan/ui"
 
 import { AgentMark } from "./agent-mark"
@@ -12,14 +12,10 @@ import { TaskBody } from "./task-body"
 export function CommentThread({
   project,
   comments,
-  refs,
-  docRefs,
   abbreviation,
 }: {
   project: string
   comments: ReadonlyArray<Comment>
-  refs?: ReadonlyArray<TaskRef>
-  docRefs?: ReadonlyArray<DocRef>
   abbreviation: string | undefined
 }) {
   return (
@@ -40,8 +36,6 @@ export function CommentThread({
               <TaskBody
                 project={project}
                 markdown={comment.text}
-                refs={refs}
-                docRefs={docRefs}
                 abbreviation={abbreviation}
                 className="text-[15px] leading-6"
                 data-keys-ignore

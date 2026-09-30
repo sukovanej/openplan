@@ -1,9 +1,6 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
-use op_api::{
-    DocChild, DocDetail, DocListItem, DocMetadata, DocRef, Problem, ProblemCode, TaskListItem,
-    updated_field,
-};
+use op_api::{DocChild, DocDetail, DocListItem, DocMetadata, Problem, ProblemCode, updated_field};
 use op_backend::Timestamp;
 use op_task::reference::{self, Target};
 use op_task::{Abbreviation, FieldError, FieldResult, layout};
@@ -205,8 +202,6 @@ impl Index {
             title: entry.title.clone(),
             metadata: entry.metadata.clone(),
             updated: self.doc_updated_of(name, entry),
-            refs: self.task_refs_in(project, &partial.body),
-            doc_refs: self.doc_refs_in(layout::DOCS, &partial.body),
             parent_title,
             children,
             body: self.body_of(&op_task::doc::content(&partial.body)),
@@ -223,34 +218,6 @@ impl Index {
             Some(abbreviation) => op_api::body_to_keys(abbreviation, layout::DOCS, content),
             None => content.to_owned(),
         }
-    }
-
-    // Every `[[…]]` naming a doc that exists, once each, in first-seen order. A dangling one is
-    // left out: the client renders it as a dangling chip, which needs no title. `dir` is the
-    // directory of the file the body comes from.
-    pub fn doc_refs_in(&self, dir: &str, body: &str) -> Vec<DocRef> {
-        let mut seen = HashSet::new();
-        op_task::doc::body_doc_names(self.abbreviation, dir, body)
-            .into_iter()
-            .filter(|name| seen.insert(name.clone()))
-            .filter_map(|name| {
-                let entry = self.docs.get(&name)?;
-                Some(DocRef {
-                    title: entry.title.clone(),
-                    name,
-                })
-            })
-            .collect()
-    }
-
-    fn task_refs_in(&self, project: &str, body: &str) -> Vec<op_api::TaskRef> {
-        let Some(abbreviation) = self.abbreviation else {
-            return Vec::new();
-        };
-        let rows = self.list(project);
-        let by_id: HashMap<&str, &TaskListItem> =
-            rows.iter().map(|row| (row.id.as_str(), row)).collect();
-        crate::body_refs(abbreviation, layout::DOCS, body, &by_id)
     }
 
     fn doc_row(&self, project: &str, name: &str, entry: &DocEntry) -> DocListItem {

@@ -14,16 +14,7 @@ import {
 } from "react"
 import { useNavigate } from "react-router-dom"
 
-import type {
-  DocDetail,
-  DocListItem,
-  DocRef,
-  Problem,
-  TaskDetail,
-  TaskListItem,
-  TaskRef,
-  TaskText,
-} from "@openplan/api-client"
+import type { DocDetail, DocListItem, Problem, TaskDetail, TaskListItem, TaskText } from "@openplan/api-client"
 import type { BodyEditorHandle, RefOption } from "@openplan/editor"
 import { docPath, ProblemBanner, statusField, withoutTextProblems } from "@openplan/task-ui"
 import { Button } from "@openplan/ui"
@@ -205,8 +196,6 @@ interface TextContentProps {
   write: WriteText<TaskText>
   self: { task?: string; doc?: string }
   noun: { title: string; body: string; empty: string }
-  refs: ReadonlyArray<TaskRef> | undefined
-  docRefs: ReadonlyArray<DocRef> | undefined
   problems: ReadonlyArray<Problem>
   abbreviation: string
   meta: (saveNote: ReactNode) => ReactNode
@@ -220,8 +209,6 @@ function TextContent({
   write,
   self,
   noun,
-  refs,
-  docRefs,
   problems,
   abbreviation,
   meta,
@@ -269,8 +256,6 @@ function TextContent({
           ref={editor}
           project={project}
           abbreviation={abbreviation}
-          refs={refs}
-          docRefs={docRefs}
           markdown={shown.description}
           onChange={(next) => edit({ ...text, description: next })}
           onSave={save}
@@ -292,8 +277,6 @@ export function TaskContent({
   id,
   title,
   description,
-  refs,
-  docRefs,
   problems,
   abbreviation,
   meta,
@@ -302,8 +285,6 @@ export function TaskContent({
   id: string
   title: string
   description: string
-  refs: TaskDetail["refs"]
-  docRefs: TaskDetail["doc_refs"]
   problems: ReadonlyArray<Problem>
   abbreviation: string
   meta: (saveNote: ReactNode) => ReactNode
@@ -325,8 +306,6 @@ export function TaskContent({
       write={write}
       self={{ task: id }}
       noun={TASK_NOUN}
-      refs={refs}
-      docRefs={docRefs}
       problems={problems}
       abbreviation={abbreviation}
       meta={meta}
@@ -372,8 +351,6 @@ export function DocContent({
       write={write}
       self={{ doc: doc.name }}
       noun={DOC_NOUN}
-      refs={doc.refs}
-      docRefs={doc.doc_refs}
       problems={doc.problems}
       abbreviation={abbreviation}
       meta={meta}

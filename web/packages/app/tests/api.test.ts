@@ -121,7 +121,6 @@ it.effect("decodes a task detail with its hierarchy from GET /api/projects/:proj
       updated: "2026-01-02T00:00:00Z",
       parent_title: "Epic",
       children: [{ id: "kid-1", title: "Kid", status: "in_progress", rank: "m" }],
-      refs: [{ id: "epic-1", title: "Epic", status: "todo" }],
     }),
   )(
     Effect.gen(function* () {
@@ -131,7 +130,6 @@ it.effect("decodes a task detail with its hierarchy from GET /api/projects/:proj
       expect(task.description).toBe("See [[OPP-2]].\n")
       expect(task.parent_title).toBe("Epic")
       expect(task.children?.map((c) => c.id)).toEqual(["kid-1"])
-      expect(task.refs?.[0].title).toBe("Epic")
     }),
   ),
 )
@@ -161,7 +159,6 @@ it.effect("decodes a task detail that omits the optional hierarchy fields", () =
       const task = yield* getTask(PROJECT, "solo-1")
       expect(task.parent_title).toBeUndefined()
       expect(task.children).toBeUndefined()
-      expect(task.refs).toBeUndefined()
     }),
   ),
 )

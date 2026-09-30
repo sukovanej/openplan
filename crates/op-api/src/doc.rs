@@ -7,15 +7,7 @@ use op_task::{Abbreviation, Timestamp, doc::Doc};
 use crate::field::{Field, FieldUpdate, Rfc3339};
 use crate::keys::{KeyError, body_from_keys};
 use crate::metadata::MetadataErrorTag;
-use crate::task::{Author, Problem, TaskRef};
-
-// A doc referenced by `[[name]]`, resolved to its current title so a chip can render without the
-// client looking it up in a full list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct DocRef {
-    pub name: String,
-    pub title: String,
-}
+use crate::task::{Author, Problem};
 
 // A doc's frontmatter, read the way a task's is: every field carries its own value or its own
 // error, so a file with one bad field still renders the rest and flags only what failed. `parent`
@@ -152,8 +144,7 @@ pub struct DocListItem {
     pub author: Option<Author>,
 }
 
-// One doc read for its own page. `body` is the markdown below the title heading; `refs` and
-// `doc_refs` resolve the `[[…]]` the body carries, so a chip renders from this one read.
+// One doc read for its own page. `body` is the markdown below the title heading.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DocDetail {
     pub project: String,
@@ -169,10 +160,6 @@ pub struct DocDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub author: Option<Author>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub refs: Vec<TaskRef>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub doc_refs: Vec<DocRef>,
     // The title of the doc `metadata.parent` names, when it resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]

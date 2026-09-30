@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest"
 import type { TagView } from "@openplan/api-client"
 
 import { DocChangeView, DocumentChangeView, TagChangeView, TaskChangeView } from "../src/change-view"
+import { RefReader } from "../src/ref-reader"
+import { holding } from "./refs"
 import { render } from "./render"
 
 describe("TaskChangeView", () => {
   it("shows a status change as the two status badges and an arrow, and nothing more", () => {
     const shown = render(
       <TaskChangeView
+        project="openplan"
         tags={undefined}
         change={{ task: "OPP-1", kind: "modified", fields: [{ field: "status", from: "todo", to: "in_review" }] }}
       />,
@@ -20,6 +23,7 @@ describe("TaskChangeView", () => {
   it("gives every other field an icon beside its words", () => {
     const shown = render(
       <TaskChangeView
+        project="openplan"
         tags={undefined}
         change={{
           task: "OPP-1",
@@ -33,12 +37,14 @@ describe("TaskChangeView", () => {
   })
 
   it("names a task that came or went", () => {
-    expect(render(<TaskChangeView change={{ task: "OPP-1", kind: "added" }} tags={undefined} />).textContent).toBe(
-      "Created",
-    )
-    expect(render(<TaskChangeView change={{ task: "OPP-1", kind: "removed" }} tags={undefined} />).textContent).toBe(
-      "Deleted",
-    )
+    expect(
+      render(<TaskChangeView change={{ task: "OPP-1", kind: "added" }} tags={undefined} project="openplan" />)
+        .textContent,
+    ).toBe("Created")
+    expect(
+      render(<TaskChangeView change={{ task: "OPP-1", kind: "removed" }} tags={undefined} project="openplan" />)
+        .textContent,
+    ).toBe("Deleted")
   })
 })
 
@@ -80,6 +86,7 @@ describe("tag changes with the registry", () => {
   it("show each tag that joined or left a task as a chip that carries its sign", () => {
     const shown = render(
       <TaskChangeView
+        project="openplan"
         tags={registry}
         change={{ task: "OPP-1", kind: "modified", fields: [{ field: "tags", from: ["gone", "x"], to: ["x", "bug"] }] }}
       />,
@@ -94,6 +101,7 @@ describe("tag changes with the registry", () => {
   it("keep the words for tags that only changed order", () => {
     const shown = render(
       <TaskChangeView
+        project="openplan"
         tags={registry}
         change={{ task: "OPP-1", kind: "modified", fields: [{ field: "tags", from: ["a", "b"], to: ["b", "a"] }] }}
       />,
@@ -110,5 +118,37 @@ describe("tag changes with the registry", () => {
       { text: "backend", dangling: true },
       { text: "Server", dangling: false },
     ])
+  })
+})
+
+describe("dependency changes", () => {
+  const dependencies = (from: ReadonlyArray<string>, to: ReadonlyArray<string>) =>
+    render(
+      <RefReader value={holding({ "OPP-2": "in_progress", "OPP-3": "done" })}>
+        <TaskChangeView
+          project="openplan"
+          tags={undefined}
+          change={{ task: "OPP-1", kind: "modified", fields: [{ field: "dependencies", from, to }] }}
+        />
+      </RefReader>,
+    )
+
+  it("show each task that joined or left as a linked chip with its sign and key", () => {
+    const shown = dependencies(["OPP-3", "OPP-9"], ["OPP-3", "OPP-2"])
+    expect(
+      [...shown.querySelectorAll("a")].map((chip) => ({
+        text: chip.textContent,
+        to: chip.getAttribute("href"),
+        dangling: chip.classList.contains("border-dashed"),
+      })),
+    ).toEqual([
+      { text: "+OPP-2", to: "/openplan/task/OPP-2", dangling: false },
+      { text: "−OPP-9", to: "/openplan/task/OPP-9", dangling: true },
+    ])
+    expect(shown.querySelector("a [aria-label='In progress']")).not.toBeNull()
+  })
+
+  it("keep the words for dependencies that only changed order", () => {
+    expect(dependencies(["OPP-2", "OPP-3"], ["OPP-3", "OPP-2"]).textContent).toBe("Dependencies reordered")
   })
 })

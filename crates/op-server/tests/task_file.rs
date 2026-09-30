@@ -90,7 +90,6 @@ async fn a_file_that_names_other_tasks_resolves_them() {
     assert_eq!(written["metadata"]["parent"], parent);
     assert_eq!(written["parent_title"], "Epic");
     assert_eq!(written["depends_on"][0]["id"], dependency);
-    assert_eq!(written["refs"][0]["id"], dependency);
 }
 
 // The comment log is append-only: a file may add entries after the ones the task has, and may

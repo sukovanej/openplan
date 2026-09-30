@@ -124,47 +124,6 @@ async fn a_deleted_doc_leaves_the_list_empty() {
     assert!(listed.as_array().unwrap().is_empty());
 }
 
-// A doc body names tasks the way a task body does, and a task body names docs the same way back.
-#[tokio::test]
-async fn docs_and_tasks_resolve_each_other_s_references() {
-    let (_dir, state) = git_state();
-    send(
-        &state,
-        "POST",
-        "/api/projects/test/tasks",
-        Some(json!({ "title": "Ship the parser", "body": "see [[architecture]]" })),
-    )
-    .await;
-    send(
-        &state,
-        "POST",
-        "/api/projects/test/docs",
-        Some(json!({ "name": "Architecture", "body": "built by [[OPP-1]]" })),
-    )
-    .await;
-
-    let doc =
-        body_json(send(&state, "GET", "/api/projects/test/docs/architecture", None).await).await;
-    let refs = doc["refs"].as_array().unwrap();
-    assert_eq!(
-        refs.len(),
-        1,
-        "the doc resolves the task it names: {refs:?}"
-    );
-    assert_eq!(refs[0]["id"], "OPP-1");
-    assert_eq!(refs[0]["title"], "Ship the parser");
-
-    let task = body_json(send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await).await;
-    let doc_refs = task["doc_refs"].as_array().unwrap();
-    assert_eq!(
-        doc_refs.len(),
-        1,
-        "the task resolves the doc it names: {doc_refs:?}"
-    );
-    assert_eq!(doc_refs[0]["name"], "architecture");
-    assert_eq!(doc_refs[0]["title"], "Architecture");
-}
-
 // A file names every other file by its path relative to itself, and the API reads each path back
 // as the key or the name a person typed.
 #[tokio::test]

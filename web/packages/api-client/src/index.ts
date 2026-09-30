@@ -143,8 +143,6 @@ export type DocChild = { readonly name: string; readonly title: string }
 export const DocChild = Schema.Struct({ name: Schema.String, title: Schema.String }).annotate({
   identifier: "DocChild",
 })
-export type DocRef = { readonly name: string; readonly title: string }
-export const DocRef = Schema.Struct({ name: Schema.String, title: Schema.String }).annotate({ identifier: "DocRef" })
 export type DocPatch = { readonly body?: string; readonly name?: string; readonly parent?: string | null }
 export const DocPatch = Schema.Struct({
   body: Schema.optionalKey(Schema.String),
@@ -731,13 +729,11 @@ export type DocDetail = {
   readonly body: string
   readonly children?: ReadonlyArray<DocChild>
   readonly conflicts: number
-  readonly doc_refs?: ReadonlyArray<DocRef>
   readonly metadata: DocMetadata
   readonly name: string
   readonly parent_title?: string
   readonly problems: ReadonlyArray<Problem>
   readonly project: string
-  readonly refs?: ReadonlyArray<TaskRef>
   readonly title: string
   readonly updated: Field_Rfc3339
 }
@@ -748,13 +744,11 @@ export const DocDetail = Schema.Struct({
   conflicts: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
     Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
   ),
-  doc_refs: Schema.optionalKey(Schema.Array(DocRef)),
   metadata: DocMetadata,
   name: Schema.String,
   parent_title: Schema.optionalKey(Schema.String),
   problems: Schema.Array(Problem),
   project: Schema.String,
-  refs: Schema.optionalKey(Schema.Array(TaskRef)),
   title: Schema.String,
   updated: Field_Rfc3339,
 }).annotate({ identifier: "DocDetail" })
@@ -806,14 +800,12 @@ export type TaskDetail = {
   readonly conflicts: number
   readonly depends_on?: ReadonlyArray<TaskRef>
   readonly description: string
-  readonly doc_refs?: ReadonlyArray<DocRef>
   readonly id: string
   readonly metadata: Metadata
   readonly parent_title?: string
   readonly problems: ReadonlyArray<Problem>
   readonly project: string
   readonly pull_requests?: ReadonlyArray<PullRequestView>
-  readonly refs?: ReadonlyArray<TaskRef>
   readonly title: string
   readonly updated: Field_Rfc3339
 }
@@ -827,14 +819,12 @@ export const TaskDetail = Schema.Struct({
   ),
   depends_on: Schema.optionalKey(Schema.Array(TaskRef)),
   description: Schema.String,
-  doc_refs: Schema.optionalKey(Schema.Array(DocRef)),
   id: Schema.String,
   metadata: Metadata,
   parent_title: Schema.optionalKey(Schema.String),
   problems: Schema.Array(Problem),
   project: Schema.String,
   pull_requests: Schema.optionalKey(Schema.Array(PullRequestView)),
-  refs: Schema.optionalKey(Schema.Array(TaskRef)),
   title: Schema.String,
   updated: Field_Rfc3339,
 }).annotate({ identifier: "TaskDetail" })

@@ -1,7 +1,7 @@
 import { Search } from "lucide-react"
 import { Link, Outlet } from "react-router-dom"
 
-import { DiagramDrawer } from "@openplan/task-ui"
+import { DiagramDrawer, RefReader } from "@openplan/task-ui"
 import { Button } from "@openplan/ui"
 
 import { CommandPalette } from "./components/command-palette"
@@ -16,6 +16,7 @@ import { SyncStatus } from "./components/sync-status"
 import { ThemeButton, ThemeToggle } from "./components/theme-toggle"
 import { drawDiagramOnce } from "./lib/diagrams"
 import { useKeyboard } from "./lib/keys"
+import { refReader } from "./lib/ref-reader"
 
 export function App() {
   const { activeOverlay, paletteTarget, openPalette, closeOverlay } = useKeyboard()
@@ -50,7 +51,9 @@ export function App() {
       </header>
       <main className="min-h-0 flex-1 overflow-hidden p-4 max-md:p-2">
         <DiagramDrawer value={drawDiagramOnce}>
-          <Outlet />
+          <RefReader value={refReader}>
+            <Outlet />
+          </RefReader>
         </DiagramDrawer>
       </main>
       <TabBar className="md:hidden" />

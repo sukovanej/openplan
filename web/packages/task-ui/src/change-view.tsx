@@ -17,7 +17,7 @@ import {
   TriangleAlert,
   Type,
 } from "lucide-react"
-import type { ReactNode } from "react"
+import { Fragment, type ReactNode } from "react"
 
 import type { DocChange, DocumentChangeKind, FieldChange, TagChange, TagView, TaskChange } from "@openplan/api-client"
 import { cn } from "@openplan/ui"
@@ -25,6 +25,8 @@ import { cn } from "@openplan/ui"
 import { StatusBadge } from "./status"
 import { TagChip } from "./tag-chip"
 import { documentChangeText, fieldChangeText, renameText, setDifference } from "./task-change"
+import { taskPath } from "./task-path"
+import { TaskRefChip } from "./task-ref-chip"
 
 // The project's tag registry by name, or `undefined` while it is still being read. Until it arrives
 // a name the registry holds looks like one it does not, so the change keeps its words instead of
@@ -71,31 +73,50 @@ function Marked({
   )
 }
 
-function TagSetChange({
+type Sign = "+" | "−"
+
+function SetChange({
+  icon: Icon,
   change,
-  tags,
+  chip,
 }: {
-  change: Extract<FieldChange, { field: "tags" }>
-  tags: ReadonlyMap<string, TagView>
+  icon: LucideIcon
+  change: Extract<FieldChange, { field: "tags" | "dependencies" }>
+  chip: (item: string, sign: Sign) => ReactNode
 }) {
   const { added, removed } = setDifference(change.from, change.to)
-  if (added.length === 0 && removed.length === 0) return <Marked icon={Tag}>{fieldChangeText(change)}</Marked>
+  if (added.length === 0 && removed.length === 0) return <Marked icon={Icon}>{fieldChangeText(change)}</Marked>
+  const signed = [...added.map((item) => [item, "+"] as const), ...removed.map((item) => [item, "−"] as const)]
   return (
     <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
-      <Tag aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-      {added.map((name) => (
-        <TagChip key={`+${name}`} name={name} tag={tags.get(name)} sign="+" />
-      ))}
-      {removed.map((name) => (
-        <TagChip key={`−${name}`} name={name} tag={tags.get(name)} sign="−" />
+      <Icon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+      {signed.map(([item, sign]) => (
+        <Fragment key={`${sign}${item}`}>{chip(item, sign)}</Fragment>
       ))}
     </span>
   )
 }
 
 // A status change is its two badges: the words would only repeat them.
-function FieldChangeView({ change, tags }: { change: FieldChange; tags: Registry }) {
-  if (change.field === "tags" && tags !== undefined) return <TagSetChange change={change} tags={tags} />
+function FieldChangeView({ project, change, tags }: { project: string; change: FieldChange; tags: Registry }) {
+  if (change.field === "tags" && tags !== undefined) {
+    return (
+      <SetChange
+        icon={Tag}
+        change={change}
+        chip={(name, sign) => <TagChip name={name} tag={tags.get(name)} sign={sign} />}
+      />
+    )
+  }
+  if (change.field === "dependencies") {
+    return (
+      <SetChange
+        icon={Link2}
+        change={change}
+        chip={(id, sign) => <TaskRefChip to={taskPath(project, id)} project={project} id={id} sign={sign} />}
+      />
+    )
+  }
   if (change.field === "status") {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">
@@ -109,7 +130,7 @@ function FieldChangeView({ change, tags }: { change: FieldChange; tags: Registry
 }
 
 function Changes({ className, children }: { className?: string; children: ReactNode }) {
-  return <span className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", className)}>{children}</span>
+  return <span className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1", className)}>{children}</span>
 }
 
 export function DocumentChangeView({ kind, className }: { kind: DocumentChangeKind; className?: string }) {
@@ -124,10 +145,12 @@ export function DocumentChangeView({ kind, className }: { kind: DocumentChangeKi
 }
 
 export function TaskChangeView({
+  project,
   change,
   tags,
   className,
 }: {
+  project: string
   change: TaskChange
   tags: Registry
   className?: string
@@ -141,6 +164,7 @@ export function TaskChangeView({
       {fields.map((field) => (
         <FieldChangeView
           key={field.field === "other" ? `other:${field.name}` : field.field}
+          project={project}
           change={field}
           tags={tags}
         />

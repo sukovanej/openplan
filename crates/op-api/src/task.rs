@@ -182,7 +182,7 @@ impl ProblemCode {
 
 // One task read for the detail page: `metadata` parsed field by field, so a file with one bad field
 // still renders everything else and flags only what failed. `updated` is the time of the last
-// revision that changed the task. `parent_title`, `children`, and `refs` carry the immediate
+// revision that changed the task. `parent_title` and `children` carry the immediate
 // hierarchy so the page renders from this one read. `depends_on` is what this task waits for, in
 // the order the file lists it; `blocks` is every task that waits for this one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -205,11 +205,6 @@ pub struct TaskDetail {
     pub parent_title: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<TaskChild>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub refs: Vec<TaskRef>,
-    // The docs the body names, resolved the same way `refs` resolves the tasks it names.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub doc_refs: Vec<crate::doc::DocRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<TaskRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

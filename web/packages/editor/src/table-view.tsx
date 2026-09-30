@@ -183,7 +183,7 @@ const ALIGNS: ReadonlyArray<{ align: Align; label: string; icon: LucideIcon }> =
 ]
 
 function TableView({ source, view, element }: { source: string; view: EditorView; element: HTMLElement }) {
-  const { project, abbreviation, refs, docRefs } = useEditorScope()
+  const { project, abbreviation } = useEditorScope()
   const grid = useMemo(() => gridOf(parseTable(source)), [source])
   const [active, setActive] = useState<Active | null>(null)
   const box = useRef<HTMLDivElement>(null)
@@ -340,7 +340,7 @@ function TableView({ source, view, element }: { source: string; view: EditorView
           />
         ) : (
           <div className={CELL_HEIGHT}>
-            <TaskInline project={project} abbreviation={abbreviation} refs={refs} docRefs={docRefs} markdown={text} />
+            <TaskInline project={project} abbreviation={abbreviation} markdown={text} />
           </div>
         )}
       </Tag>

@@ -415,7 +415,6 @@ async fn a_reference_is_written_in_this_stores_key_and_nothing_else() {
     let text = format!("{LINES}\nSee [[{target}#Design]].\n");
     let (status, written) = put(&state, &id, (&title, &base), (&title, &text)).await;
     assert_eq!(status, StatusCode::OK, "{written}");
-    assert_eq!(written["refs"][0]["id"], target);
     let description = text_of(&written["description"]);
     assert!(
         description.ends_with("See [[OPP-1#Design]].\n"),
@@ -431,7 +430,6 @@ async fn a_reference_is_written_in_this_stores_key_and_nothing_else() {
     let edited = description.replace("One.", "One!");
     let (status, written) = put(&state, &id, (&title, &description), (&title, &edited)).await;
     assert_eq!(status, StatusCode::OK, "{written}");
-    assert_eq!(written["refs"][0]["id"], target);
     assert_eq!(written["description"], edited);
 }
 

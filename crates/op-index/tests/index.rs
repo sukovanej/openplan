@@ -32,7 +32,6 @@ fn a_detail_carries_its_neighbourhood_and_its_comments_apart() {
     assert_eq!(parent.children.len(), 1);
     assert_eq!(parent.children[0].id, "OPP-2");
     assert_eq!(parent.blocks.len(), 1);
-    assert_eq!(parent.refs.len(), 1);
     assert_eq!(parent.comments.len(), 1);
     assert_eq!(parent.title, "Parent");
     assert_eq!(parent.description, "See [[OPP-2]].\n");
