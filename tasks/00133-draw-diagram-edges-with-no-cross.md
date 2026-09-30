@@ -35,3 +35,9 @@ flowchart TD
 - The three diagrams in [[../docs/storage-and-sync.md]] draw with no crossing.
 - A snapshot test in `crates/op-diagram-render/tests/` keeps each case.
 - No other snapshot gets more crossings.
+
+## Comments
+
+### 2026-09-30T20:44:58Z by Milan Suk via claude-code
+
+> Components and Storage layout drew with no crossing on main (and at e3933e0b and 9f93f9c2); only Write crossed. The cause was a tie in the rank order search, not ports, jogs, or tracks: in every snapshot the drawn crossings equal the counted ones.
