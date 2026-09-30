@@ -7,6 +7,8 @@ tags:
 - docs
 - feature
 - ui
+pull_requests:
+- https://github.com/sukovanej/openplan/pull/236
 ---
 # Track the pull requests and merge requests of a task
 
