@@ -1,16 +1,16 @@
 import { act, useEffect } from "react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { HoverCard } from "../src/hover-card"
 import { render } from "./render"
 
-beforeEach(() => vi.useFakeTimers())
-afterEach(() => vi.useRealTimers())
-
-const enter = (element: Element) => act(() => void element.dispatchEvent(new Event("pointerover", { bubbles: true })))
-const leave = (element: Element) => act(() => void element.dispatchEvent(new Event("pointerout", { bubbles: true })))
-const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms))
-const cards = (container: HTMLElement) => Array.from(container.querySelectorAll("[role=dialog]"))
+const point = (type: string, element: Element, x: number, y: number) =>
+  act(() => void element.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y })))
+const enter = (element: Element, x = 0, y = 0) => point("pointerover", element, x, y)
+const move = (element: Element, x: number, y: number) => point("pointermove", element, x, y)
+const leave = (element: Element) => point("pointerout", element, 0, 0)
+const cards = (container: HTMLElement) => Array.from(container.querySelectorAll<HTMLElement>("[role=dialog]"))
+const corner = (open: HTMLElement) => [open.style.left, open.style.top]
 
 const mounted = vi.fn()
 
@@ -36,29 +36,24 @@ describe("HoverCard", () => {
     expect(mounted).toHaveBeenCalledOnce()
   })
 
-  it("stays open while the pointer crosses to the card", () => {
+  it("follows the pointer", () => {
     const container = render(card())
     const anchor = container.firstElementChild!
-    enter(anchor)
-    wait(100)
-    leave(anchor)
-    wait(100)
-    enter(cards(container)[0])
-    wait(1000)
-    expect(cards(container)).toHaveLength(1)
+    enter(anchor, 100, 200)
+    expect(corner(cards(container)[0])).toEqual(["116px", "216px"])
+    move(anchor, 300, 400)
+    expect(corner(cards(container)[0])).toEqual(["316px", "416px"])
   })
 
-  it("closes a moment after the pointer leaves", () => {
+  it("closes when the pointer leaves", () => {
     const container = render(card())
     const anchor = container.firstElementChild!
     enter(anchor)
-    wait(100)
     leave(anchor)
-    wait(150)
     expect(cards(container)).toHaveLength(0)
   })
 
-  it("opens at once for a keyboard, and stays until the focus leaves", () => {
+  it("opens at the anchor for a keyboard, and stays until the focus leaves", () => {
     const container = render(
       <>
         {card()}
@@ -67,11 +62,12 @@ describe("HoverCard", () => {
     )
     const anchor = container.firstElementChild as HTMLElement
     act(() => anchor.focus())
-    expect(cards(container)).toHaveLength(1)
+    expect(corner(cards(container)[0])).toEqual(["6px", "6px"])
+    move(anchor, 300, 400)
+    expect(corner(cards(container)[0])).toEqual(["6px", "6px"])
     leave(anchor)
-    wait(1000)
     expect(cards(container)).toHaveLength(1)
-    act(() => (cards(container)[0] as HTMLElement).focus())
+    act(() => cards(container)[0].focus())
     expect(cards(container)).toHaveLength(1)
     act(() => container.querySelector("button")!.focus())
     expect(cards(container)).toHaveLength(0)
@@ -95,7 +91,6 @@ describe("HoverCard", () => {
     const [one, two] = Array.from(container.children) as HTMLElement[]
     act(() => one.focus())
     enter(two)
-    wait(100)
     expect(cards(container).map((open) => open.getAttribute("aria-label"))).toEqual(["Diff of two"])
   })
 })

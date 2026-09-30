@@ -1,6 +1,7 @@
 import {
   type FocusEvent,
   type KeyboardEvent,
+  type PointerEvent,
   type ReactNode,
   useEffect,
   useId,
@@ -11,15 +12,15 @@ import {
 
 import { cn } from "./cn"
 const GAP = 6
-// The pointer crosses the gap between the anchor and the card on its way to scroll the card.
-const LEAVE_DELAY = 150
+// The arrow of the cursor hangs this far below its point.
+const CURSOR_GAP = 16
 
 // A keyboard can land on one anchor while the pointer rests on another, and two cards would cover
 // each other.
 let closeOpen: (() => void) | undefined
 
-// The card is a child of the anchor in the DOM, so a pointer or a focus inside the card is still
-// inside the anchor. It is fixed to the viewport, like the tooltip, so a clipping row cannot cut it.
+// The card is a child of the anchor in the DOM, so a focus inside the card is still inside the
+// anchor. It is fixed to the viewport, like the tooltip, so a clipping row cannot cut it.
 // `content` mounts only while the card is open.
 export function HoverCard({
   label,
@@ -36,49 +37,56 @@ export function HoverCard({
 }) {
   const anchor = useRef<HTMLDivElement>(null)
   const card = useRef<HTMLDivElement>(null)
-  const timer = useRef<number>(undefined)
   const pointed = useRef(false)
-  // A card that a keyboard opened stays until the focus leaves, whatever the pointer does.
+  // A card that a keyboard opened hangs off the anchor and stays until the focus leaves, whatever
+  // the pointer does.
   const focused = useRef(false)
+  const cursor = useRef<{ x: number; y: number }>(undefined)
   const [open, setOpen] = useState(false)
   const [at, setAt] = useState<{ left: number; top: number }>()
   const id = useId()
   const [hide] = useState(() => {
     const hide = () => {
-      window.clearTimeout(timer.current)
       if (closeOpen === hide) closeOpen = undefined
+      cursor.current = undefined
       setOpen(false)
       setAt(undefined)
     }
     return hide
   })
 
+  const [place] = useState(() => () => {
+    const row = anchor.current?.getBoundingClientRect()
+    const box = card.current?.getBoundingClientRect()
+    if (row === undefined || box === undefined) return
+    const from =
+      cursor.current === undefined
+        ? { left: row.left, top: row.top - GAP, bottom: row.bottom + GAP }
+        : {
+            left: cursor.current.x + CURSOR_GAP,
+            top: cursor.current.y - GAP,
+            bottom: cursor.current.y + CURSOR_GAP,
+          }
+    const above = from.top - box.height
+    const next = {
+      left: Math.max(GAP, Math.min(from.left, window.innerWidth - box.width - GAP)),
+      top: from.bottom + box.height > window.innerHeight - GAP && above >= GAP ? above : from.bottom,
+    }
+    setAt((current) => (current?.left === next.left && current.top === next.top ? current : next))
+  })
+
   const show = () => {
-    window.clearTimeout(timer.current)
     if (closeOpen !== hide) closeOpen?.()
     closeOpen = hide
     setOpen(true)
   }
 
-  const after = (delay: number, then: () => void) => {
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(then, delay)
+  const follow = (event: PointerEvent) => {
+    cursor.current = { x: event.clientX, y: event.clientY }
   }
 
   useLayoutEffect(() => {
     if (!open) return
-    const place = () => {
-      const from = anchor.current?.getBoundingClientRect()
-      const box = card.current?.getBoundingClientRect()
-      if (from === undefined || box === undefined) return
-      const below = from.bottom + GAP
-      const above = from.top - box.height - GAP
-      const next = {
-        left: Math.max(GAP, Math.min(from.left, window.innerWidth - box.width - GAP)),
-        top: below + box.height > window.innerHeight - GAP && above >= GAP ? above : below,
-      }
-      setAt((current) => (current?.left === next.left && current.top === next.top ? current : next))
-    }
     place()
     // The content can load after the card opens, and its new height can move the card above.
     const resized = new ResizeObserver(place)
@@ -90,7 +98,7 @@ export function HoverCard({
       window.removeEventListener("scroll", place, true)
       window.removeEventListener("resize", place)
     }
-  }, [open])
+  }, [open, place])
 
   useEffect(() => hide, [hide])
 
@@ -118,9 +126,18 @@ export function HoverCard({
       aria-expanded={open}
       aria-controls={open ? id : undefined}
       className={cn("focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none", className)}
-      onPointerEnter={() => (open ? window.clearTimeout(timer.current) : show())}
+      onPointerEnter={(event) => {
+        if (open) return
+        follow(event)
+        show()
+      }}
+      onPointerMove={(event) => {
+        if (!open || focused.current) return
+        follow(event)
+        place()
+      }}
       onPointerLeave={() => {
-        if (open && !focused.current) after(LEAVE_DELAY, hide)
+        if (open && !focused.current) hide()
       }}
       onPointerDown={() => {
         pointed.current = true
