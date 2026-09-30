@@ -4,6 +4,8 @@ created: 2026-09-27T14:53:42Z
 tags:
 - feature
 - ui
+pull_requests:
+- https://github.com/sukovanej/openplan/pull/239
 ---
 # Edit a tag in place on the Tags page
 
