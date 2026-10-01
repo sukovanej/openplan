@@ -1,5 +1,11 @@
-import { Data, Effect, Schema } from "effect"
-import { type HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
+import * as Data from "effect/Data"
+import * as Effect from "effect/Effect"
+import type * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
+import type { SchemaError } from "effect/Schema"
+import * as Schema from "effect/Schema"
 // recursive declarations
 export type TaskTree = {
   readonly children: ReadonlyArray<TaskTree>
@@ -2422,16 +2428,14 @@ export interface TasksClient {
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetMergedBoard200.Type, Config>,
-    HttpClientError.HttpClientError | Schema.SchemaError
+    HttpClientError.HttpClientError | SchemaError
   >
   readonly drawDiagram: <Config extends OperationConfig>(options: {
     readonly payload: typeof DrawDiagramRequestJson.Encoded
     readonly config?: Config | undefined
   }) => Effect.Effect<
     WithOptionalResponse<typeof DrawDiagram200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | Schema.SchemaError
-    | TasksClientError<"DrawDiagram422", typeof DrawDiagram422.Type>
+    HttpClientError.HttpClientError | SchemaError | TasksClientError<"DrawDiagram422", typeof DrawDiagram422.Type>
   >
   readonly listAllDocs: <Config extends OperationConfig>(
     options:
@@ -2440,7 +2444,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListAllDocs200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"ListAllDocs400", typeof ListAllDocs400.Type>
     | TasksClientError<"ListAllDocs404", typeof ListAllDocs404.Type>
     | TasksClientError<"ListAllDocs503", typeof ListAllDocs503.Type>
@@ -2449,7 +2453,7 @@ export interface TasksClient {
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListFaults200.Type, Config>,
-    HttpClientError.HttpClientError | Schema.SchemaError
+    HttpClientError.HttpClientError | SchemaError
   >
   readonly drawFlow: <Config extends OperationConfig>(
     options:
@@ -2458,7 +2462,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof DrawFlow200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"DrawFlow400", typeof DrawFlow400.Type>
     | TasksClientError<"DrawFlow404", typeof DrawFlow404.Type>
     | TasksClientError<"DrawFlow422", typeof DrawFlow422.Type>
@@ -2468,7 +2472,7 @@ export interface TasksClient {
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListProjects200.Type, Config>,
-    HttpClientError.HttpClientError | Schema.SchemaError
+    HttpClientError.HttpClientError | SchemaError
   >
   readonly registerProject: <Config extends OperationConfig>(options: {
     readonly payload: typeof RegisterProjectRequestJson.Encoded
@@ -2476,7 +2480,7 @@ export interface TasksClient {
   }) => Effect.Effect<
     WithOptionalResponse<typeof RegisterProject200.Type | typeof RegisterProject201.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"RegisterProject400", typeof RegisterProject400.Type>
     | TasksClientError<"RegisterProject409", typeof RegisterProject409.Type>
     | TasksClientError<"RegisterProject503", typeof RegisterProject503.Type>
@@ -2487,7 +2491,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"DeleteProject404", typeof DeleteProject404.Type>
     | TasksClientError<"DeleteProject503", typeof DeleteProject503.Type>
   >
@@ -2497,7 +2501,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof RenameProject200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"RenameProject400", typeof RenameProject400.Type>
     | TasksClientError<"RenameProject404", typeof RenameProject404.Type>
     | TasksClientError<"RenameProject409", typeof RenameProject409.Type>
@@ -2509,7 +2513,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListSessions200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"ListSessions404", typeof ListSessions404.Type>
     | TasksClientError<"ListSessions503", typeof ListSessions503.Type>
   >
@@ -2519,7 +2523,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof CreateSession201.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"CreateSession400", typeof CreateSession400.Type>
     | TasksClientError<"CreateSession404", typeof CreateSession404.Type>
     | TasksClientError<"CreateSession503", typeof CreateSession503.Type>
@@ -2531,7 +2535,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"DeleteSession404", typeof DeleteSession404.Type>
     | TasksClientError<"DeleteSession503", typeof DeleteSession503.Type>
   >
@@ -2543,7 +2547,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"Approve404", typeof Approve404.Type>
     | TasksClientError<"Approve503", typeof Approve503.Type>
   >
@@ -2554,7 +2558,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"InterruptSession404", typeof InterruptSession404.Type>
     | TasksClientError<"InterruptSession503", typeof InterruptSession503.Type>
   >
@@ -2565,7 +2569,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"PromptSession404", typeof PromptSession404.Type>
     | TasksClientError<"PromptSession409", typeof PromptSession409.Type>
     | TasksClientError<"PromptSession503", typeof PromptSession503.Type>
@@ -2576,7 +2580,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetBoard200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"GetBoard404", typeof GetBoard404.Type>
     | TasksClientError<"GetBoard503", typeof GetBoard503.Type>
   >
@@ -2588,7 +2592,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListDocs200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"ListDocs404", typeof ListDocs404.Type>
     | TasksClientError<"ListDocs503", typeof ListDocs503.Type>
   >
@@ -2598,7 +2602,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof CreateDoc201.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"CreateDoc400", typeof CreateDoc400.Type>
     | TasksClientError<"CreateDoc404", typeof CreateDoc404.Type>
     | TasksClientError<"CreateDoc409", typeof CreateDoc409.Type>
@@ -2613,7 +2617,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetDoc200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"GetDoc404", typeof GetDoc404.Type>
     | TasksClientError<"GetDoc503", typeof GetDoc503.Type>
   >
@@ -2624,7 +2628,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"DeleteDoc404", typeof DeleteDoc404.Type>
     | TasksClientError<"DeleteDoc409", typeof DeleteDoc409.Type>
     | TasksClientError<"DeleteDoc503", typeof DeleteDoc503.Type>
@@ -2636,7 +2640,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof PatchDoc200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"PatchDoc400", typeof PatchDoc400.Type>
     | TasksClientError<"PatchDoc404", typeof PatchDoc404.Type>
     | TasksClientError<"PatchDoc409", typeof PatchDoc409.Type>
@@ -2652,7 +2656,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof DocHistory200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"DocHistory400", typeof DocHistory400.Type>
     | TasksClientError<"DocHistory404", typeof DocHistory404.Type>
     | TasksClientError<"DocHistory503", typeof DocHistory503.Type>
@@ -2665,7 +2669,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof DocRevision200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"DocRevision400", typeof DocRevision400.Type>
     | TasksClientError<"DocRevision404", typeof DocRevision404.Type>
     | TasksClientError<"DocRevision503", typeof DocRevision503.Type>
@@ -2677,7 +2681,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof WriteDocText200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"WriteDocText400", typeof WriteDocText400.Type>
     | TasksClientError<"WriteDocText404", typeof WriteDocText404.Type>
     | TasksClientError<"WriteDocText409", typeof WriteDocText409.Type>
@@ -2691,7 +2695,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof ProjectHistory200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"ProjectHistory404", typeof ProjectHistory404.Type>
     | TasksClientError<"ProjectHistory503", typeof ProjectHistory503.Type>
   >
@@ -2702,7 +2706,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof RevisionDiff200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"RevisionDiff404", typeof RevisionDiff404.Type>
     | TasksClientError<"RevisionDiff503", typeof RevisionDiff503.Type>
   >
@@ -2714,7 +2718,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof SearchProject200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"SearchProject404", typeof SearchProject404.Type>
     | TasksClientError<"SearchProject503", typeof SearchProject503.Type>
   >
@@ -2724,7 +2728,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetSync200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"GetSync404", typeof GetSync404.Type>
     | TasksClientError<"GetSync503", typeof GetSync503.Type>
   >
@@ -2734,7 +2738,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof RunSync200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"RunSync404", typeof RunSync404.Type>
     | TasksClientError<"RunSync502", typeof RunSync502.Type>
     | TasksClientError<"RunSync503", typeof RunSync503.Type>
@@ -2745,7 +2749,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListTags200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"ListTags404", typeof ListTags404.Type>
     | TasksClientError<"ListTags422", typeof ListTags422.Type>
     | TasksClientError<"ListTags503", typeof ListTags503.Type>
@@ -2756,7 +2760,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof CreateTag201.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"CreateTag400", typeof CreateTag400.Type>
     | TasksClientError<"CreateTag404", typeof CreateTag404.Type>
     | TasksClientError<"CreateTag409", typeof CreateTag409.Type>
@@ -2770,7 +2774,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetTag200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"GetTag400", typeof GetTag400.Type>
     | TasksClientError<"GetTag404", typeof GetTag404.Type>
     | TasksClientError<"GetTag422", typeof GetTag422.Type>
@@ -2785,7 +2789,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"DeleteTag400", typeof DeleteTag400.Type>
     | TasksClientError<"DeleteTag404", typeof DeleteTag404.Type>
     | TasksClientError<"DeleteTag409", typeof DeleteTag409.Type>
@@ -2798,7 +2802,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof PatchTag200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"PatchTag400", typeof PatchTag400.Type>
     | TasksClientError<"PatchTag404", typeof PatchTag404.Type>
     | TasksClientError<"PatchTag409", typeof PatchTag409.Type>
@@ -2813,7 +2817,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListTasks200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"ListTasks404", typeof ListTasks404.Type>
     | TasksClientError<"ListTasks503", typeof ListTasks503.Type>
   >
@@ -2823,7 +2827,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof CreateTask201.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"CreateTask400", typeof CreateTask400.Type>
     | TasksClientError<"CreateTask404", typeof CreateTask404.Type>
     | TasksClientError<"CreateTask409", typeof CreateTask409.Type>
@@ -2838,7 +2842,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetTask200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"GetTask400", typeof GetTask400.Type>
     | TasksClientError<"GetTask404", typeof GetTask404.Type>
     | TasksClientError<"GetTask503", typeof GetTask503.Type>
@@ -2850,7 +2854,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<void, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"DeleteTask400", typeof DeleteTask400.Type>
     | TasksClientError<"DeleteTask404", typeof DeleteTask404.Type>
     | TasksClientError<"DeleteTask503", typeof DeleteTask503.Type>
@@ -2862,7 +2866,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof PatchTask200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"PatchTask400", typeof PatchTask400.Type>
     | TasksClientError<"PatchTask404", typeof PatchTask404.Type>
     | TasksClientError<"PatchTask409", typeof PatchTask409.Type>
@@ -2877,7 +2881,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof ListComments200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"ListComments400", typeof ListComments400.Type>
     | TasksClientError<"ListComments404", typeof ListComments404.Type>
     | TasksClientError<"ListComments503", typeof ListComments503.Type>
@@ -2889,7 +2893,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof AddComment201.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"AddComment400", typeof AddComment400.Type>
     | TasksClientError<"AddComment404", typeof AddComment404.Type>
     | TasksClientError<"AddComment503", typeof AddComment503.Type>
@@ -2901,7 +2905,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof WriteTaskFile200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"WriteTaskFile400", typeof WriteTaskFile400.Type>
     | TasksClientError<"WriteTaskFile404", typeof WriteTaskFile404.Type>
     | TasksClientError<"WriteTaskFile409", typeof WriteTaskFile409.Type>
@@ -2916,7 +2920,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof TaskHistory200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"TaskHistory400", typeof TaskHistory400.Type>
     | TasksClientError<"TaskHistory404", typeof TaskHistory404.Type>
     | TasksClientError<"TaskHistory503", typeof TaskHistory503.Type>
@@ -2929,7 +2933,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof TaskRevision200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"TaskRevision400", typeof TaskRevision400.Type>
     | TasksClientError<"TaskRevision404", typeof TaskRevision404.Type>
     | TasksClientError<"TaskRevision503", typeof TaskRevision503.Type>
@@ -2941,7 +2945,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof WriteText200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"WriteText400", typeof WriteText400.Type>
     | TasksClientError<"WriteText404", typeof WriteText404.Type>
     | TasksClientError<"WriteText409", typeof WriteText409.Type>
@@ -2956,7 +2960,7 @@ export interface TasksClient {
   ) => Effect.Effect<
     WithOptionalResponse<typeof GetTaskTree200.Type, Config>,
     | HttpClientError.HttpClientError
-    | Schema.SchemaError
+    | SchemaError
     | TasksClientError<"GetTaskTree400", typeof GetTaskTree400.Type>
     | TasksClientError<"GetTaskTree404", typeof GetTaskTree404.Type>
     | TasksClientError<"GetTaskTree503", typeof GetTaskTree503.Type>
@@ -2967,14 +2971,11 @@ export interface TasksClient {
       | undefined,
   ) => Effect.Effect<
     WithOptionalResponse<typeof SearchAll200.Type, Config>,
-    HttpClientError.HttpClientError | Schema.SchemaError
+    HttpClientError.HttpClientError | SchemaError
   >
   readonly health: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof Health200.Type, Config>,
-    HttpClientError.HttpClientError | Schema.SchemaError
-  >
+  ) => Effect.Effect<WithOptionalResponse<typeof Health200.Type, Config>, HttpClientError.HttpClientError | SchemaError>
 }
 
 export interface TasksClientError<Tag extends string, E> {
