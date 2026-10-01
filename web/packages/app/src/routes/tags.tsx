@@ -151,11 +151,13 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
         value={tag.display}
         patch={renamed}
         label={`Rename ${tag.display}`}
-        className="flex items-center gap-3"
+        className="group flex items-center gap-3"
         inputClassName="w-48 max-sm:flex-1"
       >
         <TagChip name={tag.name} tag={tag} />
-        <span className="text-muted-foreground/70 font-mono text-xs">{tag.name}</span>
+        <span className="text-muted-foreground/70 group-hover:text-foreground font-mono text-xs transition-colors">
+          {tag.name}
+        </span>
       </InPlace>
       <InPlace
         project={project}
@@ -163,7 +165,7 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
         value={tag.description ?? ""}
         patch={described}
         label={`Describe ${tag.display}`}
-        className="text-muted-foreground min-w-0 truncate text-sm max-sm:order-last max-sm:basis-full max-sm:whitespace-normal"
+        className="text-muted-foreground hover:text-foreground min-w-0 truncate text-sm max-sm:order-last max-sm:basis-full max-sm:whitespace-normal"
         inputClassName="flex-1 max-sm:order-last max-sm:basis-full"
       >
         {tag.description ?? <span className="text-muted-foreground/50">Add description</span>}
@@ -232,7 +234,7 @@ function InPlace({
       aria-label={label}
       onClick={() => setOpen(true)}
       className={cn(
-        "hover:bg-muted focus-visible:ring-ring -mx-1 cursor-text rounded-md px-1 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none",
+        "focus-visible:ring-ring cursor-text rounded-sm text-left transition-colors focus-visible:ring-2 focus-visible:outline-none",
         className,
       )}
     >
