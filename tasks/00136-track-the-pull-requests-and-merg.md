@@ -6,7 +6,7 @@ tags:
 - daemon
 - docs
 - feature
-- uiasldkfjasdf
+- ui
 pull_requests:
 - https://github.com/sukovanej/openplan/pull/236
 ---

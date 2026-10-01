@@ -3,7 +3,7 @@ status: done
 created: 2026-09-26T01:52:07Z
 tags:
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Show tags as colored chips in the activity view
 

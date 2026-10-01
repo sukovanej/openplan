@@ -1,6 +1,6 @@
 ---
 color: cyan
 ---
-# UIasldkfjasdf
+# UI
 
 The web UI.

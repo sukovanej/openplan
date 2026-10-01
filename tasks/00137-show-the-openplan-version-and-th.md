@@ -4,7 +4,7 @@ created: 2026-09-27T17:11:35Z
 tags:
 - daemon
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Show the openplan version and the disk space of each project on one page
 

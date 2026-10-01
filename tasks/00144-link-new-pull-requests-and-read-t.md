@@ -7,7 +7,7 @@ tags:
 - cli
 - daemon
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Link new pull requests and read their state in the daemon
 

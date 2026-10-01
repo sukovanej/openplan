@@ -6,7 +6,7 @@ dependencies:
 - ./00109-rolling-updates-a-branch-with-a.md
 tags:
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # UI: rolling-updates control and review popover
 

@@ -3,7 +3,7 @@ status: done
 created: 2026-09-27T19:37:37Z
 tags:
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Load older revisions on scroll in the activity view
 

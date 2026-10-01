@@ -3,7 +3,7 @@ status: done
 created: 2026-09-27T21:37:32Z
 tags:
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Show a dependency change as task chips in the activity view
 

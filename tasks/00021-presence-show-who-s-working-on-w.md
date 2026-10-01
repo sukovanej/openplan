@@ -4,7 +4,7 @@ created: 2026-07-14T17:30:13Z
 tags:
 - daemon
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Presence: show who's working on what, from Claude Code sessions
 

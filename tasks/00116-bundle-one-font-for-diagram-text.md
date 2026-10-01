@@ -4,7 +4,7 @@ created: 2026-09-25T15:18:48Z
 tags:
 - daemon
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Bundle one font for diagram text and give the daemon its glyph widths
 

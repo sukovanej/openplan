@@ -5,7 +5,7 @@ tags:
 - cli
 - daemon
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Auto-update the CLI and the daemon
 

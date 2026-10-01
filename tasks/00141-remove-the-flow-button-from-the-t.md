@@ -3,7 +3,7 @@ status: done
 created: 2026-09-28T13:01:40Z
 tags:
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Remove the Flow button from the task box header
 

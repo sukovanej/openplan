@@ -7,7 +7,7 @@ tags:
 - daemon
 - feature
 - git
-- uiasldkfjasdf
+- ui
 ---
 # Discard rolling updates from the review popover
 

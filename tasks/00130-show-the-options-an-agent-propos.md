@@ -5,7 +5,7 @@ tags:
 - cli
 - docs
 - draft
-- uiasldkfjasdf
+- ui
 ---
 # Show the options an agent proposes as a choice that a person picks in the web UI
 

@@ -3,7 +3,7 @@ status: done
 created: 2026-09-27T14:43:18Z
 tags:
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Make diamond nodes less wide and round their corners
 

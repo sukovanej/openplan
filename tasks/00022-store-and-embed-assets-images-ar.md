@@ -4,7 +4,7 @@ created: 2026-07-14T22:12:23Z
 tags:
 - daemon
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Store and embed assets (images, artifacts, files) in tasks
 

@@ -3,7 +3,7 @@ status: in_review
 created: 2026-09-27T14:53:42Z
 tags:
 - feature
-- uiasldkfjasdf
+- ui
 pull_requests:
 - https://github.com/sukovanej/openplan/pull/239
 ---

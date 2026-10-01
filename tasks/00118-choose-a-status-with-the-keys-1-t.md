@@ -3,7 +3,7 @@ status: done
 created: 2026-09-26T00:25:42Z
 tags:
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Choose a status with a letter key in the status menu
 

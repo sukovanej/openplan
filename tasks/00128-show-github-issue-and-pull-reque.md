@@ -4,7 +4,7 @@ created: 2026-09-26T13:28:35Z
 tags:
 - daemon
 - feature
-- uiasldkfjasdf
+- ui
 ---
 # Show GitHub issue and pull request links in a short form with the GitHub icon
 
