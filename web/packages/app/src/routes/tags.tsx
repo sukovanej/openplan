@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { Check, Pencil, Plus, Trash2, X } from "lucide-react"
+import { Check, Plus, Trash2, X } from "lucide-react"
 import { type ReactNode, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 
@@ -26,6 +26,7 @@ import { useProject, useProjects } from "../lib/projects"
 import { tagsKey, useProjectMutation } from "../lib/query-client"
 import { useRowCursor } from "../lib/row-cursor"
 import { abortable } from "../lib/runtime"
+import { described, renamed } from "../lib/tags"
 
 // This page holds no task rows, and the cursor is the board's — left as it was, `j` then Enter here
 // would open a task the reader can no longer see.
@@ -112,7 +113,7 @@ function ProjectTags({ project }: { project: string }) {
       ) : (
         <ul>
           {tags.data.map((tag, index) => (
-            <li key={`${tag.name}:${tag.display}:${tag.description ?? ""}`}>
+            <li key={tag.name}>
               <TagRow project={project} tag={tag} last={index === tags.data.length - 1} />
             </li>
           ))}
@@ -122,7 +123,7 @@ function ProjectTags({ project }: { project: string }) {
   )
 }
 
-type Editing = "no" | "naming" | "deleting" | "forcing" | "recolouring"
+type Editing = "no" | "deleting" | "forcing" | "recolouring"
 
 function TagRow({ project, tag, last }: { project: string; tag: TagView; last: boolean }) {
   const [editing, setEditing] = useState<Editing>("no")
@@ -144,52 +145,153 @@ function TagRow({ project, tag, last }: { project: string; tag: TagView; last: b
           mutation.mutate(patchTag(project, tag.name, { color }))
         }}
       />
-      {editing === "naming" ? (
-        <TagForm
-          project={project}
-          tag={tag}
-          mutation={mutation}
-          onClose={() => setEditing("no")}
-          className="min-w-0 flex-1"
-        />
-      ) : (
-        <>
-          <TagChip name={tag.name} tag={tag} />
-          <span className="text-muted-foreground/70 font-mono text-xs">{tag.name}</span>
-          {tag.description !== undefined && (
-            <span className="text-muted-foreground min-w-0 truncate text-sm max-sm:order-last max-sm:basis-full max-sm:whitespace-normal">
-              {tag.description}
-            </span>
-          )}
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            {editing === "deleting" || editing === "forcing" ? (
-              <DeleteConfirm
-                project={project}
-                tag={tag}
-                mutation={mutation}
-                forcing={editing === "forcing"}
-                onRefused={() => setEditing("forcing")}
-                onCancel={() => setEditing("no")}
-              />
-            ) : (
-              <>
-                <Button aria-label={`Edit ${tag.display}`} onClick={() => setEditing("naming")}>
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button
-                  variant="danger"
-                  aria-label={`Delete ${tag.display}`}
-                  onClick={() => setEditing("deleting")}
-                  className="text-danger/70 hover:text-danger"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </>
-            )}
-          </div>
-        </>
-      )}
+      <InPlace
+        project={project}
+        tag={tag}
+        value={tag.display}
+        patch={renamed}
+        label={`Rename ${tag.display}`}
+        className="group flex items-center gap-3"
+        inputClassName="w-48 max-sm:flex-1"
+      >
+        <TagChip name={tag.name} tag={tag} />
+        <span className="text-muted-foreground/70 group-hover:text-foreground font-mono text-xs transition-colors">
+          {tag.name}
+        </span>
+      </InPlace>
+      <InPlace
+        project={project}
+        tag={tag}
+        value={tag.description ?? ""}
+        patch={described}
+        label={`Describe ${tag.display}`}
+        className="text-muted-foreground hover:text-foreground min-w-0 truncate text-sm max-sm:order-last max-sm:basis-full max-sm:whitespace-normal"
+        inputClassName="flex-1 max-sm:order-last max-sm:basis-full"
+      >
+        {tag.description ?? <span className="text-muted-foreground/50">Add description</span>}
+      </InPlace>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {editing === "deleting" || editing === "forcing" ? (
+          <DeleteConfirm
+            project={project}
+            tag={tag}
+            mutation={mutation}
+            forcing={editing === "forcing"}
+            onRefused={() => setEditing("forcing")}
+            onCancel={() => setEditing("no")}
+          />
+        ) : (
+          <Button
+            variant="danger"
+            aria-label={`Delete ${tag.display}`}
+            onClick={() => setEditing("deleting")}
+            className="text-danger/70 hover:text-danger"
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        )}
+      </div>
     </Row>
+  )
+}
+
+function InPlace({
+  project,
+  tag,
+  value,
+  patch,
+  label,
+  className,
+  inputClassName,
+  children,
+}: {
+  project: string
+  tag: TagView
+  value: string
+  patch: typeof renamed
+  label: string
+  className: string
+  inputClassName: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  if (open) {
+    return (
+      <InPlaceInput
+        project={project}
+        tag={tag}
+        value={value}
+        patch={patch}
+        label={label}
+        className={inputClassName}
+        onClose={() => setOpen(false)}
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={() => setOpen(true)}
+      className={cn(
+        "focus-visible:ring-ring cursor-text rounded-sm text-left transition-colors focus-visible:ring-2 focus-visible:outline-none",
+        className,
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function InPlaceInput({
+  project,
+  tag,
+  value,
+  patch,
+  label,
+  className,
+  onClose,
+}: {
+  project: string
+  tag: TagView
+  value: string
+  patch: typeof renamed
+  label: string
+  className: string
+  onClose: () => void
+}) {
+  const [typed, setTyped] = useState(value)
+  const mutation = useProjectMutation(project, "inline")
+  const save = () => {
+    if (mutation.isPending) return
+    const change = patch(tag, typed)
+    if (change === undefined) onClose()
+    else mutation.mutate(patchTag(project, tag.name, change), { onSuccess: onClose })
+  }
+  return (
+    <>
+      <TextInput
+        autoFocus
+        value={typed}
+        aria-label={label}
+        aria-invalid={mutation.isError}
+        onChange={(event) => {
+          setTyped(event.target.value)
+          mutation.reset()
+        }}
+        onBlur={save}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") save()
+          if (event.key === "Escape") onClose()
+        }}
+        className={cn("h-6.5", className)}
+      />
+      {mutation.isError && (
+        <p role="alert" className="text-danger order-last basis-full text-xs">
+          {errorText(mutation.error)}
+        </p>
+      )}
+    </>
   )
 }
 
@@ -290,46 +392,22 @@ function DeleteConfirm({
   )
 }
 
-// A rename rewrites the `tags:` of every task that names the tag, so it is sent only
-// when the name really changed. Registration leaves the colour out: the registry derives one from
-// the name, and the row recolours in a click.
-function TagForm({
-  project,
-  tag,
-  mutation,
-  onClose,
-  className,
-}: {
-  project: string
-  tag?: TagView
-  mutation: ProjectMutation
-  onClose?: () => void
-  className?: string
-}) {
-  const editing = tag !== undefined
-  const [name, setName] = useState(tag?.display ?? "")
-  const [description, setDescription] = useState(tag?.description ?? "")
+// Registration leaves the colour out: the registry derives one from the name, and the row recolours
+// in a click.
+function TagForm({ project, mutation, className }: { project: string; mutation: ProjectMutation; className?: string }) {
+  const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
   const named = name.trim()
 
   const submit = () => {
     if (named === "" || mutation.isPending) return
     const described = description.trim()
-    if (tag === undefined) {
-      mutation.mutate(createTag(project, { name: named, description: described === "" ? undefined : described }), {
-        onSuccess: () => {
-          setName("")
-          setDescription("")
-        },
-      })
-      return
-    }
-    mutation.mutate(
-      patchTag(project, tag.name, {
-        name: named === tag.display ? undefined : named,
-        description: described === (tag.description ?? "") ? undefined : described === "" ? null : described,
-      }),
-      { onSuccess: onClose },
-    )
+    mutation.mutate(createTag(project, { name: named, description: described === "" ? undefined : described }), {
+      onSuccess: () => {
+        setName("")
+        setDescription("")
+      },
+    })
   }
 
   return (
@@ -338,13 +416,9 @@ function TagForm({
         event.preventDefault()
         submit()
       }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") onClose?.()
-      }}
       className={cn("flex flex-wrap items-center gap-2", className)}
     >
       <TextInput
-        autoFocus={editing}
         value={name}
         onChange={(event) => setName(event.target.value)}
         placeholder="Tag name"
@@ -363,15 +437,9 @@ function TagForm({
         disabled={named === "" || mutation.isPending}
         className="disabled:opacity-40"
       >
-        {editing ? <Check className="size-3.5" /> : <Plus className="size-3.5" />}
-        {editing ? "Save" : "Register tag"}
+        <Plus className="size-3.5" />
+        Register tag
       </Button>
-      {onClose !== undefined && (
-        <Button size="md" onClick={onClose}>
-          <X className="size-3.5" />
-          Cancel
-        </Button>
-      )}
     </form>
   )
 }

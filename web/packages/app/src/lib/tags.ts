@@ -1,7 +1,7 @@
 import { queryOptions, useQueries, useQuery } from "@tanstack/react-query"
 import { useCallback } from "react"
 
-import type { TagView } from "@openplan/api-client"
+import type { TagPatch, TagView } from "@openplan/api-client"
 import { fuzzyMatch } from "@openplan/ui"
 
 import { listTags } from "./api"
@@ -90,4 +90,17 @@ export function tagMatches(
 export function tagSpelled(tags: ReadonlyArray<TagView>, query: string): TagView | undefined {
   const wanted = query.toLowerCase()
   return tags.find((tag) => tag.name === wanted || tag.display.toLowerCase() === wanted)
+}
+
+// A rename rewrites the `tags:` of every task that names the tag, so it is sent only when the name
+// really changed. A tag cannot go without a name, so an empty one keeps the old.
+export function renamed(tag: TagView, typed: string): TagPatch | undefined {
+  const name = typed.trim()
+  return name === "" || name === tag.display ? undefined : { name }
+}
+
+export function described(tag: TagView, typed: string): TagPatch | undefined {
+  const description = typed.trim()
+  if (description === (tag.description ?? "")) return undefined
+  return { description: description === "" ? null : description }
 }
