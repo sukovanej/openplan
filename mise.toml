@@ -29,6 +29,9 @@ run = [
   "cargo run --quiet --manifest-path ../../../Cargo.toml -p openplan -- server openapi > openapi.json",
   # `pnpm exec` prints a workspace banner on stdout, which the redirect would write into the file.
   "pnpm --silent exec openapigen -s openapi.json -f httpclient -n TasksClient > src/index.ts",
+  # The generator imports each Effect module by its own path, and it has no option for the
+  # `import { HttpClient } from "effect/http"` form that the rest of the web code uses.
+  "node barrel-imports.ts src/index.ts",
   "pnpm exec oxfmt src/index.ts",
 ]
 
