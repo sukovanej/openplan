@@ -5,7 +5,9 @@ All notable changes to openplan are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.5...main)
+## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.6...main)
+
+## [0.0.6](https://github.com/sukovanej/openplan/compare/v0.0.5...v0.0.6) - 2026-10-01
 
 ### Added
 
@@ -17,6 +19,42 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   remote. The task page has a "Pull requests" section, the task list marks a
   task that has pull requests, and the activity view shows each link. The
   openplan skill tells the agent to link the pull request that it opens.
+
+### Changed
+
+- The Tags page edits a tag in place. A click on the chip or the slug renames
+  the tag, and a click on the description changes the description. Enter or a
+  click outside the field saves, and Escape cancels. An empty name keeps the
+  old name, and an empty description removes the description. The pencil
+  button is gone.
+- The activity view, the task history, and the revision notice show a
+  dependency change as task chips with a + or − sign. Before, they showed the
+  keys as text.
+- A task reference chip shows the status mark and the key, and no title. A doc
+  reference chip shows the icon and the name, and no title. Each chip reads
+  its task or doc, so a change to the task or doc updates the chip.
+- The HTTP API no longer has `TaskDetail.refs`, `TaskDetail.doc_refs`,
+  `DocDetail.refs`, `DocDetail.doc_refs`, or `DocRef`. Read the task or the doc
+  of a reference instead.
+- The activity view reads older revisions when you scroll near the end of the
+  list. The "Show older revisions" button is gone from the activity view. When
+  a read fails, the view shows the error and a "Retry" button. The task history
+  and the doc history keep the button.
+- A diff card that the pointer opens follows the cursor, 16 px below and to
+  the right of it. The card closes when the pointer leaves the line. A card
+  that the keyboard opens stays at the line.
+- The flow no longer starts from a backlog task. It shows a backlog task when a
+  shown task needs it, or when you name its status or its key.
+- A flow card and a box header put the key and the title on one line when they
+  fit.
+- The header of the task page no longer has a Flow link. The `f` key still
+  opens the flow of the task.
+
+### Fixed
+
+- A graph diagram no longer draws two edges that cross when a swap of two
+  neighboring nodes removes the crossing.
+- A long task chip no longer runs out of the history column.
 
 ## [0.0.5](https://github.com/sukovanej/openplan/compare/v0.0.4...v0.0.5) - 2026-09-29
 
