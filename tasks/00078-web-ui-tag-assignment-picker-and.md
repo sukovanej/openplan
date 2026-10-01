@@ -5,7 +5,7 @@ parent: ./00012-tags-registered-labels-name-colo.md
 dependencies:
 - ./00077-web-ui-palette-tokens-tagchip-ta.md
 tags:
-- ui
+- uiasldkfjasdf
 ---
 # Web UI: tag assignment picker and tag management surface
 

@@ -3,7 +3,7 @@ status: done
 created: 2026-09-27T14:51:41Z
 tags:
 - feature
-- ui
+- uiasldkfjasdf
 ---
 # Show the agent as an icon with the name in a tooltip
 

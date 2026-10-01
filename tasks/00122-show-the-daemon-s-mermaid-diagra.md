@@ -5,7 +5,7 @@ tags:
 - cli
 - docs
 - feature
-- ui
+- uiasldkfjasdf
 ---
 # Show the daemon's Mermaid diagrams and flow in the web app, lint them, and remove D2
 

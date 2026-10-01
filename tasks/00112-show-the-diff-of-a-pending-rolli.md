@@ -6,7 +6,7 @@ dependencies:
 tags:
 - daemon
 - feature
-- ui
+- uiasldkfjasdf
 ---
 # Show the diff of a pending rolling update with a generic DiffView
 

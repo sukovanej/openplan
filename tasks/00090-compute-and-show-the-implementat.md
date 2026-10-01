@@ -4,7 +4,7 @@ created: 2026-08-27T11:13:32Z
 tags:
 - daemon
 - feature
-- ui
+- uiasldkfjasdf
 ---
 # Compute and show the implementation flow
 

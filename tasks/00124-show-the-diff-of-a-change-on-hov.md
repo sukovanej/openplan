@@ -4,7 +4,7 @@ created: 2026-09-26T02:02:39Z
 tags:
 - daemon
 - feature
-- ui
+- uiasldkfjasdf
 ---
 # Show the diff of a change on hover in the activity view
 

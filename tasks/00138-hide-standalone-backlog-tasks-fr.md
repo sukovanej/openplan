@@ -4,7 +4,7 @@ created: 2026-09-27T18:23:01Z
 tags:
 - daemon
 - feature
-- ui
+- uiasldkfjasdf
 pull_requests:
 - https://github.com/sukovanej/openplan/pull/237
 ---

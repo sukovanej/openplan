@@ -3,7 +3,7 @@ status: done
 created: 2026-09-26T13:43:55Z
 tags:
 - feature
-- ui
+- uiasldkfjasdf
 ---
 # Show a title change as one word in the activity view
 

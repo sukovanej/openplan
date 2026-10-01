@@ -5,7 +5,7 @@ dependencies:
 - ./00106-port-the-cli-and-daemon-to-windo.md
 tags:
 - feature
-- ui
+- uiasldkfjasdf
 ---
 # Ship the Windows desktop app
 
