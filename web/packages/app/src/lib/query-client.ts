@@ -7,7 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { Effect } from "effect"
-import type { HttpClient } from "effect/unstable/http"
+import type { HttpClient } from "effect/http"
 
 import { connectionStore } from "./connection"
 import type { Invalidator, Refreshed } from "./events"

@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/http"
 
 import { make } from "../src/index.ts"
 

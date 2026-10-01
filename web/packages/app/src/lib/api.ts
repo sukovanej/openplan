@@ -1,6 +1,6 @@
 import { Context, Data, Effect } from "effect"
 import type { Schema } from "effect"
-import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 import * as Api from "@openplan/api-client"
 

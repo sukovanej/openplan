@@ -1,6 +1,6 @@
 import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { Effect } from "effect"
-import type { HttpClient } from "effect/unstable/http"
+import type { HttpClient } from "effect/http"
 
 import type { DocChange, DocumentChange, HistoryEntry, TagChange, TaskChange } from "@openplan/api-client"
 import { docPath, docRevisionPath, revisionPath, taskPath } from "@openplan/task-ui"
