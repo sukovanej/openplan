@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="assets/screenshots/task-light.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/task-dark.png"><img alt="The task page of the openplan web UI" src="assets/screenshots/task-light.png" width="88%"></picture></a>
+  <a href="assets/screenshots/task.png"><img alt="The task page of the openplan web UI" src="assets/screenshots/task.png" width="88%"></a>
 </p>
 
 A team keeps its tasks in the git repository of the code, in the ref `refs/openplan/tasks`, apart
@@ -49,9 +49,9 @@ from the code branches. One person can keep them in a local directory instead.
 - **Pull requests.** Link GitHub pull requests and GitLab merge requests to a task.
 
 <p align="center">
-  <a href="assets/screenshots/list-light.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/list-dark.png"><img alt="The task list" src="assets/screenshots/list-light.png" width="32%"></picture></a>
-  <a href="assets/screenshots/doc-light.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/doc-dark.png"><img alt="A doc with a Mermaid diagram" src="assets/screenshots/doc-light.png" width="32%"></picture></a>
-  <a href="assets/screenshots/activity-light.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/activity-dark.png"><img alt="The activity feed" src="assets/screenshots/activity-light.png" width="32%"></picture></a>
+  <a href="assets/screenshots/list.png"><img alt="The task list" src="assets/screenshots/list.png" width="32%"></a>
+  <a href="assets/screenshots/doc.png"><img alt="A doc with a Mermaid diagram" src="assets/screenshots/doc.png" width="32%"></a>
+  <a href="assets/screenshots/activity.png"><img alt="The activity feed" src="assets/screenshots/activity.png" width="32%"></a>
 </p>
 
 ## Install
