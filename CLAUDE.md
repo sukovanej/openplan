@@ -33,8 +33,9 @@ rather than writing the prose.
 - A plain comment is allowed only for *why* the code cannot express itself: a
   footgun, an external constraint, or a deliberate placeholder (`TODO(...)`).
   Never restate *what* the code does.
-- The README stays at build/run essentials. A crate's purpose belongs in its
-  `Cargo.toml` `description`, not in prose.
+- The README presents the product to its users: features, install, and usage.
+  Build, run, and release steps go in `DEVELOPMENT.md`. A crate's purpose
+  belongs in its `Cargo.toml` `description`, not in prose.
 - Exempt, because they are product UI rather than documentation: CLI `--help`
   text (clap `///` / `about`) and user-facing error/log messages.
 

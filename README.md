@@ -1,8 +1,58 @@
-# openplan
+<p align="center">
+  <img src="assets/icon.svg" width="88" alt="">
+</p>
 
-Local-first task manager for humans and AI agents, in plain markdown. A team keeps its tasks in
-the git ref `refs/openplan/tasks`, which every daemon syncs with the remote; one person can keep
-them in a local directory instead.
+<h1 align="center">openplan</h1>
+
+<p align="center">
+  A local-first task manager for humans and AI agents.<br>
+  Tasks are markdown files in your git repository, with a realtime web UI.
+</p>
+
+<p align="center">
+  <a href="https://github.com/sukovanej/openplan/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/sukovanej/openplan?sort=semver"></a>
+  <a href="https://github.com/sukovanej/openplan/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/sukovanej/openplan/ci.yml?branch=main&label=CI"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/sukovanej/openplan"></a>
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="DEVELOPMENT.md">Development</a>
+</p>
+
+<p align="center">
+  <a href="assets/screenshots/task.png"><img alt="The task page of the openplan web UI" src="assets/screenshots/task.png" width="88%"></a>
+</p>
+
+A team keeps its tasks in the git repository of the code, in the ref `refs/openplan/tasks`, apart
+from the code branches. One person can keep them in a local directory instead.
+
+## Features
+
+- **Tasks in plain markdown.** The front matter holds the status, the parent, the dependencies,
+  the tags, and the linked pull requests. The body is free markdown.
+- **Sync through git.** The daemon pushes and pulls the tasks ref every 30 seconds and soon after
+  each write. A team needs no server other than its git remote.
+- **One daemon for every project.** The CLI and the web UI both talk to it, so they always show
+  the same data. It starts by itself on the first command.
+- **Realtime web UI.** It has a task list, a task page, docs, an activity feed, tags, and a flow
+  graph of the open tasks. A change from the CLI or a teammate shows at once.
+- **Docs next to the tasks.** Write design notes as docs, nest them, and link them from tasks
+  with `[[name]]`.
+- **Diagrams.** A Mermaid block (flowchart, sequence, or ER diagram) in a task or doc shows as a
+  diagram.
+- **Full history.** Each write is a revision. `openplan history` shows who changed what.
+- **Agent skills.** `openplan setup-skills` installs skills for Claude Code and Codex. With them,
+  an agent reads and writes the tasks through the CLI.
+- **Pull requests.** Link GitHub pull requests and GitLab merge requests to a task.
+
+<p align="center">
+  <a href="assets/screenshots/list.png"><img alt="The task list" src="assets/screenshots/list.png" width="32%"></a>
+  <a href="assets/screenshots/doc.png"><img alt="A doc with a Mermaid diagram" src="assets/screenshots/doc.png" width="32%"></a>
+  <a href="assets/screenshots/activity.png"><img alt="The activity feed" src="assets/screenshots/activity.png" width="32%"></a>
+</p>
 
 ## Install
 
@@ -14,140 +64,52 @@ The installer puts `openplan` in `~/.local/bin` and adds that directory to your 
 `OPENPLAN_INSTALL_DIR` picks another directory, and `OPENPLAN_NO_MODIFY_PATH=1` keeps the
 profile untouched. Releases carry binaries for macOS (Apple silicon and Intel) and Linux
 (x86_64 and arm64). Every archive and its checksum is on the
-[releases page](https://github.com/sukovanej/openplan/releases).
+[releases page](https://github.com/sukovanej/openplan/releases). `openplan update` installs the
+newest release.
 
-Releases carry no desktop app for now. To use the web UI, run `openplan open` in a project. It
-opens the UI of the daemon in your browser.
+## Quick start
 
-In GitHub Actions:
-
-```yaml
-- uses: sukovanej/openplan/.github/actions/setup@v0.0.1
-  with:
-    version: 0.0.1   # omit for the latest release
-- run: openplan lint --skills   # the agent skills; the tasks change apart from the code
-```
-
-## Build
+In the root of a git repository:
 
 ```sh
-cargo build
-cargo test
-cargo fmt --check
-cargo clippy -- -D warnings
+openplan init --abbreviation ABC     # task keys start with ABC, as in ABC-1
+openplan setup-skills                # let Claude Code and Codex use the tasks
+openplan tasks create "Ship the login page" --status todo
+openplan tasks set ABC-1 status in_progress
+openplan open                        # the web UI in your browser
 ```
 
-The web UI lives in `web/` (a pnpm workspace). Its build output
-(`web/packages/app/dist/`) is gitignored — build it before `cargo build` so the SPA gets
-embedded. Without a build the daemon still compiles and runs, but serves no web UI.
+To join the tasks that a teammate already pushed, clone the repository and run `openplan init`
+with no abbreviation.
+
+## Usage
 
 ```sh
-cd web && pnpm install && pnpm -r build   # → web/packages/app/dist
-cargo build                               # embeds the SPA
+openplan tasks list                  # the tasks of this project
+openplan tasks get ABC-1             # the whole task file
+openplan tasks comment ABC-1 "..."   # add a comment
+openplan tasks tree ABC-1            # the subtasks of a task
+openplan doc create storage          # a new doc
+openplan history ABC-1               # who changed a task, and when
+openplan sync                        # exchange the tasks with the remote now
+openplan lint                        # find problems in the tasks, docs, and skills
+openplan server start | stop         # the background daemon on 127.0.0.1:7373
+openplan project list                # the projects the daemon serves
 ```
 
-Web workspace checks: `pnpm -r typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm -r test`.
-Live development: `pnpm --filter @openplan/app dev` (Vite on :5173, proxying the API to
-the daemon on :7373).
+`openplan <command> --help` shows all options.
 
-## Run
+Every task command goes through the daemon and starts it if it is down. `lint` is the exception.
+It reads the tasks itself and never starts a daemon. The first command from a project registers
+it with the daemon. `OPENPLAN_HOME` sets the state directory of the daemon (default `~/.plan`).
+`OPENPLAN_PORT` sets its port (default 7373).
 
-`openplan` is the single binary. Put it on PATH and start its daemon on that build:
+`openplan migrate` moves the tasks of a repository that keeps them in `.plan/` beside the code
+into the tasks ref.
 
-```sh
-mise run install     # SPA → release binary → PATH → daemon restarted on it
-```
+## Contributing
 
-The daemon respawns itself from its own executable, so the binary that starts it is the one that
-keeps serving. Installing and restarting together is what keeps the daemon and the checkout the
-same build.
-
-Without installing, run it from the checkout as `cargo run -p openplan -- <args>`:
-
-```sh
-openplan init --abbreviation OPP    # start the tasks: in the ref refs/openplan/tasks in a repository
-openplan migrate                    # move a legacy .plan/ beside the code into that ref
-openplan tasks list                 # the tasks of this project
-openplan history OPP-42             # who changed a task, and when
-openplan sync                       # exchange the tasks with the remote now
-openplan open                       # the web UI in your browser
-openplan server start               # background daemon: realtime API + web UI on 127.0.0.1:7373
-openplan server stop                # stop the background daemon
-openplan project list               # projects the daemon serves
-```
-
-Every task command goes through the daemon and starts it if it is down, so a query answers the same
-whether the CLI or the web UI asked it. `lint` is the exception: it reads the tasks itself and never
-starts a daemon. One daemon serves every project on the machine: the first command from a project
-registers it, and `openplan project` manages the registry. The daemon syncs a git project with its
-remote every 30 seconds and soon after each write. `OPENPLAN_HOME` picks the daemon's state
-directory (default `~/.plan`), `OPENPLAN_PORT` its port (default 7373).
-
-### Desktop window
-
-```sh
-mise run gui     # the window on the running daemon, starting one when none runs
-```
-
-It loads `http://127.0.0.1:<port>/`, so it shows the SPA the daemon serves. Run `mise run install`
-after a change to the SPA. The window starts its own daemon when none runs, so it needs no
-`openplan` on `PATH`; it obeys `OPENPLAN_HOME` and `OPENPLAN_PORT` like every other command.
-
-On Windows, install the GUI and run the CLI and daemon in WSL instead. With the daemon already
-listening in WSL, open the Windows app and it connects through WSL's localhost forwarding. It
-waits up to five seconds for `http://127.0.0.1:7373/health`, then tells you if the bridge is not
-available. Set `OPENPLAN_PORT` before launching the app when the WSL daemon uses a fixed port
-other than 7373; port `0` is not supported because its randomly selected port stays in WSL.
-
-### Icons
-
-`assets/icon.svg` is the only source. Edit it, then rasterize:
-
-```sh
-mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
-```
-
-## Release
-
-The product version is `version` in `[workspace.package]`, and it follows
-[semver](https://semver.org). Every crate takes it, and `openplan --version` prints it.
-`mise` installs `cargo-dist` and `cargo-edit` from `[tools]` in `mise.toml`.
-
-`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com). Write each section by
-hand. cargo-dist takes the GitHub Release notes from the section for the version, so this file
-is what users read on the release page.
-
-```md
-## [0.0.2] - 2026-09-10
-
-### Added
-- The lines you want users to read.
-```
-
-Then bump on a branch:
-
-```sh
-mise run release 0.0.2       # bump the version, commit
-```
-
-The task stops when `CHANGELOG.md` has no section for the version. Merge that commit into
-`main`, then tag it:
-
-```sh
-git tag v0.0.2 && git push origin v0.0.2
-```
-
-The tag starts `.github/workflows/release.yml`. It builds each target, makes the archives, the
-checksums, and the installer, and publishes a GitHub Release.
-
-[cargo-dist](https://axodotdev.github.io/cargo-dist/) generates that workflow from
-`[workspace.metadata.dist]` in `Cargo.toml`. After a change there, run `dist init --yes` and
-commit the result.
-
-The desktop app ships as a bundle, not as a binary in a tarball, so `crates/op-gui` sets
-`dist = false` and cargo-dist skips it. `.github/workflows/release-app.yml` builds the bundle on
-each platform and uploads it to a release. For now, it runs only when you start it by hand. Nothing
-generates that file. Edit it by hand.
+[DEVELOPMENT.md](DEVELOPMENT.md) tells you how to build, run, and release openplan.
 
 ## License
 
