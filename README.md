@@ -24,8 +24,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot-dark.png">
-    <img alt="The task page of the openplan web UI" src="assets/screenshot-light.png" width="88%">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/task-dark.png">
+    <img alt="The task page of the openplan web UI" src="assets/screenshots/task-light.png" width="88%">
   </picture>
 </p>
 
@@ -50,6 +50,41 @@ from the code branches. One person can keep them in a local directory instead.
 - **Agent skills.** `openplan setup-skills` installs skills for Claude Code and Codex. With them,
   an agent reads and writes the tasks through the CLI.
 - **Pull requests.** Link GitHub pull requests and GitLab merge requests to a task.
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/list-dark.png">
+        <img alt="The task list" src="assets/screenshots/list-light.png">
+      </picture>
+      <br><b>Tasks</b><br>The tasks of a project, by status.
+    </td>
+    <td width="50%" align="center">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/doc-dark.png">
+        <img alt="A doc with a Mermaid diagram" src="assets/screenshots/doc-light.png">
+      </picture>
+      <br><b>Docs</b><br>Design notes with Mermaid diagrams.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/flow-dark.png">
+        <img alt="The flow of the tasks" src="assets/screenshots/flow-light.png">
+      </picture>
+      <br><b>Flow</b><br>Subtasks and dependencies as a graph.
+    </td>
+    <td width="50%" align="center">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/activity-dark.png">
+        <img alt="The activity feed" src="assets/screenshots/activity-light.png">
+      </picture>
+      <br><b>Activity</b><br>Each change to the tasks, newest first.
+    </td>
+  </tr>
+</table>
 
 ## Install
 
