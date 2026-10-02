@@ -107,15 +107,6 @@ it with the daemon. `OPENPLAN_HOME` sets the state directory of the daemon (defa
 `openplan migrate` moves the tasks of a repository that keeps them in `.plan/` beside the code
 into the tasks ref.
 
-### GitHub Actions
-
-```yaml
-- uses: sukovanej/openplan/.github/actions/setup@v0.0.1
-  with:
-    version: 0.0.1   # omit for the latest release
-- run: openplan lint --skills   # the agent skills; the tasks change apart from the code
-```
-
 ## Contributing
 
 [DEVELOPMENT.md](DEVELOPMENT.md) tells you how to build, run, and release openplan.
