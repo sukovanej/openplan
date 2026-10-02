@@ -213,7 +213,9 @@ const Revision = memo(function Revision({
           </MetaItem>
         )}
       </span>
-      <ul aria-label="Changes" className="flex min-w-0 flex-1 basis-40 flex-col gap-1">
+      {/* The history of one task or doc names no task or doc, so its change is short: it stands beside
+          the author whenever it fits, even in a narrow sidebar. */}
+      <ul aria-label="Changes" className={cn("flex min-w-0 flex-1 flex-col gap-1", one ? "basis-auto" : "basis-40")}>
         {lines.map((line) => {
           const content = (
             <ChangeLine
