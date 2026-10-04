@@ -1,11 +1,13 @@
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
-import type * as HttpClient from "effect/http/HttpClient"
+import * as Sse from "effect/encoding/Sse"
+import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import type { SchemaError } from "effect/Schema"
 import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
 // recursive declarations
 export type TaskTree = {
   readonly children: ReadonlyArray<TaskTree>
@@ -105,6 +107,8 @@ export const SourcePosition = Schema.Struct({
 }).annotate({ identifier: "SourcePosition" })
 export type Refusal = "tag_referenced" | "tag_unregistered"
 export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"]).annotate({ identifier: "Refusal" })
+export type StopReason = "stop" | "update"
+export const StopReason = Schema.Literals(["stop", "update"]).annotate({ identifier: "StopReason" })
 export type FaultKind = "root_gone" | "unreadable" | "no_identity" | "sync_failed" | "outside_changes_unread"
 export const FaultKind = Schema.Literals([
   "root_gone",
@@ -347,6 +351,28 @@ export const ApiErrorBody = Schema.Struct({
   position: Schema.optionalKey(SourcePosition),
   reason: Schema.optionalKey(Refusal),
 }).annotate({ identifier: "ApiErrorBody" })
+export type ChangeEvent =
+  | { readonly id: string; readonly kind: "task_changed"; readonly project: string }
+  | { readonly kind: "doc_changed"; readonly name: string; readonly project: string }
+  | { readonly kind: "tags_changed"; readonly project: string }
+  | { readonly kind: "projects_changed" }
+  | { readonly kind: "sync_changed"; readonly project: string }
+  | { readonly kind: "faults_changed" }
+  | { readonly kind: "resync" }
+  | { readonly kind: "daemon_stopping"; readonly reason: StopReason }
+export const ChangeEvent = Schema.Union(
+  [
+    Schema.Struct({ id: Schema.String, kind: Schema.Literal("task_changed"), project: Schema.String }),
+    Schema.Struct({ kind: Schema.Literal("doc_changed"), name: Schema.String, project: Schema.String }),
+    Schema.Struct({ kind: Schema.Literal("tags_changed"), project: Schema.String }),
+    Schema.Struct({ kind: Schema.Literal("projects_changed") }),
+    Schema.Struct({ kind: Schema.Literal("sync_changed"), project: Schema.String }),
+    Schema.Struct({ kind: Schema.Literal("faults_changed") }),
+    Schema.Struct({ kind: Schema.Literal("resync") }),
+    Schema.Struct({ kind: Schema.Literal("daemon_stopping"), reason: StopReason }),
+  ],
+  { mode: "oneOf" },
+).annotate({ identifier: "ChangeEvent" })
 export type Fault = { readonly kind: FaultKind; readonly message: string; readonly project: string }
 export const Fault = Schema.Struct({ kind: FaultKind, message: Schema.String, project: Schema.String }).annotate({
   identifier: "Fault",
@@ -391,6 +417,43 @@ export const SessionSummary = Schema.Struct({
   status: Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })),
   task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
 }).annotate({ identifier: "SessionSummary" })
+export type SessionEvent =
+  | ({
+      readonly agent: string
+      readonly cwd: string
+      readonly id: string
+      readonly project: string
+      readonly started_at: Rfc3339
+      readonly status: { readonly [x: string]: Schema.Json }
+      readonly task?: string | null
+      readonly transcript: { readonly [x: string]: Schema.Json }
+      readonly kind: "snapshot"
+    } & { readonly [x: string]: Schema.Json })
+  | ({ readonly kind: "agent" } & { readonly [x: string]: Schema.Json })
+  | { readonly id: string; readonly kind: "task" }
+export const SessionEvent = Schema.Union(
+  [
+    Schema.StructWithRest(
+      Schema.Struct({
+        agent: Schema.String.annotate({ examples: ["claude_code"] }),
+        cwd: Schema.String,
+        id: Schema.String,
+        project: Schema.String,
+        started_at: Rfc3339,
+        status: Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })),
+        task: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+        transcript: Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })),
+        kind: Schema.Literal("snapshot"),
+      }),
+      [Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" }))],
+    ),
+    Schema.StructWithRest(Schema.Struct({ kind: Schema.Literal("agent") }), [
+      Schema.Record(Schema.String, Schema.Json.annotate({ expected: "JSON value" })),
+    ]),
+    Schema.Struct({ id: Schema.String, kind: Schema.Literal("task") }),
+  ],
+  { mode: "oneOf" },
+).annotate({ identifier: "SessionEvent" })
 export type RevisionView = {
   readonly agent?: string
   readonly at: Rfc3339
@@ -904,6 +967,13 @@ export type ListAllDocs404 = ApiErrorBody
 export const ListAllDocs404 = ApiErrorBody
 export type ListAllDocs503 = ApiErrorBody
 export const ListAllDocs503 = ApiErrorBody
+export type EventsParams = { readonly "Last-Event-ID"?: string | null; readonly last_event_id?: string | null }
+export const EventsParams = Schema.Struct({
+  "Last-Event-ID": Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+  last_event_id: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
+})
+export type Events200Sse = ChangeEvent
+export const Events200Sse = ChangeEvent
 export type ListFaults200 = ReadonlyArray<Fault>
 export const ListFaults200 = Schema.Array(Fault)
 export type DrawFlowParams = {
@@ -996,6 +1066,12 @@ export type Approve404 = ApiErrorBody
 export const Approve404 = ApiErrorBody
 export type Approve503 = ApiErrorBody
 export const Approve503 = ApiErrorBody
+export type SessionEvents200Sse = SessionEvent
+export const SessionEvents200Sse = SessionEvent
+export type SessionEvents404 = ApiErrorBody
+export const SessionEvents404 = ApiErrorBody
+export type SessionEvents503 = ApiErrorBody
+export const SessionEvents503 = ApiErrorBody
 export type InterruptSession404 = ApiErrorBody
 export const InterruptSession404 = ApiErrorBody
 export type InterruptSession503 = ApiErrorBody
@@ -1455,6 +1531,29 @@ export const make = (
       }
       return Effect.succeed(method(path))
     })
+  const executeStreamRequest = (request: HttpClientRequest.HttpClientRequest) =>
+    Effect.suspend(() =>
+      options.transformClient
+        ? Effect.flatMap(options.transformClient(httpClient), (client) =>
+            HttpClient.filterStatusOk(client).execute(request),
+          )
+        : HttpClient.filterStatusOk(httpClient).execute(request),
+    )
+  const sseRequest =
+    <Type, DecodingServices>(schema: Schema.ConstraintDecoder<Type, DecodingServices>) =>
+    (
+      request: HttpClientRequest.HttpClientRequest,
+    ): Stream.Stream<
+      { readonly event: string; readonly id: string | undefined; readonly data: Type },
+      HttpClientError.HttpClientError | SchemaError | Sse.Retry | Sse.SseError,
+      DecodingServices
+    > =>
+      executeStreamRequest(request).pipe(
+        Effect.map((response) => response.stream),
+        Stream.unwrap,
+        Stream.decodeText(),
+        Stream.pipeThroughChannel(Sse.decodeDataSchema(schema)),
+      )
   const decodeSuccess =
     <Schema extends Schema.Constraint>(schema: Schema) =>
     (response: HttpClientResponse.HttpClientResponse) =>
@@ -1499,6 +1598,22 @@ export const make = (
             orElse: unexpectedStatus,
           }),
         ),
+      ),
+    events: (options) =>
+      HttpClientRequest.get("/api/events").pipe(
+        HttpClientRequest.setUrlParams({ last_event_id: options?.params?.["last_event_id"] as any }),
+        HttpClientRequest.setHeaders({ "Last-Event-ID": options?.params?.["Last-Event-ID"] ?? undefined }),
+        withResponse(options?.config)(
+          HttpClientResponse.matchStatus({
+            orElse: unexpectedStatus,
+          }),
+        ),
+      ),
+    eventsSse: (options) =>
+      HttpClientRequest.get("/api/events").pipe(
+        HttpClientRequest.setUrlParams({ last_event_id: options?.params?.["last_event_id"] as any }),
+        HttpClientRequest.setHeaders({ "Last-Event-ID": options?.params?.["Last-Event-ID"] ?? undefined }),
+        sseRequest(Events200Sse),
       ),
     listFaults: (options) =>
       HttpClientRequest.get("/api/faults").pipe(
@@ -1679,6 +1794,32 @@ export const make = (
             ),
           ),
         ),
+      ),
+    sessionEvents: (project, id, options) =>
+      __makePathRequest(
+        HttpClientRequest.get,
+        [project, id],
+        () => "/api/projects/" + __encodePathParam(project) + "/agent/sessions/" + __encodePathParam(id) + "/events",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "404": decodeError("SessionEvents404", SessionEvents404),
+                "503": decodeError("SessionEvents503", SessionEvents503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    sessionEventsSse: (project, id) =>
+      Stream.unwrap(
+        __makePathRequest(
+          HttpClientRequest.get,
+          [project, id],
+          () => "/api/projects/" + __encodePathParam(project) + "/agent/sessions/" + __encodePathParam(id) + "/events",
+        ).pipe(Effect.map((request) => request.pipe(sseRequest(SessionEvents200Sse)))),
       ),
     interruptSession: (project, id, options) =>
       __makePathRequest(
@@ -2449,6 +2590,18 @@ export interface TasksClient {
     | TasksClientError<"ListAllDocs404", typeof ListAllDocs404.Type>
     | TasksClientError<"ListAllDocs503", typeof ListAllDocs503.Type>
   >
+  readonly events: <Config extends OperationConfig>(
+    options:
+      | { readonly params?: typeof EventsParams.Encoded | undefined; readonly config?: Config | undefined }
+      | undefined,
+  ) => Effect.Effect<WithOptionalResponse<void, Config>, HttpClientError.HttpClientError | SchemaError>
+  readonly eventsSse: (
+    options: { readonly params?: typeof EventsParams.Encoded | undefined } | undefined,
+  ) => Stream.Stream<
+    { readonly event: string; readonly id: string | undefined; readonly data: typeof Events200Sse.Type },
+    HttpClientError.HttpClientError | SchemaError | Sse.Retry | Sse.SseError,
+    typeof Events200Sse.DecodingServices
+  >
   readonly listFaults: <Config extends OperationConfig>(
     options: { readonly config?: Config | undefined } | undefined,
   ) => Effect.Effect<
@@ -2550,6 +2703,25 @@ export interface TasksClient {
     | SchemaError
     | TasksClientError<"Approve404", typeof Approve404.Type>
     | TasksClientError<"Approve503", typeof Approve503.Type>
+  >
+  readonly sessionEvents: <Config extends OperationConfig>(
+    project: string,
+    id: string,
+    options: { readonly config?: Config | undefined } | undefined,
+  ) => Effect.Effect<
+    WithOptionalResponse<void, Config>,
+    | HttpClientError.HttpClientError
+    | SchemaError
+    | TasksClientError<"SessionEvents404", typeof SessionEvents404.Type>
+    | TasksClientError<"SessionEvents503", typeof SessionEvents503.Type>
+  >
+  readonly sessionEventsSse: (
+    project: string,
+    id: string,
+  ) => Stream.Stream<
+    { readonly event: string; readonly id: string | undefined; readonly data: typeof SessionEvents200Sse.Type },
+    HttpClientError.HttpClientError | SchemaError | Sse.Retry | Sse.SseError,
+    typeof SessionEvents200Sse.DecodingServices
   >
   readonly interruptSession: <Config extends OperationConfig>(
     project: string,
