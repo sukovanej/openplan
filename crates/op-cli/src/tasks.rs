@@ -62,7 +62,7 @@ pub fn run(command: TaskCommand, root: &Path, daemon_url: Option<&str>) -> Resul
             comment(root, daemon_url, &id, &text)
         }
         TaskCommand::Comments { id, json } => comments(root, daemon_url, &id, json),
-        TaskCommand::Show { id } => show(root, daemon_url, &id),
+        TaskCommand::Show { id, json } => show(root, daemon_url, &id, json),
         TaskCommand::Pr { command } => {
             let (id, patch) = match command {
                 PullRequestCommand::Add { id, pull_request } => (
@@ -264,8 +264,12 @@ fn shown<T: std::fmt::Display>(field: &Field<T>) -> String {
     }
 }
 
-fn show(root: &Path, daemon_url: Option<&str>, id: &str) -> Result<()> {
+fn show(root: &Path, daemon_url: Option<&str>, id: &str, json: bool) -> Result<()> {
     let detail = Plan::resolve(root, daemon_url)?.get(id)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&detail)?);
+        return Ok(());
+    }
     let metadata = &detail.metadata;
     println!("id:     {id}");
     println!("title:  {}", detail.title);

@@ -12,10 +12,7 @@ pub fn run(command: TagCommand, root: &Path, daemon_url: Option<&str>) -> Result
     match command {
         // The palette is a closed set this binary carries, so it answers without a daemon and
         // without a repository — the one tag command that needs neither.
-        TagCommand::Colors => {
-            colors();
-            Ok(())
-        }
+        TagCommand::Colors { json } => colors(json),
         TagCommand::Create {
             name,
             color,
@@ -54,10 +51,16 @@ pub fn identities(names: Vec<String>) -> Result<Vec<String>> {
     names.iter().map(|name| identity(name)).collect()
 }
 
-fn colors() {
-    for color in Color::ALL {
-        println!("{}", color.as_str());
+fn colors(json: bool) -> Result<()> {
+    let names = Color::ALL.map(|color| color.as_str());
+    if json {
+        println!("{}", serde_json::to_string_pretty(&names)?);
+    } else {
+        for name in names {
+            println!("{name}");
+        }
     }
+    Ok(())
 }
 
 fn create(

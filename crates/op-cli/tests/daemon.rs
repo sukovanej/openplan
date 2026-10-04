@@ -196,12 +196,28 @@ fn start_ping_stop_roundtrip() {
     let ping = ok(daemon.run(&["server", "ping"]));
     assert!(ping.contains("running (pid"), "{ping}");
 
+    let report: serde_json::Value =
+        serde_json::from_str(&ok(daemon.run(&["server", "ping", "--json"]))).unwrap();
+    assert_eq!(report["running"], true, "{report}");
+    assert_eq!(report["pid"], pid, "{report}");
+    assert_eq!(report["port"], daemon.info_port().unwrap(), "{report}");
+
     let stop = ok(daemon.run(&["server", "stop"]));
     assert!(stop.contains("stopped"), "{stop}");
 
     let down = daemon.run(&["server", "ping"]);
     assert!(!down.status.success(), "ping must exit non-zero when down");
     assert!(stdout(&down).contains("not running"));
+
+    let down = daemon.run(&["server", "ping", "--json"]);
+    assert!(
+        !down.status.success(),
+        "ping --json must exit non-zero when down"
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&down.stdout).unwrap(),
+        serde_json::json!({ "running": false })
+    );
 
     assert!(!daemon.home_path().join("daemon.json").exists());
     assert!(
