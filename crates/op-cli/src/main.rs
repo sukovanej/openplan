@@ -579,16 +579,13 @@ fn page_urls(root: &Path, daemon_url: Option<&str>, keys: &[String], json: bool)
     let urls = keys
         .iter()
         .map(|key| {
-            let url = match op_task::is_key_shaped(key) {
-                true => {
-                    plan.get(key)?;
-                    plan.task_page(key)
-                }
-                false => {
-                    let name = doc::identity(key)?;
-                    plan.doc(&name)?;
-                    plan.doc_page(&name)
-                }
+            let url = if op_task::is_key_shaped(key) {
+                plan.get(key)?;
+                plan.task_page(key)
+            } else {
+                let name = doc::identity(key)?;
+                plan.doc(&name)?;
+                plan.doc_page(&name)
             };
             Ok(PageUrl { key, url })
         })
