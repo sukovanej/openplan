@@ -2,9 +2,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use op_api::ProjectView;
+use op_api::{DaemonInfo, ProjectView};
 use op_daemon::{Control, Started, StopOutcome, UpdateRecord, base_url, default_port, now_unix};
 use op_server::{Location, same_path};
+use serde::Serialize;
 
 pub fn start(port: u16) -> Result<()> {
     let control = Control::resolve()?;
@@ -40,37 +41,81 @@ pub fn restart(port: u16) -> Result<()> {
     start(port)
 }
 
-pub fn ping(override_url: Option<&str>) -> Result<bool> {
+#[derive(Default, Serialize)]
+struct Ping {
+    running: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(flatten)]
+    daemon: Option<DaemonInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    updates: Option<UpdateRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stale_pid: Option<u32>,
+}
+
+pub fn ping(override_url: Option<&str>, json: bool) -> Result<bool> {
+    let ping = probe(override_url)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&ping)?);
+    } else {
+        print_ping(&ping);
+    }
+    Ok(ping.running)
+}
+
+fn probe(override_url: Option<&str>) -> Result<Ping> {
     let client = op_client::Client::default();
     if let Some(url) = override_url {
-        let up = client.health(url.trim_end_matches('/')).is_some();
-        if up {
-            println!("running (daemon at {url})");
-        } else {
-            println!("not running (no openplan daemon at {url})");
-        }
-        return Ok(up);
+        return Ok(Ping {
+            running: client.health(url.trim_end_matches('/')).is_some(),
+            url: Some(url.to_owned()),
+            ..Ping::default()
+        });
     }
-
     let control = Control::resolve()?;
-    match control.recorded() {
-        Some(info) if op_daemon::serves(&client, &info) => {
+    Ok(match control.recorded() {
+        Some(info) if op_daemon::serves(&client, &info) => Ping {
+            running: true,
+            daemon: Some(info),
+            updates: Some(control.home().read_update()),
+            ..Ping::default()
+        },
+        Some(info) => Ping {
+            stale_pid: Some(info.pid),
+            ..Ping::default()
+        },
+        None => Ping::default(),
+    })
+}
+
+fn print_ping(ping: &Ping) {
+    match ping {
+        Ping {
+            url: Some(url),
+            running: true,
+            ..
+        } => println!("running (daemon at {url})"),
+        Ping { url: Some(url), .. } => println!("not running (no openplan daemon at {url})"),
+        Ping {
+            daemon: Some(info),
+            updates,
+            ..
+        } => {
             let uptime = fmt_uptime(now_unix().saturating_sub(info.started_at));
             println!(
                 "running (pid {}, port {}, up {}, v{})",
                 info.pid, info.port, uptime, info.version
             );
-            print_updates(&control.home().read_update());
-            Ok(true)
+            if let Some(updates) = updates {
+                print_updates(updates);
+            }
         }
-        Some(info) => {
-            println!("not running (stale daemon.json for pid {})", info.pid);
-            Ok(false)
-        }
-        None => {
-            println!("not running");
-            Ok(false)
-        }
+        Ping {
+            stale_pid: Some(pid),
+            ..
+        } => println!("not running (stale daemon.json for pid {pid})"),
+        _ => println!("not running"),
     }
 }
 

@@ -357,6 +357,38 @@ fn url_refuses_a_key_with_no_task() {
 }
 
 #[test]
+fn url_json_pairs_each_key_with_its_page() {
+    let project = Project::local();
+    let task = project.create("First");
+    ok(project.run(&["doc", "create", "Storage Layout"]));
+    let plain = ok(project.run(&["url", &task, "Storage Layout"]));
+
+    let urls = json(project.run(&["url", &task, "Storage Layout", "--json"]));
+
+    let pages: Vec<&str> = plain.lines().collect();
+    assert_eq!(
+        urls,
+        serde_json::json!([
+            { "key": task, "url": pages[0] },
+            { "key": "Storage Layout", "url": pages[1] },
+        ])
+    );
+}
+
+#[test]
+fn project_list_json_carries_each_project_and_its_faults() {
+    let project = Project::local();
+
+    let projects = json(project.run(&["project", "list", "--json"]));
+
+    let projects = projects.as_array().unwrap();
+    assert_eq!(projects.len(), 1, "{projects:?}");
+    assert_eq!(projects[0]["abbreviation"], "OPP");
+    assert_eq!(projects[0]["backend"], "local");
+    assert_eq!(projects[0]["faults"], serde_json::json!([]));
+}
+
+#[test]
 fn a_write_with_no_reachable_daemon_fails_explicitly() {
     let project = Project::local();
 
@@ -589,6 +621,7 @@ fn get_show_and_missing_id() {
     let view = json(project.run(&["tasks", "get", &id, "--json"]));
     assert_eq!(view["title"], "Ship it");
     assert_eq!(view["metadata"]["status"], "backlog");
+    assert_eq!(json(project.run(&["tasks", "show", &id, "--json"])), view);
 
     for missing in ["does-not-exist", "OPP-99"] {
         let out = project.run(&["tasks", "get", missing]);
@@ -1403,6 +1436,9 @@ fn tag_colors_lists_the_palette() {
         "the palette needs no project and no daemon"
     );
     assert!(!home.path().join("daemon.json").exists());
+
+    let names_json = json(project.run(&["tag", "colors", "--json"]));
+    assert_eq!(names_json, serde_json::json!(names));
 }
 
 #[test]

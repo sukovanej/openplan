@@ -24,6 +24,7 @@ use op_task::tag::Color;
 use op_daemon::{Home, Updates};
 use op_update::Channel;
 use plan::Plan;
+use serde::Serialize;
 
 #[derive(Parser)]
 #[command(name = "openplan", version, about = "openplan — local-first task CLI")]
@@ -93,6 +94,8 @@ enum Command {
     Url {
         #[arg(required = true)]
         keys: Vec<String>,
+        #[arg(long)]
+        json: bool,
     },
     /// Report problems in the tasks, docs, and agent skills
     Lint {
@@ -245,7 +248,11 @@ enum TaskCommand {
         json: bool,
     },
     /// Print a task's metadata (status, parent, dependencies, tags, pull requests)
-    Show { id: String },
+    Show {
+        id: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Link and unlink the pull requests and merge requests of a task
     Pr {
         #[command(subcommand)]
@@ -380,13 +387,19 @@ enum TagCommand {
         yes: bool,
     },
     /// Print the color names a tag can take
-    Colors,
+    Colors {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
 enum ProjectCommand {
     /// List every registered project, with the reason a demoted one is not served
-    List,
+    List {
+        #[arg(long)]
+        json: bool,
+    },
     /// Register a repository; defaults to --root
     Add { path: Option<PathBuf> },
     /// Drop a project from the registry; its tasks stay where they are
@@ -413,7 +426,10 @@ enum ServerCommand {
         port: u16,
     },
     /// Report daemon status without starting it
-    Ping,
+    Ping {
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the HTTP API's OpenAPI 3.1 spec to stdout
     Openapi,
 }
@@ -481,7 +497,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
         .map(|()| ExitCode::SUCCESS),
         Command::Sync { status, json } => history::sync(root, daemon_url, status, json),
         Command::Open => open::run(root, daemon_url).map(|()| ExitCode::SUCCESS),
-        Command::Url { keys } => page_urls(root, daemon_url, &keys).map(|()| ExitCode::SUCCESS),
+        Command::Url { keys, json } => {
+            page_urls(root, daemon_url, &keys, json).map(|()| ExitCode::SUCCESS)
+        }
         Command::Lint { keys, json, skills } => lint::run(root, &keys, json, skills),
         Command::Doc { command } => doc::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Tag { command } => tag::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
@@ -522,8 +540,8 @@ fn server(command: ServerCommand, daemon_url: Option<&str>) -> Result<ExitCode> 
             daemon::restart(port)?;
             Ok(ExitCode::SUCCESS)
         }
-        ServerCommand::Ping => {
-            let running = daemon::ping(daemon_url)?;
+        ServerCommand::Ping { json } => {
+            let running = daemon::ping(daemon_url, json)?;
             Ok(if running {
                 ExitCode::SUCCESS
             } else {
@@ -549,20 +567,34 @@ fn reject_remote_override(daemon_url: Option<&str>, command: &str) -> Result<()>
     Ok(())
 }
 
+#[derive(Serialize)]
+struct PageUrl<'a> {
+    key: &'a str,
+    url: String,
+}
+
 // A link to a task or a doc that does not exist opens an empty page, so a mistyped one fails here.
-fn page_urls(root: &Path, daemon_url: Option<&str>, keys: &[String]) -> Result<()> {
+fn page_urls(root: &Path, daemon_url: Option<&str>, keys: &[String], json: bool) -> Result<()> {
     let plan = Plan::resolve(root, daemon_url)?;
-    for key in keys {
-        match op_task::is_key_shaped(key) {
-            true => {
+    let urls = keys
+        .iter()
+        .map(|key| {
+            let url = if op_task::is_key_shaped(key) {
                 plan.get(key)?;
-                println!("{}", plan.task_page(key));
-            }
-            false => {
+                plan.task_page(key)
+            } else {
                 let name = doc::identity(key)?;
                 plan.doc(&name)?;
-                println!("{}", plan.doc_page(&name));
-            }
+                plan.doc_page(&name)
+            };
+            Ok(PageUrl { key, url })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&urls)?);
+    } else {
+        for page in &urls {
+            println!("{}", page.url);
         }
     }
     Ok(())

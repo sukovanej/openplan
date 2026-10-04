@@ -1,7 +1,9 @@
 use std::path::Path;
 
 use anyhow::{Context as _, Result};
+use op_api::{Fault, ProjectView};
 use op_client::Client;
+use serde::Serialize;
 
 use crate::ProjectCommand;
 use crate::daemon::daemon_base_url;
@@ -12,16 +14,37 @@ pub fn run(command: ProjectCommand, root: &Path, daemon_url: Option<&str>) -> Re
     let client = Client::default();
     let base_url = daemon_base_url(&client, daemon_url)?;
     match command {
-        ProjectCommand::List => list(&client, &base_url),
+        ProjectCommand::List { json } => list(&client, &base_url, json),
         ProjectCommand::Add { path } => add(&client, &base_url, path.as_deref(), root),
         ProjectCommand::Remove { name } => remove(&client, &base_url, &name),
         ProjectCommand::Rename { from, to } => rename(&client, &base_url, &from, &to),
     }
 }
 
-fn list(client: &Client, base_url: &str) -> Result<()> {
+#[derive(Serialize)]
+struct ProjectRow<'a> {
+    #[serde(flatten)]
+    view: &'a ProjectView,
+    faults: Vec<&'a Fault>,
+}
+
+fn list(client: &Client, base_url: &str, json: bool) -> Result<()> {
     let views = client.projects(base_url, op_client::WRITE_TIMEOUT)?;
     let faults = client.faults(base_url)?;
+    if json {
+        let rows: Vec<ProjectRow> = views
+            .iter()
+            .map(|view| ProjectRow {
+                view,
+                faults: faults
+                    .iter()
+                    .filter(|fault| fault.project == view.name)
+                    .collect(),
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
     if views.is_empty() {
         println!("no projects registered");
         return Ok(());
