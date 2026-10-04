@@ -87,25 +87,36 @@ pub struct SessionSummary {
     pub started_at: Rfc3339,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SessionView {
     pub id: String,
     pub project: String,
+    #[schema(value_type = String, example = "claude_code")]
     pub agent: AgentKind,
     pub task: Option<String>,
+    #[schema(value_type = String)]
     pub cwd: PathBuf,
+    #[schema(value_type = Object)]
     pub status: Status,
     pub started_at: Rfc3339,
+    #[schema(value_type = Object)]
     pub transcript: Transcript,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionEvent {
-    Snapshot(Box<SessionView>),
-    Agent(AgentEvent),
+    Snapshot(#[schema(inline)] Box<SessionView>),
+    Agent(#[schema(inline)] AgentUpdate),
     Task { id: String },
 }
+
+// `AgentEvent` belongs to a crate that knows nothing of HTTP; this gives utoipa the schema without
+// changing the bytes on the wire.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(transparent)]
+#[schema(value_type = Object)]
+pub struct AgentUpdate(pub AgentEvent);
 
 // The transcript and the bound task move together because every send happens while this is held:
 // a reader that takes its snapshot under the same lock can then subscribe without racing the
@@ -137,7 +148,7 @@ impl AgentSession {
     fn apply(&self, event: AgentEvent) {
         let mut live = self.lock();
         live.transcript.apply(&event);
-        let _ = self.events.send(SessionEvent::Agent(event));
+        let _ = self.events.send(SessionEvent::Agent(AgentUpdate(event)));
     }
 
     // The first task this session's agent writes while a turn runs is the task it works on. The
@@ -594,6 +605,19 @@ pub(crate) async fn delete_session(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project}/agent/sessions/{id}/events",
+    params(
+        ("project" = String, Path, description = "Project name"),
+        ("id" = String, Path, description = "Session id")
+    ),
+    responses(
+        (status = 200, description = "A server-sent event stream. The first event is a snapshot of the session; each event after it is one change. The stream ends when the reader falls behind, so a reader reconnects and takes a new snapshot", content_type = "text/event-stream", body = SessionEvent),
+        (status = 404, description = "No such project, or no such session", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
 pub(crate) async fn session_events(
     State(state): State<AppState>,
     Path((project, id)): Path<(String, String)>,

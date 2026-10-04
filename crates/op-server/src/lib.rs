@@ -14,7 +14,6 @@ use axum::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
-    routing::get,
 };
 use op_api::{
     ApiErrorBody, ChangeEvent, DaemonInfo, Fault, FlowCycles, KeyError, ProjectView, Refusal,
@@ -613,12 +612,14 @@ struct ApiDoc;
 fn documented() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
+        .routes(routes!(events))
         .routes(routes!(list_faults))
         .routes(routes!(list_projects, register_project))
         .routes(routes!(delete_project, rename_project))
         .routes(routes!(tasks::list_tasks, tasks::create_task))
         .routes(routes!(agent::list_sessions, agent::create_session))
         .routes(routes!(agent::delete_session))
+        .routes(routes!(agent::session_events))
         .routes(routes!(agent::prompt_session))
         .routes(routes!(agent::interrupt_session))
         .routes(routes!(agent::approve))
@@ -665,22 +666,28 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 // utoipa leaves `additionalProperties` unset, and JSON Schema reads that as "any extra field".
 // The web client generator follows it and types every response as an open record.
 fn close_objects(schema: &mut RefOr<Schema>) {
+    if let RefOr::T(Schema::Object(object)) = schema
+        && !object.properties.is_empty()
+        && object.additional_properties.is_none()
+    {
+        object.additional_properties = Some(Box::new(AdditionalProperties::FreeForm(false)));
+    }
+    close_members(schema);
+}
+
+fn close_members(schema: &mut RefOr<Schema>) {
     let RefOr::T(schema) = schema else { return };
     match schema {
-        Schema::Object(object) => {
-            if !object.properties.is_empty() && object.additional_properties.is_none() {
-                object.additional_properties =
-                    Some(Box::new(AdditionalProperties::FreeForm(false)));
-            }
-            object.properties.values_mut().for_each(close_objects);
-        }
+        Schema::Object(object) => object.properties.values_mut().for_each(close_objects),
         Schema::Array(array) => {
             if let ArrayItems::RefOrSchema(items) = &mut array.items {
                 close_objects(items);
             }
         }
         Schema::OneOf(one_of) => one_of.items.iter_mut().for_each(close_objects),
-        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(close_objects),
+        // Every member of an `allOf` checks the whole object, so a closed member rejects the fields
+        // of the others.
+        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(close_members),
         Schema::AnyOf(any_of) => any_of.items.iter_mut().for_each(close_objects),
         _ => {}
     }
@@ -753,11 +760,6 @@ pub fn app(state: AppState) -> Router {
     let (router, api) = documented().split_for_parts();
     router
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
-        .route("/api/events", get(events))
-        .route(
-            "/api/projects/{project}/agent/sessions/{id}/events",
-            get(agent::session_events),
-        )
         .route("/admin/shutdown", axum::routing::post(admin_shutdown))
         .fallback(static_handler)
         .layer(
@@ -981,13 +983,22 @@ async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Re
 
 // A new EventSource cannot set a header, so a page that opens one to reconnect sends its cursor in
 // the query instead.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::IntoParams)]
 struct EventsQuery {
     last_event_id: Option<String>,
 }
 
 // A browser sends the id of the last event it saw when it reconnects, and the stream replays what
 // came after it. A cursor this daemon cannot serve gets `Resync` instead.
+#[utoipa::path(
+    get,
+    path = "/api/events",
+    params(
+        ("Last-Event-ID" = Option<String>, Header, description = "The id of the last event the client saw; the stream first sends the events after it"),
+        EventsQuery
+    ),
+    responses((status = 200, description = "A server-sent event stream of changes. Each event carries an id to resume from. A cursor that the daemon cannot serve gets a `resync` event", content_type = "text/event-stream", body = ChangeEvent))
+)]
 async fn events(
     State(state): State<AppState>,
     headers: HeaderMap,
