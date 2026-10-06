@@ -3857,39 +3857,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "op-agent"
-version = "0.0.6"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "op-agent-claude"
-version = "0.0.6"
-dependencies = [
- "op-agent",
- "op-claude",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "op-agent-codex"
-version = "0.0.6"
-dependencies = [
- "op-agent",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "op-api"
 version = "0.0.6"
 dependencies = [
@@ -3955,15 +3922,6 @@ name = "op-browser"
 version = "0.0.6"
 dependencies = [
  "anyhow",
-]
-
-[[package]]
-name = "op-claude"
-version = "0.0.6"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -4067,12 +4025,8 @@ name = "op-server"
 version = "0.0.6"
 dependencies = [
  "axum",
- "getrandom 0.4.3",
  "gix-imara-diff",
  "http-body-util",
- "op-agent",
- "op-agent-claude",
- "op-agent-codex",
  "op-api",
  "op-backend",
  "op-backend-git",

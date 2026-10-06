@@ -35,7 +35,6 @@ use utoipa::openapi::schema::{AdditionalProperties, ArrayItems, Schema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
 
-pub mod agent;
 mod docs;
 mod drawing;
 mod forge;
@@ -43,7 +42,6 @@ mod project;
 mod registry;
 mod revision_diff;
 mod tasks;
-use agent::AgentSessions;
 pub use drawing::DrawingCache;
 pub use project::{Location, OpenError, Project, STORE_DIR, open_backend, sync_view};
 pub use registry::{
@@ -87,13 +85,11 @@ pub enum ProjectsError {
     Tracker(#[from] TrackerError),
 }
 
-// One published change, numbered so a client that reconnects can ask for what it missed. `via` is
-// the agent that made the change, which only the daemon itself reads.
+// One published change, numbered so a client that reconnects can ask for what it missed.
 #[derive(Debug, Clone)]
 pub(crate) struct Published {
     pub seq: u64,
     pub event: ChangeEvent,
-    pub via: Option<String>,
 }
 
 #[derive(Clone)]
@@ -140,7 +136,7 @@ impl Publisher {
                 false => reported.insert(name, faults),
             };
         }
-        self.publish(ChangeEvent::FaultsChanged, None);
+        self.publish(ChangeEvent::FaultsChanged);
     }
 
     pub fn forget(&self, project: &str) {
@@ -150,11 +146,11 @@ impl Publisher {
             .expect("fault record poisoned")
             .remove(project);
         if removed.is_some() {
-            self.publish(ChangeEvent::FaultsChanged, None);
+            self.publish(ChangeEvent::FaultsChanged);
         }
     }
 
-    pub fn publish(&self, event: ChangeEvent, via: Option<String>) {
+    pub fn publish(&self, event: ChangeEvent) {
         // Every sync reports its status, twice a minute for each project, even when nothing moved.
         match event {
             ChangeEvent::SyncChanged { .. } => tracing::debug!(?event, "change published"),
@@ -165,7 +161,6 @@ impl Publisher {
         let published = Published {
             seq: recent.0,
             event,
-            via,
         };
         recent.1.push_back(published.clone());
         if recent.1.len() > REPLAY {
@@ -215,7 +210,6 @@ pub struct AppState {
     shutdown: Arc<watch::Sender<Option<StopReason>>>,
     health: Option<Arc<DaemonInfo>>,
     publisher: Publisher,
-    agents: Arc<AgentSessions>,
     drawings: Arc<DrawingCache>,
 }
 
@@ -236,22 +230,8 @@ impl AppState {
             shutdown: Arc::new(watch::channel(None).0),
             health: None,
             publisher: Publisher::new(),
-            agents: Arc::new(AgentSessions::new(agent::backends())),
             drawings: Arc::new(DrawingCache::new(DrawingCache::BUDGET)),
         }
-    }
-
-    // A test hands in a fake here; the daemon keeps the two real backends `new` installed.
-    pub fn with_agents(
-        mut self,
-        agents: BTreeMap<op_agent::AgentKind, Arc<dyn op_agent::Agent>>,
-    ) -> Self {
-        self.agents = Arc::new(AgentSessions::new(agents));
-        self
-    }
-
-    pub fn agents(&self) -> Arc<AgentSessions> {
-        Arc::clone(&self.agents)
     }
 
     pub fn drawings(&self) -> Arc<DrawingCache> {
@@ -482,11 +462,9 @@ impl AppState {
         *self.shutdown.borrow()
     }
 
-    // `install` runs and the daemon stops for the update only while no agent session is live. Both
-    // happen under the lock that starting a session takes, so no session starts in between.
-    pub fn update_if_idle<E>(&self, install: impl FnOnce() -> Result<(), E>) -> Result<bool, E> {
-        let sessions = self.agents.held();
-        if self.stop_reason().is_some() || sessions.values().any(|session| session.live()) {
+    // A daemon that already stops keeps its reason and installs nothing.
+    pub fn update<E>(&self, install: impl FnOnce() -> Result<(), E>) -> Result<bool, E> {
+        if self.stop_reason().is_some() {
             return Ok(false);
         }
         install()?;
@@ -496,10 +474,6 @@ impl AppState {
 
     pub(crate) fn stopping(&self) -> watch::Receiver<Option<StopReason>> {
         self.shutdown.subscribe()
-    }
-
-    pub(crate) fn publisher(&self) -> &Publisher {
-        &self.publisher
     }
 
     fn serving(&self, location: &Location) -> Option<Arc<Project>> {
@@ -617,12 +591,6 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(list_projects, register_project))
         .routes(routes!(delete_project, rename_project))
         .routes(routes!(tasks::list_tasks, tasks::create_task))
-        .routes(routes!(agent::list_sessions, agent::create_session))
-        .routes(routes!(agent::delete_session))
-        .routes(routes!(agent::session_events))
-        .routes(routes!(agent::prompt_session))
-        .routes(routes!(agent::interrupt_session))
-        .routes(routes!(agent::approve))
         .routes(routes!(tasks::get_board))
         .routes(routes!(tasks::get_merged_board))
         .routes(routes!(drawing::draw_flow))
@@ -814,7 +782,6 @@ pub async fn serve(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
     let stop = state.clone();
-    let agents = state.agents();
     let watchdog = tokio::spawn(watch_projects(state.clone()));
     let stopping = state.clone();
     let result = axum::serve(listener, app(state))
@@ -830,7 +797,6 @@ pub async fn serve(
         })
         .await;
     watchdog.abort();
-    agents.finish().await;
     let _ = tokio::task::spawn_blocking(move || {
         for project in stopping.projects() {
             project.stop();
@@ -858,7 +824,7 @@ async fn watch_projects(state: AppState) {
         .await
         .unwrap_or(false);
         if moved {
-            state.publisher.publish(ChangeEvent::ProjectsChanged, None);
+            state.publisher.publish(ChangeEvent::ProjectsChanged);
         }
     }
 }
@@ -917,7 +883,7 @@ async fn register_project(
     let author = author_of(&headers);
     let (view, created) = blocking(move || Ok(registering.register_as(&body, author)?)).await?;
     if created {
-        state.publisher.publish(ChangeEvent::ProjectsChanged, None);
+        state.publisher.publish(ChangeEvent::ProjectsChanged);
     }
     let status = match created {
         true => StatusCode::CREATED,
@@ -943,7 +909,7 @@ async fn delete_project(
 ) -> Result<StatusCode, ApiError> {
     let removing = state.clone();
     blocking(move || Ok(removing.deregister(&project)?)).await?;
-    state.publisher.publish(ChangeEvent::ProjectsChanged, None);
+    state.publisher.publish(ChangeEvent::ProjectsChanged);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -967,7 +933,7 @@ async fn rename_project(
 ) -> Result<Json<ProjectView>, ApiError> {
     let renaming = state.clone();
     let view = blocking(move || Ok(renaming.rename_project(&project, &body.name)?)).await?;
-    state.publisher.publish(ChangeEvent::ProjectsChanged, None);
+    state.publisher.publish(ChangeEvent::ProjectsChanged);
     Ok(Json(view))
 }
 
@@ -1111,10 +1077,6 @@ impl ApiError {
 
     pub(crate) fn not_found(message: impl Into<String>) -> Self {
         Self::new(StatusCode::NOT_FOUND, message)
-    }
-
-    pub(crate) fn conflict(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::CONFLICT, message)
     }
 
     pub(crate) fn unavailable(message: impl Into<String>) -> Self {

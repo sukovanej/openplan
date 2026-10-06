@@ -14,7 +14,6 @@ const FIRST_CHECK: Duration = Duration::from_secs(5 * 60);
 // Each push to `main` makes a canary build, so the interval also limits how often a canary daemon
 // restarts.
 const INTERVAL: Duration = Duration::from_secs(60 * 60);
-const IDLE_POLL: Duration = Duration::from_secs(30);
 
 pub enum Updates {
     Auto,
@@ -38,6 +37,7 @@ pub enum Checked {
     Off,
     UpToDate,
     Installed(Version),
+    Stopping,
 }
 
 impl Updater {
@@ -130,6 +130,7 @@ pub(crate) async fn keep_updated(
                 tracing::info!(%version, "installed a new release; starting again on it");
                 return;
             }
+            Ok(Checked::Stopping) => return,
             Ok(Checked::UpToDate | Checked::Off) => {}
             Err(err) => {
                 let error = format!("{err:#}");
@@ -141,8 +142,8 @@ pub(crate) async fn keep_updated(
     }
 }
 
-// Downloads and verifies the new release first, then replaces the executable and stops the daemon
-// once no agent session runs. `serve` then starts the new executable in this process.
+// Downloads and verifies the new release first, then replaces the executable and stops the daemon.
+// `serve` then starts the new executable in this process.
 pub async fn check(updater: &Arc<Updater>, home: &Arc<Home>, state: &AppState) -> Result<Checked> {
     if !home.read_update().auto {
         return Ok(Checked::Off);
@@ -156,33 +157,19 @@ pub async fn check(updater: &Arc<Updater>, home: &Arc<Home>, state: &AppState) -
         return Ok(Checked::UpToDate);
     };
     let version = ready.version.clone();
-    let ready = Arc::new(ready);
-    let mut waiting = false;
-    loop {
-        if !home.read_update().auto {
-            return Ok(Checked::Off);
-        }
-        let (updater, home, state, ready) = (
-            Arc::clone(updater),
-            Arc::clone(home),
-            state.clone(),
-            Arc::clone(&ready),
-        );
-        // Unpacking the archive blocks, and it runs under the lock that starting a session takes.
-        let installed = tokio::task::spawn_blocking(move || {
-            state.update_if_idle(|| install(&updater, &home, &ready))
-        })
-        .await
-        .context("the install panicked")??;
-        if installed {
-            return Ok(Checked::Installed(version));
-        }
-        if !waiting {
-            waiting = true;
-            tracing::info!(%version, "a new release is ready; waiting until no agent session runs");
-        }
-        tokio::time::sleep(IDLE_POLL).await;
+    if !home.read_update().auto {
+        return Ok(Checked::Off);
     }
+    let (updater, home, state) = (Arc::clone(updater), Arc::clone(home), state.clone());
+    // Unpacking the archive blocks.
+    let installed =
+        tokio::task::spawn_blocking(move || state.update(|| install(&updater, &home, &ready)))
+            .await
+            .context("the install panicked")??;
+    Ok(match installed {
+        true => Checked::Installed(version),
+        false => Checked::Stopping,
+    })
 }
 
 fn install(updater: &Updater, home: &Home, ready: &Ready) -> Result<()> {

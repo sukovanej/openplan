@@ -1523,58 +1523,15 @@ fn the_openapi_spec_documents_every_json_api_route() {
 #[test]
 fn the_openapi_spec_documents_each_event_stream_and_its_events() {
     let spec = serde_json::to_value(op_server::openapi()).unwrap();
-    for (route, event) in [
-        ("/api/events", "ChangeEvent"),
-        (
-            "/api/projects/{project}/agent/sessions/{id}/events",
-            "SessionEvent",
-        ),
-    ] {
-        assert_eq!(
-            spec["paths"][route]["get"]["responses"]["200"]["content"]["text/event-stream"]["schema"]
-                ["$ref"],
-            format!("#/components/schemas/{event}"),
-            "{route} must document its events"
-        );
-    }
+    assert_eq!(
+        spec["paths"]["/api/events"]["get"]["responses"]["200"]["content"]["text/event-stream"]["schema"]
+            ["$ref"],
+        "#/components/schemas/ChangeEvent"
+    );
     let parameters = spec["paths"]["/api/events"]["get"]["parameters"].to_string();
     for cursor in ["Last-Event-ID", "last_event_id"] {
         assert!(parameters.contains(cursor), "{cursor}: {parameters}");
     }
-}
-
-// A snapshot event is the session and its `kind` in one object, which the spec writes as an
-// `allOf`. A closed member would reject the fields of the other member.
-#[test]
-fn no_member_of_an_all_of_is_closed() {
-    fn check(schema: &serde_json::Value) {
-        match schema {
-            serde_json::Value::Object(object) => {
-                for member in object
-                    .get("allOf")
-                    .and_then(|all| all.as_array())
-                    .into_iter()
-                    .flatten()
-                {
-                    assert!(
-                        member.get("additionalProperties").is_none(),
-                        "a closed allOf member: {member}"
-                    );
-                }
-                object.values().for_each(check);
-            }
-            serde_json::Value::Array(items) => items.iter().for_each(check),
-            _ => {}
-        }
-    }
-    let spec = serde_json::to_value(op_server::openapi()).unwrap();
-    assert!(
-        spec["components"]["schemas"]["SessionEvent"]
-            .to_string()
-            .contains("allOf"),
-        "the snapshot event must stay an allOf, or this test checks nothing"
-    );
-    check(&spec);
 }
 
 // The generated web client turns each documented refusal into a typed error that carries the

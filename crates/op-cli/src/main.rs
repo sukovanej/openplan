@@ -120,7 +120,7 @@ enum Command {
         #[arg(long)]
         canary: bool,
         /// Turn the daemon's own updates on or off, and install nothing now. The daemon checks
-        /// every hour and installs a new release when no agent session runs
+        /// every hour and installs a new release
         #[arg(long, value_enum, conflicts_with = "canary")]
         auto: Option<Toggle>,
     },
