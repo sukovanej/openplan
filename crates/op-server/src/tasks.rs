@@ -100,7 +100,7 @@ impl Project {
     }
 }
 
-pub(crate) fn no_such_task(key: &str) -> ApiError {
+fn no_such_task(key: &str) -> ApiError {
     ApiError::not_found(format!("no such task: {key}"))
 }
 

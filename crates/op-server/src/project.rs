@@ -447,7 +447,6 @@ impl Project {
     fn moved(&self, moved: &HeadMoved, publisher: &Publisher) {
         self.catch_up();
         let project = self.name();
-        let via = moved.to.author.via.clone();
         let (mut tags, mut config) = (false, false);
         let keys: Vec<String> = {
             let index = self.index();
@@ -457,38 +456,29 @@ impl Project {
                 .collect()
         };
         for id in keys {
-            publisher.publish(
-                ChangeEvent::TaskChanged {
-                    project: project.clone(),
-                    id,
-                },
-                via.clone(),
-            );
+            publisher.publish(ChangeEvent::TaskChanged {
+                project: project.clone(),
+                id,
+            });
         }
         for change in &moved.changes {
             match Document::of(&change.path) {
                 Document::Tag(_) => tags = true,
                 Document::Config => config = true,
-                Document::Doc(name) => publisher.publish(
-                    ChangeEvent::DocChanged {
-                        project: project.clone(),
-                        name,
-                    },
-                    via.clone(),
-                ),
+                Document::Doc(name) => publisher.publish(ChangeEvent::DocChanged {
+                    project: project.clone(),
+                    name,
+                }),
                 _ => {}
             }
         }
         if tags {
-            publisher.publish(
-                ChangeEvent::TagsChanged {
-                    project: project.clone(),
-                },
-                None,
-            );
+            publisher.publish(ChangeEvent::TagsChanged {
+                project: project.clone(),
+            });
         }
         if config {
-            publisher.publish(ChangeEvent::ProjectsChanged, None);
+            publisher.publish(ChangeEvent::ProjectsChanged);
         }
         if moved.origin == Origin::Local {
             self.sync_soon();
@@ -644,7 +634,7 @@ fn pump(
                     return;
                 };
                 project.reload();
-                publisher.publish(ChangeEvent::Resync, None);
+                publisher.publish(ChangeEvent::Resync);
                 publisher.report(&project);
                 continue;
             }
@@ -655,12 +645,9 @@ fn pump(
         };
         match event {
             BackendEvent::HeadMoved(moved) => project.moved(&moved, &publisher),
-            BackendEvent::Sync(_) => publisher.publish(
-                ChangeEvent::SyncChanged {
-                    project: project.name(),
-                },
-                None,
-            ),
+            BackendEvent::Sync(_) => publisher.publish(ChangeEvent::SyncChanged {
+                project: project.name(),
+            }),
         }
         publisher.report(&project);
     }

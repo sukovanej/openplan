@@ -18,6 +18,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `openplan setup-skills`. Use `npx skills add sukovanej/openplan`.
 - The skill check of `openplan lint` and its `--skills` option.
+- Agent sessions. The daemon no longer runs a coding agent, and
+  `/api/projects/{project}/agent/sessions` and its routes are gone. A new
+  release now installs at once, because the daemon no longer waits for a
+  session to end.
 
 ## [0.0.6](https://github.com/sukovanej/openplan/compare/v0.0.5...v0.0.6) - 2026-10-01
 

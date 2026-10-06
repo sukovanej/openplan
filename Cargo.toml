@@ -11,10 +11,6 @@ repository = "https://github.com/sukovanej/openplan"
 publish = false
 
 [workspace.dependencies]
-op-agent = { path = "crates/op-agent" }
-op-agent-claude = { path = "crates/op-agent-claude" }
-op-agent-codex = { path = "crates/op-agent-codex" }
-op-claude = { path = "crates/op-claude" }
 op-md = { path = "crates/op-md" }
 op-diagram = { path = "crates/op-diagram" }
 op-diagram-mermaid = { path = "crates/op-diagram-mermaid" }

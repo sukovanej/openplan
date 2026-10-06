@@ -121,7 +121,7 @@ async fn a_stop_for_an_update_tells_the_client_it_is_an_update() {
     let (_dir, state) = local_state();
     let mut events = EventStream::open(&state, None).await;
 
-    assert_eq!(state.update_if_idle(|| Ok::<(), ()>(())), Ok(true));
+    assert_eq!(state.update(|| Ok::<(), ()>(())), Ok(true));
 
     assert_eq!(
         events.expect().await.data,
@@ -133,7 +133,7 @@ async fn a_stop_for_an_update_tells_the_client_it_is_an_update() {
 async fn a_signal_after_an_update_keeps_the_update_as_the_reason() {
     let (_dir, state) = local_state();
 
-    assert_eq!(state.update_if_idle(|| Ok::<(), ()>(())), Ok(true));
+    assert_eq!(state.update(|| Ok::<(), ()>(())), Ok(true));
     state.stop();
 
     assert_eq!(state.stop_reason(), Some(op_api::StopReason::Update));
