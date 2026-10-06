@@ -168,3 +168,7 @@ same session attached.
 ### 2026-09-10T01:30:25Z by Milan Suk via claude-code
 
 > The task detail page already binds `a` to Add subtask, so the agent page takes `e` there: it edits the task. `n` on a project board is as specified.
+
+### 2026-10-06T19:54:11Z by Milan Suk via claude-code
+
+> Dropped: the agent sessions and the agent crates are removed from the daemon.
