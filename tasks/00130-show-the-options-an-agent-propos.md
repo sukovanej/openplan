@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: cancelled
 created: 2026-09-26T14:32:14Z
 tags:
 - cli
