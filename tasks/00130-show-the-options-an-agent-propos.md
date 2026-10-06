@@ -122,3 +122,9 @@ Later, the agent page (OPP-114) can draw the same cards when the agent proposes 
 #### [x] Yes, a "Needs a decision" mark on the row (recommended)
 
 #### [ ] No, the `draft` tag is enough
+
+## Comments
+
+### 2026-10-06T19:54:11Z by Milan Suk via claude-code
+
+> Dropped: the project no longer builds for coding agents that run in the daemon.
