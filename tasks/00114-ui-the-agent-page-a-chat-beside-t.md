@@ -1,5 +1,5 @@
 ---
-status: in_review
+status: cancelled
 created: 2026-09-10T00:16:28Z
 dependencies:
 - ./00113-agent-sessions-the-daemon-runs-a.md
