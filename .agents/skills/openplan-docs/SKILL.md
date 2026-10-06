@@ -1,6 +1,6 @@
 ---
 name: openplan-docs
-description: Docs in this repo are "docs" kept by the `openplan doc` CLI, NOT markdown files in the checkout or documents of another docs tool or connector. Invoke this skill whenever the user mentions a doc or docs, by name or not: to read, list, find, write, create, edit, nest, rename, or delete a doc, or to base work on one.
+description: 'Docs in this repo are "docs" kept by the `openplan doc` CLI, NOT markdown files in the checkout or documents of another docs tool or connector. Invoke this skill whenever the user mentions a doc or docs, by name or not: to read, list, find, write, create, edit, nest, rename, or delete a doc, or to base work on one.'
 ---
 
 # Docs
@@ -33,8 +33,10 @@ The write turns each link into a file path.
 In a reply to the user, link each doc to its page in the web UI:
 `[<name>](<address>)`. Get the address from `openplan url <name>`.
 
-After you create or change a doc, show its page in the built-in browser of the Codex app.
-Open the address from `openplan url <name>` with `@Browser`.
+After you create or change a doc, show its page in the built-in browser of the
+agent app. Get the address from `openplan url <name>`. In Claude Code, open it
+with the `navigate` tool of the browser pane (`mcp__Claude_Browser__navigate`).
+In Codex, open it with `@Browser`.
 When you write more than one doc in a row, show the last one. When the browser
 already shows the page, do not open it again, because the page updates itself.
 Skip this step after `openplan doc delete`, and skip it when the session cannot

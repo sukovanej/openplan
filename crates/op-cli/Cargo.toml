@@ -19,7 +19,6 @@ op-daemon.workspace = true
 op-server.workspace = true
 op-tracker.workspace = true
 op-task.workspace = true
-op-skills.workspace = true
 op-update.workspace = true
 clap.workspace = true
 tokio.workspace = true

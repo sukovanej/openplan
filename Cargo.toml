@@ -32,7 +32,6 @@ op-browser = { path = "crates/op-browser" }
 op-index = { path = "crates/op-index" }
 op-server = { path = "crates/op-server" }
 op-daemon = { path = "crates/op-daemon" }
-op-skills = { path = "crates/op-skills" }
 op-update = { path = "crates/op-update" }
 
 serde = { version = "1", features = ["derive"] }

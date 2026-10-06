@@ -57,12 +57,6 @@ enum Command {
         #[arg(long, value_enum)]
         backend: Option<Backend>,
     },
-    /// Install or update the OpenPlan agent skills in this repository
-    SetupSkills {
-        /// Install skills for one agent; omit to install for all agents
-        #[arg(long, value_enum)]
-        agent: Option<Agent>,
-    },
     /// Manage the tasks of this project
     Tasks {
         #[command(subcommand)]
@@ -97,15 +91,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Report problems in the tasks, docs, and agent skills
+    /// Report problems in the tasks and docs
     Lint {
         /// Report only these tasks; every task is checked all the same
         keys: Vec<String>,
         #[arg(long)]
         json: bool,
-        /// Check only the agent skill files of this checkout, not the tasks
-        #[arg(long, conflicts_with = "keys")]
-        skills: bool,
     },
     /// Manage the project documents
     Doc {
@@ -167,12 +158,6 @@ impl Backend {
 enum Toggle {
     On,
     Off,
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-enum Agent {
-    Claude,
-    Codex,
 }
 
 #[derive(Subcommand)]
@@ -469,15 +454,6 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Migrate { backend } => {
             start::migrate(root, daemon_url, backend.map(Backend::kind)).map(|()| ExitCode::SUCCESS)
         }
-        Command::SetupSkills { agent } => {
-            let agents = match agent {
-                Some(Agent::Claude) => vec![op_skills::Agent::Claude],
-                Some(Agent::Codex) => vec![op_skills::Agent::Codex],
-                None => op_skills::Agent::ALL.to_vec(),
-            };
-            op_skills::setup(&lint::skills_root(root), &agents)?;
-            Ok(ExitCode::SUCCESS)
-        }
         Command::Tasks { command } => {
             tasks::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS)
         }
@@ -500,7 +476,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Url { keys, json } => {
             page_urls(root, daemon_url, &keys, json).map(|()| ExitCode::SUCCESS)
         }
-        Command::Lint { keys, json, skills } => lint::run(root, &keys, json, skills),
+        Command::Lint { keys, json } => lint::run(root, &keys, json),
         Command::Doc { command } => doc::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Tag { command } => tag::run(command, root, daemon_url).map(|()| ExitCode::SUCCESS),
         Command::Project { command } => {

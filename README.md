@@ -44,7 +44,8 @@ from the code branches. One person can keep them in a local directory instead.
 - **Diagrams.** A Mermaid block (flowchart, sequence, or ER diagram) in a task or doc shows as a
   diagram.
 - **Full history.** Each write is a revision. `openplan history` shows who changed what.
-- **Agent skills.** `openplan setup-skills` installs skills for Claude Code and Codex. With them,
+- **Agent skills.** `npx skills add sukovanej/openplan` installs skills for Claude Code, Codex,
+  and the other agents that [skills](https://github.com/vercel-labs/skills) supports. With them,
   an agent reads and writes the tasks through the CLI.
 - **Pull requests.** Link GitHub pull requests and GitLab merge requests to a task.
 
@@ -73,7 +74,7 @@ In the root of a git repository:
 
 ```sh
 openplan init --abbreviation ABC     # task keys start with ABC, as in ABC-1
-openplan setup-skills                # let Claude Code and Codex use the tasks
+npx skills add sukovanej/openplan    # let your coding agent use the tasks
 openplan tasks create "Ship the login page" --status todo
 openplan tasks set ABC-1 status in_progress
 openplan open                        # the web UI in your browser
@@ -92,7 +93,7 @@ openplan tasks tree ABC-1            # the subtasks of a task
 openplan doc create storage          # a new doc
 openplan history ABC-1               # who changed a task, and when
 openplan sync                        # exchange the tasks with the remote now
-openplan lint                        # find problems in the tasks, docs, and skills
+openplan lint                        # find problems in the tasks and docs
 openplan server start | stop         # the background daemon on 127.0.0.1:7373
 openplan project list                # the projects the daemon serves
 ```

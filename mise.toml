@@ -5,7 +5,7 @@ cargo-dist = "0.32.0"
 "cargo:cargo-insta" = "1.48.0"
 
 [tasks.lint]
-description = "Report the problems in the tasks of this project and stale agent skills"
+description = "Report the problems in the tasks and docs of this project"
 run = "cargo run --quiet -p openplan -- lint"
 
 # The daemon respawns itself from its own executable, so whichever binary runs `server restart`
@@ -21,6 +21,12 @@ run = [
   "cargo install --path crates/op-cli --force",
   "openplan server restart",
 ]
+
+# `npx skills update` skips a skill installed from a local path, so a change to skills/ reaches
+# this checkout only through a new `add`.
+[tasks.skills]
+description = "Install the skills of skills/ into this checkout for Claude Code and Codex"
+run = "npx -y skills add . -a claude-code -a codex -y"
 
 [tasks.generate-web-client]
 description = "Regenerate the Effect HTTP client (web/packages/api-client) from the Rust API's OpenAPI spec"
