@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "openplan": {
+      "source": ".",
+      "sourceType": "local",
+      "computedHash": "f1d2248da43391bfdb72d551f6fbd10cda2ac9852b3595dd6c80dd86e31e6a81"
+    },
+    "openplan-docs": {
+      "source": ".",
+      "sourceType": "local",
+      "computedHash": "f9215ae053b7f4ae6ddae82ef470d976f5d2dcedc411314c0d62aa126d9acc36"
+    }
+  }
+}

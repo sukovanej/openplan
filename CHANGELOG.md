@@ -7,6 +7,18 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.6...main)
 
+### Changed
+
+- `npx skills add sukovanej/openplan` installs the agent skills. It installs
+  them for Claude Code, Codex, and each other agent that
+  [skills](https://github.com/vercel-labs/skills) supports. Run
+  `npx skills update` to update them.
+
+### Removed
+
+- `openplan setup-skills`. Use `npx skills add sukovanej/openplan`.
+- The skill check of `openplan lint` and its `--skills` option.
+
 ## [0.0.6](https://github.com/sukovanej/openplan/compare/v0.0.5...v0.0.6) - 2026-10-01
 
 ### Added

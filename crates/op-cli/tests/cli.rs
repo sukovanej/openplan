@@ -33,36 +33,6 @@ fn unregistered_store(abbreviation: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn setup_skills_installs_both_agents_by_default() {
-    let home = Home::new();
-    let root = tempfile::tempdir().unwrap();
-
-    ok(home.run(root.path(), &["setup-skills"]));
-
-    assert!(
-        root.path()
-            .join(".claude/skills/openplan/SKILL.md")
-            .is_file()
-    );
-    assert!(
-        root.path()
-            .join(".agents/skills/openplan/SKILL.md")
-            .is_file()
-    );
-}
-
-#[test]
-fn setup_skills_can_target_one_agent() {
-    let home = Home::new();
-    let root = tempfile::tempdir().unwrap();
-
-    ok(home.run(root.path(), &["setup-skills", "--agent=codex"]));
-
-    assert!(root.path().join(".agents/skills").is_dir());
-    assert!(!root.path().join(".claude").exists());
-}
-
-#[test]
 fn list_reports_real_status_and_title() {
     let project = Project::local();
     project.edit(
@@ -1932,7 +1902,7 @@ fn lint_clean_project_exits_zero() {
 
     assert!(out.status.success(), "{}", combined(&out));
     assert!(
-        stdout(&out).contains("checked 2 tasks, 0 docs and 0 skill files, found 0 problems"),
+        stdout(&out).contains("checked 2 tasks and 0 docs, found 0 problems"),
         "{}",
         stdout(&out)
     );
@@ -1998,7 +1968,7 @@ fn lint_keys_filter_the_report_and_an_unknown_key_fails() {
     );
     assert!(!stdout(&out).contains("OPP-2"), "{}", stdout(&out));
     assert!(
-        stdout(&out).contains("checked 1 task, 0 docs and"),
+        stdout(&out).contains("checked 1 task and 0 docs,"),
         "{}",
         stdout(&out)
     );
@@ -2079,80 +2049,8 @@ fn lint_reports_a_reference_a_file_names_by_its_key_or_its_name() {
         ),
         "{printed}"
     );
-    assert!(printed.contains("checked 2 tasks, 1 doc and"), "{printed}");
+    assert!(printed.contains("checked 2 tasks and 1 doc,"), "{printed}");
     assert!(printed.contains("found 2 problems"), "{printed}");
-}
-
-// CI checks a code change, and the tasks are not part of one: `--skills` needs no tasks at all.
-#[test]
-fn lint_skills_checks_the_skill_files_alone() {
-    let home = Home::new();
-    let root = tempfile::tempdir().unwrap();
-    ok(home.run(root.path(), &["setup-skills", "--agent=claude"]));
-
-    let clean = home.run(root.path(), &["lint", "--skills"]);
-    assert!(clean.status.success(), "{}", combined(&clean));
-
-    let skill = root.path().join(".claude/skills/openplan/SKILL.md");
-    std::fs::write(&skill, "stale\n").unwrap();
-    let stale = home.run(root.path(), &["lint", "--skills"]);
-    assert!(!stale.status.success());
-    let report = stdout(&stale);
-    assert!(
-        report.contains("error[skill]: skill openplan differs from the openplan binary"),
-        "{report}"
-    );
-    assert!(report.contains("run `openplan setup-skills`"), "{report}");
-    assert!(
-        !home.path().join("daemon.json").exists(),
-        "lint never starts a daemon"
-    );
-}
-
-#[test]
-fn lint_skills_reports_retired_skills_until_setup_skills_removes_them() {
-    let home = Home::new();
-    let root = tempfile::tempdir().unwrap();
-    let retired = root.path().join(".claude/skills/task-management");
-    std::fs::create_dir_all(&retired).unwrap();
-    std::fs::write(retired.join("SKILL.md"), "old\n").unwrap();
-
-    let before = home.run(root.path(), &["lint", "--skills"]);
-    assert!(!before.status.success());
-    let report = stdout(&before);
-    assert!(
-        report.contains("error[skill]: skill task-management is retired"),
-        "{report}"
-    );
-    assert!(
-        report.contains("error[skill]: skill openplan is missing"),
-        "{report}"
-    );
-
-    ok(home.run(root.path(), &["setup-skills", "--agent=claude"]));
-
-    let after = home.run(root.path(), &["lint", "--skills"]);
-    assert!(after.status.success(), "{}", combined(&after));
-    assert!(!retired.exists());
-}
-
-// `lint` reads the skills under the project root it discovers, so an install run from a
-// subdirectory has to write them there; otherwise lint reports as missing what the user just
-// installed.
-#[test]
-fn setup_skills_installs_at_the_project_root() {
-    let store = LintStore::new();
-    let sub = store.path().join("crates/op-cli");
-    std::fs::create_dir_all(&sub).unwrap();
-
-    ok(store.home.run(&sub, &["setup-skills", "--agent=claude"]));
-
-    assert!(store.path().join(".claude/skills").is_dir());
-    assert!(!sub.join(".claude").exists());
-    assert!(
-        store.lint(&[]).status.success(),
-        "what setup-skills installed must lint clean"
-    );
 }
 
 #[test]
@@ -2210,40 +2108,6 @@ fn lint_reports_a_broken_mermaid_fence_in_the_body_and_in_a_comment() {
             "{expected} is not reported: {report}"
         );
     }
-}
-
-// A worktree is a checkout of its own, so the skills a person installs there stay there.
-#[test]
-fn setup_skills_in_a_worktree_writes_into_that_worktree() {
-    let home = Home::new();
-    let dir = tempfile::tempdir().unwrap();
-    let main = dir.path().join("main");
-    git_repo(&main);
-    write(&main.join("README.md"), "# Code\n");
-    git(&main, &["add", "-A"]);
-    git(&main, &["commit", "-qm", "Start"]);
-    let worktree = dir.path().join("feature");
-    git(
-        &main,
-        &[
-            "worktree",
-            "add",
-            "-q",
-            worktree.to_str().unwrap(),
-            "-b",
-            "feature",
-        ],
-    );
-    let sub = worktree.join("src");
-    std::fs::create_dir_all(&sub).unwrap();
-
-    ok(home.run(&sub, &["setup-skills", "--agent=claude"]));
-
-    assert!(worktree.join(".claude/skills").is_dir());
-    assert!(!main.join(".claude").exists());
-    assert!(!sub.join(".claude").exists());
-    let checked = home.run(&sub, &["lint", "--skills"]);
-    assert!(checked.status.success(), "{}", combined(&checked));
 }
 
 #[test]

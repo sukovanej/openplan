@@ -4102,14 +4102,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "op-skills"
-version = "0.0.6"
-dependencies = [
- "anyhow",
- "tempfile",
-]
-
-[[package]]
 name = "op-task"
 version = "0.0.6"
 dependencies = [
@@ -4170,7 +4162,6 @@ dependencies = [
  "op-daemon",
  "op-index",
  "op-server",
- "op-skills",
  "op-task",
  "op-tracker",
  "op-update",

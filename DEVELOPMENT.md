@@ -52,6 +52,16 @@ waits up to five seconds for `http://127.0.0.1:7373/health`, then tells you if t
 available. Set `OPENPLAN_PORT` before launching the app when the WSL daemon uses a fixed port
 other than 7373. Port `0` is not supported because its randomly selected port stays in WSL.
 
+## Agent skills
+
+`skills/` holds the agent skills. `npx skills add sukovanej/openplan` installs them from there.
+This checkout keeps an installed copy in `.agents/skills/` and `skills-lock.json`. After you change
+a skill, install it again:
+
+```sh
+mise run skills  # skills/ → .agents/skills/, with a symlink in .claude/skills/
+```
+
 ## Icons
 
 `assets/icon.svg` is the only source. Edit it, then rasterize:

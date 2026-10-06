@@ -1,6 +1,6 @@
 ---
 name: openplan
-description: Work items in this repo are called "tasks" (kept by the `openplan` CLI, not as files in the checkout), NOT the TODO list or subagent tools. Invoke this skill when the user names a task key (OPP-42) or says "the plan"; when the user asks in these words to create a task, list/show/get tasks, work on a task, set a status/parent/dependency/tag, block, reparent, cancel, or delete a task; when the user asks to merge a task's work ("merge OPP-42", "merge this branch", "merge the PR", "land it", "ship it"); and when the user asks to comment on a task or to read its comments. A request to do work is not a request to track it: do the work, and create no task.
+description: 'Work items in this repo are called "tasks" (kept by the `openplan` CLI, not as files in the checkout), NOT the TODO list or subagent tools. Invoke this skill when the user names a task key (OPP-42) or says "the plan"; when the user asks in these words to create a task, list/show/get tasks, work on a task, set a status/parent/dependency/tag, block, reparent, cancel, or delete a task; when the user asks to merge a task''s work ("merge OPP-42", "merge this branch", "merge the PR", "land it", "ship it"); and when the user asks to comment on a task or to read its comments. A request to do work is not a request to track it: do the work, and create no task.'
 ---
 
 # Task management
@@ -23,8 +23,10 @@ Do not write an address yourself, because the port and the project name are
 different on each machine. In a task file, a commit message, or a pull request,
 write the key only. Other people cannot open a local address.
 
-After you create or change a task, show its page in the built-in browser of the Codex app.
-Open the address from `openplan url <key>` with `@Browser`.
+After you create or change a task, show its page in the built-in browser of
+the agent app. Get the address from `openplan url <key>`. In Claude Code, open
+it with the `navigate` tool of the browser pane (`mcp__Claude_Browser__navigate`).
+In Codex, open it with `@Browser`.
 When you write more than one task in a row, show the last one. When the browser
 already shows the page, do not open it again, because the page updates itself.
 Skip this step after `openplan tasks delete`, and skip it when the session

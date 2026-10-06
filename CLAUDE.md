@@ -65,4 +65,5 @@ cargo command, check whether it names a `mise` task and, if so, run that:
 mise run install               # build the SPA into the binary, put it on PATH, restart the daemon
 mise run rebuild               # an alias for install
 mise run generate-web-client   # regenerate the Effect HTTP client from the API's OpenAPI spec
+mise run skills                # install the skills of skills/ into this checkout after a change
 ```

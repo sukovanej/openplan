@@ -1,24 +1,13 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Result, bail};
 use op_api::{DocListItem, ProblemCode, TaskListItem};
 use op_index::Index;
 use op_server::Location;
-use op_skills::Expected;
 use op_tracker::Tracker;
 use serde::Serialize;
-
-// Skills are files of the checkout a person works in, so each worktree has its own, and an install
-// run from a subdirectory lands at the top of the checkout. Outside git they sit beside the local
-// tasks, or in the directory given.
-pub fn skills_root(root: &Path) -> PathBuf {
-    if let Some(workdir) = op_backend_git::inspect(root).and_then(|checkout| checkout.workdir) {
-        return workdir;
-    }
-    Location::find(root, None).map_or_else(|_| root.to_path_buf(), |location| location.root)
-}
 
 #[derive(Serialize)]
 struct Finding {
@@ -26,8 +15,6 @@ struct Finding {
     task: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     doc: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<PathBuf>,
     code: &'static str,
     message: String,
     help: &'static str,
@@ -35,79 +22,49 @@ struct Finding {
 
 // The tasks are read where they live, without the daemon, as CI and a fresh clone need them. The
 // daemon finds the same problems after every change; this prints them for one run.
-pub fn run(root: &Path, keys: &[String], json: bool, skills_only: bool) -> Result<ExitCode> {
+pub fn run(root: &Path, keys: &[String], json: bool) -> Result<ExitCode> {
     let mut findings = Vec::new();
+    let location = Location::find_or_join(root)?;
+    let signer = op_backend_git::signer(&location.root);
+    let backend = op_server::open_backend(&location, &signer, false)?;
+    // A hand edit that no one can sign stays out of the history, and a check without it would
+    // pass the files as they were.
+    backend.refresh()?;
+    let tracker = Tracker::new(backend);
+    let mut index = Index::new();
+    index.load(&tracker.plan()?)?;
+    let wanted = wanted(&index, keys)?;
     let mut tasks = 0;
-    let mut docs = 0;
-    if !skills_only {
-        let location = Location::find_or_join(root)?;
-        let signer = op_backend_git::signer(&location.root);
-        let backend = op_server::open_backend(&location, &signer, false)?;
-        // A hand edit that no one can sign stays out of the history, and a check without it would
-        // pass the files as they were.
-        backend.refresh()?;
-        let tracker = Tracker::new(backend);
-        let mut index = Index::new();
-        index.load(&tracker.plan()?)?;
-        let wanted = wanted(&index, keys)?;
-        for row in index
-            .list("")
-            .iter()
-            .filter(|row| wanted.as_ref().is_none_or(|keys| keys.contains(&row.id)))
-        {
-            tasks += 1;
-            findings.extend(task_findings(row));
-        }
-        if wanted.is_none() {
-            let rows = index.list_docs("");
-            docs = rows.len();
-            findings.extend(rows.iter().flat_map(doc_findings));
-        }
+    for row in index
+        .list("")
+        .iter()
+        .filter(|row| wanted.as_ref().is_none_or(|keys| keys.contains(&row.id)))
+    {
+        tasks += 1;
+        findings.extend(task_findings(row));
     }
-    let skills = op_skills::installed(&skills_root(root))?;
-    if keys.is_empty() {
-        findings.extend(
-            skills
-                .iter()
-                .filter(|skill| !skill.matches())
-                .map(|skill| Finding {
-                    task: None,
-                    doc: None,
-                    path: Some(skill.path.clone()),
-                    code: "skill",
-                    message: match (&skill.expected, &skill.source) {
-                        (Expected::Retired, _) => format!(
-                            "skill {} is retired: the openplan skill replaces it",
-                            skill.name
-                        ),
-                        (Expected::Contents(_), None) => format!("skill {} is missing", skill.name),
-                        (Expected::Contents(_), Some(_)) => {
-                            format!("skill {} differs from the openplan binary", skill.name)
-                        }
-                    },
-                    help: "run `openplan setup-skills`",
-                }),
-        );
+    let mut docs = 0;
+    if wanted.is_none() {
+        let rows = index.list_docs("");
+        docs = rows.len();
+        findings.extend(rows.iter().flat_map(doc_findings));
     }
     if json {
         println!("{}", serde_json::to_string_pretty(&findings)?);
     } else {
         for finding in &findings {
-            let place = match (&finding.task, &finding.doc, &finding.path) {
-                (Some(task), _, _) => task.clone(),
-                (None, Some(doc), _) => format!("doc {doc}"),
-                (None, None, Some(path)) => path.display().to_string(),
-                (None, None, None) => String::new(),
+            let place = match (&finding.task, &finding.doc) {
+                (Some(task), _) => task.clone(),
+                (None, Some(doc)) => format!("doc {doc}"),
+                (None, None) => String::new(),
             };
             println!("{place}: error[{}]: {}", finding.code, finding.message);
             println!("  help: {}", finding.help);
         }
-        let skill_files = skills.iter().filter(|skill| skill.source.is_some()).count();
         println!(
-            "checked {tasks} task{}, {docs} doc{} and {skill_files} skill file{}, found {} problem{}",
+            "checked {tasks} task{} and {docs} doc{}, found {} problem{}",
             plural(tasks),
             plural(docs),
-            plural(skill_files),
             findings.len(),
             plural(findings.len())
         );
@@ -141,7 +98,6 @@ fn task_findings(row: &TaskListItem) -> Vec<Finding> {
         .map(|problem| Finding {
             task: Some(row.id.clone()),
             doc: None,
-            path: None,
             code: problem.code.as_str(),
             message: problem.message.clone(),
             help: help(problem.code),
@@ -151,7 +107,6 @@ fn task_findings(row: &TaskListItem) -> Vec<Finding> {
         findings.push(Finding {
             task: Some(row.id.clone()),
             doc: None,
-            path: None,
             code: "conflict",
             message: format!(
                 "{} unresolved conflict{} from a sync",
@@ -172,7 +127,6 @@ fn doc_findings(doc: &DocListItem) -> Vec<Finding> {
         .map(|problem| Finding {
             task: None,
             doc: Some(doc.name.clone()),
-            path: None,
             code: problem.code.as_str(),
             message: problem.message.clone(),
             help: doc_help(problem.code),
@@ -186,7 +140,6 @@ fn conflict_finding(doc: &DocListItem) -> Option<Finding> {
     (doc.conflicts > 0).then(|| Finding {
         task: None,
         doc: Some(doc.name.clone()),
-        path: None,
         code: "conflict",
         message: format!(
             "{} unresolved conflict{} from a sync",
