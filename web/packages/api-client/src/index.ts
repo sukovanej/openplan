@@ -1347,11 +1347,13 @@ export interface OperationConfig {
  * of an operation based upon the value of the `includeResponse` configuration
  * option.
  */
-export type WithOptionalResponse<A, Config extends OperationConfig> = Config extends {
+export type WithOptionalResponse<A, Config extends OperationConfig | undefined> = Config extends {
   readonly includeResponse: true
 }
   ? [A, HttpClientResponse.HttpClientResponse]
-  : A
+  : Config extends { readonly includeResponse?: false | undefined } | undefined
+    ? A
+    : A | [A, HttpClientResponse.HttpClientResponse]
 
 export const make = (
   httpClient: HttpClient.HttpClient,
@@ -1457,7 +1459,7 @@ export const make = (
       )
   return {
     httpClient,
-    getMergedBoard: (options) =>
+    getMergedBoard: (options: Parameters<TasksClient["getMergedBoard"]>[0]) =>
       HttpClientRequest.get("/api/board").pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
@@ -1466,7 +1468,7 @@ export const make = (
           }),
         ),
       ),
-    drawDiagram: (options) =>
+    drawDiagram: (options: Parameters<TasksClient["drawDiagram"]>[0]) =>
       HttpClientRequest.post("/api/diagram").pipe(
         HttpClientRequest.bodyJsonUnsafe(options.payload),
         withResponse(options.config)(
@@ -1477,7 +1479,7 @@ export const make = (
           }),
         ),
       ),
-    listAllDocs: (options) =>
+    listAllDocs: (options: Parameters<TasksClient["listAllDocs"]>[0]) =>
       HttpClientRequest.get("/api/docs").pipe(
         HttpClientRequest.setUrlParams({ project: options?.params?.["project"] as any }),
         withResponse(options?.config)(
@@ -1490,7 +1492,7 @@ export const make = (
           }),
         ),
       ),
-    events: (options) =>
+    events: (options: Parameters<TasksClient["events"]>[0]) =>
       HttpClientRequest.get("/api/events").pipe(
         HttpClientRequest.setUrlParams({ last_event_id: options?.params?.["last_event_id"] as any }),
         HttpClientRequest.setHeaders({ "Last-Event-ID": options?.params?.["Last-Event-ID"] ?? undefined }),
@@ -1506,7 +1508,7 @@ export const make = (
         HttpClientRequest.setHeaders({ "Last-Event-ID": options?.params?.["Last-Event-ID"] ?? undefined }),
         sseRequest(Events200Sse),
       ),
-    listFaults: (options) =>
+    listFaults: (options: Parameters<TasksClient["listFaults"]>[0]) =>
       HttpClientRequest.get("/api/faults").pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
@@ -1515,7 +1517,7 @@ export const make = (
           }),
         ),
       ),
-    drawFlow: (options) =>
+    drawFlow: (options: Parameters<TasksClient["drawFlow"]>[0]) =>
       HttpClientRequest.get("/api/flow/drawing").pipe(
         HttpClientRequest.setUrlParams({
           project: options?.params?.["project"] as any,
@@ -1536,7 +1538,7 @@ export const make = (
           }),
         ),
       ),
-    listProjects: (options) =>
+    listProjects: (options: Parameters<TasksClient["listProjects"]>[0]) =>
       HttpClientRequest.get("/api/projects").pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
@@ -1545,7 +1547,7 @@ export const make = (
           }),
         ),
       ),
-    registerProject: (options) =>
+    registerProject: (options: Parameters<TasksClient["registerProject"]>[0]) =>
       HttpClientRequest.post("/api/projects").pipe(
         HttpClientRequest.bodyJsonUnsafe(options.payload),
         withResponse(options.config)(
@@ -1559,7 +1561,7 @@ export const make = (
           }),
         ),
       ),
-    deleteProject: (project, options) =>
+    deleteProject: (project, options: Parameters<TasksClient["deleteProject"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.delete,
         [project],
@@ -1578,7 +1580,7 @@ export const make = (
           ),
         ),
       ),
-    renameProject: (project, options) =>
+    renameProject: (project, options: Parameters<TasksClient["renameProject"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.patch,
         [project],
@@ -1600,7 +1602,7 @@ export const make = (
           ),
         ),
       ),
-    getBoard: (project, options) =>
+    getBoard: (project, options: Parameters<TasksClient["getBoard"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project],
@@ -1619,7 +1621,7 @@ export const make = (
           ),
         ),
       ),
-    listDocs: (project, options) =>
+    listDocs: (project, options: Parameters<TasksClient["listDocs"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project],
@@ -1639,7 +1641,7 @@ export const make = (
           ),
         ),
       ),
-    createDoc: (project, options) =>
+    createDoc: (project, options: Parameters<TasksClient["createDoc"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.post,
         [project],
@@ -1661,7 +1663,7 @@ export const make = (
           ),
         ),
       ),
-    getDoc: (project, name, options) =>
+    getDoc: (project, name, options: Parameters<TasksClient["getDoc"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, name],
@@ -1681,7 +1683,7 @@ export const make = (
           ),
         ),
       ),
-    deleteDoc: (project, name, options) =>
+    deleteDoc: (project, name, options: Parameters<TasksClient["deleteDoc"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.delete,
         [project, name],
@@ -1701,7 +1703,7 @@ export const make = (
           ),
         ),
       ),
-    patchDoc: (project, name, options) =>
+    patchDoc: (project, name, options: Parameters<TasksClient["patchDoc"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.patch,
         [project, name],
@@ -1724,7 +1726,7 @@ export const make = (
           ),
         ),
       ),
-    docHistory: (project, name, options) =>
+    docHistory: (project, name, options: Parameters<TasksClient["docHistory"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, name],
@@ -1748,7 +1750,7 @@ export const make = (
           ),
         ),
       ),
-    docRevision: (project, name, revision, options) =>
+    docRevision: (project, name, revision, options: Parameters<TasksClient["docRevision"]>[3]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, name, revision],
@@ -1775,7 +1777,7 @@ export const make = (
           ),
         ),
       ),
-    writeDocText: (project, name, options) =>
+    writeDocText: (project, name, options: Parameters<TasksClient["writeDocText"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.put,
         [project, name],
@@ -1797,7 +1799,7 @@ export const make = (
           ),
         ),
       ),
-    projectHistory: (project, options) =>
+    projectHistory: (project, options: Parameters<TasksClient["projectHistory"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project],
@@ -1820,7 +1822,7 @@ export const make = (
           ),
         ),
       ),
-    revisionDiff: (project, revision, options) =>
+    revisionDiff: (project, revision, options: Parameters<TasksClient["revisionDiff"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, revision],
@@ -1843,7 +1845,7 @@ export const make = (
           ),
         ),
       ),
-    searchProject: (project, options) =>
+    searchProject: (project, options: Parameters<TasksClient["searchProject"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project],
@@ -1866,7 +1868,7 @@ export const make = (
           ),
         ),
       ),
-    getSync: (project, options) =>
+    getSync: (project, options: Parameters<TasksClient["getSync"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project],
@@ -1885,7 +1887,7 @@ export const make = (
           ),
         ),
       ),
-    runSync: (project, options) =>
+    runSync: (project, options: Parameters<TasksClient["runSync"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.post,
         [project],
@@ -1905,7 +1907,7 @@ export const make = (
           ),
         ),
       ),
-    listTags: (project, options) =>
+    listTags: (project, options: Parameters<TasksClient["listTags"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project],
@@ -1925,7 +1927,7 @@ export const make = (
           ),
         ),
       ),
-    createTag: (project, options) =>
+    createTag: (project, options: Parameters<TasksClient["createTag"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.post,
         [project],
@@ -1948,7 +1950,7 @@ export const make = (
           ),
         ),
       ),
-    getTag: (project, name, options) =>
+    getTag: (project, name, options: Parameters<TasksClient["getTag"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, name],
@@ -1969,7 +1971,7 @@ export const make = (
           ),
         ),
       ),
-    deleteTag: (project, name, options) =>
+    deleteTag: (project, name, options: Parameters<TasksClient["deleteTag"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.delete,
         [project, name],
@@ -1991,7 +1993,7 @@ export const make = (
           ),
         ),
       ),
-    patchTag: (project, name, options) =>
+    patchTag: (project, name, options: Parameters<TasksClient["patchTag"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.patch,
         [project, name],
@@ -2014,7 +2016,7 @@ export const make = (
           ),
         ),
       ),
-    listTasks: (project, options) =>
+    listTasks: (project, options: Parameters<TasksClient["listTasks"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project],
@@ -2034,7 +2036,7 @@ export const make = (
           ),
         ),
       ),
-    createTask: (project, options) =>
+    createTask: (project, options: Parameters<TasksClient["createTask"]>[1]) =>
       __makePathRequest(
         HttpClientRequest.post,
         [project],
@@ -2056,7 +2058,7 @@ export const make = (
           ),
         ),
       ),
-    getTask: (project, id, options) =>
+    getTask: (project, id, options: Parameters<TasksClient["getTask"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, id],
@@ -2077,7 +2079,7 @@ export const make = (
           ),
         ),
       ),
-    deleteTask: (project, id, options) =>
+    deleteTask: (project, id, options: Parameters<TasksClient["deleteTask"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.delete,
         [project, id],
@@ -2097,7 +2099,7 @@ export const make = (
           ),
         ),
       ),
-    patchTask: (project, id, options) =>
+    patchTask: (project, id, options: Parameters<TasksClient["patchTask"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.patch,
         [project, id],
@@ -2119,7 +2121,7 @@ export const make = (
           ),
         ),
       ),
-    listComments: (project, id, options) =>
+    listComments: (project, id, options: Parameters<TasksClient["listComments"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, id],
@@ -2140,7 +2142,7 @@ export const make = (
           ),
         ),
       ),
-    addComment: (project, id, options) =>
+    addComment: (project, id, options: Parameters<TasksClient["addComment"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.post,
         [project, id],
@@ -2161,7 +2163,7 @@ export const make = (
           ),
         ),
       ),
-    writeTaskFile: (project, id, options) =>
+    writeTaskFile: (project, id, options: Parameters<TasksClient["writeTaskFile"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.put,
         [project, id],
@@ -2183,7 +2185,7 @@ export const make = (
           ),
         ),
       ),
-    taskHistory: (project, id, options) =>
+    taskHistory: (project, id, options: Parameters<TasksClient["taskHistory"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, id],
@@ -2207,7 +2209,7 @@ export const make = (
           ),
         ),
       ),
-    taskRevision: (project, id, revision, options) =>
+    taskRevision: (project, id, revision, options: Parameters<TasksClient["taskRevision"]>[3]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, id, revision],
@@ -2234,7 +2236,7 @@ export const make = (
           ),
         ),
       ),
-    writeText: (project, id, options) =>
+    writeText: (project, id, options: Parameters<TasksClient["writeText"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.put,
         [project, id],
@@ -2256,7 +2258,7 @@ export const make = (
           ),
         ),
       ),
-    getTaskTree: (project, id, options) =>
+    getTaskTree: (project, id, options: Parameters<TasksClient["getTaskTree"]>[2]) =>
       __makePathRequest(
         HttpClientRequest.get,
         [project, id],
@@ -2280,7 +2282,7 @@ export const make = (
           ),
         ),
       ),
-    searchAll: (options) =>
+    searchAll: (options: Parameters<TasksClient["searchAll"]>[0]) =>
       HttpClientRequest.get("/api/search").pipe(
         HttpClientRequest.setUrlParams({ q: options?.params?.["q"] as any, fresh: options?.params?.["fresh"] as any }),
         withResponse(options?.config)(
@@ -2290,7 +2292,7 @@ export const make = (
           }),
         ),
       ),
-    health: (options) =>
+    health: (options: Parameters<TasksClient["health"]>[0]) =>
       HttpClientRequest.get("/health").pipe(
         withResponse(options?.config)(
           HttpClientResponse.matchStatus({
@@ -2304,36 +2306,72 @@ export const make = (
 
 export interface TasksClient {
   readonly httpClient: HttpClient.HttpClient
-  readonly getMergedBoard: <Config extends OperationConfig>(
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetMergedBoard200.Type, Config>,
-    HttpClientError.HttpClientError | SchemaError
-  >
-  readonly drawDiagram: <Config extends OperationConfig>(options: {
-    readonly payload: typeof DrawDiagramRequestJson.Encoded
-    readonly config?: Config | undefined
-  }) => Effect.Effect<
-    WithOptionalResponse<typeof DrawDiagram200.Type, Config>,
-    HttpClientError.HttpClientError | SchemaError | TasksClientError<"DrawDiagram422", typeof DrawDiagram422.Type>
-  >
-  readonly listAllDocs: <Config extends OperationConfig>(
-    options:
-      | { readonly params?: typeof ListAllDocsParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ListAllDocs200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"ListAllDocs400", typeof ListAllDocs400.Type>
-    | TasksClientError<"ListAllDocs404", typeof ListAllDocs404.Type>
-    | TasksClientError<"ListAllDocs503", typeof ListAllDocs503.Type>
-  >
-  readonly events: <Config extends OperationConfig>(
-    options:
-      | { readonly params?: typeof EventsParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<WithOptionalResponse<void, Config>, HttpClientError.HttpClientError | SchemaError>
+  readonly getMergedBoard: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof GetMergedBoard200.Type, Config>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetMergedBoard200.Type, Config | undefined>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+  }
+  readonly drawDiagram: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly payload: typeof DrawDiagramRequestJson.Encoded
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof DrawDiagram200.Type, Config>,
+      HttpClientError.HttpClientError | SchemaError | TasksClientError<"DrawDiagram422", typeof DrawDiagram422.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly payload: typeof DrawDiagramRequestJson.Encoded
+      readonly config?: Config | undefined
+    }): Effect.Effect<
+      WithOptionalResponse<typeof DrawDiagram200.Type, Config | undefined>,
+      HttpClientError.HttpClientError | SchemaError | TasksClientError<"DrawDiagram422", typeof DrawDiagram422.Type>
+    >
+  }
+  readonly listAllDocs: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly params?: typeof ListAllDocsParams.Encoded | undefined
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof ListAllDocs200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListAllDocs400", typeof ListAllDocs400.Type>
+      | TasksClientError<"ListAllDocs404", typeof ListAllDocs404.Type>
+      | TasksClientError<"ListAllDocs503", typeof ListAllDocs503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      options:
+        | { readonly params?: typeof ListAllDocsParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListAllDocs200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListAllDocs400", typeof ListAllDocs400.Type>
+      | TasksClientError<"ListAllDocs404", typeof ListAllDocs404.Type>
+      | TasksClientError<"ListAllDocs503", typeof ListAllDocs503.Type>
+    >
+  }
+  readonly events: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly params?: typeof EventsParams.Encoded | undefined
+      readonly config: Config
+    }): Effect.Effect<WithOptionalResponse<void, Config>, HttpClientError.HttpClientError | SchemaError>
+    <Config extends OperationConfig | undefined = undefined>(
+      options:
+        | { readonly params?: typeof EventsParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<WithOptionalResponse<void, Config | undefined>, HttpClientError.HttpClientError | SchemaError>
+  }
   readonly eventsSse: (
     options: { readonly params?: typeof EventsParams.Encoded | undefined } | undefined,
   ) => Stream.Stream<
@@ -2341,466 +2379,986 @@ export interface TasksClient {
     HttpClientError.HttpClientError | SchemaError | Sse.Retry | Sse.SseError,
     typeof Events200Sse.DecodingServices
   >
-  readonly listFaults: <Config extends OperationConfig>(
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ListFaults200.Type, Config>,
-    HttpClientError.HttpClientError | SchemaError
-  >
-  readonly drawFlow: <Config extends OperationConfig>(
-    options:
-      | { readonly params?: typeof DrawFlowParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof DrawFlow200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DrawFlow400", typeof DrawFlow400.Type>
-    | TasksClientError<"DrawFlow404", typeof DrawFlow404.Type>
-    | TasksClientError<"DrawFlow422", typeof DrawFlow422.Type>
-    | TasksClientError<"DrawFlow503", typeof DrawFlow503.Type>
-  >
-  readonly listProjects: <Config extends OperationConfig>(
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ListProjects200.Type, Config>,
-    HttpClientError.HttpClientError | SchemaError
-  >
-  readonly registerProject: <Config extends OperationConfig>(options: {
-    readonly payload: typeof RegisterProjectRequestJson.Encoded
-    readonly config?: Config | undefined
-  }) => Effect.Effect<
-    WithOptionalResponse<typeof RegisterProject200.Type | typeof RegisterProject201.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"RegisterProject400", typeof RegisterProject400.Type>
-    | TasksClientError<"RegisterProject409", typeof RegisterProject409.Type>
-    | TasksClientError<"RegisterProject503", typeof RegisterProject503.Type>
-  >
-  readonly deleteProject: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<void, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DeleteProject404", typeof DeleteProject404.Type>
-    | TasksClientError<"DeleteProject503", typeof DeleteProject503.Type>
-  >
-  readonly renameProject: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly payload: typeof RenameProjectRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof RenameProject200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"RenameProject400", typeof RenameProject400.Type>
-    | TasksClientError<"RenameProject404", typeof RenameProject404.Type>
-    | TasksClientError<"RenameProject409", typeof RenameProject409.Type>
-    | TasksClientError<"RenameProject503", typeof RenameProject503.Type>
-  >
-  readonly getBoard: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetBoard200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetBoard404", typeof GetBoard404.Type>
-    | TasksClientError<"GetBoard503", typeof GetBoard503.Type>
-  >
-  readonly listDocs: <Config extends OperationConfig>(
-    project: string,
-    options:
-      | { readonly params?: typeof ListDocsParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ListDocs200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"ListDocs404", typeof ListDocs404.Type>
-    | TasksClientError<"ListDocs503", typeof ListDocs503.Type>
-  >
-  readonly createDoc: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly payload: typeof CreateDocRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof CreateDoc201.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"CreateDoc400", typeof CreateDoc400.Type>
-    | TasksClientError<"CreateDoc404", typeof CreateDoc404.Type>
-    | TasksClientError<"CreateDoc409", typeof CreateDoc409.Type>
-    | TasksClientError<"CreateDoc503", typeof CreateDoc503.Type>
-  >
-  readonly getDoc: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    options:
-      | { readonly params?: typeof GetDocParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetDoc200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetDoc404", typeof GetDoc404.Type>
-    | TasksClientError<"GetDoc503", typeof GetDoc503.Type>
-  >
-  readonly deleteDoc: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<void, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DeleteDoc404", typeof DeleteDoc404.Type>
-    | TasksClientError<"DeleteDoc409", typeof DeleteDoc409.Type>
-    | TasksClientError<"DeleteDoc503", typeof DeleteDoc503.Type>
-  >
-  readonly patchDoc: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    options: { readonly payload: typeof PatchDocRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof PatchDoc200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"PatchDoc400", typeof PatchDoc400.Type>
-    | TasksClientError<"PatchDoc404", typeof PatchDoc404.Type>
-    | TasksClientError<"PatchDoc409", typeof PatchDoc409.Type>
-    | TasksClientError<"PatchDoc422", typeof PatchDoc422.Type>
-    | TasksClientError<"PatchDoc503", typeof PatchDoc503.Type>
-  >
-  readonly docHistory: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    options:
-      | { readonly params?: typeof DocHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof DocHistory200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DocHistory400", typeof DocHistory400.Type>
-    | TasksClientError<"DocHistory404", typeof DocHistory404.Type>
-    | TasksClientError<"DocHistory503", typeof DocHistory503.Type>
-  >
-  readonly docRevision: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    revision: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof DocRevision200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DocRevision400", typeof DocRevision400.Type>
-    | TasksClientError<"DocRevision404", typeof DocRevision404.Type>
-    | TasksClientError<"DocRevision503", typeof DocRevision503.Type>
-  >
-  readonly writeDocText: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    options: { readonly payload: typeof WriteDocTextRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof WriteDocText200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"WriteDocText400", typeof WriteDocText400.Type>
-    | TasksClientError<"WriteDocText404", typeof WriteDocText404.Type>
-    | TasksClientError<"WriteDocText409", typeof WriteDocText409.Type>
-    | TasksClientError<"WriteDocText503", typeof WriteDocText503.Type>
-  >
-  readonly projectHistory: <Config extends OperationConfig>(
-    project: string,
-    options:
-      | { readonly params?: typeof ProjectHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ProjectHistory200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"ProjectHistory404", typeof ProjectHistory404.Type>
-    | TasksClientError<"ProjectHistory503", typeof ProjectHistory503.Type>
-  >
-  readonly revisionDiff: <Config extends OperationConfig>(
-    project: string,
-    revision: string,
-    options: { readonly params: typeof RevisionDiffParams.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof RevisionDiff200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"RevisionDiff404", typeof RevisionDiff404.Type>
-    | TasksClientError<"RevisionDiff503", typeof RevisionDiff503.Type>
-  >
-  readonly searchProject: <Config extends OperationConfig>(
-    project: string,
-    options:
-      | { readonly params?: typeof SearchProjectParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof SearchProject200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"SearchProject404", typeof SearchProject404.Type>
-    | TasksClientError<"SearchProject503", typeof SearchProject503.Type>
-  >
-  readonly getSync: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetSync200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetSync404", typeof GetSync404.Type>
-    | TasksClientError<"GetSync503", typeof GetSync503.Type>
-  >
-  readonly runSync: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof RunSync200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"RunSync404", typeof RunSync404.Type>
-    | TasksClientError<"RunSync502", typeof RunSync502.Type>
-    | TasksClientError<"RunSync503", typeof RunSync503.Type>
-  >
-  readonly listTags: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ListTags200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"ListTags404", typeof ListTags404.Type>
-    | TasksClientError<"ListTags422", typeof ListTags422.Type>
-    | TasksClientError<"ListTags503", typeof ListTags503.Type>
-  >
-  readonly createTag: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly payload: typeof CreateTagRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof CreateTag201.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"CreateTag400", typeof CreateTag400.Type>
-    | TasksClientError<"CreateTag404", typeof CreateTag404.Type>
-    | TasksClientError<"CreateTag409", typeof CreateTag409.Type>
-    | TasksClientError<"CreateTag422", typeof CreateTag422.Type>
-    | TasksClientError<"CreateTag503", typeof CreateTag503.Type>
-  >
-  readonly getTag: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetTag200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetTag400", typeof GetTag400.Type>
-    | TasksClientError<"GetTag404", typeof GetTag404.Type>
-    | TasksClientError<"GetTag422", typeof GetTag422.Type>
-    | TasksClientError<"GetTag503", typeof GetTag503.Type>
-  >
-  readonly deleteTag: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    options:
-      | { readonly params?: typeof DeleteTagParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<void, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DeleteTag400", typeof DeleteTag400.Type>
-    | TasksClientError<"DeleteTag404", typeof DeleteTag404.Type>
-    | TasksClientError<"DeleteTag409", typeof DeleteTag409.Type>
-    | TasksClientError<"DeleteTag503", typeof DeleteTag503.Type>
-  >
-  readonly patchTag: <Config extends OperationConfig>(
-    project: string,
-    name: string,
-    options: { readonly payload: typeof PatchTagRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof PatchTag200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"PatchTag400", typeof PatchTag400.Type>
-    | TasksClientError<"PatchTag404", typeof PatchTag404.Type>
-    | TasksClientError<"PatchTag409", typeof PatchTag409.Type>
-    | TasksClientError<"PatchTag422", typeof PatchTag422.Type>
-    | TasksClientError<"PatchTag503", typeof PatchTag503.Type>
-  >
-  readonly listTasks: <Config extends OperationConfig>(
-    project: string,
-    options:
-      | { readonly params?: typeof ListTasksParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ListTasks200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"ListTasks404", typeof ListTasks404.Type>
-    | TasksClientError<"ListTasks503", typeof ListTasks503.Type>
-  >
-  readonly createTask: <Config extends OperationConfig>(
-    project: string,
-    options: { readonly payload: typeof CreateTaskRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof CreateTask201.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"CreateTask400", typeof CreateTask400.Type>
-    | TasksClientError<"CreateTask404", typeof CreateTask404.Type>
-    | TasksClientError<"CreateTask409", typeof CreateTask409.Type>
-    | TasksClientError<"CreateTask503", typeof CreateTask503.Type>
-  >
-  readonly getTask: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options:
-      | { readonly params?: typeof GetTaskParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetTask200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetTask400", typeof GetTask400.Type>
-    | TasksClientError<"GetTask404", typeof GetTask404.Type>
-    | TasksClientError<"GetTask503", typeof GetTask503.Type>
-  >
-  readonly deleteTask: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<void, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"DeleteTask400", typeof DeleteTask400.Type>
-    | TasksClientError<"DeleteTask404", typeof DeleteTask404.Type>
-    | TasksClientError<"DeleteTask503", typeof DeleteTask503.Type>
-  >
-  readonly patchTask: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options: { readonly payload: typeof PatchTaskRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof PatchTask200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"PatchTask400", typeof PatchTask400.Type>
-    | TasksClientError<"PatchTask404", typeof PatchTask404.Type>
-    | TasksClientError<"PatchTask409", typeof PatchTask409.Type>
-    | TasksClientError<"PatchTask503", typeof PatchTask503.Type>
-  >
-  readonly listComments: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options:
-      | { readonly params?: typeof ListCommentsParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof ListComments200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"ListComments400", typeof ListComments400.Type>
-    | TasksClientError<"ListComments404", typeof ListComments404.Type>
-    | TasksClientError<"ListComments503", typeof ListComments503.Type>
-  >
-  readonly addComment: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options: { readonly payload: typeof AddCommentRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof AddComment201.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"AddComment400", typeof AddComment400.Type>
-    | TasksClientError<"AddComment404", typeof AddComment404.Type>
-    | TasksClientError<"AddComment503", typeof AddComment503.Type>
-  >
-  readonly writeTaskFile: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options: { readonly payload: typeof WriteTaskFileRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof WriteTaskFile200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"WriteTaskFile400", typeof WriteTaskFile400.Type>
-    | TasksClientError<"WriteTaskFile404", typeof WriteTaskFile404.Type>
-    | TasksClientError<"WriteTaskFile409", typeof WriteTaskFile409.Type>
-    | TasksClientError<"WriteTaskFile503", typeof WriteTaskFile503.Type>
-  >
-  readonly taskHistory: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options:
-      | { readonly params?: typeof TaskHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof TaskHistory200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"TaskHistory400", typeof TaskHistory400.Type>
-    | TasksClientError<"TaskHistory404", typeof TaskHistory404.Type>
-    | TasksClientError<"TaskHistory503", typeof TaskHistory503.Type>
-  >
-  readonly taskRevision: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    revision: string,
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof TaskRevision200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"TaskRevision400", typeof TaskRevision400.Type>
-    | TasksClientError<"TaskRevision404", typeof TaskRevision404.Type>
-    | TasksClientError<"TaskRevision503", typeof TaskRevision503.Type>
-  >
-  readonly writeText: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options: { readonly payload: typeof WriteTextRequestJson.Encoded; readonly config?: Config | undefined },
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof WriteText200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"WriteText400", typeof WriteText400.Type>
-    | TasksClientError<"WriteText404", typeof WriteText404.Type>
-    | TasksClientError<"WriteText409", typeof WriteText409.Type>
-    | TasksClientError<"WriteText503", typeof WriteText503.Type>
-  >
-  readonly getTaskTree: <Config extends OperationConfig>(
-    project: string,
-    id: string,
-    options:
-      | { readonly params?: typeof GetTaskTreeParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof GetTaskTree200.Type, Config>,
-    | HttpClientError.HttpClientError
-    | SchemaError
-    | TasksClientError<"GetTaskTree400", typeof GetTaskTree400.Type>
-    | TasksClientError<"GetTaskTree404", typeof GetTaskTree404.Type>
-    | TasksClientError<"GetTaskTree503", typeof GetTaskTree503.Type>
-  >
-  readonly searchAll: <Config extends OperationConfig>(
-    options:
-      | { readonly params?: typeof SearchAllParams.Encoded | undefined; readonly config?: Config | undefined }
-      | undefined,
-  ) => Effect.Effect<
-    WithOptionalResponse<typeof SearchAll200.Type, Config>,
-    HttpClientError.HttpClientError | SchemaError
-  >
-  readonly health: <Config extends OperationConfig>(
-    options: { readonly config?: Config | undefined } | undefined,
-  ) => Effect.Effect<WithOptionalResponse<typeof Health200.Type, Config>, HttpClientError.HttpClientError | SchemaError>
+  readonly listFaults: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof ListFaults200.Type, Config>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListFaults200.Type, Config | undefined>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+  }
+  readonly drawFlow: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly params?: typeof DrawFlowParams.Encoded | undefined
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof DrawFlow200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DrawFlow400", typeof DrawFlow400.Type>
+      | TasksClientError<"DrawFlow404", typeof DrawFlow404.Type>
+      | TasksClientError<"DrawFlow422", typeof DrawFlow422.Type>
+      | TasksClientError<"DrawFlow503", typeof DrawFlow503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      options:
+        | { readonly params?: typeof DrawFlowParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof DrawFlow200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DrawFlow400", typeof DrawFlow400.Type>
+      | TasksClientError<"DrawFlow404", typeof DrawFlow404.Type>
+      | TasksClientError<"DrawFlow422", typeof DrawFlow422.Type>
+      | TasksClientError<"DrawFlow503", typeof DrawFlow503.Type>
+    >
+  }
+  readonly listProjects: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof ListProjects200.Type, Config>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListProjects200.Type, Config | undefined>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+  }
+  readonly registerProject: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly payload: typeof RegisterProjectRequestJson.Encoded
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof RegisterProject200.Type | typeof RegisterProject201.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"RegisterProject400", typeof RegisterProject400.Type>
+      | TasksClientError<"RegisterProject409", typeof RegisterProject409.Type>
+      | TasksClientError<"RegisterProject503", typeof RegisterProject503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly payload: typeof RegisterProjectRequestJson.Encoded
+      readonly config?: Config | undefined
+    }): Effect.Effect<
+      WithOptionalResponse<typeof RegisterProject200.Type | typeof RegisterProject201.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"RegisterProject400", typeof RegisterProject400.Type>
+      | TasksClientError<"RegisterProject409", typeof RegisterProject409.Type>
+      | TasksClientError<"RegisterProject503", typeof RegisterProject503.Type>
+    >
+  }
+  readonly deleteProject: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<void, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DeleteProject404", typeof DeleteProject404.Type>
+      | TasksClientError<"DeleteProject503", typeof DeleteProject503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<void, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DeleteProject404", typeof DeleteProject404.Type>
+      | TasksClientError<"DeleteProject503", typeof DeleteProject503.Type>
+    >
+  }
+  readonly renameProject: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof RenameProjectRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof RenameProject200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"RenameProject400", typeof RenameProject400.Type>
+      | TasksClientError<"RenameProject404", typeof RenameProject404.Type>
+      | TasksClientError<"RenameProject409", typeof RenameProject409.Type>
+      | TasksClientError<"RenameProject503", typeof RenameProject503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof RenameProjectRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof RenameProject200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"RenameProject400", typeof RenameProject400.Type>
+      | TasksClientError<"RenameProject404", typeof RenameProject404.Type>
+      | TasksClientError<"RenameProject409", typeof RenameProject409.Type>
+      | TasksClientError<"RenameProject503", typeof RenameProject503.Type>
+    >
+  }
+  readonly getBoard: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetBoard200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetBoard404", typeof GetBoard404.Type>
+      | TasksClientError<"GetBoard503", typeof GetBoard503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetBoard200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetBoard404", typeof GetBoard404.Type>
+      | TasksClientError<"GetBoard503", typeof GetBoard503.Type>
+    >
+  }
+  readonly listDocs: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly params?: typeof ListDocsParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListDocs200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListDocs404", typeof ListDocs404.Type>
+      | TasksClientError<"ListDocs503", typeof ListDocs503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options:
+        | { readonly params?: typeof ListDocsParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListDocs200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListDocs404", typeof ListDocs404.Type>
+      | TasksClientError<"ListDocs503", typeof ListDocs503.Type>
+    >
+  }
+  readonly createDoc: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof CreateDocRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof CreateDoc201.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"CreateDoc400", typeof CreateDoc400.Type>
+      | TasksClientError<"CreateDoc404", typeof CreateDoc404.Type>
+      | TasksClientError<"CreateDoc409", typeof CreateDoc409.Type>
+      | TasksClientError<"CreateDoc503", typeof CreateDoc503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof CreateDocRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof CreateDoc201.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"CreateDoc400", typeof CreateDoc400.Type>
+      | TasksClientError<"CreateDoc404", typeof CreateDoc404.Type>
+      | TasksClientError<"CreateDoc409", typeof CreateDoc409.Type>
+      | TasksClientError<"CreateDoc503", typeof CreateDoc503.Type>
+    >
+  }
+  readonly getDoc: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly params?: typeof GetDocParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetDoc200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetDoc404", typeof GetDoc404.Type>
+      | TasksClientError<"GetDoc503", typeof GetDoc503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options:
+        | { readonly params?: typeof GetDocParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetDoc200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetDoc404", typeof GetDoc404.Type>
+      | TasksClientError<"GetDoc503", typeof GetDoc503.Type>
+    >
+  }
+  readonly deleteDoc: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<void, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DeleteDoc404", typeof DeleteDoc404.Type>
+      | TasksClientError<"DeleteDoc409", typeof DeleteDoc409.Type>
+      | TasksClientError<"DeleteDoc503", typeof DeleteDoc503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<void, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DeleteDoc404", typeof DeleteDoc404.Type>
+      | TasksClientError<"DeleteDoc409", typeof DeleteDoc409.Type>
+      | TasksClientError<"DeleteDoc503", typeof DeleteDoc503.Type>
+    >
+  }
+  readonly patchDoc: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly payload: typeof PatchDocRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof PatchDoc200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"PatchDoc400", typeof PatchDoc400.Type>
+      | TasksClientError<"PatchDoc404", typeof PatchDoc404.Type>
+      | TasksClientError<"PatchDoc409", typeof PatchDoc409.Type>
+      | TasksClientError<"PatchDoc422", typeof PatchDoc422.Type>
+      | TasksClientError<"PatchDoc503", typeof PatchDoc503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly payload: typeof PatchDocRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof PatchDoc200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"PatchDoc400", typeof PatchDoc400.Type>
+      | TasksClientError<"PatchDoc404", typeof PatchDoc404.Type>
+      | TasksClientError<"PatchDoc409", typeof PatchDoc409.Type>
+      | TasksClientError<"PatchDoc422", typeof PatchDoc422.Type>
+      | TasksClientError<"PatchDoc503", typeof PatchDoc503.Type>
+    >
+  }
+  readonly docHistory: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly params?: typeof DocHistoryParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof DocHistory200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DocHistory400", typeof DocHistory400.Type>
+      | TasksClientError<"DocHistory404", typeof DocHistory404.Type>
+      | TasksClientError<"DocHistory503", typeof DocHistory503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options:
+        | { readonly params?: typeof DocHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof DocHistory200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DocHistory400", typeof DocHistory400.Type>
+      | TasksClientError<"DocHistory404", typeof DocHistory404.Type>
+      | TasksClientError<"DocHistory503", typeof DocHistory503.Type>
+    >
+  }
+  readonly docRevision: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      revision: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof DocRevision200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DocRevision400", typeof DocRevision400.Type>
+      | TasksClientError<"DocRevision404", typeof DocRevision404.Type>
+      | TasksClientError<"DocRevision503", typeof DocRevision503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      revision: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof DocRevision200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DocRevision400", typeof DocRevision400.Type>
+      | TasksClientError<"DocRevision404", typeof DocRevision404.Type>
+      | TasksClientError<"DocRevision503", typeof DocRevision503.Type>
+    >
+  }
+  readonly writeDocText: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly payload: typeof WriteDocTextRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof WriteDocText200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"WriteDocText400", typeof WriteDocText400.Type>
+      | TasksClientError<"WriteDocText404", typeof WriteDocText404.Type>
+      | TasksClientError<"WriteDocText409", typeof WriteDocText409.Type>
+      | TasksClientError<"WriteDocText503", typeof WriteDocText503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly payload: typeof WriteDocTextRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof WriteDocText200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"WriteDocText400", typeof WriteDocText400.Type>
+      | TasksClientError<"WriteDocText404", typeof WriteDocText404.Type>
+      | TasksClientError<"WriteDocText409", typeof WriteDocText409.Type>
+      | TasksClientError<"WriteDocText503", typeof WriteDocText503.Type>
+    >
+  }
+  readonly projectHistory: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly params?: typeof ProjectHistoryParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ProjectHistory200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ProjectHistory404", typeof ProjectHistory404.Type>
+      | TasksClientError<"ProjectHistory503", typeof ProjectHistory503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options:
+        | { readonly params?: typeof ProjectHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ProjectHistory200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ProjectHistory404", typeof ProjectHistory404.Type>
+      | TasksClientError<"ProjectHistory503", typeof ProjectHistory503.Type>
+    >
+  }
+  readonly revisionDiff: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      revision: string,
+      options: { readonly params: typeof RevisionDiffParams.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof RevisionDiff200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"RevisionDiff404", typeof RevisionDiff404.Type>
+      | TasksClientError<"RevisionDiff503", typeof RevisionDiff503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      revision: string,
+      options: { readonly params: typeof RevisionDiffParams.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof RevisionDiff200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"RevisionDiff404", typeof RevisionDiff404.Type>
+      | TasksClientError<"RevisionDiff503", typeof RevisionDiff503.Type>
+    >
+  }
+  readonly searchProject: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly params?: typeof SearchProjectParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof SearchProject200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"SearchProject404", typeof SearchProject404.Type>
+      | TasksClientError<"SearchProject503", typeof SearchProject503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options:
+        | { readonly params?: typeof SearchProjectParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof SearchProject200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"SearchProject404", typeof SearchProject404.Type>
+      | TasksClientError<"SearchProject503", typeof SearchProject503.Type>
+    >
+  }
+  readonly getSync: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetSync200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetSync404", typeof GetSync404.Type>
+      | TasksClientError<"GetSync503", typeof GetSync503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetSync200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetSync404", typeof GetSync404.Type>
+      | TasksClientError<"GetSync503", typeof GetSync503.Type>
+    >
+  }
+  readonly runSync: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof RunSync200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"RunSync404", typeof RunSync404.Type>
+      | TasksClientError<"RunSync502", typeof RunSync502.Type>
+      | TasksClientError<"RunSync503", typeof RunSync503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof RunSync200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"RunSync404", typeof RunSync404.Type>
+      | TasksClientError<"RunSync502", typeof RunSync502.Type>
+      | TasksClientError<"RunSync503", typeof RunSync503.Type>
+    >
+  }
+  readonly listTags: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListTags200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListTags404", typeof ListTags404.Type>
+      | TasksClientError<"ListTags422", typeof ListTags422.Type>
+      | TasksClientError<"ListTags503", typeof ListTags503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListTags200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListTags404", typeof ListTags404.Type>
+      | TasksClientError<"ListTags422", typeof ListTags422.Type>
+      | TasksClientError<"ListTags503", typeof ListTags503.Type>
+    >
+  }
+  readonly createTag: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof CreateTagRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof CreateTag201.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"CreateTag400", typeof CreateTag400.Type>
+      | TasksClientError<"CreateTag404", typeof CreateTag404.Type>
+      | TasksClientError<"CreateTag409", typeof CreateTag409.Type>
+      | TasksClientError<"CreateTag422", typeof CreateTag422.Type>
+      | TasksClientError<"CreateTag503", typeof CreateTag503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof CreateTagRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof CreateTag201.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"CreateTag400", typeof CreateTag400.Type>
+      | TasksClientError<"CreateTag404", typeof CreateTag404.Type>
+      | TasksClientError<"CreateTag409", typeof CreateTag409.Type>
+      | TasksClientError<"CreateTag422", typeof CreateTag422.Type>
+      | TasksClientError<"CreateTag503", typeof CreateTag503.Type>
+    >
+  }
+  readonly getTag: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetTag200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetTag400", typeof GetTag400.Type>
+      | TasksClientError<"GetTag404", typeof GetTag404.Type>
+      | TasksClientError<"GetTag422", typeof GetTag422.Type>
+      | TasksClientError<"GetTag503", typeof GetTag503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetTag200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetTag400", typeof GetTag400.Type>
+      | TasksClientError<"GetTag404", typeof GetTag404.Type>
+      | TasksClientError<"GetTag422", typeof GetTag422.Type>
+      | TasksClientError<"GetTag503", typeof GetTag503.Type>
+    >
+  }
+  readonly deleteTag: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly params?: typeof DeleteTagParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<void, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DeleteTag400", typeof DeleteTag400.Type>
+      | TasksClientError<"DeleteTag404", typeof DeleteTag404.Type>
+      | TasksClientError<"DeleteTag409", typeof DeleteTag409.Type>
+      | TasksClientError<"DeleteTag503", typeof DeleteTag503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options:
+        | { readonly params?: typeof DeleteTagParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<void, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DeleteTag400", typeof DeleteTag400.Type>
+      | TasksClientError<"DeleteTag404", typeof DeleteTag404.Type>
+      | TasksClientError<"DeleteTag409", typeof DeleteTag409.Type>
+      | TasksClientError<"DeleteTag503", typeof DeleteTag503.Type>
+    >
+  }
+  readonly patchTag: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly payload: typeof PatchTagRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof PatchTag200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"PatchTag400", typeof PatchTag400.Type>
+      | TasksClientError<"PatchTag404", typeof PatchTag404.Type>
+      | TasksClientError<"PatchTag409", typeof PatchTag409.Type>
+      | TasksClientError<"PatchTag422", typeof PatchTag422.Type>
+      | TasksClientError<"PatchTag503", typeof PatchTag503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      name: string,
+      options: { readonly payload: typeof PatchTagRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof PatchTag200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"PatchTag400", typeof PatchTag400.Type>
+      | TasksClientError<"PatchTag404", typeof PatchTag404.Type>
+      | TasksClientError<"PatchTag409", typeof PatchTag409.Type>
+      | TasksClientError<"PatchTag422", typeof PatchTag422.Type>
+      | TasksClientError<"PatchTag503", typeof PatchTag503.Type>
+    >
+  }
+  readonly listTasks: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly params?: typeof ListTasksParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListTasks200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListTasks404", typeof ListTasks404.Type>
+      | TasksClientError<"ListTasks503", typeof ListTasks503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options:
+        | { readonly params?: typeof ListTasksParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListTasks200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListTasks404", typeof ListTasks404.Type>
+      | TasksClientError<"ListTasks503", typeof ListTasks503.Type>
+    >
+  }
+  readonly createTask: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof CreateTaskRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof CreateTask201.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"CreateTask400", typeof CreateTask400.Type>
+      | TasksClientError<"CreateTask404", typeof CreateTask404.Type>
+      | TasksClientError<"CreateTask409", typeof CreateTask409.Type>
+      | TasksClientError<"CreateTask503", typeof CreateTask503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof CreateTaskRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof CreateTask201.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"CreateTask400", typeof CreateTask400.Type>
+      | TasksClientError<"CreateTask404", typeof CreateTask404.Type>
+      | TasksClientError<"CreateTask409", typeof CreateTask409.Type>
+      | TasksClientError<"CreateTask503", typeof CreateTask503.Type>
+    >
+  }
+  readonly getTask: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly params?: typeof GetTaskParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetTask200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetTask400", typeof GetTask400.Type>
+      | TasksClientError<"GetTask404", typeof GetTask404.Type>
+      | TasksClientError<"GetTask503", typeof GetTask503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options:
+        | { readonly params?: typeof GetTaskParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetTask200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetTask400", typeof GetTask400.Type>
+      | TasksClientError<"GetTask404", typeof GetTask404.Type>
+      | TasksClientError<"GetTask503", typeof GetTask503.Type>
+    >
+  }
+  readonly deleteTask: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<void, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DeleteTask400", typeof DeleteTask400.Type>
+      | TasksClientError<"DeleteTask404", typeof DeleteTask404.Type>
+      | TasksClientError<"DeleteTask503", typeof DeleteTask503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<void, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"DeleteTask400", typeof DeleteTask400.Type>
+      | TasksClientError<"DeleteTask404", typeof DeleteTask404.Type>
+      | TasksClientError<"DeleteTask503", typeof DeleteTask503.Type>
+    >
+  }
+  readonly patchTask: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly payload: typeof PatchTaskRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof PatchTask200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"PatchTask400", typeof PatchTask400.Type>
+      | TasksClientError<"PatchTask404", typeof PatchTask404.Type>
+      | TasksClientError<"PatchTask409", typeof PatchTask409.Type>
+      | TasksClientError<"PatchTask503", typeof PatchTask503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly payload: typeof PatchTaskRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof PatchTask200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"PatchTask400", typeof PatchTask400.Type>
+      | TasksClientError<"PatchTask404", typeof PatchTask404.Type>
+      | TasksClientError<"PatchTask409", typeof PatchTask409.Type>
+      | TasksClientError<"PatchTask503", typeof PatchTask503.Type>
+    >
+  }
+  readonly listComments: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly params?: typeof ListCommentsParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListComments200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListComments400", typeof ListComments400.Type>
+      | TasksClientError<"ListComments404", typeof ListComments404.Type>
+      | TasksClientError<"ListComments503", typeof ListComments503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options:
+        | { readonly params?: typeof ListCommentsParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof ListComments200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"ListComments400", typeof ListComments400.Type>
+      | TasksClientError<"ListComments404", typeof ListComments404.Type>
+      | TasksClientError<"ListComments503", typeof ListComments503.Type>
+    >
+  }
+  readonly addComment: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly payload: typeof AddCommentRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof AddComment201.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"AddComment400", typeof AddComment400.Type>
+      | TasksClientError<"AddComment404", typeof AddComment404.Type>
+      | TasksClientError<"AddComment503", typeof AddComment503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly payload: typeof AddCommentRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof AddComment201.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"AddComment400", typeof AddComment400.Type>
+      | TasksClientError<"AddComment404", typeof AddComment404.Type>
+      | TasksClientError<"AddComment503", typeof AddComment503.Type>
+    >
+  }
+  readonly writeTaskFile: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly payload: typeof WriteTaskFileRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof WriteTaskFile200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"WriteTaskFile400", typeof WriteTaskFile400.Type>
+      | TasksClientError<"WriteTaskFile404", typeof WriteTaskFile404.Type>
+      | TasksClientError<"WriteTaskFile409", typeof WriteTaskFile409.Type>
+      | TasksClientError<"WriteTaskFile503", typeof WriteTaskFile503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly payload: typeof WriteTaskFileRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof WriteTaskFile200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"WriteTaskFile400", typeof WriteTaskFile400.Type>
+      | TasksClientError<"WriteTaskFile404", typeof WriteTaskFile404.Type>
+      | TasksClientError<"WriteTaskFile409", typeof WriteTaskFile409.Type>
+      | TasksClientError<"WriteTaskFile503", typeof WriteTaskFile503.Type>
+    >
+  }
+  readonly taskHistory: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly params?: typeof TaskHistoryParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof TaskHistory200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"TaskHistory400", typeof TaskHistory400.Type>
+      | TasksClientError<"TaskHistory404", typeof TaskHistory404.Type>
+      | TasksClientError<"TaskHistory503", typeof TaskHistory503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options:
+        | { readonly params?: typeof TaskHistoryParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof TaskHistory200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"TaskHistory400", typeof TaskHistory400.Type>
+      | TasksClientError<"TaskHistory404", typeof TaskHistory404.Type>
+      | TasksClientError<"TaskHistory503", typeof TaskHistory503.Type>
+    >
+  }
+  readonly taskRevision: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      revision: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof TaskRevision200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"TaskRevision400", typeof TaskRevision400.Type>
+      | TasksClientError<"TaskRevision404", typeof TaskRevision404.Type>
+      | TasksClientError<"TaskRevision503", typeof TaskRevision503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      revision: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof TaskRevision200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"TaskRevision400", typeof TaskRevision400.Type>
+      | TasksClientError<"TaskRevision404", typeof TaskRevision404.Type>
+      | TasksClientError<"TaskRevision503", typeof TaskRevision503.Type>
+    >
+  }
+  readonly writeText: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly payload: typeof WriteTextRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof WriteText200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"WriteText400", typeof WriteText400.Type>
+      | TasksClientError<"WriteText404", typeof WriteText404.Type>
+      | TasksClientError<"WriteText409", typeof WriteText409.Type>
+      | TasksClientError<"WriteText503", typeof WriteText503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly payload: typeof WriteTextRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof WriteText200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"WriteText400", typeof WriteText400.Type>
+      | TasksClientError<"WriteText404", typeof WriteText404.Type>
+      | TasksClientError<"WriteText409", typeof WriteText409.Type>
+      | TasksClientError<"WriteText503", typeof WriteText503.Type>
+    >
+  }
+  readonly getTaskTree: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options: { readonly params?: typeof GetTaskTreeParams.Encoded | undefined; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetTaskTree200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetTaskTree400", typeof GetTaskTree400.Type>
+      | TasksClientError<"GetTaskTree404", typeof GetTaskTree404.Type>
+      | TasksClientError<"GetTaskTree503", typeof GetTaskTree503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      id: string,
+      options:
+        | { readonly params?: typeof GetTaskTreeParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof GetTaskTree200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"GetTaskTree400", typeof GetTaskTree400.Type>
+      | TasksClientError<"GetTaskTree404", typeof GetTaskTree404.Type>
+      | TasksClientError<"GetTaskTree503", typeof GetTaskTree503.Type>
+    >
+  }
+  readonly searchAll: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly params?: typeof SearchAllParams.Encoded | undefined
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof SearchAll200.Type, Config>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      options:
+        | { readonly params?: typeof SearchAllParams.Encoded | undefined; readonly config?: Config | undefined }
+        | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof SearchAll200.Type, Config | undefined>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+  }
+  readonly health: {
+    <Config extends OperationConfig | undefined = undefined>(options: {
+      readonly config: Config
+    }): Effect.Effect<
+      WithOptionalResponse<typeof Health200.Type, Config>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof Health200.Type, Config | undefined>,
+      HttpClientError.HttpClientError | SchemaError
+    >
+  }
 }
 
 export interface TasksClientError<Tag extends string, E> {
