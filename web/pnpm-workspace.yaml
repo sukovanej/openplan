@@ -6,15 +6,15 @@ onlyBuiltDependencies:
   - "@tailwindcss/oxide"
 
 catalog:
-  effect: 4.0.0
-  "@effect/vitest": 4.0.0
-  "@effect/platform-node": 4.0.0
-  "@effect/openapi-generator": 4.0.0
+  effect: 4.0.2
+  "@effect/vitest": 4.0.2
+  "@effect/platform-node": 4.0.2
+  "@effect/openapi-generator": 4.0.2
 
   react: 19.3.0
   react-dom: 19.3.0
   react-router-dom: 7.18.4
-  "@tanstack/react-query": 5.104.0
+  "@tanstack/react-query": 5.104.1
   react-markdown: 10.1.0
   remark-gfm: 4.0.1
   "@codemirror/autocomplete": 6.20.3
@@ -32,39 +32,31 @@ catalog:
   class-variance-authority: 0.7.1
   clsx: 2.1.1
   tailwind-merge: 3.7.0
-  lucide-react: 1.49.0
+  lucide-react: 1.53.0
 
   "@types/hast": 3.0.5
   "@types/react": 19.3.0
   "@types/react-dom": 19.3.0
-  "@types/node": 26.6.3
+  "@types/node": 26.6.4
 
   tailwindcss: 4.3.3
   "@tailwindcss/vite": 4.3.3
   "@tailwindcss/typography": 0.5.20
-  vite: 8.3.1
-  "@vitejs/plugin-react": 6.1.1
+  vite: 8.3.3
+  "@vitejs/plugin-react": 6.1.2
   vitest: 5.0.3
   happy-dom: 20.14.5
   typescript: 7.0.2
-  oxlint: 1.86.0
-  oxfmt: 0.71.0
+  oxlint: 1.87.0
+  oxfmt: 0.72.0
 
 minimumReleaseAgeExclude:
-  - "@effect/openapi-generator@4.0.0"
-  - "@effect/platform-node-shared@4.0.0"
-  - "@effect/platform-node@4.0.0"
-  - "@effect/vitest@4.0.0"
-  - effect@4.0.0
-  - "@shikijs/core@4.5.0"
-  - "@shikijs/engine-javascript@4.5.0"
-  - "@shikijs/langs@4.5.0"
-  - "@shikijs/themes@4.5.0"
-  - "@shikijs/primitive@4.5.0"
-  - "@shikijs/types@4.5.0"
-  - vitest@5.0.3
-  - "@vitest/mocker@5.0.3"
-  - "@vitest/spy@5.0.3"
+  - "@effect/openapi-generator@4.0.2"
+  - "@effect/platform-node-shared@4.0.2"
+  - "@effect/platform-node@4.0.2"
+  - "@effect/vitest@4.0.2"
+  - effect@4.0.2
+  - lucide-react@1.53.0
 
 allowBuilds:
   msgpackr-extract: false
