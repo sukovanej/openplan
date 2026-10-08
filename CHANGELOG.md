@@ -5,7 +5,16 @@ All notable changes to openplan are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.6...main)
+## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.7...main)
+
+## [0.0.7](https://github.com/sukovanej/openplan/compare/v0.0.6...v0.0.7) - 2026-10-08
+
+### Added
+
+- `--json` on `openplan tasks show`, `openplan project list`, `openplan url`,
+  `openplan tag colors`, and `openplan server ping`.
+- The OpenAPI spec documents `GET /api/events`. The response is
+  `text/event-stream`, and each event has the `ChangeEvent` schema.
 
 ### Changed
 
@@ -13,6 +22,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   them for Claude Code, Codex, and each other agent that
   [skills](https://github.com/vercel-labs/skills) supports. Run
   `npx skills update` to update them.
+- A build from source needs Rust 1.99 or later.
 
 ### Removed
 
@@ -22,6 +32,11 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `/api/projects/{project}/agent/sessions` and its routes are gone. A new
   release now installs at once, because the daemon no longer waits for a
   session to end.
+
+### Fixed
+
+- The history of one task or doc shows the change on the same line as the
+  author. Before, the doc sidebar put "Edited" on a new line.
 
 ## [0.0.6](https://github.com/sukovanej/openplan/compare/v0.0.5...v0.0.6) - 2026-10-01
 
