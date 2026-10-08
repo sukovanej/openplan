@@ -5,7 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.0.6"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.99"
 license = "MIT"
 repository = "https://github.com/sukovanej/openplan"
 publish = false
@@ -42,9 +42,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 pulldown-cmark = { version = "0.13", default-features = false }
 
-gix = "0.87" # default features provide the sha1 object hash
+gix = "0.88" # default features provide the sha1 object hash
 # The diff crate that gix already builds, with the unified format turned on.
-gix-imara-diff = { version = "0.2", features = ["unified_diff"] }
+gix-imara-diff = { version = "0.3", features = ["unified_diff"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] } # UTC only, so no tzdb
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs", "process", "io-util", "time"] }
@@ -52,9 +52,9 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 axum = "0.8"
 tower-http = { version = "0.7", features = ["trace"] }
 rust-embed = "8"
-utoipa = { version = "5", features = ["axum_extras"] }
-utoipa-axum = "0.2"
-utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
+utoipa = { version = "6", features = ["axum_extras"] }
+utoipa-axum = "0.3"
+utoipa-swagger-ui = { version = "10", features = ["axum", "vendored"] }
 
 tauri = "2"
 tauri-build = "2"

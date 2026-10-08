@@ -186,11 +186,10 @@ fn merge_base(
     one: ObjectId,
     two: ObjectId,
 ) -> Result<Option<ObjectId>, BackendError> {
-    match repo.merge_base(one, two) {
-        Ok(base) => Ok(Some(base.detach())),
-        Err(gix::repository::merge_base::Error::NotFound { .. }) => Ok(None),
-        Err(err) => Err(objects::storage(err)),
-    }
+    let bases = repo
+        .merge_bases_many(one, &[two])
+        .map_err(objects::storage)?;
+    Ok(bases.first().map(|base| base.detach()))
 }
 
 fn count(

@@ -286,17 +286,16 @@ fn problems(scene: &Scene) -> Vec<String> {
                 problems.push(format!("the nodes {} and {} overlap", first.id, second.id));
             }
         }
-        if let Some(parent) = &first.parent {
-            if !cluster_at[parent.as_str()]
+        if let Some(parent) = &first.parent
+            && !cluster_at[parent.as_str()]
                 .rect
                 .inset(-0.5)
                 .contains(&first.rect)
-            {
-                problems.push(format!(
-                    "the node {} lies outside its cluster {parent}",
-                    first.id
-                ));
-            }
+        {
+            problems.push(format!(
+                "the node {} lies outside its cluster {parent}",
+                first.id
+            ));
         }
         for cluster in &scene.clusters {
             if !within(first.parent.as_deref(), &cluster.id)
@@ -318,17 +317,16 @@ fn problems(scene: &Scene) -> Vec<String> {
                 ));
             }
         }
-        if let Some(parent) = &first.parent {
-            if !cluster_at[parent.as_str()]
+        if let Some(parent) = &first.parent
+            && !cluster_at[parent.as_str()]
                 .rect
                 .inset(-0.5)
                 .contains(&first.rect)
-            {
-                problems.push(format!(
-                    "the cluster {} lies outside its cluster {parent}",
-                    first.id
-                ));
-            }
+        {
+            problems.push(format!(
+                "the cluster {} lies outside its cluster {parent}",
+                first.id
+            ));
         }
         for second in &scene.clusters[at + 1..] {
             let nested = within(first.parent.as_deref(), &second.id)
@@ -343,13 +341,13 @@ fn problems(scene: &Scene) -> Vec<String> {
     }
     for edge in &scene.edges {
         for node in &scene.nodes {
-            if let Some(label) = &edge.label {
-                if label.rect.inset(0.5).overlaps(&node.rect) {
-                    problems.push(format!(
-                        "the label of {} -> {} overlaps the node {}",
-                        edge.from, edge.to, node.id
-                    ));
-                }
+            if let Some(label) = &edge.label
+                && label.rect.inset(0.5).overlaps(&node.rect)
+            {
+                problems.push(format!(
+                    "the label of {} -> {} overlaps the node {}",
+                    edge.from, edge.to, node.id
+                ));
             }
             if node.id == edge.from || node.id == edge.to {
                 continue;
@@ -367,13 +365,14 @@ fn problems(scene: &Scene) -> Vec<String> {
             }
         }
         for other in &scene.edges {
-            if let (Some(first), Some(second)) = (&edge.label, &other.label) {
-                if !std::ptr::eq(edge, other) && first.rect.inset(0.5).overlaps(&second.rect) {
-                    problems.push(format!(
-                        "the labels of {} -> {} and {} -> {} overlap",
-                        edge.from, edge.to, other.from, other.to
-                    ));
-                }
+            if let (Some(first), Some(second)) = (&edge.label, &other.label)
+                && !std::ptr::eq(edge, other)
+                && first.rect.inset(0.5).overlaps(&second.rect)
+            {
+                problems.push(format!(
+                    "the labels of {} -> {} and {} -> {} overlap",
+                    edge.from, edge.to, other.from, other.to
+                ));
             }
         }
     }
@@ -545,14 +544,13 @@ fn sequence_problems(scene: &Scene) -> Vec<String> {
         .map(|cluster| (cluster.id.as_str(), cluster))
         .collect();
     for cluster in &scene.clusters {
-        if let Some(parent) = &cluster.parent {
-            if !cluster_at[parent.as_str()]
+        if let Some(parent) = &cluster.parent
+            && !cluster_at[parent.as_str()]
                 .rect
                 .inset(-0.5)
                 .contains(&cluster.rect)
-            {
-                problems.push(format!("{} lies outside {parent}", cluster.id));
-            }
+        {
+            problems.push(format!("{} lies outside {parent}", cluster.id));
         }
     }
     problems

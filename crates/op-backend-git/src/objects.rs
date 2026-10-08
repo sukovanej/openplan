@@ -411,16 +411,9 @@ pub(crate) fn move_reference(
     }
 }
 
-fn is_lock_contention(err: &gix::reference::edit::Error) -> bool {
-    use std::error::Error as _;
-    let mut source: Option<&dyn std::error::Error> = err.source();
-    while let Some(cause) = source {
-        if cause.to_string().contains("lock") {
-            return true;
-        }
-        source = cause.source();
-    }
-    err.to_string().contains("lock")
+fn is_lock_contention(err: &gix::Error) -> bool {
+    err.iter_errors()
+        .any(|cause| cause.to_string().contains("lock"))
 }
 
 // Other processes retry the same reference, and a random pause keeps them from colliding again.

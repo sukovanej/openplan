@@ -135,7 +135,7 @@ jobs:
         with:
           "cache": "pnpm"
           "cache-dependency-path": "web/pnpm-lock.yaml"
-          "node-version": 24
+          "node-version": 26
       - name: "Build the web SPA"
         run: |
           cd web

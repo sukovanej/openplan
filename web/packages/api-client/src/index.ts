@@ -292,7 +292,7 @@ export type CreateTask = {
   readonly dependencies?: ReadonlyArray<string>
   readonly parent?: string | null
   readonly pull_requests?: ReadonlyArray<string>
-  readonly status?: null | Status
+  readonly status?: Status | null
   readonly tags?: ReadonlyArray<string>
   readonly title: string
 }
@@ -301,7 +301,7 @@ export const CreateTask = Schema.Struct({
   dependencies: Schema.optionalKey(Schema.Array(Schema.String)),
   parent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
   pull_requests: Schema.optionalKey(Schema.Array(Schema.String)),
-  status: Schema.optionalKey(Schema.Union([Schema.Null, Status], { mode: "oneOf" })),
+  status: Schema.optionalKey(Schema.Union([Status, Schema.Null], { mode: "oneOf" })),
   tags: Schema.optionalKey(Schema.Array(Schema.String)),
   title: Schema.String,
 }).annotate({ identifier: "CreateTask" })
