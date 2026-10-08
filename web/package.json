@@ -19,7 +19,7 @@
     "vitest": "catalog:"
   },
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.12"
   },
   "packageManager": "pnpm@12.10.1"
 }

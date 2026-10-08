@@ -41,10 +41,10 @@ pub fn between(lower: Option<&str>, upper: Option<&str>) -> Option<String> {
     if [lower, upper].iter().flatten().any(|key| !is_valid(key)) {
         return None;
     }
-    if let (Some(lower), Some(upper)) = (lower, upper) {
-        if value_of(lower) >= value_of(upper) {
-            return None;
-        }
+    if let (Some(lower), Some(upper)) = (lower, upper)
+        && value_of(lower) >= value_of(upper)
+    {
+        return None;
     }
     let mut out = Vec::new();
     let mut open_upper = upper.is_none();

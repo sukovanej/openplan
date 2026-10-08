@@ -100,7 +100,7 @@ fn nested(docs: &[DocListItem]) -> Vec<(usize, &DocListItem)> {
     let mut out = Vec::new();
     for doc in docs
         .iter()
-        .filter(|doc| !doc.metadata.parent().is_some_and(&held))
+        .filter(|doc| !doc.metadata.parent().is_some_and(held))
     {
         push_subtree(docs, doc, 0, &mut out);
     }

@@ -1,8 +1,8 @@
 [tools]
 cargo-dist = "0.32.0"
-"cargo:cargo-edit" = "0.13.7"
+"cargo:cargo-edit" = "0.13.13"
 "cargo:tauri-cli" = "2"
-"cargo:cargo-insta" = "1.48.0"
+"cargo:cargo-insta" = "1.49.0"
 
 [tasks.lint]
 description = "Report the problems in the tasks and docs of this project"
