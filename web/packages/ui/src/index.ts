@@ -11,6 +11,7 @@ export { type FuzzyMatch, fuzzyMatch, type FuzzySegment, fuzzySegments } from ".
 export { IconToggleGroup, type IconToggleOption } from "./icon-toggle-group"
 export { Kbd } from "./kbd"
 export { Menu, type MenuItem } from "./menu"
+export { MenuTrigger } from "./menu-trigger"
 export { MetaItem, MetaLine } from "./meta-line"
 export { Modal } from "./modal"
 export { Palette, type PaletteItem, type PaletteProvider } from "./palette"

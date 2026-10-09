@@ -1,9 +1,9 @@
-import { Check, ChevronsUpDown, TriangleAlert } from "lucide-react"
+import { Check, TriangleAlert } from "lucide-react"
 import { useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import type { ProjectView } from "@openplan/api-client"
-import { cn, CONTROL_HEIGHT, Kbd, Menu, type MenuItem, Tooltip, useDismissOnOutsideClick } from "@openplan/ui"
+import { cn, Kbd, Menu, type MenuItem, MenuTrigger, Tooltip, useDismissOnOutsideClick } from "@openplan/ui"
 
 import { demotedReason, useFaults } from "../lib/faults"
 import { useProjectMenuRequest } from "../lib/project-menu"
@@ -63,20 +63,10 @@ export function ProjectSelect({ className }: { className?: string }) {
           </span>
         }
       >
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-          className={cn(
-            "hover:bg-muted focus-visible:ring-ring inline-flex min-w-0 items-center gap-1.5 rounded-md border px-2 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
-            CONTROL_HEIGHT,
-          )}
-        >
+        <MenuTrigger open={open} onClick={() => setOpen(!open)}>
           {reason !== undefined && <TriangleAlert className="text-warning size-3.5 shrink-0" aria-hidden />}
           <span className="truncate">{label(selected)}</span>
-          <ChevronsUpDown className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-        </button>
+        </MenuTrigger>
       </Tooltip>
       {open && (
         <Menu

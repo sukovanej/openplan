@@ -44,7 +44,8 @@ export interface Keyboard {
   readonly activeOverlay: OverlayName | null
   readonly paletteTarget: PaletteTarget
   readonly openPalette: (target: PaletteTarget) => void
-  readonly closeOverlay: () => void
+  readonly openNewTask: () => void
+  readonly closeOverlay: (name: OverlayName) => void
 }
 
 export function useKeyboard(): Keyboard {
@@ -60,6 +61,9 @@ export function useKeyboard(): Keyboard {
     setPaletteTarget(target)
     setActiveOverlay("palette")
   }, [])
+  // Another overlay can ask for this one as it closes, so a close leaves the overlay it does not name.
+  const closeOverlay = useCallback((name: OverlayName) => setActiveOverlay((open) => (open === name ? null : open)), [])
+  const openNewTask = useCallback(() => setActiveOverlay("new-task"), [])
   const live = useEffectEvent(() => ({ navigate, pathname, search, scope, activeOverlay, projects }))
 
   // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
@@ -100,7 +104,7 @@ export function useKeyboard(): Keyboard {
       back: () => (canGoBack() ? live().navigate(-1) : live().navigate(pageAbove(live().pathname))),
       overlay: (name) => ({
         open: () => setActiveOverlay(name),
-        close: () => setActiveOverlay((open) => (open === name ? null : open)),
+        close: () => closeOverlay(name),
         toggle: () => setActiveOverlay((open) => (open === name ? null : name)),
       }),
       palette: { open: openPalette },
@@ -158,7 +162,7 @@ export function useKeyboard(): Keyboard {
       context,
     })
     return dispatcher.attach()
-  }, [openPalette])
+  }, [openPalette, closeOverlay])
 
-  return { activeOverlay, paletteTarget, openPalette, closeOverlay: () => setActiveOverlay(null) }
+  return { activeOverlay, paletteTarget, openPalette, openNewTask, closeOverlay }
 }

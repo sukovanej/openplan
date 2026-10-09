@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { Waypoints, type LucideIcon } from "lucide-react"
+import { Plus, Waypoints, type LucideIcon } from "lucide-react"
 import { useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 
@@ -14,19 +14,27 @@ import { runtime } from "../lib/runtime"
 interface Command {
   readonly label: string
   readonly icon: LucideIcon
-  readonly to: string
+  readonly run: (actions: PaletteActions) => void
 }
 
-const COMMANDS: ReadonlyArray<Command> = [{ label: "Show the implementation flow", icon: Waypoints, to: FLOW_ROUTE }]
+interface PaletteActions {
+  readonly open: (to: string) => void
+  readonly newTask: () => void
+}
 
-function commandItems(query: string, open: (to: string) => void): ReadonlyArray<PaletteItem> {
+const COMMANDS: ReadonlyArray<Command> = [
+  { label: "Create a task", icon: Plus, run: (actions) => actions.newTask() },
+  { label: "Show the implementation flow", icon: Waypoints, run: (actions) => actions.open(FLOW_ROUTE) },
+]
+
+function commandItems(query: string, actions: PaletteActions): ReadonlyArray<PaletteItem> {
   return COMMANDS.flatMap((command) => {
     const match = fuzzyMatch(query, command.label)
     return match === null ? [] : [{ match, command }]
   })
     .sort((a, b) => a.match.score - b.match.score)
     .map(({ match, command }) => ({
-      key: `command ${command.to}`,
+      key: `command ${command.label}`,
       content: (
         <span className="flex min-w-0 items-center gap-2">
           <command.icon className="text-muted-foreground size-4 shrink-0" />
@@ -35,7 +43,7 @@ function commandItems(query: string, open: (to: string) => void): ReadonlyArray<
           </span>
         </span>
       ),
-      onSelect: () => open(command.to),
+      onSelect: () => command.run(actions),
     }))
 }
 
@@ -56,13 +64,16 @@ function searchProvider(open: (to: string) => void): PaletteProvider {
 // The general command interface: the commands the app answers for, and the tasks a query finds, in
 // one list. A search the daemon refuses takes the tasks with it and leaves the commands, which need
 // no daemon to run.
-function homeProvider(open: (to: string) => void): PaletteProvider {
+function homeProvider(actions: PaletteActions): PaletteProvider {
   return {
     id: "home",
     placeholder: "Search tasks or run a command",
     idleLabel: "Type to search titles, bodies, and frontmatter",
     emptyLabel: "No matching command or task",
-    items: async (query) => [...commandItems(query, open), ...(await searchItems(query, open).catch(() => []))],
+    items: async (query) => [
+      ...commandItems(query, actions),
+      ...(await searchItems(query, actions.open).catch(() => [])),
+    ],
   }
 }
 
@@ -75,12 +86,12 @@ function row(hit: SearchHit, open: (to: string) => void): PaletteItem {
   }
 }
 
-function providerFor(target: PaletteTarget, open: (to: string) => void): PaletteProvider {
+function providerFor(target: PaletteTarget, actions: PaletteActions): PaletteProvider {
   switch (target) {
     case "home":
-      return homeProvider(open)
+      return homeProvider(actions)
     case "search":
-      return searchProvider(open)
+      return searchProvider(actions.open)
   }
 }
 
@@ -88,12 +99,17 @@ export function CommandPalette({
   open,
   target,
   onClose,
+  onNewTask,
 }: {
   open: boolean
   target: PaletteTarget
   onClose: () => void
+  onNewTask: () => void
 }) {
   const navigate = useNavigate()
-  const provider = useMemo(() => providerFor(target, (to) => navigate(to)), [target, navigate])
+  const provider = useMemo(
+    () => providerFor(target, { open: (to) => navigate(to), newTask: onNewTask }),
+    [target, navigate, onNewTask],
+  )
   return <Palette open={open} provider={provider} onClose={onClose} />
 }

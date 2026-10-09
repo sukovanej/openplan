@@ -8,7 +8,7 @@ import { Button, type ComboOption, Combobox, FuzzyText, Tooltip } from "@openpla
 
 import { createTag, patchTask } from "../lib/api"
 import { useDetailAction } from "../lib/detail-actions"
-import { useProjectMutation, type Write } from "../lib/query-client"
+import { useProjectMutation } from "../lib/query-client"
 import { tagMatches, tagsWith, tagsWithout, tagSpelled, useTags } from "../lib/tags"
 import { FieldConflictControl } from "./field-conflict"
 
@@ -41,6 +41,24 @@ export function TagsField({
     if (broken === undefined && !mutation.isPending) setAdding(true)
   })
   const close = useCallback(() => setAdding(false), [])
+  const { mutate } = mutation
+  const add = useCallback(
+    (name: string) => {
+      if (tags !== undefined) mutate(patchTask(project, id, { tags: tagsWith(names, tags, name) }))
+    },
+    [mutate, project, id, names, tags],
+  )
+  const register = useCallback(
+    (name: string) => {
+      if (tags === undefined) return
+      mutate(
+        Effect.flatMap(createTag(project, { name }), (tag) =>
+          patchTask(project, id, { tags: tagsWith(names, tags, tag.name) }),
+        ),
+      )
+    },
+    [mutate, project, id, names, tags],
+  )
 
   const editable = broken === undefined && tags !== undefined && !mutation.isPending
   return (
@@ -66,23 +84,38 @@ export function TagsField({
           ) : broken !== undefined ? (
             <Unreadable what="tags" reason={`The tags of this task cannot be read (${broken}).`} />
           ) : adding && tags !== undefined ? (
-            <TagPicker project={project} id={id} names={names} tags={tags} mutate={mutation.mutate} onClose={close} />
+            <TagPicker names={names} tags={tags} onPick={add} onRegister={register} onClose={close} />
           ) : (
-            <Button
-              variant="accent"
-              onClick={() => setAdding(true)}
-              aria-label="Add tag"
-              disabled={mutation.isPending}
-              className={names.length > 0 ? "px-1.5" : undefined}
-            >
-              <Plus className="size-3.5" />
-              {names.length === 0 && "Add tag"}
-            </Button>
+            <AddTagButton carried={names.length} disabled={mutation.isPending} onClick={() => setAdding(true)} />
           )}
         </>
       }
       className={className}
     />
+  )
+}
+
+// Beside chips the button shrinks to its icon, so it does not crowd them.
+export function AddTagButton({
+  carried,
+  disabled,
+  onClick,
+}: {
+  carried: number
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <Button
+      variant="accent"
+      onClick={onClick}
+      aria-label="Add tag"
+      disabled={disabled}
+      className={carried > 0 ? "px-1.5" : undefined}
+    >
+      <Plus className="size-3.5" />
+      {carried === 0 && "Add tag"}
+    </Button>
   )
 }
 
@@ -115,19 +148,17 @@ function TagOption({ tag, indices }: { tag: TagView; indices: ReadonlyArray<numb
 // Only the registry can be picked from — a tag exists before a task can carry it. A name the registry
 // does not hold is offered as a tag to register, so the whole trip stays in one box; the registry's
 // own answer names the new tag, which keeps the normalization rule where it belongs.
-function TagPicker({
-  project,
-  id,
+export function TagPicker({
   names,
   tags,
-  mutate,
+  onPick,
+  onRegister,
   onClose,
 }: {
-  project: string
-  id: string
   names: ReadonlyArray<string>
   tags: ReadonlyMap<string, TagView>
-  mutate: (effect: Write) => void
+  onPick: (name: string) => void
+  onRegister: (name: string) => void
   onClose: () => void
 }) {
   const all = useMemo(() => [...tags.values()], [tags])
@@ -137,10 +168,7 @@ function TagPicker({
       const options: ComboOption[] = tagMatches(all, query, assigned).map(({ tag, indices }) => ({
         key: tag.name,
         content: <TagOption tag={tag} indices={indices} />,
-        onSelect: () => {
-          const next = tagsWith(names, tags, tag.name)
-          mutate(patchTask(project, id, { tags: next }))
-        },
+        onSelect: () => onPick(tag.name),
       }))
       if (query === "") return options
       const spelled = tagSpelled(all, query)
@@ -152,7 +180,7 @@ function TagPicker({
           content: (
             <span className="text-muted-foreground flex items-center gap-2">
               <ColorDot color={spelled.color} />
-              {spelled.display} is already on this task
+              {spelled.display} is already on the task
             </span>
           ),
           onSelect: onClose,
@@ -168,17 +196,12 @@ function TagPicker({
               </span>
             </span>
           ),
-          onSelect: () =>
-            mutate(
-              Effect.flatMap(createTag(project, { name: query }), (tag) =>
-                patchTask(project, id, { tags: tagsWith(names, tags, tag.name) }),
-              ),
-            ),
+          onSelect: () => onRegister(query),
         })
       }
       return options
     },
-    [all, assigned, names, tags, project, id, mutate, onClose],
+    [all, assigned, onPick, onRegister, onClose],
   )
 
   return (

@@ -27,7 +27,8 @@ export function Modal({
   useEffect(() => {
     if (!open) return
     restore.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dialog.current?.focus()
+    const target = dialog.current?.querySelector<HTMLElement>("[data-autofocus]") ?? dialog.current
+    target?.focus()
     return () => restore.current?.focus()
   }, [open])
 
@@ -53,9 +54,11 @@ export function Modal({
   }
 
   // The app's key dispatcher skips a key that is already handled, so Esc closes the modal and not
-  // the page behind it.
+  // the page behind it. For the same reason a control inside the modal that answers Esc itself, such
+  // as an open menu, keeps the modal open.
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
+      if (event.defaultPrevented) return
       event.preventDefault()
       onClose()
     } else {
