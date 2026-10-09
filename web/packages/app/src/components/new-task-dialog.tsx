@@ -71,7 +71,7 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [lastProject, setLastProject] = useState<string>()
   const drafting = useMemo(() => ({ draft, setDraft, lastProject, setLastProject }), [draft, lastProject])
   return (
-    <Modal open={open} onClose={onClose} label="New task" className="w-full max-w-3xl">
+    <Modal open={open} onClose={onClose} label="New task" className="w-full max-w-[59rem]">
       <NewTaskForm drafting={drafting} onClose={onClose} />
     </Modal>
   )
@@ -275,9 +275,11 @@ function DraftForm({
   )
 }
 
+// As wide as the task column of the task page and nearly as tall as the window, so the draft reads
+// as the task it becomes.
 function Shell({ footer, onClose, children }: { footer?: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
-    <Panel className="bg-background h-auto max-h-[85dvh] rounded-xl shadow-lg">
+    <Panel className="bg-background h-[85dvh] rounded-xl shadow-lg">
       <PanelHeader className="gap-2">
         <PanelTitle>New task</PanelTitle>
         <Button size="icon" aria-label="Close" onClick={onClose} className="ml-auto">
