@@ -1,6 +1,6 @@
 // Every overlay the app can put over the page. One is open at a time, and each is its own key
 // scope, so two overlays can bind the same key without either one firing under the other.
-export const OVERLAY_NAMES = ["help", "palette"] as const
+export const OVERLAY_NAMES = ["help", "palette", "new-task"] as const
 export type OverlayName = (typeof OVERLAY_NAMES)[number]
 
 export type Scope = "global" | "list" | "detail" | "activity" | "flow" | "rows" | OverlayName

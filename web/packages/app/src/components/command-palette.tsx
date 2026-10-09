@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { Waypoints, type LucideIcon } from "lucide-react"
+import { Plus, Waypoints, type LucideIcon } from "lucide-react"
 import { useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 
@@ -9,15 +9,19 @@ import { FuzzyText, fuzzyMatch, Palette, type PaletteItem, type PaletteProvider 
 
 import { searchTasks } from "../lib/api"
 import type { PaletteTarget } from "../lib/keys"
+import { openNewTask } from "../lib/new-task"
 import { runtime } from "../lib/runtime"
 
 interface Command {
   readonly label: string
   readonly icon: LucideIcon
-  readonly to: string
+  readonly run: (open: (to: string) => void) => void
 }
 
-const COMMANDS: ReadonlyArray<Command> = [{ label: "Show the implementation flow", icon: Waypoints, to: FLOW_ROUTE }]
+const COMMANDS: ReadonlyArray<Command> = [
+  { label: "Create a task", icon: Plus, run: openNewTask },
+  { label: "Show the implementation flow", icon: Waypoints, run: (open) => open(FLOW_ROUTE) },
+]
 
 function commandItems(query: string, open: (to: string) => void): ReadonlyArray<PaletteItem> {
   return COMMANDS.flatMap((command) => {
@@ -26,7 +30,7 @@ function commandItems(query: string, open: (to: string) => void): ReadonlyArray<
   })
     .sort((a, b) => a.match.score - b.match.score)
     .map(({ match, command }) => ({
-      key: `command ${command.to}`,
+      key: `command ${command.label}`,
       content: (
         <span className="flex min-w-0 items-center gap-2">
           <command.icon className="text-muted-foreground size-4 shrink-0" />
@@ -35,7 +39,7 @@ function commandItems(query: string, open: (to: string) => void): ReadonlyArray<
           </span>
         </span>
       ),
-      onSelect: () => open(command.to),
+      onSelect: () => command.run(open),
     }))
 }
 

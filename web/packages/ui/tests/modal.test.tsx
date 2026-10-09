@@ -49,6 +49,35 @@ describe("Modal", () => {
     expect(document.activeElement).toBe(dialogOf())
   })
 
+  it("gives the focus to the field marked to take it", () => {
+    render(
+      <Modal open onClose={() => {}} label="New task">
+        <button type="button">first</button>
+        <input data-autofocus aria-label="Title" />
+      </Modal>,
+    )
+    expect(document.activeElement).toBe(document.querySelector('[aria-label="Title"]'))
+  })
+
+  it("stays open when a control inside it answers Esc itself", () => {
+    const onClose = vi.fn()
+    render(
+      <Modal open onClose={onClose} label="New task">
+        <input
+          aria-label="Search"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") event.preventDefault()
+          }}
+        />
+      </Modal>,
+    )
+    const input = document.querySelector<HTMLElement>('[aria-label="Search"]')!
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+    })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it("returns focus to whatever opened it", () => {
     function Harness() {
       const [open, setOpen] = useState(false)

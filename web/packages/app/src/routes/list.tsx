@@ -77,7 +77,7 @@ function BoardState({ board }: { board: UseQueryResult<Board> }) {
   return board.data.groups.length === 0 ? (
     <Panel>
       <PanelBody className="p-6 max-md:p-4">
-        <EmptyState title="No tasks yet" detail="Create one with `openplan tasks create`." />
+        <EmptyState title="No tasks yet" detail="Create one with New task, the C key, or `openplan tasks create`." />
       </PanelBody>
     </Panel>
   ) : (

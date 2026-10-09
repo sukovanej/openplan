@@ -3,6 +3,7 @@ import {
   type KeyboardEvent,
   lazy,
   type ReactNode,
+  type RefObject,
   Suspense,
   useCallback,
   useEffect,
@@ -30,7 +31,7 @@ import { BodySkeleton } from "./states"
 
 // CodeMirror and its markdown grammars are most of the editor's weight, and only a task or a doc
 // page needs them.
-const BodyEditor = lazy(() => import("@openplan/editor").then((module) => ({ default: module.BodyEditor })))
+export const BodyEditor = lazy(() => import("@openplan/editor").then((module) => ({ default: module.BodyEditor })))
 
 const NO_TASKS: ReadonlyArray<TaskListItem> = []
 const NO_DOCS: ReadonlyArray<DocListItem> = []
@@ -80,7 +81,7 @@ function useText(draftKey: string, stored: TaskText, write: WriteText<TaskText>,
 
 // The tasks and the docs of the project, as `[[` offers them. `self` is the page's own task or doc,
 // which a body does not reference.
-function useRefSearch(project: string, self: { task?: string; doc?: string }, wanted: boolean) {
+export function useRefSearch(project: string, self: { task?: string; doc?: string }, wanted: boolean) {
   const tasks = useQuery({ queryKey: tasksKey(project), queryFn: abortable(listTasks(project)), enabled: wanted })
   const docs = useQuery({
     queryKey: allDocsKey(project),
@@ -113,20 +114,25 @@ function useRefSearch(project: string, self: { task?: string; doc?: string }, wa
   )
 }
 
-function TitleField({
+export function TitleField({
   value,
   placeholder,
   onChange,
   onEnter,
   onSave,
+  field: given,
+  autoFocus = false,
 }: {
   value: string
   placeholder: string
   onChange: (title: string) => void
   onEnter: () => void
   onSave: () => void
+  field?: RefObject<HTMLTextAreaElement | null>
+  autoFocus?: boolean
 }) {
-  const field = useRef<HTMLTextAreaElement>(null)
+  const own = useRef<HTMLTextAreaElement>(null)
+  const field = given ?? own
   // The field is as tall as its text, which wraps at whatever width the panel gives it.
   useLayoutEffect(() => {
     const element = field.current
@@ -139,7 +145,7 @@ function TitleField({
     const observer = new ResizeObserver(fit)
     observer.observe(element.parentElement ?? element)
     return () => observer.disconnect()
-  }, [value])
+  }, [field, value])
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const element = event.currentTarget
     const atEnd = element.selectionStart === element.value.length && element.selectionEnd === element.value.length
@@ -158,6 +164,7 @@ function TitleField({
     <textarea
       ref={field}
       aria-label="Title"
+      data-autofocus={autoFocus ? "" : undefined}
       rows={1}
       value={value}
       placeholder={placeholder}

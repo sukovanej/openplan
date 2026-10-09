@@ -158,6 +158,24 @@ export const bindings: ReadonlyArray<Binding> = [
     run: (ctx) => ctx.detail.editDescription(),
   },
   {
+    id: "task.new",
+    keys: "c",
+    scope: "global",
+    label: "Create a task",
+    group: "Task",
+    run: (ctx) => ctx.overlay("new-task").open(),
+  },
+  // The title field holds the focus and answers Esc itself. This one catches Esc when the focus has
+  // left the field.
+  {
+    id: "new-task.close",
+    keys: "Escape",
+    scope: "new-task",
+    label: "Close the new task",
+    group: "Task",
+    run: (ctx) => ctx.overlay("new-task").close(),
+  },
+  {
     id: "task.status",
     keys: "s",
     scope: "global",

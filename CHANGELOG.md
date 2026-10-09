@@ -7,6 +7,18 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.7...main)
 
+### Added
+
+- Create a task in the web UI. Press `c`, click **New task** in the header, or
+  run "Create a task" from the command palette. The dialog takes a title, a
+  description, tags, and a project. `⌘⏎` creates the task, and `⇧⌘⏎` creates
+  it and opens a new empty draft. The dialog keeps the draft when you close it.
+
+### Changed
+
+- The shortcut badges use the UI font. On a Mac they show a chord the way macOS
+  does, for example `⇧⌘⏎`.
+
 ## [0.0.7](https://github.com/sukovanej/openplan/compare/v0.0.6...v0.0.7) - 2026-10-08
 
 ### Added
