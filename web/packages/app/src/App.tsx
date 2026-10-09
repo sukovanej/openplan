@@ -17,11 +17,10 @@ import { SyncStatus } from "./components/sync-status"
 import { ThemeButton, ThemeToggle } from "./components/theme-toggle"
 import { drawDiagramOnce } from "./lib/diagrams"
 import { useKeyboard } from "./lib/keys"
-import { openNewTask } from "./lib/new-task"
 import { refReader } from "./lib/ref-reader"
 
 export function App() {
-  const { activeOverlay, paletteTarget, openPalette, closeOverlay } = useKeyboard()
+  const { activeOverlay, paletteTarget, openPalette, openNewTask, closeOverlay } = useKeyboard()
   return (
     // A phone's browser bar comes and goes, and `dvh` follows it where `vh` would hide the tab bar
     // under it.
@@ -82,6 +81,7 @@ export function App() {
         open={activeOverlay === "palette"}
         target={paletteTarget}
         onClose={() => closeOverlay("palette")}
+        onNewTask={openNewTask}
       />
       <NewTaskDialog open={activeOverlay === "new-task"} onClose={() => closeOverlay("new-task")} />
       <MutationError />

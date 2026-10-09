@@ -14,7 +14,6 @@ import {
 import { copyTaskId } from "../clipboard"
 import { detailActions, escapeOutcome } from "../detail-actions"
 import { taskFlowPath } from "../flow-selection"
-import { useNewTaskRequest } from "../new-task"
 import { openProjectMenu } from "../project-menu"
 import { pagePath, selectedProject, selectedProjects, selects, switchProjectPath } from "../project-scope"
 import { useProjects } from "../projects"
@@ -45,6 +44,7 @@ export interface Keyboard {
   readonly activeOverlay: OverlayName | null
   readonly paletteTarget: PaletteTarget
   readonly openPalette: (target: PaletteTarget) => void
+  readonly openNewTask: () => void
   readonly closeOverlay: (name: OverlayName) => void
 }
 
@@ -63,7 +63,7 @@ export function useKeyboard(): Keyboard {
   }, [])
   // Another overlay can ask for this one as it closes, so a close leaves the overlay it does not name.
   const closeOverlay = useCallback((name: OverlayName) => setActiveOverlay((open) => (open === name ? null : open)), [])
-  useNewTaskRequest(() => setActiveOverlay("new-task"))
+  const openNewTask = useCallback(() => setActiveOverlay("new-task"), [])
   const live = useEffectEvent(() => ({ navigate, pathname, search, scope, activeOverlay, projects }))
 
   // Unmounting a hovered row fires no mouseleave, so without this a row hovered on the way out of a
@@ -164,5 +164,5 @@ export function useKeyboard(): Keyboard {
     return dispatcher.attach()
   }, [openPalette, closeOverlay])
 
-  return { activeOverlay, paletteTarget, openPalette, closeOverlay }
+  return { activeOverlay, paletteTarget, openPalette, openNewTask, closeOverlay }
 }

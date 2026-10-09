@@ -11,8 +11,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Create a task in the web UI. Press `c`, click **New task** in the header, or
   run "Create a task" from the command palette. The dialog takes a title, a
-  description, tags, and a project. `⌘⏎` creates the task, and `⇧⌘⏎` creates
-  it and opens a new empty draft. The dialog keeps the draft when you close it.
+  description, tags, and a project. `⌘⏎` (`Ctrl+⏎` on Linux and Windows)
+  creates the task. `⇧⌘⏎` creates it and keeps the dialog open for the next
+  task, with the same project and tags. The dialog keeps the draft when you
+  close it.
 
 ### Changed
 

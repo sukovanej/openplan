@@ -86,21 +86,36 @@ export function TagsField({
           ) : adding && tags !== undefined ? (
             <TagPicker names={names} tags={tags} onPick={add} onRegister={register} onClose={close} />
           ) : (
-            <Button
-              variant="accent"
-              onClick={() => setAdding(true)}
-              aria-label="Add tag"
-              disabled={mutation.isPending}
-              className={names.length > 0 ? "px-1.5" : undefined}
-            >
-              <Plus className="size-3.5" />
-              {names.length === 0 && "Add tag"}
-            </Button>
+            <AddTagButton carried={names.length} disabled={mutation.isPending} onClick={() => setAdding(true)} />
           )}
         </>
       }
       className={className}
     />
+  )
+}
+
+// Beside chips the button shrinks to its icon, so it does not crowd them.
+export function AddTagButton({
+  carried,
+  disabled,
+  onClick,
+}: {
+  carried: number
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <Button
+      variant="accent"
+      onClick={onClick}
+      aria-label="Add tag"
+      disabled={disabled}
+      className={carried > 0 ? "px-1.5" : undefined}
+    >
+      <Plus className="size-3.5" />
+      {carried === 0 && "Add tag"}
+    </Button>
   )
 }
 

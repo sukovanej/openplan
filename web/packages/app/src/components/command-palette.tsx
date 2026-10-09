@@ -9,21 +9,25 @@ import { FuzzyText, fuzzyMatch, Palette, type PaletteItem, type PaletteProvider 
 
 import { searchTasks } from "../lib/api"
 import type { PaletteTarget } from "../lib/keys"
-import { openNewTask } from "../lib/new-task"
 import { runtime } from "../lib/runtime"
 
 interface Command {
   readonly label: string
   readonly icon: LucideIcon
-  readonly run: (open: (to: string) => void) => void
+  readonly run: (actions: PaletteActions) => void
+}
+
+interface PaletteActions {
+  readonly open: (to: string) => void
+  readonly newTask: () => void
 }
 
 const COMMANDS: ReadonlyArray<Command> = [
-  { label: "Create a task", icon: Plus, run: openNewTask },
-  { label: "Show the implementation flow", icon: Waypoints, run: (open) => open(FLOW_ROUTE) },
+  { label: "Create a task", icon: Plus, run: (actions) => actions.newTask() },
+  { label: "Show the implementation flow", icon: Waypoints, run: (actions) => actions.open(FLOW_ROUTE) },
 ]
 
-function commandItems(query: string, open: (to: string) => void): ReadonlyArray<PaletteItem> {
+function commandItems(query: string, actions: PaletteActions): ReadonlyArray<PaletteItem> {
   return COMMANDS.flatMap((command) => {
     const match = fuzzyMatch(query, command.label)
     return match === null ? [] : [{ match, command }]
@@ -39,7 +43,7 @@ function commandItems(query: string, open: (to: string) => void): ReadonlyArray<
           </span>
         </span>
       ),
-      onSelect: () => command.run(open),
+      onSelect: () => command.run(actions),
     }))
 }
 
@@ -60,13 +64,16 @@ function searchProvider(open: (to: string) => void): PaletteProvider {
 // The general command interface: the commands the app answers for, and the tasks a query finds, in
 // one list. A search the daemon refuses takes the tasks with it and leaves the commands, which need
 // no daemon to run.
-function homeProvider(open: (to: string) => void): PaletteProvider {
+function homeProvider(actions: PaletteActions): PaletteProvider {
   return {
     id: "home",
     placeholder: "Search tasks or run a command",
     idleLabel: "Type to search titles, bodies, and frontmatter",
     emptyLabel: "No matching command or task",
-    items: async (query) => [...commandItems(query, open), ...(await searchItems(query, open).catch(() => []))],
+    items: async (query) => [
+      ...commandItems(query, actions),
+      ...(await searchItems(query, actions.open).catch(() => [])),
+    ],
   }
 }
 
@@ -79,12 +86,12 @@ function row(hit: SearchHit, open: (to: string) => void): PaletteItem {
   }
 }
 
-function providerFor(target: PaletteTarget, open: (to: string) => void): PaletteProvider {
+function providerFor(target: PaletteTarget, actions: PaletteActions): PaletteProvider {
   switch (target) {
     case "home":
-      return homeProvider(open)
+      return homeProvider(actions)
     case "search":
-      return searchProvider(open)
+      return searchProvider(actions.open)
   }
 }
 
@@ -92,12 +99,17 @@ export function CommandPalette({
   open,
   target,
   onClose,
+  onNewTask,
 }: {
   open: boolean
   target: PaletteTarget
   onClose: () => void
+  onNewTask: () => void
 }) {
   const navigate = useNavigate()
-  const provider = useMemo(() => providerFor(target, (to) => navigate(to)), [target, navigate])
+  const provider = useMemo(
+    () => providerFor(target, { open: (to) => navigate(to), newTask: onNewTask }),
+    [target, navigate, onNewTask],
+  )
   return <Palette open={open} provider={provider} onClose={onClose} />
 }

@@ -1,12 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { Check, ChevronsUpDown, Plus, X } from "lucide-react"
+import { Effect } from "effect"
+import { Check, Plus, X } from "lucide-react"
 import {
   type Dispatch,
-  type KeyboardEvent,
   type ReactNode,
   type SetStateAction,
   Suspense,
   useCallback,
+  useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -15,14 +17,13 @@ import { useLocation, useNavigate } from "react-router-dom"
 
 import type { ProjectView, TagView } from "@openplan/api-client"
 import type { BodyEditorHandle } from "@openplan/editor"
-import { TagChip } from "@openplan/task-ui"
+import { TagList } from "@openplan/task-ui"
 import {
   Button,
-  cn,
-  CONTROL_HEIGHT,
   Kbd,
   Menu,
   type MenuItem,
+  MenuTrigger,
   Modal,
   Panel,
   PanelBody,
@@ -32,20 +33,19 @@ import {
 } from "@openplan/ui"
 
 import { createTag, createTask } from "../lib/api"
-import { demotedReason, useFaults } from "../lib/faults"
 import { flash } from "../lib/flash"
 import { errorText } from "../lib/format"
 import { defaultProject } from "../lib/new-task"
 import { selectedProject } from "../lib/project-scope"
-import { useProjects } from "../lib/projects"
+import { useWritableProjects } from "../lib/projects"
 import { tagsKey, useProjectMutation } from "../lib/query-client"
-import { tagsWith, tagsWithout, useTags } from "../lib/tags"
+import { type TagsByName, tagsWith, tagsWithout, useTags } from "../lib/tags"
 import { BodySkeleton } from "./states"
-import { TagPicker } from "./tags-field"
+import { AddTagButton, TagPicker } from "./tags-field"
 import { BodyEditor, TitleField, useRefSearch } from "./task-content"
 
-// `project` is unset until the reader starts the draft. From then on the draft keeps its project,
-// because its tags and its `[[KEY]]` references belong to that project.
+// `project` is unset while the draft is blank. Once the reader starts it, the draft keeps its
+// project, because its tags and its `[[KEY]]` references belong to that project.
 interface Draft {
   readonly project?: string
   readonly title: string
@@ -54,47 +54,41 @@ interface Draft {
 }
 
 const EMPTY: Draft = { title: "", body: "", tags: [] }
+const NO_TAGS: ReadonlyArray<string> = []
+
+const isBlank = (draft: Draft) => draft.title === "" && draft.body === "" && draft.tags.length === 0
+
+interface Drafting {
+  readonly draft: Draft
+  readonly setDraft: Dispatch<SetStateAction<Draft>>
+  readonly lastProject: string | undefined
+  readonly setLastProject: (project: string) => void
+}
 
 // The draft outlives the dialog, so Esc or a click outside does not lose what the reader typed.
 export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [draft, setDraft] = useState(EMPTY)
-  const [last, setLast] = useState<string>()
+  const [lastProject, setLastProject] = useState<string>()
+  const drafting = useMemo(() => ({ draft, setDraft, lastProject, setLastProject }), [draft, lastProject])
   return (
     <Modal open={open} onClose={onClose} label="New task" className="w-full max-w-3xl">
-      <NewTaskForm draft={draft} setDraft={setDraft} last={last} onCreated={setLast} onClose={onClose} />
+      <NewTaskForm drafting={drafting} onClose={onClose} />
     </Modal>
   )
 }
 
-// A demoted project cannot take a write, so it is no choice here.
-function NewTaskForm({
-  draft,
-  setDraft,
-  last,
-  onCreated,
-  onClose,
-}: {
-  draft: Draft
-  setDraft: Dispatch<SetStateAction<Draft>>
-  last: string | undefined
-  onCreated: (project: string) => void
-  onClose: () => void
-}) {
-  const projects = useProjects()
-  const faults = useFaults()
+function NewTaskForm({ drafting, onClose }: { drafting: Drafting; onClose: () => void }) {
+  const writable = useWritableProjects()
   const { pathname, search } = useLocation()
-  const writable = useMemo(
-    () => (projects ?? []).filter((project) => demotedReason(faults, project.name) === undefined),
-    [projects, faults],
-  )
 
-  if (projects === undefined) return null
-  const names = writable.map((project) => project.name)
-  const name =
-    draft.project !== undefined && names.includes(draft.project)
+  if (writable === undefined) return null
+  const { draft, lastProject } = drafting
+  const projectNames = writable.map((project) => project.name)
+  const chosen =
+    draft.project !== undefined && projectNames.includes(draft.project)
       ? draft.project
-      : defaultProject(names, selectedProject(pathname, search), last)
-  const project = writable.find((each) => each.name === name)
+      : defaultProject(projectNames, selectedProject(pathname, search), lastProject)
+  const project = writable.find((candidate) => candidate.name === chosen)
   if (project === undefined) {
     return (
       <Shell onClose={onClose}>
@@ -105,83 +99,78 @@ function NewTaskForm({
     )
   }
   // The body editor reads its project once, so another project needs another editor.
-  return (
-    <DraftForm
-      key={project.name}
-      project={project}
-      writable={writable}
-      draft={draft}
-      setDraft={setDraft}
-      onCreated={onCreated}
-      onClose={onClose}
-    />
-  )
+  return <DraftForm key={project.name} project={project} drafting={drafting} onClose={onClose} />
 }
 
 function DraftForm({
   project,
-  writable,
-  draft,
-  setDraft,
-  onCreated,
+  drafting: { draft, setDraft, setLastProject },
   onClose,
 }: {
   project: ProjectView
-  writable: ReadonlyArray<ProjectView>
-  draft: Draft
-  setDraft: Dispatch<SetStateAction<Draft>>
-  onCreated: (project: string) => void
+  drafting: Drafting
   onClose: () => void
 }) {
   const navigate = useNavigate()
   const client = useQueryClient()
-  const mutation = useProjectMutation(project.name, "inline")
-  const { reset, mutate } = mutation
+  const { mutate, reset, isPending, isError, error } = useProjectMutation(project.name, "inline")
   const { byName: registry } = useTags(project.name)
   const [searching, setSearching] = useState(false)
   const searchRefs = useRefSearch(project.name, {}, searching)
-  const title = draft.title.trim()
   const titleField = useRef<HTMLTextAreaElement>(null)
   const editor = useRef<BodyEditorHandle>(null)
+  const title = draft.title.trim()
+  // The draft keeps the names of another project when the reader switches, so switching back finds
+  // them again. Only the names this project's registry holds are shown and sent.
+  const tags = useMemo(
+    () => (registry === undefined ? NO_TAGS : draft.tags.filter((name) => registry.has(name))),
+    [registry, draft.tags],
+  )
 
   const change = useCallback(
     (patch: Partial<Draft>) => {
-      setDraft((held) => ({ ...held, project: project.name, ...patch }))
+      setDraft((held) => {
+        const next = { ...held, ...patch }
+        return { ...next, project: isBlank(next) ? undefined : project.name }
+      })
       reset()
     },
     [setDraft, project.name, reset],
   )
+  const changeTags = useCallback((next: ReadonlyArray<string>) => change({ tags: next }), [change])
 
-  const changeTags = useCallback((tags: ReadonlyArray<string>) => change({ tags }), [change])
-
+  // The registry the picker read does not hold the new tag yet, and a chip for a name the registry
+  // does not hold reads as an unknown tag, so the new tag goes into the cached registry at once.
   const register = useCallback(
     (name: string) =>
-      mutate(createTag(project.name, { name }), {
-        // Until the registry holds the new tag, its chip reads as a name the registry does not know.
-        onSuccess: (created) => {
-          const tag = created as TagView
-          client.setQueryData<ReadonlyArray<TagView>>(tagsKey(project.name), (held) =>
-            held === undefined || held.some((each) => each.name === tag.name) ? held : [...held, tag],
-          )
-          setDraft((held) => ({ ...held, project: project.name, tags: [...held.tags, tag.name] }))
-        },
-      }),
+      mutate(
+        Effect.tap(createTag(project.name, { name }), (tag) =>
+          Effect.sync(() => {
+            client.setQueryData<ReadonlyArray<TagView>>(tagsKey(project.name), (held) =>
+              held === undefined || held.some((each) => each.name === tag.name) ? held : [...held, tag],
+            )
+            setDraft((held) => ({
+              ...held,
+              project: project.name,
+              tags: held.tags.includes(tag.name) ? held.tags : [...held.tags, tag.name],
+            }))
+          }),
+        ),
+      ),
     [mutate, project.name, setDraft, client],
   )
 
+  // The dialog can close while the write is on its way, so what follows the write runs with the
+  // write and not in a callback of this form.
   const create = (another: boolean) => {
-    if (title === "" || mutation.isPending) return
+    if (title === "" || isPending) return
     const body = draft.body.trim()
+    const input = { title, body: body === "" ? undefined : body, tags: tags.length === 0 ? undefined : tags }
     mutate(
-      createTask(project.name, {
-        title,
-        body: body === "" ? undefined : body,
-        tags: draft.tags.length === 0 ? undefined : draft.tags,
-      }),
-      {
-        onSuccess: (id) => {
-          flash.show(`Created ${String(id)}`, "ok")
-          onCreated(project.name)
+      Effect.tap(createTask(project.name, input), (id) =>
+        Effect.sync(() => {
+          flash.show(`Created ${id}`, "ok")
+          setLastProject(project.name)
           if (another) {
             setDraft((held) => ({ ...held, title: "", body: "" }))
             titleField.current?.focus()
@@ -189,18 +178,25 @@ function DraftForm({
             setDraft(EMPTY)
             onClose()
           }
-        },
-      },
+        }),
+      ),
     )
   }
 
-  // The capture phase reaches the form before the body editor, which would take ⌘↵ for a new line.
-  const onKeyDownCapture = (event: KeyboardEvent) => {
-    if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return
-    event.preventDefault()
-    event.stopPropagation()
-    create(event.shiftKey)
-  }
+  // The focus leaves the form when a tag picker or the project menu closes, or after Esc, so the
+  // document catches the chord. Its capture phase also comes before the body editor, which takes ⌘⏎
+  // for a new line.
+  const submit = useEffectEvent(create)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return
+      event.preventDefault()
+      event.stopPropagation()
+      submit(event.shiftKey)
+    }
+    document.addEventListener("keydown", onKeyDown, true)
+    return () => document.removeEventListener("keydown", onKeyDown, true)
+  }, [])
 
   return (
     <form
@@ -208,25 +204,16 @@ function DraftForm({
         event.preventDefault()
         create(false)
       }}
-      onKeyDownCapture={onKeyDownCapture}
       className="contents"
     >
       <Shell
         onClose={onClose}
         footer={
           <>
-            {writable.length > 1 && (
-              <ProjectPicker
-                project={project.name}
-                writable={writable}
-                onPick={(name) => {
-                  if (name !== project.name) setDraft((held) => ({ ...held, project: name, tags: [] }))
-                }}
-              />
-            )}
-            {mutation.isError && (
+            <ProjectPicker project={project.name} onPick={(name) => setDraft((held) => ({ ...held, project: name }))} />
+            {isError && (
               <p role="alert" className="text-danger min-w-0 truncate text-sm">
-                {errorText(mutation.error)}
+                {errorText(error)}
               </p>
             )}
             <span className="text-muted-foreground ml-auto flex shrink-0 items-center gap-1.5 text-xs max-md:hidden">
@@ -236,7 +223,7 @@ function DraftForm({
               type="submit"
               variant="accent"
               size="md"
-              disabled={title === "" || mutation.isPending}
+              disabled={title === "" || isPending}
               className="shrink-0 disabled:opacity-40 max-md:ml-auto"
             >
               <Plus className="size-3.5" aria-hidden />
@@ -255,11 +242,15 @@ function DraftForm({
           onEnter={() => editor.current?.focus("start")}
           onSave={() => create(false)}
         />
-        <div className="mb-4 flex min-h-8 items-center gap-4">
-          {registry !== undefined && (
-            <DraftTags names={draft.tags} registry={registry} onChange={changeTags} onRegister={register} />
-          )}
-        </div>
+        {registry !== undefined && (
+          <DraftTags
+            names={tags}
+            registry={registry}
+            onChange={changeTags}
+            onRegister={register}
+            className="mb-4 min-h-8"
+          />
+        )}
         <div onFocus={() => setSearching(true)}>
           <Suspense fallback={<BodySkeleton />}>
             <BodyEditor
@@ -284,7 +275,6 @@ function DraftForm({
   )
 }
 
-// The task page's panel, with a footer that says where the task goes and makes it.
 function Shell({ footer, onClose, children }: { footer?: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
     <Panel className="bg-background h-auto max-h-[85dvh] rounded-xl shadow-lg">
@@ -301,50 +291,35 @@ function Shell({ footer, onClose, children }: { footer?: ReactNode; onClose: () 
 }
 
 // The picker sits in the footer at the bottom of the panel, so its menu opens upward over the body.
-function ProjectPicker({
-  project,
-  writable,
-  onPick,
-}: {
-  project: string
-  writable: ReadonlyArray<ProjectView>
-  onPick: (name: string) => void
-}) {
+function ProjectPicker({ project, onPick }: { project: string; onPick: (name: string) => void }) {
+  const writable = useWritableProjects()
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   useDismissOnOutsideClick(root, open ? () => setOpen(false) : undefined)
 
-  const items: ReadonlyArray<MenuItem> = writable.map((each) => ({
-    key: each.name,
+  if (writable === undefined || writable.length < 2) return null
+  const items: ReadonlyArray<MenuItem> = writable.map((candidate) => ({
+    key: candidate.name,
     content: (
       <>
-        <span className="min-w-0 grow truncate">{each.name}</span>
-        {each.name === project && <Check className="text-muted-foreground size-3.5 shrink-0" aria-label="Current" />}
+        <span className="min-w-0 grow truncate">{candidate.name}</span>
+        {candidate.name === project && (
+          <Check className="text-muted-foreground size-3.5 shrink-0" aria-label="Current" />
+        )}
       </>
     ),
   }))
 
   return (
     <div ref={root} className="relative">
-      <button
-        type="button"
-        aria-label="Project"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className={cn(
-          "hover:bg-muted focus-visible:ring-ring inline-flex max-w-56 items-center gap-1.5 rounded-md border px-2 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
-          CONTROL_HEIGHT,
-        )}
-      >
+      <MenuTrigger open={open} aria-label="Project" onClick={() => setOpen(!open)} className="max-w-56">
         <span className="truncate">{project}</span>
-        <ChevronsUpDown className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-      </button>
+      </MenuTrigger>
       {open && (
         <Menu
           label="Projects"
           items={items}
-          initial={writable.findIndex((each) => each.name === project)}
+          initial={writable.findIndex((candidate) => candidate.name === project)}
           onPick={(index) => {
             setOpen(false)
             onPick(writable[index].name)
@@ -362,38 +337,30 @@ function DraftTags({
   registry,
   onChange,
   onRegister,
+  className,
 }: {
   names: ReadonlyArray<string>
-  registry: ReadonlyMap<string, TagView>
+  registry: TagsByName
   onChange: (tags: ReadonlyArray<string>) => void
   onRegister: (name: string) => void
+  className?: string
 }) {
   const [adding, setAdding] = useState(false)
   const close = useCallback(() => setAdding(false), [])
   const pick = useCallback((name: string) => onChange(tagsWith(names, registry, name)), [names, registry, onChange])
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {names.map((name) => (
-        <TagChip
-          key={name}
-          name={name}
-          tag={registry.get(name)}
-          onRemove={() => onChange(tagsWithout(names, registry, name))}
-        />
-      ))}
-      {adding ? (
-        <TagPicker names={names} tags={registry} onPick={pick} onRegister={onRegister} onClose={close} />
-      ) : (
-        <Button
-          variant="accent"
-          onClick={() => setAdding(true)}
-          aria-label="Add tag"
-          className={names.length > 0 ? "px-1.5" : undefined}
-        >
-          <Plus className="size-3.5" />
-          {names.length === 0 && "Add tag"}
-        </Button>
-      )}
-    </div>
+    <TagList
+      names={names}
+      tags={registry}
+      onRemove={(name) => onChange(tagsWithout(names, registry, name))}
+      trailing={
+        adding ? (
+          <TagPicker names={names} tags={registry} onPick={pick} onRegister={onRegister} onClose={close} />
+        ) : (
+          <AddTagButton carried={names.length} onClick={() => setAdding(true)} />
+        )
+      }
+      className={className}
+    />
   )
 }
