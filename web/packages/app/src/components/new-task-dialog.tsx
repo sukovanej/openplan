@@ -17,7 +17,7 @@ import { useLocation, useNavigate } from "react-router-dom"
 
 import type { ProjectView, TagView } from "@openplan/api-client"
 import type { BodyEditorHandle } from "@openplan/editor"
-import { TagList } from "@openplan/task-ui"
+import { TagList, taskPath } from "@openplan/task-ui"
 import {
   Button,
   Kbd,
@@ -169,14 +169,15 @@ function DraftForm({
     mutate(
       Effect.tap(createTask(project.name, input), (id) =>
         Effect.sync(() => {
-          flash.show(`Created ${id}`, "ok")
           setLastProject(project.name)
           if (another) {
+            flash.show(`Created ${id}`, "ok")
             setDraft((held) => ({ ...held, title: "", body: "" }))
             titleField.current?.focus()
           } else {
             setDraft(EMPTY)
             onClose()
+            navigate(taskPath(project.name, id))
           }
         }),
       ),
