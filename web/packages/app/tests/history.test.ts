@@ -88,6 +88,14 @@ describe("the rows of a revision in the activity", () => {
     expect(rows).toHaveLength(SHOWN_CHANGES + 1)
     expect(rows.at(-1)).toEqual({ kind: "more", count: 3 })
   })
+
+  it("shows a new project code as a row of its own, in place of the config", () => {
+    const projectCode = { from: "OPP", to: "WEB" }
+    const changed = { ...entry("r", [{ path: "config.toml", kind: "modified" }]), project_code: projectCode }
+    const rows = activityRows(changed)
+    expect(rows).toEqual([{ kind: "project_code", change: projectCode }])
+    expect(diffTarget(changed, rows[0])).toEqual({ path: "config.toml" })
+  })
 })
 
 describe("where a change leads", () => {

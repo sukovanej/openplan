@@ -135,6 +135,13 @@ impl Plan {
             .collect())
     }
 
+    pub fn set_project_code(&self, project_code: &str) -> Result<ProjectView> {
+        served(
+            self.client
+                .set_project_code(&self.base_url, &self.project, project_code),
+        )
+    }
+
     pub fn docs(&self) -> Result<Vec<DocListItem>> {
         served(self.client.docs(&self.base_url, &self.project))
     }

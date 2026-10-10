@@ -37,10 +37,10 @@ it("is case-insensitive about the prefix", () => {
   expect(titles("opp-1")).toEqual(["Ship login page"])
 })
 
-// Every id starts with the abbreviation, so a query that is only its letters must stay a title
+// Every id starts with the project code, so a query that is only its letters must stay a title
 // search: as a key match it would mark every task and rank titles out of the popover entirely —
 // "Presence" would lead the list for "o" despite sharing not one letter with it.
-it("keeps a query that merely prefixes the abbreviation a title search", () => {
+it("keeps a query that merely prefixes the project code a title search", () => {
   expect(titles("o")).toEqual(["Open the parser", "Ship login page"])
   expect(titles("op")).toEqual(["Open the parser", "Ship login page"])
   expect(titles("opp")).toEqual(["Open the parser"])

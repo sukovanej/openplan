@@ -1,8 +1,8 @@
-use crate::Abbreviation;
+use crate::ProjectCode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
-    pub abbreviation: Abbreviation,
+    pub project_code: ProjectCode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -23,18 +23,22 @@ impl ConfigError {
     }
 }
 
-const REQUIRED: &str = "'abbreviation' required";
-const MUST_BE: &str = "'abbreviation' must be exactly three uppercase letters";
+const REQUIRED: &str = "'project_code' required";
+const MUST_BE: &str = "'project_code' must be exactly three uppercase letters";
 
 impl Config {
-    pub fn new(abbreviation: Abbreviation) -> Self {
-        Self { abbreviation }
+    pub fn new(project_code: ProjectCode) -> Self {
+        Self { project_code }
     }
 
     pub fn parse(text: &str) -> Result<Self, ConfigError> {
         let table: toml::Table =
             toml::from_str(text).map_err(|err| ConfigError::new(err.message()))?;
-        match table.get("abbreviation") {
+        // Stores written before the rename name the key `abbreviation`.
+        match table
+            .get("project_code")
+            .or_else(|| table.get("abbreviation"))
+        {
             None => Err(ConfigError::new(REQUIRED)),
             Some(toml::Value::String(text)) => text
                 .parse()
@@ -45,6 +49,6 @@ impl Config {
     }
 
     pub fn to_file_string(&self) -> String {
-        format!("abbreviation = \"{}\"\n", self.abbreviation)
+        format!("project_code = \"{}\"\n", self.project_code)
     }
 }

@@ -29,7 +29,7 @@ async function settle(): Promise<void> {
 function body(markdown: string): HTMLElement {
   return render(
     <DiagramDrawer value={draw}>
-      <TaskBody project="openplan" abbreviation="OPP" markdown={markdown} />
+      <TaskBody project="openplan" projectCode="OPP" markdown={markdown} />
     </DiagramDrawer>,
   )
 }
@@ -96,7 +96,7 @@ describe("a draw that fails", () => {
   async function failed(): Promise<HTMLElement> {
     const root = render(
       <DiagramDrawer value={flaky}>
-        <TaskBody project="openplan" abbreviation="OPP" markdown={"```mermaid\nflowchart LR\n  p --> q\n```"} />
+        <TaskBody project="openplan" projectCode="OPP" markdown={"```mermaid\nflowchart LR\n  p --> q\n```"} />
       </DiagramDrawer>,
     )
     await settle()

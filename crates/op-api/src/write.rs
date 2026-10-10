@@ -3,7 +3,7 @@ use utoipa::ToSchema;
 
 use op_forge::{Forge, PullRequest, PullRequestError};
 use op_task::content::Text;
-use op_task::{Abbreviation, Status, Task, Timestamp};
+use op_task::{ProjectCode, Status, Task, Timestamp};
 
 use crate::field::FieldUpdate;
 use crate::keys::{KeyError, body_from_keys, body_from_keys_keeping, link_of};
@@ -52,26 +52,26 @@ impl CreateTask {
     pub fn into_task(
         self,
         created: Timestamp,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
         forge: Option<&Forge>,
     ) -> Result<Task, WriteError> {
         let mut task = Task::new(&self.title, self.status.unwrap_or(Status::Backlog), created);
         task.set_parent(
             self.parent
                 .as_deref()
-                .map(|parent| link_of(abbreviation, parent))
+                .map(|parent| link_of(project_code, parent))
                 .transpose()?,
         );
         task.set_dependencies(
             self.dependencies
                 .iter()
-                .map(|dependency| link_of(abbreviation, dependency))
+                .map(|dependency| link_of(project_code, dependency))
                 .collect::<Result<_, KeyError>>()?,
         );
         task.set_tags(self.tags);
         task.set_pull_requests(addresses(&pull_requests_of(&self.pull_requests, forge)?));
         if let Some(body) = &self.body {
-            task.append_body(&body_from_keys(abbreviation, body)?);
+            task.append_body(&body_from_keys(project_code, body)?);
         }
         Ok(task)
     }
@@ -111,7 +111,7 @@ impl TaskPatch {
     pub fn apply(
         self,
         task: &mut Task,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
         forge: Option<&Forge>,
     ) -> Result<(), WriteError> {
         if let Some(status) = self.status {
@@ -120,7 +120,7 @@ impl TaskPatch {
         match self.parent {
             FieldUpdate::Keep => {}
             FieldUpdate::Clear => task.set_parent(None),
-            FieldUpdate::Set(key) => task.set_parent(Some(link_of(abbreviation, &key)?)),
+            FieldUpdate::Set(key) => task.set_parent(Some(link_of(project_code, &key)?)),
         }
         if let Some(rank) = self.rank {
             task.set_rank(Some(rank));
@@ -129,7 +129,7 @@ impl TaskPatch {
             task.set_dependencies(
                 dependencies
                     .iter()
-                    .map(|dependency| link_of(abbreviation, dependency))
+                    .map(|dependency| link_of(project_code, dependency))
                     .collect::<Result<_, KeyError>>()?,
             );
         }
@@ -172,9 +172,9 @@ pub struct WriteTaskText {
 }
 
 impl WriteTaskText {
-    pub fn into_texts(self, abbreviation: Abbreviation) -> Result<(Text, Text), KeyError> {
+    pub fn into_texts(self, project_code: ProjectCode) -> Result<(Text, Text), KeyError> {
         texts(
-            abbreviation,
+            project_code,
             (self.base.title, &self.base.description),
             (self.text.title, &self.text.description),
         )
@@ -184,7 +184,7 @@ impl WriteTaskText {
 // A file can hold a reference in a spelling a write may not add, such as another store's key. The
 // text may keep each one that `base` holds, so an edit elsewhere is not refused for it.
 pub(crate) fn texts(
-    abbreviation: Abbreviation,
+    project_code: ProjectCode,
     base: (String, &str),
     text: (String, &str),
 ) -> Result<(Text, Text), KeyError> {
@@ -192,9 +192,9 @@ pub(crate) fn texts(
         .into_iter()
         .map(|(_, inner)| op_task::ref_target(inner))
         .collect();
-    let base_description = body_from_keys_keeping(abbreviation, base.1, |_| true)?;
+    let base_description = body_from_keys_keeping(project_code, base.1, |_| true)?;
     let description =
-        body_from_keys_keeping(abbreviation, text.1, |target| held.contains(&target))?;
+        body_from_keys_keeping(project_code, text.1, |target| held.contains(&target))?;
     Ok((
         Text {
             title: base.0,

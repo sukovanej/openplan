@@ -392,14 +392,14 @@ pub fn rewrite_parent(input: &str, from: &str, to: Option<&str>) -> Option<Strin
 
 // Every doc a `[[…]]` in a body under `dir` names, by a path or by a name a person typed.
 pub fn body_doc_names(
-    abbreviation: Option<crate::Abbreviation>,
+    project_code: Option<crate::ProjectCode>,
     dir: &str,
     body: &str,
 ) -> Vec<String> {
     crate::body_ref_spans(body)
         .into_iter()
         .filter_map(
-            |(_, inner)| match crate::reference::body_target(abbreviation, dir, inner)? {
+            |(_, inner)| match crate::reference::body_target(project_code, dir, inner)? {
                 crate::reference::Target::Doc(name) => Some(name),
                 crate::reference::Target::Task(_) => None,
             },

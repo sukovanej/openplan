@@ -1,5 +1,5 @@
 use crate::layout::{self, Document};
-use crate::{Abbreviation, ref_target, with_section};
+use crate::{ProjectCode, ref_target, with_section};
 
 // What a `[[…]]` in a body names.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,7 +52,7 @@ fn components(path: &str) -> Vec<&str> {
 // store's key names a task and a doc name names a doc: a person types those, and a write turns each
 // into a path. Bare digits name nothing, because the file layer spells a task that way in memory and
 // a body must not.
-pub fn body_target(abbreviation: Option<Abbreviation>, dir: &str, inner: &str) -> Option<Target> {
+pub fn body_target(project_code: Option<ProjectCode>, dir: &str, inner: &str) -> Option<Target> {
     if let Some(path) = resolve(dir, inner) {
         return match Document::of(&path) {
             Document::Task(number) => Some(Target::Task(number)),
@@ -61,7 +61,7 @@ pub fn body_target(abbreviation: Option<Abbreviation>, dir: &str, inner: &str) -
         };
     }
     let target = ref_target(inner);
-    if let Some(number) = abbreviation.and_then(|abbreviation| abbreviation.parse_key(target)) {
+    if let Some(number) = project_code.and_then(|project_code| project_code.parse_key(target)) {
         return Some(Target::Task(number));
     }
     doc_name(target).map(|name| Target::Doc(name.to_owned()))
@@ -90,15 +90,11 @@ pub fn task_file_ref(dir: &str, path: &str, reference: &str) -> String {
 
 // Every reference in `body` that names a task or a doc but is not a path, as the file spells it.
 // A write turns each into a path, so a file that still holds one was written by hand.
-pub fn unpathed(
-    abbreviation: Option<Abbreviation>,
-    dir: &str,
-    body: &str,
-) -> Vec<(String, Target)> {
+pub fn unpathed(project_code: Option<ProjectCode>, dir: &str, body: &str) -> Vec<(String, Target)> {
     crate::body_ref_spans(body)
         .into_iter()
         .filter(|(_, inner)| !is_path(dir, inner))
-        .filter_map(|(_, inner)| Some((inner.to_owned(), body_target(abbreviation, dir, inner)?)))
+        .filter_map(|(_, inner)| Some((inner.to_owned(), body_target(project_code, dir, inner)?)))
         .collect()
 }
 

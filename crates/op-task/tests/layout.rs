@@ -50,12 +50,19 @@ fn a_task_path_carries_its_number_and_title() {
 
 #[test]
 fn the_config_round_trips() {
-    let config = Config::parse("abbreviation = \"OPP\"\n").expect("config");
-    assert_eq!(config.abbreviation.as_str(), "OPP");
+    let config = Config::parse("project_code = \"OPP\"\n").expect("config");
+    assert_eq!(config.project_code.as_str(), "OPP");
     assert_eq!(
         Config::parse(&config.to_file_string()).expect("config"),
         config
     );
     assert!(Config::parse("").is_err());
-    assert!(Config::parse("abbreviation = \"op\"").is_err());
+    assert!(Config::parse("project_code = \"op\"").is_err());
+}
+
+#[test]
+fn the_config_reads_the_key_it_had_before_the_rename() {
+    let config = Config::parse("abbreviation = \"OPP\"\n").expect("config");
+    assert_eq!(config.project_code.as_str(), "OPP");
+    assert_eq!(config.to_file_string(), "project_code = \"OPP\"\n");
 }

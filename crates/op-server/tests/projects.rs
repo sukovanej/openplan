@@ -95,16 +95,16 @@ fn break_config(state: &AppState, name: &str) {
         .commit(&project.sign().unwrap(), &mut |_| {
             Ok(op_backend::Edit::new(
                 "Break the config",
-                vec![op_backend::Op::put("config.toml", "abbreviation = 7\n")],
+                vec![op_backend::Op::put("config.toml", "project_code = 7\n")],
             ))
         })
         .unwrap();
     project.reload();
 }
 
-fn write_config(state: &AppState, name: &str, abbreviation: &str) {
+fn write_config(state: &AppState, name: &str, project_code: &str) {
     let project = state.project(name).unwrap();
-    let text = format!("abbreviation = \"{abbreviation}\"\n");
+    let text = format!("project_code = \"{project_code}\"\n");
     project
         .tracker()
         .backend()
@@ -118,7 +118,7 @@ fn write_config(state: &AppState, name: &str, abbreviation: &str) {
     project.reload();
 }
 
-// Two directories, one daemon. They share nothing: not the id space, not the abbreviation, and not
+// Two directories, one daemon. They share nothing: not the id space, not the project code, and not
 // the index.
 #[tokio::test]
 async fn two_projects_interleave_and_allocate_ids_independently() {
@@ -154,10 +154,10 @@ async fn two_projects_interleave_and_allocate_ids_independently() {
     );
 }
 
-// Two projects can use the same abbreviation, so a merged board keyed on the id alone would fold
+// Two projects can use the same project code, so a merged board keyed on the id alone would fold
 // their tasks into one row, and nest a child under a parent from the other project.
 #[tokio::test]
-async fn the_merged_board_keeps_two_projects_that_share_an_abbreviation_apart() {
+async fn the_merged_board_keeps_two_projects_that_share_a_project_code_apart() {
     let (_alpha, _beta, state) = two_local("APP", "APP");
 
     assert_eq!(
@@ -237,11 +237,11 @@ async fn a_merged_board_and_a_merged_search_span_a_local_and_a_git_project() {
     let listed = json_of(&state, "/api/projects").await;
     let alpha = project_view(&listed, "alpha");
     assert_eq!(alpha["backend"], "local");
-    assert_eq!(alpha["abbreviation"], "AAA");
+    assert_eq!(alpha["project_code"], "AAA");
     assert!(alpha.get("git_common_dir").is_none());
     let beta = project_view(&listed, "beta");
     assert_eq!(beta["backend"], "git");
-    assert_eq!(beta["abbreviation"], "BBB");
+    assert_eq!(beta["project_code"], "BBB");
     assert_eq!(
         beta["git_common_dir"],
         git.path()
@@ -271,7 +271,7 @@ async fn a_broken_config_demotes_one_project_and_leaves_the_other_serving() {
     let faults = faults_of(&state, "alpha").await;
     assert_eq!(faults.len(), 1, "{faults:?}");
     assert_eq!(faults[0].0, "unreadable");
-    assert!(faults[0].1.contains("abbreviation"), "{faults:?}");
+    assert!(faults[0].1.contains("project_code"), "{faults:?}");
     assert_eq!(faults_of(&state, "beta").await, []);
     assert_eq!(
         board_rows(&state, "/api/board").await,
@@ -386,9 +386,9 @@ async fn a_removed_root_demotes_the_project_and_a_restored_one_promotes_it() {
     );
 }
 
-// The abbreviation spells every key, so a new one re-keys every task at once.
+// The project code spells every key, so a new one re-keys every task at once.
 #[tokio::test]
-async fn a_new_abbreviation_re_keys_every_task() {
+async fn a_new_project_code_re_keys_every_task() {
     let dir = tempfile::tempdir().unwrap();
     let state = AppState::new([local_project("alpha", dir.path(), "AAA")]);
     create_in(&state, "alpha", json!({ "title": "one" })).await;
@@ -412,25 +412,25 @@ async fn a_new_abbreviation_re_keys_every_task() {
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        json_of(&state, "/api/projects").await[0]["abbreviation"],
+        json_of(&state, "/api/projects").await[0]["project_code"],
         "ZZZ"
     );
 }
 
 #[tokio::test]
-async fn registering_a_directory_with_an_abbreviation_starts_its_tasks() {
+async fn registering_a_directory_with_a_project_code_starts_its_tasks() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let state = with_registry(home.path(), []);
 
     let (status, view) =
-        register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+        register(&state, json!({ "path": dir.path(), "project_code": "OPP" })).await;
     assert_eq!(status, StatusCode::CREATED, "{view}");
     assert_eq!(
         view["backend"], "local",
         "a directory outside git keeps its tasks in files"
     );
-    assert_eq!(view["abbreviation"], "OPP");
+    assert_eq!(view["project_code"], "OPP");
     assert!(dir.path().join(".plan/config.toml").exists());
 
     let name = view["name"].as_str().unwrap().to_owned();
@@ -451,17 +451,17 @@ async fn registering_a_directory_with_an_abbreviation_starts_its_tasks() {
 }
 
 #[tokio::test]
-async fn registering_a_repository_with_an_abbreviation_keeps_its_tasks_on_a_branch() {
+async fn registering_a_repository_with_a_project_code_keeps_its_tasks_on_a_branch() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
     repository(dir.path());
     let state = with_registry(home.path(), []);
 
     let (status, view) =
-        register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+        register(&state, json!({ "path": dir.path(), "project_code": "OPP" })).await;
     assert_eq!(status, StatusCode::CREATED, "{view}");
     assert_eq!(view["backend"], "git");
-    assert_eq!(view["abbreviation"], "OPP");
+    assert_eq!(view["project_code"], "OPP");
     assert!(!dir.path().join(".plan").exists());
     assert!(!git_output(dir.path(), &["rev-parse", op_backend_git::TASKS_NAME]).is_empty());
 
@@ -481,7 +481,7 @@ async fn a_repository_can_keep_its_tasks_in_local_files_when_asked() {
 
     let (status, view) = register(
         &state,
-        json!({ "path": dir.path(), "backend": "local", "abbreviation": "OPP" }),
+        json!({ "path": dir.path(), "backend": "local", "project_code": "OPP" }),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{view}");
@@ -490,29 +490,29 @@ async fn a_repository_can_keep_its_tasks_in_local_files_when_asked() {
 }
 
 #[tokio::test]
-async fn starting_a_project_again_under_another_abbreviation_is_a_conflict() {
+async fn starting_a_project_again_under_another_project_code_is_a_conflict() {
     let home = tempfile::tempdir().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let state = with_registry(home.path(), []);
     let (status, first) =
-        register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+        register(&state, json!({ "path": dir.path(), "project_code": "OPP" })).await;
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, again) =
-        register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+        register(&state, json!({ "path": dir.path(), "project_code": "OPP" })).await;
     assert_eq!(
         status,
         StatusCode::OK,
-        "the same abbreviation starts nothing new"
+        "the same project code starts nothing new"
     );
     assert_eq!(again["name"], first["name"]);
 
     let (status, refused) =
-        register(&state, json!({ "path": dir.path(), "abbreviation": "ZZZ" })).await;
+        register(&state, json!({ "path": dir.path(), "project_code": "ZZZ" })).await;
     assert_eq!(status, StatusCode::CONFLICT, "{refused}");
     assert!(message_of(&refused).contains("OPP"), "{refused}");
     assert_eq!(
-        json_of(&state, "/api/projects").await[0]["abbreviation"],
+        json_of(&state, "/api/projects").await[0]["project_code"],
         "OPP"
     );
 }
@@ -524,7 +524,7 @@ async fn registering_a_project_twice_answers_the_entry_it_already_has() {
     let state = with_registry(home.path(), []);
 
     let (status, entry) =
-        register(&state, json!({ "path": dir.path(), "abbreviation": "AAA" })).await;
+        register(&state, json!({ "path": dir.path(), "project_code": "AAA" })).await;
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, again) = register(&state, json!({ "path": dir.path() })).await;
@@ -553,7 +553,7 @@ async fn a_restarted_daemon_serves_what_it_registered() {
     let state = with_registry(home.path(), []);
     for dir in [&local, &git] {
         let (status, view) =
-            register(&state, json!({ "path": dir.path(), "abbreviation": "OPP" })).await;
+            register(&state, json!({ "path": dir.path(), "project_code": "OPP" })).await;
         assert_eq!(status, StatusCode::CREATED);
         create_signed(&state, view["name"].as_str().unwrap(), "Kept").await;
     }
@@ -588,14 +588,14 @@ async fn registering_a_path_that_cannot_be_served_names_the_missing_part() {
 
     let (status, body) = register(
         &state,
-        json!({ "path": dir.path(), "backend": "git", "abbreviation": "OPP" }),
+        json!({ "path": dir.path(), "backend": "git", "project_code": "OPP" }),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(message_of(&body).contains("git repository"), "{body}");
 
     let (status, body) =
-        register(&state, json!({ "path": dir.path(), "abbreviation": "opp" })).await;
+        register(&state, json!({ "path": dir.path(), "project_code": "opp" })).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(
         message_of(&body).contains("three uppercase letters"),
@@ -623,7 +623,7 @@ async fn a_repository_with_tasks_beside_the_code_needs_a_migration() {
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
     std::fs::write(
         dir.path().join(".plan/config.toml"),
-        "abbreviation = \"OPP\"\n",
+        "project_code = \"OPP\"\n",
     )
     .unwrap();
     let state = with_registry(home.path(), []);
@@ -826,7 +826,7 @@ async fn two_worktrees_of_one_repository_are_one_project() {
     let (status, view) = register(&state, json!({ "path": linked })).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["name"], "main");
-    assert_eq!(view["abbreviation"], "AAA");
+    assert_eq!(view["project_code"], "AAA");
 }
 
 // A name reaches the URL as one path segment. A name written by hand can be one no request can
@@ -859,7 +859,7 @@ async fn a_project_registered_over_http_answers_its_own_routes() {
 
     let (status, registered) = register(&state, json!({ "path": dir.path() })).await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(registered["abbreviation"], "AAA");
+    assert_eq!(registered["project_code"], "AAA");
     let name = registered["name"].as_str().unwrap();
     assert_eq!(
         send(&state, "GET", &format!("/api/projects/{name}/tasks"), None)
@@ -892,7 +892,7 @@ async fn removing_a_project_leaves_the_others_serving() {
     let views = json_of(&state, "/api/projects").await;
     assert_eq!(views.as_array().unwrap().len(), 1, "{views}");
     assert_eq!(views[0]["name"], "beta");
-    assert_eq!(views[0]["abbreviation"], "BBB");
+    assert_eq!(views[0]["project_code"], "BBB");
     assert_eq!(
         send(&state, "GET", "/api/projects/beta/board", None)
             .await

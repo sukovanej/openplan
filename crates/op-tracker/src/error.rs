@@ -5,7 +5,7 @@ use op_task::config::ConfigError;
 pub enum TrackerError {
     #[error("this project has no tasks yet; `openplan init` starts them")]
     NotInitialized,
-    #[error("this project already uses the abbreviation {0}")]
+    #[error("this project already uses the project code {0}")]
     AlreadyInitialized(String),
     #[error("no such task: {id}")]
     NotFound { id: String },

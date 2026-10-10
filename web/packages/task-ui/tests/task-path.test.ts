@@ -103,7 +103,7 @@ describe("taskRouteOf", () => {
     expect(taskRouteOf(taskPath("openplan", "OPP-3", "Design"))).toEqual({ project: "openplan", id: "OPP-3" })
   })
 
-  // Two stores can commit the same abbreviation, so the same key on two projects is two tasks.
+  // Two stores can commit the same project code, so the same key on two projects is two tasks.
   it("keeps two projects' spellings of one key apart", () => {
     expect(taskRouteOf("/web/task/APP-1")?.project).toBe("web")
     expect(taskRouteOf("/api/task/APP-1")?.project).toBe("api")

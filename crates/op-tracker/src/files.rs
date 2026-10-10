@@ -242,11 +242,11 @@ pub(crate) fn in_file_form(plan: &Plan, task: &Task) -> Task {
 // A body as a file under `dir` carries it: every reference is the path of its target. A task that
 // no file holds keeps the key, so the reference resolves once that task exists.
 pub(crate) fn body_in_file_form(plan: &Plan, dir: &str, body: &str) -> String {
-    let abbreviation = plan.abbreviation().ok();
+    let project_code = plan.project_code().ok();
     renamed_body_refs(body, |reference| {
         let number = match parse_id(ref_target(reference)) {
             Some(number) => Some(number),
-            None => match reference::body_target(abbreviation, dir, reference) {
+            None => match reference::body_target(project_code, dir, reference) {
                 Some(Target::Task(number)) => Some(number),
                 Some(Target::Doc(name)) => return reference::doc_ref(dir, &name, reference),
                 None => None,
@@ -265,14 +265,14 @@ pub(crate) fn body_in_file_form(plan: &Plan, dir: &str, body: &str) -> String {
 
 // `text`, from a file under `dir`, with each link to the doc `from` pointing at the doc `to`.
 pub(crate) fn relinked_doc(
-    abbreviation: Option<op_task::Abbreviation>,
+    project_code: Option<op_task::ProjectCode>,
     dir: &str,
     text: &str,
     from: &str,
     to: &str,
 ) -> String {
     renamed_body_refs(text, |inner| {
-        match reference::body_target(abbreviation, dir, inner) {
+        match reference::body_target(project_code, dir, inner) {
             Some(Target::Doc(name)) if name == from => reference::doc_ref(dir, to, inner),
             _ => inner.to_owned(),
         }

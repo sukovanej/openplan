@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use op_task::content::Text;
-use op_task::{Abbreviation, Timestamp, doc::Doc};
+use op_task::{ProjectCode, Timestamp, doc::Doc};
 
 use crate::field::{Field, FieldUpdate, Rfc3339};
 use crate::keys::{KeyError, body_from_keys};
@@ -203,12 +203,12 @@ impl CreateDoc {
     pub fn into_doc(
         self,
         created: Timestamp,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
     ) -> Result<Doc, DocWriteError> {
         let mut doc = Doc::new(&self.name, created)?;
         doc.set_parent(self.parent.as_deref())?;
         if let Some(body) = &self.body {
-            doc.set_content(&body_from_keys(abbreviation, body)?);
+            doc.set_content(&body_from_keys(project_code, body)?);
         }
         Ok(doc)
     }
@@ -245,9 +245,9 @@ pub struct WriteDocText {
 }
 
 impl WriteDocText {
-    pub fn into_texts(self, abbreviation: Abbreviation) -> Result<(Text, Text), KeyError> {
+    pub fn into_texts(self, project_code: ProjectCode) -> Result<(Text, Text), KeyError> {
         crate::write::texts(
-            abbreviation,
+            project_code,
             (self.base.title, &self.base.body),
             (self.text.title, &self.text.body),
         )

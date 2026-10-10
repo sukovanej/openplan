@@ -2,20 +2,35 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use op_backend::{BackendError, Change, ChangeKind, Snapshot};
 use op_forge::{Forge, PullRequest};
+use op_task::config::Config;
 use op_task::layout::{self, Document};
 use op_task::{
-    Abbreviation, FieldResult, PartialFrontmatter, PartialMetadata, PartialTask, Status, comment,
+    FieldResult, PartialFrontmatter, PartialMetadata, PartialTask, ProjectCode, Status, comment,
 };
 
 pub(crate) type Read<'a> = &'a dyn Fn(&str) -> Result<Option<Vec<u8>>, BackendError>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Described {
-    pub config: Option<ChangeKind>,
+    pub config: Option<ConfigChange>,
     pub tags: Vec<TagChange>,
     pub tasks: Vec<TaskChange>,
     pub docs: Vec<DocChange>,
     pub others: Vec<Change>,
+}
+
+// A side that holds no config, or one that does not parse, has no project code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConfigChange {
+    pub kind: ChangeKind,
+    pub from: Option<ProjectCode>,
+    pub to: Option<ProjectCode>,
+}
+
+impl ConfigChange {
+    pub fn new_project_code(&self) -> Option<(ProjectCode, ProjectCode)> {
+        self.from.zip(self.to).filter(|(from, to)| from != to)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,7 +130,13 @@ pub(crate) fn describe(
     let mut docs = Vec::new();
     for change in changes {
         match Document::of(&change.path) {
-            Document::Config => described.config = Some(change.kind),
+            Document::Config => {
+                described.config = Some(ConfigChange {
+                    kind: change.kind,
+                    from: project_code(before)?,
+                    to: project_code(after)?,
+                })
+            }
             Document::Task(number) => tasks.entry(number).or_default().push(change),
             Document::Tag(name) => tags.push((name, change.kind)),
             Document::Doc(name) => docs.push((name, change.kind)),
@@ -130,6 +151,12 @@ pub(crate) fn describe(
     described.tags = tag_changes(tags, before, after)?;
     described.docs = doc_changes(docs, before, after)?;
     Ok(described)
+}
+
+fn project_code(read: Read<'_>) -> Result<Option<ProjectCode>, BackendError> {
+    Ok(read(layout::CONFIG)?
+        .and_then(|bytes| Config::parse(&String::from_utf8_lossy(&bytes)).ok())
+        .map(|config| config.project_code))
 }
 
 // A new title gives the task a new file name, so one task can arrive as a removed and an added path.
@@ -448,19 +475,20 @@ fn tag_content(read: Read<'_>, name: &str) -> Result<Option<String>, BackendErro
 
 impl Described {
     // One line for each document, in the words of the commit messages that openplan writes.
-    pub fn lines(&self, abbreviation: Option<Abbreviation>, forge: Option<&Forge>) -> Vec<String> {
-        let key = |number: u64| match abbreviation {
-            Some(abbreviation) => abbreviation.format_key(number),
+    pub fn lines(&self, project_code: Option<ProjectCode>, forge: Option<&Forge>) -> Vec<String> {
+        let key = |number: u64| match project_code {
+            Some(project_code) => project_code.format_key(number),
             None => number.to_string(),
         };
         let mut lines = Vec::new();
-        if let Some(kind) = self.config {
-            lines.push(match (kind, abbreviation) {
-                (ChangeKind::Added, Some(abbreviation)) => {
-                    format!("Start the {abbreviation} tasks")
+        if let Some(config) = &self.config {
+            lines.push(match (config.kind, config.to, config.new_project_code()) {
+                (ChangeKind::Added, Some(project_code), _) => {
+                    format!("Start the {project_code} tasks")
                 }
-                (ChangeKind::Added, None) => "Start the tasks".to_owned(),
-                (kind, _) => format!("{}: {}", layout::CONFIG, verb(kind)),
+                (ChangeKind::Added, None, _) => "Start the tasks".to_owned(),
+                (_, _, Some((from, to))) => format!("Change the task keys from {from} to {to}"),
+                (kind, _, _) => format!("{}: {}", layout::CONFIG, verb(kind)),
             });
         }
         for tag in &self.tags {

@@ -257,7 +257,7 @@ function DraftForm({
             <BodyEditor
               ref={editor}
               project={project.name}
-              abbreviation={project.abbreviation}
+              projectCode={project.project_code}
               markdown={draft.body}
               onChange={(body) => change({ body })}
               onSave={() => create(false)}

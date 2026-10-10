@@ -19,8 +19,8 @@ export function useProject(name: string): ProjectView | undefined {
   return useProjects()?.find((project) => project.name === name)
 }
 
-export function useAbbreviation(project: string): string | undefined {
-  return useProject(project)?.abbreviation
+export function useProjectCode(project: string): string | undefined {
+  return useProject(project)?.project_code
 }
 
 // A demoted project cannot take a write.

@@ -26,7 +26,7 @@ export const PROJECT_ACTIVITY_ROUTE = `${BOARD_ROUTE}/${ACTIVITY_SEGMENT}`
 // The registry refuses these as project names, so no project hides behind one.
 const ABOVE_PROJECTS: ReadonlySet<string> = new Set([DOCS_SEGMENT, FLOW_SEGMENT, TAGS_SEGMENT, ACTIVITY_SEGMENT])
 
-// Two stores can commit the same abbreviation, so a key names a task only inside its project. Every
+// Two stores can commit the same project code, so a key names a task only inside its project. Every
 // task URL therefore carries the project, and every helper here takes it.
 export interface TaskRoute {
   readonly project: string

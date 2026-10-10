@@ -15,7 +15,7 @@ pub struct ProjectView {
     #[schema(nullable = false)]
     pub git_common_dir: Option<String>,
     pub backend: BackendKind,
-    pub abbreviation: String,
+    pub project_code: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub sync: Option<SyncView>,
@@ -42,7 +42,7 @@ impl BackendKind {
     }
 }
 
-// `backend` and `abbreviation` start a project that has no tasks yet. Without them the daemon serves
+// `backend` and `project_code` start a project that has no tasks yet. Without them the daemon serves
 // what the path already holds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct RegisterProject {
@@ -50,12 +50,22 @@ pub struct RegisterProject {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
     pub backend: Option<BackendKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    // A CLI from before the rename sends `abbreviation`.
+    #[serde(
+        default,
+        alias = "abbreviation",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schema(nullable = false)]
-    pub abbreviation: Option<String>,
+    pub project_code: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct RenameProject {
     pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SetProjectCode {
+    pub project_code: String,
 }

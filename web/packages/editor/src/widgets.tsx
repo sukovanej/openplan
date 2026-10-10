@@ -46,8 +46,8 @@ export abstract class ReactWidget extends WidgetType {
 }
 
 function TaskRefView({ reference }: { reference: string }) {
-  const { project, abbreviation } = useEditorScope()
-  const target = referenced(reference, abbreviation)
+  const { project, projectCode } = useEditorScope()
+  const target = referenced(reference, projectCode)
   if (target === null) return <span>[[{reference}]]</span>
   const to = referencePath(project, target)
   return target.kind === "task" ? (
@@ -140,10 +140,10 @@ export class ConflictWidget extends ReactWidget {
 }
 
 function ConflictView({ conflict, onResolve }: { conflict: ConflictBlock; onResolve: (text: string) => void }) {
-  const { project, abbreviation } = useEditorScope()
+  const { project, projectCode } = useEditorScope()
   return (
     <div data-keys-ignore>
-      <BodyConflict project={project} abbreviation={abbreviation} conflict={conflict} onResolve={onResolve} />
+      <BodyConflict project={project} projectCode={projectCode} conflict={conflict} onResolve={onResolve} />
     </div>
   )
 }

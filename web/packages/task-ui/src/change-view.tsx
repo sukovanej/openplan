@@ -19,7 +19,15 @@ import {
 } from "lucide-react"
 import { Fragment, type ReactNode } from "react"
 
-import type { DocChange, DocumentChangeKind, FieldChange, TagChange, TagView, TaskChange } from "@openplan/api-client"
+import type {
+  ProjectCodeChange,
+  DocChange,
+  DocumentChangeKind,
+  FieldChange,
+  TagChange,
+  TagView,
+  TaskChange,
+} from "@openplan/api-client"
 import { cn } from "@openplan/ui"
 
 import { StatusBadge } from "./status"
@@ -203,6 +211,20 @@ export function DocChangeView({ change, className }: { change: DocChange; classN
   return (
     <Changes className={className}>
       <Marked icon={Type}>{renameText(change)}</Marked>
+    </Changes>
+  )
+}
+
+export function ProjectCodeChangeView({ change, className }: { change: ProjectCodeChange; className?: string }) {
+  return (
+    <Changes className={className}>
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <Hash aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+        <span>Task keys</span>
+        <span className="font-mono text-xs">{change.from}</span>
+        <ArrowRight aria-label="to" className="text-muted-foreground size-3.5 shrink-0" />
+        <span className="font-mono text-xs">{change.to}</span>
+      </span>
     </Changes>
   )
 }

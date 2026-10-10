@@ -22,11 +22,11 @@ fn frontmatter_value(contents: &str, key: &str) -> String {
 
 // A local project that no daemon serves yet: `.plan/config.toml` in a directory outside any git
 // repository. The first command that reaches a daemon registers it.
-fn unregistered_store(abbreviation: &str) -> tempfile::TempDir {
+fn unregistered_store(project_code: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     write(
         &dir.path().join(".plan/config.toml"),
-        &format!("abbreviation = \"{abbreviation}\"\n"),
+        &format!("project_code = \"{project_code}\"\n"),
     );
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
     dir
@@ -353,7 +353,7 @@ fn project_list_json_carries_each_project_and_its_faults() {
 
     let projects = projects.as_array().unwrap();
     assert_eq!(projects.len(), 1, "{projects:?}");
-    assert_eq!(projects[0]["abbreviation"], "OPP");
+    assert_eq!(projects[0]["project_code"], "OPP");
     assert_eq!(projects[0]["backend"], "local");
     assert_eq!(projects[0]["faults"], serde_json::json!([]));
 }
@@ -388,7 +388,7 @@ fn a_command_where_no_tasks_live_says_how_to_start_them() {
         let out = home.run(empty.path(), args);
         assert!(!out.status.success(), "{args:?}: {}", stdout(&out));
         assert!(
-            stderr(&out).contains("openplan init --abbreviation"),
+            stderr(&out).contains("openplan init --project-code"),
             "{args:?}: {}",
             stderr(&out)
         );
@@ -406,7 +406,7 @@ fn a_repository_with_tasks_beside_the_code_asks_for_a_migration() {
     git_repo(repo.path());
     write(
         &repo.path().join(".plan/config.toml"),
-        "abbreviation = \"OPP\"\n",
+        "project_code = \"OPP\"\n",
     );
 
     let out = home.run(repo.path(), &["tasks", "create", "Ship login"]);
@@ -2221,5 +2221,39 @@ fn a_doc_name_the_normalizer_cannot_spell_is_refused() {
         stderr(&out).contains("lowercase letters"),
         "the refusal carries the naming rule: {}",
         stderr(&out)
+    );
+}
+
+#[test]
+fn project_project_code_gives_every_task_a_key_with_the_new_letters() {
+    let project = Project::local();
+    let id = ok(project.run(&["tasks", "create", "Wire the parser"]))
+        .trim()
+        .to_owned();
+    assert_eq!(id, "OPP-1");
+
+    let changed = ok(project.run(&["project", "code", "WEB"]));
+
+    assert_eq!(changed.trim(), "the task keys now start with WEB");
+    assert!(ok(project.run(&["tasks", "list"])).contains("WEB-1"));
+    assert!(!project.run(&["tasks", "show", "OPP-1"]).status.success());
+    let history = ok(project.run(&["history", "--limit", "1"]));
+    assert!(
+        history.contains("Change the task keys from OPP to WEB"),
+        "{history}"
+    );
+
+    let refused = project.run(&["project", "code", "WEB"]);
+    assert!(!refused.status.success());
+    assert!(
+        stderr(&refused).contains("the task keys already start with WEB"),
+        "{}",
+        stderr(&refused)
+    );
+    let refused = project.run(&["project", "code", "web"]);
+    assert!(
+        stderr(&refused).contains("use exactly three uppercase letters"),
+        "{}",
+        stderr(&refused)
     );
 }

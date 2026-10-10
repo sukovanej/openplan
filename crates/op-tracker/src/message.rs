@@ -30,11 +30,11 @@ pub(crate) fn of(plan: &Plan, ops: &[Op], forge: Option<&Forge>) -> Result<Strin
         &|path| after.read(path),
         None,
     )?;
-    let abbreviation = after
+    let project_code = after
         .read(layout::CONFIG)?
         .and_then(|bytes| Config::parse(&String::from_utf8_lossy(&bytes)).ok())
-        .map(|config| config.abbreviation);
-    let mut lines = described.lines(abbreviation, forge).into_iter();
+        .map(|config| config.project_code);
+    let mut lines = described.lines(project_code, forge).into_iter();
     let subject = lines.next().unwrap_or_default();
     let rest: Vec<String> = lines.collect();
     Ok(match rest.is_empty() {

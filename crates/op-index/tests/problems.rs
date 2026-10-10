@@ -13,7 +13,7 @@ fn plan(files: &[(&str, &str)]) -> Plan {
         .collect();
     documents.insert(
         "config.toml".to_owned(),
-        b"abbreviation = \"OPP\"\n".to_vec(),
+        b"project_code = \"OPP\"\n".to_vec(),
     );
     documents.insert("tags/bug.md".to_owned(), b"# bug\n".to_vec());
     Plan::read(Arc::new(MemorySnapshot::new(None, documents))).expect("plan")

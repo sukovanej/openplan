@@ -67,21 +67,21 @@ pub fn open(name: &str, dir: &Path, kind: BackendKind) -> Project {
     Project::open(name, location).unwrap()
 }
 
-pub fn started(project: Project, abbreviation: &str) -> Project {
+pub fn started(project: Project, project_code: &str) -> Project {
     project
         .tracker()
-        .init(&project.sign().unwrap(), abbreviation.parse().unwrap())
+        .init(&project.sign().unwrap(), project_code.parse().unwrap())
         .unwrap();
     project.reload();
     project
 }
 
-pub fn local_project(name: &str, dir: &Path, abbreviation: &str) -> Project {
-    started(open(name, dir, BackendKind::Local), abbreviation)
+pub fn local_project(name: &str, dir: &Path, project_code: &str) -> Project {
+    started(open(name, dir, BackendKind::Local), project_code)
 }
 
-pub fn git_project(name: &str, dir: &Path, abbreviation: &str) -> Project {
-    started(open(name, dir, BackendKind::Git), abbreviation)
+pub fn git_project(name: &str, dir: &Path, project_code: &str) -> Project {
+    started(open(name, dir, BackendKind::Git), project_code)
 }
 
 pub fn local_state() -> (tempfile::TempDir, AppState) {

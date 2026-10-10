@@ -407,7 +407,7 @@ fn import_copies_the_history_of_a_directory_and_the_edits_not_yet_committed() {
     let root = dir.path();
     git(root, &["init", "--quiet", "-b", "main"]);
     std::fs::create_dir_all(root.join(".plan/tasks")).expect("mkdir");
-    std::fs::write(root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n").expect("write");
+    std::fs::write(root.join(".plan/config.toml"), "project_code = \"OPP\"\n").expect("write");
     std::fs::write(root.join(".plan/tasks/00001-a.md"), "one").expect("write");
     std::fs::write(root.join("README"), "code").expect("write");
     git(root, &["add", "-A"]);

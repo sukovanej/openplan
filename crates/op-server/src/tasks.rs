@@ -7,12 +7,12 @@ use axum::response::{IntoResponse, Response};
 use op_api::{
     ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask, DocChange, DocumentChange,
     DocumentChangeKind, FieldChange, Flow, FlowQuery, Forge, HistoryEntry, KeyError, Metadata,
-    PullRequestView, RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch,
-    TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot,
-    TaskSummary, TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
+    ProjectCodeChange, PullRequestView, RevisionView, SearchHit, Status, SyncResult, SyncView,
+    TagChange, TagPatch, TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch,
+    TaskSnapshot, TaskSummary, TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
 };
 use op_backend::{Change, ChangeKind, Committed, LogEntry, RevisionId};
-use op_task::{Abbreviation, Task, layout};
+use op_task::{ProjectCode, Task, layout};
 use op_tracker::{HistoryQuery, TrackerError};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -80,17 +80,17 @@ impl Project {
         }
     }
 
-    pub(crate) fn abbreviation(&self) -> Result<Abbreviation, ApiError> {
+    pub(crate) fn project_code(&self) -> Result<ProjectCode, ApiError> {
         self.index()
-            .abbreviation()
+            .project_code()
             .ok_or_else(|| ApiError::from(TrackerError::NotInitialized))
     }
 
     pub(crate) fn number(&self, key: &str) -> Result<u64, ApiError> {
-        let abbreviation = self.abbreviation()?;
-        abbreviation
+        let project_code = self.project_code()?;
+        project_code
             .parse_key(key)
-            .ok_or_else(|| KeyError::new(abbreviation, key).into())
+            .ok_or_else(|| KeyError::new(project_code, key).into())
     }
 
     fn detail(&self, key: &str, number: u64) -> Result<TaskDetail, ApiError> {
@@ -153,11 +153,11 @@ pub(crate) async fn create_task(
     let actor = actor_of(&state, &headers, &project)?;
     let created = op_task::now();
     let id = blocking(move || {
-        let abbreviation = project.abbreviation()?;
-        let task = body.into_task(created, abbreviation, project.forge())?;
+        let project_code = project.project_code()?;
+        let task = body.into_task(created, project_code, project.forge())?;
         let created = project.tracker().create_task(&actor, &task)?;
         project.written(created.committed.as_ref());
-        Ok(abbreviation.format_key(created.number))
+        Ok(project_code.format_key(created.number))
     })
     .await?;
     Ok((StatusCode::CREATED, Json(CreatedTask { id })).into_response())
@@ -220,12 +220,12 @@ pub(crate) async fn patch_task(
     let project = project_of(&state, &project)?;
     let actor = actor_of(&state, &headers, &project)?;
     let detail = blocking(move || {
-        let abbreviation = project.abbreviation()?;
+        let project_code = project.project_code()?;
         let number = project.number(&id)?;
         let updated = project.tracker().update_task(&actor, number, |task| {
             patch
                 .clone()
-                .apply(task, abbreviation, project.forge())
+                .apply(task, project_code, project.forge())
                 .map_err(|err| TrackerError::Invalid(err.to_string()))
         })?;
         project.written(updated.committed.as_ref());
@@ -313,7 +313,7 @@ pub(crate) async fn write_text(
     let actor = actor_of(&state, &headers, &project)?;
     let detail = blocking(move || {
         let number = project.number(&id)?;
-        let (base, text) = body.into_texts(project.abbreviation()?)?;
+        let (base, text) = body.into_texts(project.project_code()?)?;
         let updated = project.tracker().edit_text(&actor, number, &base, &text)?;
         project.written(updated.committed.as_ref());
         project.detail(&id, number)
@@ -581,7 +581,7 @@ pub(crate) async fn task_revision(
 ) -> Result<Json<TaskAtRevision>, ApiError> {
     let project = project_of(&state, &project)?;
     let view = blocking(move || {
-        let abbreviation = project.abbreviation()?;
+        let project_code = project.project_code()?;
         let number = project.number(&id)?;
         let raw = project
             .tracker()
@@ -589,21 +589,21 @@ pub(crate) async fn task_revision(
         Ok(TaskAtRevision {
             id,
             revision,
-            task: raw.map(|raw| snapshot(&raw, abbreviation)),
+            task: raw.map(|raw| snapshot(&raw, project_code)),
         })
     })
     .await?;
     Ok(Json(view))
 }
 
-fn snapshot(raw: &str, abbreviation: Abbreviation) -> TaskSnapshot {
+fn snapshot(raw: &str, project_code: ProjectCode) -> TaskSnapshot {
     let partial = op_task::parse_partial(raw);
     TaskSnapshot {
         title: partial.title.clone().unwrap_or_default(),
-        metadata: Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation),
+        metadata: Metadata::from_partial(partial.metadata, &partial.conflicts, project_code),
         comments: op_index::comments_of(&partial.body),
         description: op_api::body_to_keys(
-            abbreviation,
+            project_code,
             op_task::layout::TASKS,
             &op_task::content::split(&op_task::comment::strip(&partial.body)),
         ),
@@ -623,9 +623,9 @@ pub(crate) fn history(
     project: &Project,
     log: Vec<LogEntry>,
 ) -> Result<Vec<HistoryEntry>, ApiError> {
-    let abbreviation = project.index().abbreviation();
-    let key = |number: u64| match abbreviation {
-        Some(abbreviation) => abbreviation.format_key(number),
+    let project_code = project.index().project_code();
+    let key = |number: u64| match project_code {
+        Some(project_code) => project_code.format_key(number),
         None => number.to_string(),
     };
     log.into_iter()
@@ -633,7 +633,7 @@ pub(crate) fn history(
             let described = project.tracker().describe(&entry)?;
             Ok(HistoryEntry {
                 revision: revision_view(&entry.revision),
-                summary: described.lines(abbreviation, project.forge()),
+                summary: described.lines(project_code, project.forge()),
                 tasks: described
                     .tasks
                     .into_iter()
@@ -641,6 +641,13 @@ pub(crate) fn history(
                     .collect(),
                 tags: described.tags.into_iter().map(tag_change).collect(),
                 docs: described.docs.into_iter().map(doc_change).collect(),
+                project_code: described
+                    .config
+                    .and_then(|config| config.new_project_code())
+                    .map(|(from, to)| ProjectCodeChange {
+                        from: from.to_string(),
+                        to: to.to_string(),
+                    }),
                 changes: entry
                     .changes
                     .into_iter()
@@ -919,7 +926,7 @@ fn flow_query(parameters: &[(String, String)]) -> Result<FlowQuery, ApiError> {
     if !keys.is_empty() && query.projects.is_empty() {
         return Err(ApiError::bad_request(
             "a task parameter needs a project parameter: two projects can use the same \
-             abbreviation, so a key alone names no task",
+             project code, so a key alone names no task",
         ));
     }
     query.tasks = query

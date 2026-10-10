@@ -143,8 +143,14 @@ export type DocumentChangeKind = "added" | "modified" | "removed"
 export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed"]).annotate({
   identifier: "DocumentChangeKind",
 })
+export type ProjectCodeChange = { readonly from: string; readonly to: string }
+export const ProjectCodeChange = Schema.Struct({ from: Schema.String, to: Schema.String }).annotate({
+  identifier: "ProjectCodeChange",
+})
 export type DocText = { readonly body: string; readonly title: string }
 export const DocText = Schema.Struct({ body: Schema.String, title: Schema.String }).annotate({ identifier: "DocText" })
+export type SetProjectCode = { readonly project_code: string }
+export const SetProjectCode = Schema.Struct({ project_code: Schema.String }).annotate({ identifier: "SetProjectCode" })
 export type DocumentDiff =
   | { readonly diff: string; readonly kind: "text"; readonly truncated: boolean }
   | { readonly kind: "binary" }
@@ -363,11 +369,11 @@ export type Fault = { readonly kind: FaultKind; readonly message: string; readon
 export const Fault = Schema.Struct({ kind: FaultKind, message: Schema.String, project: Schema.String }).annotate({
   identifier: "Fault",
 })
-export type RegisterProject = { readonly abbreviation?: string; readonly backend?: BackendKind; readonly path: string }
+export type RegisterProject = { readonly backend?: BackendKind; readonly path: string; readonly project_code?: string }
 export const RegisterProject = Schema.Struct({
-  abbreviation: Schema.optionalKey(Schema.String),
   backend: Schema.optionalKey(BackendKind),
   path: Schema.String,
+  project_code: Schema.optionalKey(Schema.String),
 }).annotate({ identifier: "RegisterProject" })
 export type SyncView = {
   readonly ahead: number
@@ -575,20 +581,20 @@ export const FieldChange = Schema.Union(
   { mode: "oneOf" },
 ).annotate({ identifier: "FieldChange" })
 export type ProjectView = {
-  readonly abbreviation: string
   readonly backend: BackendKind
   readonly forge?: Forge
   readonly git_common_dir?: string
   readonly name: string
+  readonly project_code: string
   readonly root: string
   readonly sync?: SyncView
 }
 export const ProjectView = Schema.Struct({
-  abbreviation: Schema.String,
   backend: BackendKind,
   forge: Schema.optionalKey(Forge),
   git_common_dir: Schema.optionalKey(Schema.String),
   name: Schema.String,
+  project_code: Schema.String,
   root: Schema.String,
   sync: Schema.optionalKey(SyncView),
 }).annotate({ identifier: "ProjectView" })
@@ -687,6 +693,7 @@ export const Metadata = Schema.Union(
 export type HistoryEntry = {
   readonly changes: ReadonlyArray<DocumentChange>
   readonly docs: ReadonlyArray<DocChange>
+  readonly project_code?: ProjectCodeChange
   readonly revision: RevisionView
   readonly summary: ReadonlyArray<string>
   readonly tags: ReadonlyArray<TagChange>
@@ -695,6 +702,7 @@ export type HistoryEntry = {
 export const HistoryEntry = Schema.Struct({
   changes: Schema.Array(DocumentChange),
   docs: Schema.Array(DocChange),
+  project_code: Schema.optionalKey(ProjectCodeChange),
   revision: RevisionView,
   summary: Schema.Array(Schema.String),
   tags: Schema.Array(TagChange),
@@ -1087,6 +1095,18 @@ export type ProjectHistory404 = ApiErrorBody
 export const ProjectHistory404 = ApiErrorBody
 export type ProjectHistory503 = ApiErrorBody
 export const ProjectHistory503 = ApiErrorBody
+export type SetProjectCodeRequestJson = SetProjectCode
+export const SetProjectCodeRequestJson = SetProjectCode
+export type SetProjectCode200 = ProjectView
+export const SetProjectCode200 = ProjectView
+export type SetProjectCode400 = ApiErrorBody
+export const SetProjectCode400 = ApiErrorBody
+export type SetProjectCode404 = ApiErrorBody
+export const SetProjectCode404 = ApiErrorBody
+export type SetProjectCode409 = ApiErrorBody
+export const SetProjectCode409 = ApiErrorBody
+export type SetProjectCode503 = ApiErrorBody
+export const SetProjectCode503 = ApiErrorBody
 export type RevisionDiffParams = { readonly path: string; readonly from?: string | null }
 export const RevisionDiffParams = Schema.Struct({
   path: Schema.String,
@@ -1816,6 +1836,28 @@ export const make = (
                 "2xx": decodeSuccess(ProjectHistory200),
                 "404": decodeError("ProjectHistory404", ProjectHistory404),
                 "503": decodeError("ProjectHistory503", ProjectHistory503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    setProjectCode: (project, options: Parameters<TasksClient["setProjectCode"]>[1]) =>
+      __makePathRequest(
+        HttpClientRequest.put,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/project-code",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(SetProjectCode200),
+                "400": decodeError("SetProjectCode400", SetProjectCode400),
+                "404": decodeError("SetProjectCode404", SetProjectCode404),
+                "409": decodeError("SetProjectCode409", SetProjectCode409),
+                "503": decodeError("SetProjectCode503", SetProjectCode503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -2766,6 +2808,32 @@ export interface TasksClient {
       | SchemaError
       | TasksClientError<"ProjectHistory404", typeof ProjectHistory404.Type>
       | TasksClientError<"ProjectHistory503", typeof ProjectHistory503.Type>
+    >
+  }
+  readonly setProjectCode: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof SetProjectCodeRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof SetProjectCode200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"SetProjectCode400", typeof SetProjectCode400.Type>
+      | TasksClientError<"SetProjectCode404", typeof SetProjectCode404.Type>
+      | TasksClientError<"SetProjectCode409", typeof SetProjectCode409.Type>
+      | TasksClientError<"SetProjectCode503", typeof SetProjectCode503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof SetProjectCodeRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof SetProjectCode200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"SetProjectCode400", typeof SetProjectCode400.Type>
+      | TasksClientError<"SetProjectCode404", typeof SetProjectCode404.Type>
+      | TasksClientError<"SetProjectCode409", typeof SetProjectCode409.Type>
+      | TasksClientError<"SetProjectCode503", typeof SetProjectCode503.Type>
     >
   }
   readonly revisionDiff: {

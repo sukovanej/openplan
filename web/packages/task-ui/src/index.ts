@@ -3,7 +3,7 @@ export { BodyConflict, TaskBodyWithConflicts } from "./body-conflict"
 export { type BodySegment, bodySegments, type ConflictBlock } from "./body-segments"
 export { ChangeMark } from "./change-mark"
 export { isDiagramTag } from "./code-block"
-export { DocChangeView, DocumentChangeView, TagChangeView, TaskChangeView } from "./change-view"
+export { ProjectCodeChangeView, DocChangeView, DocumentChangeView, TagChangeView, TaskChangeView } from "./change-view"
 export { DocRefChip } from "./doc-ref-chip"
 export {
   docConflictedFields,

@@ -16,7 +16,7 @@ const comment = (over: Partial<Comment> = {}): Comment => ({
 })
 
 const thread = (comments: ReadonlyArray<Comment>) =>
-  render(<CommentThread project="openplan" comments={comments} abbreviation="OPP" />)
+  render(<CommentThread project="openplan" comments={comments} projectCode="OPP" />)
 
 describe("CommentThread", () => {
   it("shows every entry with its author, absolute time, and agent", () => {

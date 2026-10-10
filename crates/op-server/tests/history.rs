@@ -604,3 +604,65 @@ async fn a_reopened_project_credits_its_tasks_from_the_log() {
     let rows = json_of(&reopened, "/api/projects/test/tasks").await;
     assert_eq!(rows[0]["author"]["name"], "Ann");
 }
+
+#[tokio::test]
+async fn a_new_project_code_reads_as_one_change_with_both_values() {
+    for (_dir, state) in [local_state(), git_state()] {
+        create(&state, "One").await;
+        let response = send(
+            &state,
+            "PUT",
+            "/api/projects/test/project-code",
+            Some(json!({ "project_code": "WEB" })),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_json(response).await["project_code"], "WEB");
+
+        let entries = history(&state, "").await;
+        assert_eq!(
+            entries[0]["summary"],
+            json!(["Change the task keys from OPP to WEB"])
+        );
+        assert_eq!(
+            entries[0]["revision"]["message"],
+            "Change the task keys from OPP to WEB"
+        );
+        assert_eq!(
+            entries[0]["project_code"],
+            json!({ "from": "OPP", "to": "WEB" })
+        );
+        assert_eq!(changed_tasks(&entries[1]), vec!["WEB-1"]);
+        assert!(entries[1].get("project_code").is_none(), "{}", entries[1]);
+
+        let task = send(&state, "GET", "/api/projects/test/tasks/WEB-1", None).await;
+        assert_eq!(task.status(), StatusCode::OK);
+        let old = send(&state, "GET", "/api/projects/test/tasks/OPP-1", None).await;
+        assert_ne!(old.status(), StatusCode::OK);
+    }
+}
+
+#[tokio::test]
+async fn a_new_project_code_refuses_bad_letters_and_the_current_ones() {
+    let (_dir, state) = local_state();
+    for (project_code, reason) in [
+        ("web", "three uppercase letters"),
+        ("OPP", "already start with OPP"),
+    ] {
+        let response = send(
+            &state,
+            "PUT",
+            "/api/projects/test/project-code",
+            Some(json!({ "project_code": project_code })),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let message = message_of(&body_json(response).await);
+        assert!(message.contains(reason), "{message}");
+    }
+    assert_eq!(
+        history(&state, "").await.len(),
+        1,
+        "no revision was written"
+    );
+}

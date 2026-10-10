@@ -27,7 +27,7 @@ fn init_in_a_repository_starts_the_tasks_on_a_git_branch() {
     let repo = tempfile::tempdir().unwrap();
     git_repo(repo.path());
 
-    let started = ok(home.run(repo.path(), &["init", "--abbreviation", "OPP"]));
+    let started = ok(home.run(repo.path(), &["init", "--project-code", "OPP"]));
 
     assert!(
         started.contains("keeps its OPP tasks in the git ref refs/openplan/tasks"),
@@ -62,7 +62,7 @@ fn init_outside_a_repository_starts_a_local_directory() {
     let home = Home::new();
     let dir = tempfile::tempdir().unwrap();
 
-    let started = ok(home.run(dir.path(), &["init", "--abbreviation", "LOC"]));
+    let started = ok(home.run(dir.path(), &["init", "--project-code", "LOC"]));
 
     let store = dir.path().canonicalize().unwrap().join(".plan");
     assert!(
@@ -72,7 +72,7 @@ fn init_outside_a_repository_starts_a_local_directory() {
     assert!(store.join(".history.sqlite").is_file());
     assert_eq!(
         std::fs::read_to_string(store.join("config.toml")).unwrap(),
-        "abbreviation = \"LOC\"\n"
+        "project_code = \"LOC\"\n"
     );
     let id = ok(home.run(dir.path(), &["tasks", "create", "Ship it"]));
     assert_eq!(id.trim(), "LOC-1");
@@ -87,7 +87,7 @@ fn init_outside_a_repository_with_no_git_name_registers_nothing() {
     home.forget_git_name();
     let dir = tempfile::tempdir().unwrap();
 
-    let refused = home.run(dir.path(), &["init", "--abbreviation", "LOC"]);
+    let refused = home.run(dir.path(), &["init", "--project-code", "LOC"]);
 
     assert!(!refused.status.success());
     assert!(
@@ -107,7 +107,7 @@ fn init_with_the_local_backend_keeps_the_tasks_of_a_repository_in_a_directory() 
 
     let started = ok(home.run(
         repo.path(),
-        &["init", "--abbreviation", "OPP", "--backend", "local"],
+        &["init", "--project-code", "OPP", "--backend", "local"],
     ));
 
     assert!(started.contains("/.plan"), "{started}");
@@ -122,11 +122,11 @@ fn init_with_the_local_backend_keeps_the_tasks_of_a_repository_in_a_directory() 
 }
 
 #[test]
-fn init_refuses_an_abbreviation_that_is_not_three_letters() {
+fn init_refuses_a_project_code_that_is_not_three_letters() {
     let home = Home::new();
     let dir = tempfile::tempdir().unwrap();
 
-    let out = home.run(dir.path(), &["init", "--abbreviation", "Op"]);
+    let out = home.run(dir.path(), &["init", "--project-code", "Op"]);
 
     assert!(!out.status.success());
     assert!(
@@ -138,23 +138,23 @@ fn init_refuses_an_abbreviation_that_is_not_three_letters() {
 }
 
 #[test]
-fn init_again_keeps_the_abbreviation_the_project_has() {
+fn init_again_keeps_the_project_code_the_project_has() {
     let home = Home::new();
     let local = tempfile::tempdir().unwrap();
     let repo = tempfile::tempdir().unwrap();
     git_repo(repo.path());
     for root in [local.path(), repo.path()] {
-        ok(home.run(root, &["init", "--abbreviation", "OPP"]));
+        ok(home.run(root, &["init", "--project-code", "OPP"]));
         let id = ok(home.run(root, &["tasks", "create", "Ship it"]))
             .trim()
             .to_owned();
 
-        ok(home.run(root, &["init", "--abbreviation", "OPP"]));
-        let refused = home.run(root, &["init", "--abbreviation", "XYZ"]);
+        ok(home.run(root, &["init", "--project-code", "OPP"]));
+        let refused = home.run(root, &["init", "--project-code", "XYZ"]);
 
         assert!(!refused.status.success(), "{}", stdout(&refused));
         assert!(
-            stderr(&refused).contains("this project already uses the abbreviation OPP"),
+            stderr(&refused).contains("this project already uses the project code OPP"),
             "{}",
             stderr(&refused)
         );
@@ -165,7 +165,7 @@ fn init_again_keeps_the_abbreviation_the_project_has() {
 // A second person who clones the repository joins the tasks the first one pushed, rather than start
 // a rival set under the same name.
 #[test]
-fn init_without_an_abbreviation_joins_the_tasks_on_the_remote() {
+fn init_without_a_project_code_joins_the_tasks_on_the_remote() {
     let remote = Remote::new();
     let ann = remote.founder("ann", "Ann");
     let id = remote.create(&ann, "From Ann");
@@ -181,14 +181,14 @@ fn init_without_an_abbreviation_joins_the_tasks_on_the_remote() {
 }
 
 #[test]
-fn init_without_an_abbreviation_refuses_a_remote_with_no_tasks() {
+fn init_without_a_project_code_refuses_a_remote_with_no_tasks() {
     let remote = Remote::new();
     let ann = remote.clone("ann", "Ann");
 
     let refused = remote.run(&ann, &["init"]);
     assert!(!refused.status.success(), "{}", stdout(&refused));
     assert!(
-        stderr(&refused).contains("openplan init --abbreviation <ABC>"),
+        stderr(&refused).contains("openplan init --project-code <ABC>"),
         "{}",
         stderr(&refused)
     );
@@ -202,7 +202,7 @@ fn init_in_a_clone_joins_the_tasks_on_the_remote() {
     ok(remote.run(&ann, &["sync"]));
 
     let ben = remote.clone("ben", "Ben");
-    let joined = ok(remote.run(&ben, &["init", "--abbreviation", "OPP"]));
+    let joined = ok(remote.run(&ben, &["init", "--project-code", "OPP"]));
 
     assert!(
         joined.contains("keeps its OPP tasks in the git ref refs/openplan/tasks"),
@@ -214,16 +214,16 @@ fn init_in_a_clone_joins_the_tasks_on_the_remote() {
     );
 
     let cat = remote.clone("cat", "Cat");
-    let refused = remote.run(&cat, &["init", "--abbreviation", "XYZ"]);
+    let refused = remote.run(&cat, &["init", "--project-code", "XYZ"]);
     assert!(!refused.status.success(), "{}", stdout(&refused));
     assert!(
-        stderr(&refused).contains("already uses the abbreviation OPP"),
+        stderr(&refused).contains("already uses the project code OPP"),
         "{}",
         stderr(&refused)
     );
     assert!(
         ok(remote.run(&cat, &["tasks", "list"])).contains("From Ann"),
-        "a refused abbreviation leaves the tasks the clone joined"
+        "a refused project code leaves the tasks the clone joined"
     );
 }
 
@@ -231,7 +231,7 @@ fn init_in_a_clone_joins_the_tasks_on_the_remote() {
 // alone, and a change to one task.
 fn repository_with_plan(root: &Path) {
     git_repo(root);
-    write(&root.join(".plan/config.toml"), "abbreviation = \"OPP\"\n");
+    write(&root.join(".plan/config.toml"), "project_code = \"OPP\"\n");
     write(
         &root.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: todo\ncreated: 2001-01-01T00:00:00Z\n---\n# Alpha\n",
@@ -439,7 +439,7 @@ fn migrate_refuses_a_project_with_nothing_to_migrate() {
     let out = home.run(empty.path(), &["migrate"]);
     assert!(!out.status.success());
     assert!(
-        stderr(&out).contains("openplan init --abbreviation"),
+        stderr(&out).contains("openplan init --project-code"),
         "{}",
         stderr(&out)
     );
@@ -461,4 +461,15 @@ fn migrate_brings_the_docs_of_the_plan_directory() {
 
     let printed = ok(home.run(root, &["doc", "get", "doc-store"]));
     assert_eq!(printed, "# Doc Store\n\nDocs sit beside tasks.\n");
+}
+
+#[test]
+fn init_still_takes_the_flag_it_had_before_the_rename() {
+    let home = Home::new();
+    let dir = tempfile::tempdir().unwrap();
+
+    ok(home.run(dir.path(), &["init", "--abbreviation", "LOC"]));
+
+    let id = ok(home.run(dir.path(), &["tasks", "create", "Ship it"]));
+    assert_eq!(id.trim(), "LOC-1");
 }

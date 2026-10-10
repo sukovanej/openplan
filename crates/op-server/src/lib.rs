@@ -17,7 +17,7 @@ use axum::{
 };
 use op_api::{
     ApiErrorBody, ChangeEvent, DaemonInfo, Fault, FlowCycles, KeyError, ProjectView, Refusal,
-    RegisterProject, RenameProject, SourcePosition, StopReason, WriteError,
+    RegisterProject, RenameProject, SetProjectCode, SourcePosition, StopReason, WriteError,
 };
 use op_backend::{Actor, BackendError};
 use op_tracker::TrackerError;
@@ -79,8 +79,8 @@ pub enum ProjectsError {
     // where the caller stands.
     #[error("a project path must be absolute, and {0} is not")]
     RelativePath(PathBuf),
-    #[error("not an abbreviation: {0:?}; use exactly three uppercase letters")]
-    BadAbbreviation(String),
+    #[error("not a project code: {0:?}; use exactly three uppercase letters")]
+    BadProjectCode(String),
     #[error(transparent)]
     Tracker(#[from] TrackerError),
 }
@@ -279,7 +279,7 @@ impl AppState {
 
     // Idempotent by where the tasks live, not by the path asked for: two worktrees of one
     // repository are one project, and two concurrent first writes from the CLI both land. The bool
-    // says whether this call added the project. An abbreviation starts the project's tasks.
+    // says whether this call added the project. A project code starts the project's tasks.
     pub fn register(
         &self,
         request: &RegisterProject,
@@ -298,18 +298,18 @@ impl AppState {
         if path.is_relative() {
             return Err(ProjectsError::RelativePath(path));
         }
-        let abbreviation = request
-            .abbreviation
+        let project_code = request
+            .project_code
             .as_deref()
             .map(|text| {
-                text.parse::<op_task::Abbreviation>()
-                    .map_err(|_| ProjectsError::BadAbbreviation(text.to_owned()))
+                text.parse::<op_task::ProjectCode>()
+                    .map_err(|_| ProjectsError::BadProjectCode(text.to_owned()))
             })
             .transpose()?;
         let registry_path = self.registry_path()?;
         // Starting tasks where some already live joins them; only a path with none takes the kind
         // its place suggests.
-        let location = match (request.backend, abbreviation) {
+        let location = match (request.backend, project_code) {
             (Some(kind), _) => Location::find(&path, Some(kind))?,
             (None, None) => Location::find_or_join(&path)?,
             (None, Some(_)) => match Location::find(&path, None) {
@@ -324,10 +324,10 @@ impl AppState {
             },
         };
         // Resolved before anything opens, so a start no one can sign registers nothing.
-        let start = match (abbreviation, author) {
-            (Some(abbreviation), Some(author)) => Some((abbreviation, author)),
-            (Some(abbreviation), None) => Some((
-                abbreviation,
+        let start = match (project_code, author) {
+            (Some(project_code), Some(author)) => Some((project_code, author)),
+            (Some(project_code), None) => Some((
+                project_code,
                 op_backend_git::identity(&location.root).map_err(TrackerError::from)?,
             )),
             (None, _) => None,
@@ -368,8 +368,8 @@ impl AppState {
             tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
             project.start(self.publisher.clone());
         }
-        if let Some((abbreviation, author)) = start {
-            start_tasks(&project, abbreviation, &author)?;
+        if let Some((project_code, author)) = start {
+            start_tasks(&project, project_code, &author)?;
         }
         self.publisher.report(&project);
         Ok((project.view(), created))
@@ -526,7 +526,7 @@ fn project_name(
 // repository joins its tasks rather than starting a rival set.
 fn start_tasks(
     project: &Project,
-    abbreviation: op_task::Abbreviation,
+    project_code: op_task::ProjectCode,
     author: &Actor,
 ) -> Result<(), ProjectsError> {
     let tracker = project.tracker();
@@ -536,7 +536,7 @@ fn start_tasks(
     {
         tracing::warn!(project = %project.name(), error = %err, "starting the tasks without the remote");
     }
-    tracker.init(author, abbreviation)?;
+    tracker.init(author, project_code)?;
     project.reload();
     Ok(())
 }
@@ -590,6 +590,7 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(list_faults))
         .routes(routes!(list_projects, register_project))
         .routes(routes!(delete_project, rename_project))
+        .routes(routes!(set_project_code))
         .routes(routes!(tasks::list_tasks, tasks::create_task))
         .routes(routes!(tasks::get_board))
         .routes(routes!(tasks::get_merged_board))
@@ -870,7 +871,7 @@ async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project
         (status = 201, description = "Registered", body = ProjectView),
         (status = 200, description = "Already registered", body = ProjectView),
         (status = 400, description = "The path holds no tasks, needs a migration, or the request is invalid", body = ApiErrorBody),
-        (status = 409, description = "The project already uses another abbreviation", body = ApiErrorBody),
+        (status = 409, description = "The project already uses another project code", body = ApiErrorBody),
         (status = 503, description = "This daemon serves a fixed set of projects", body = ApiErrorBody)
     )
 )]
@@ -934,6 +935,42 @@ async fn rename_project(
     let renaming = state.clone();
     let view = blocking(move || Ok(renaming.rename_project(&project, &body.name)?)).await?;
     state.publisher.publish(ChangeEvent::ProjectsChanged);
+    Ok(Json(view))
+}
+
+// Task files and links hold numbers, not keys, so every task keeps its number under the new
+// letters, and an old key names no task.
+#[utoipa::path(
+    put,
+    path = "/api/projects/{project}/project-code",
+    params(("project" = String, Path, description = "Project name")),
+    request_body = SetProjectCode,
+    responses(
+        (status = 200, description = "The task keys start with the new letters", body = ProjectView),
+        (status = 400, description = "Not three uppercase letters, or the current project code", body = ApiErrorBody),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 409, description = "The project has no tasks yet", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn set_project_code(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+    headers: HeaderMap,
+    Json(body): Json<SetProjectCode>,
+) -> Result<Json<ProjectView>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let actor = actor_of(&state, &headers, &project)?;
+    let view = blocking(move || {
+        let project_code = body
+            .project_code
+            .parse::<op_task::ProjectCode>()
+            .map_err(|_| ProjectsError::BadProjectCode(body.project_code.clone()))?;
+        project.tracker().set_project_code(&actor, project_code)?;
+        project.catch_up();
+        Ok(project.view())
+    })
+    .await?;
     Ok(Json(view))
 }
 
@@ -1173,7 +1210,7 @@ impl From<ProjectsError> for ApiError {
             | ProjectsError::BadName(_)
             | ProjectsError::ReservedName(_)
             | ProjectsError::RelativePath(_)
-            | ProjectsError::BadAbbreviation(_) => StatusCode::BAD_REQUEST,
+            | ProjectsError::BadProjectCode(_) => StatusCode::BAD_REQUEST,
             ProjectsError::NoSuchProject(_) => StatusCode::NOT_FOUND,
             ProjectsError::NameTaken(_) => StatusCode::CONFLICT,
             ProjectsError::NoRegistry => StatusCode::SERVICE_UNAVAILABLE,

@@ -7,7 +7,7 @@ use op_task::config::{Config, ConfigError};
 use op_task::doc::Doc;
 use op_task::layout::{self, Document};
 use op_task::tag::{Tag, normalize_name};
-use op_task::{Abbreviation, Task};
+use op_task::{ProjectCode, Task};
 
 use crate::TrackerError;
 
@@ -89,13 +89,13 @@ impl Plan {
         }
     }
 
-    pub fn abbreviation(&self) -> Result<Abbreviation, TrackerError> {
-        Ok(self.config()?.abbreviation)
+    pub fn project_code(&self) -> Result<ProjectCode, TrackerError> {
+        Ok(self.config()?.project_code)
     }
 
     pub fn key(&self, number: u64) -> String {
-        match self.abbreviation() {
-            Ok(abbreviation) => abbreviation.format_key(number),
+        match self.project_code() {
+            Ok(project_code) => project_code.format_key(number),
             Err(_) => number.to_string(),
         }
     }
