@@ -112,16 +112,16 @@ export const StopReason = Schema.Literals(["stop", "update"]).annotate({ identif
 export type FaultKind =
   | "root_gone"
   | "unreadable"
-  | "newer_format"
-  | "older_format"
+  | "newer_store_version"
+  | "older_store_version"
   | "no_identity"
   | "sync_failed"
   | "outside_changes_unread"
 export const FaultKind = Schema.Literals([
   "root_gone",
   "unreadable",
-  "newer_format",
-  "older_format",
+  "newer_store_version",
+  "older_store_version",
   "no_identity",
   "sync_failed",
   "outside_changes_unread",
@@ -154,17 +154,11 @@ export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed
 })
 export type DocText = { readonly body: string; readonly title: string }
 export const DocText = Schema.Struct({ body: Schema.String, title: Schema.String }).annotate({ identifier: "DocText" })
-export type Migration = { readonly format: number; readonly from?: number; readonly project: string }
+export type Migration = { readonly from?: string; readonly project: string; readonly version: string }
 export const Migration = Schema.Struct({
-  format: Schema.Number.annotate({ format: "int32" })
-    .check(Schema.isInt().annotate({ expected: "an integer" }))
-    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
-  from: Schema.optionalKey(
-    Schema.Number.annotate({ format: "int32" })
-      .check(Schema.isInt().annotate({ expected: "an integer" }))
-      .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
-  ),
+  from: Schema.optionalKey(Schema.String),
   project: Schema.String,
+  version: Schema.String,
 }).annotate({ identifier: "Migration" })
 export type DocumentDiff =
   | { readonly diff: string; readonly kind: "text"; readonly truncated: boolean }

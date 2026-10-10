@@ -11,8 +11,9 @@ use op_task::doc::Doc;
 use op_task::layout::{self, Document};
 use op_task::reference::relative;
 use op_task::{Abbreviation, Task, merge, parse_partial, three_way};
+use semver::Version;
 
-use crate::format::{self, FORMATS, FormatError, Formats};
+use crate::version::{self, STORE_VERSIONS, StoreVersions, VersionError};
 
 // Sync runs unattended, so every conflict gets an answer and nothing a person wrote is lost. A field
 // or lines that both sides changed differently keep both versions in the task, with the published
@@ -20,16 +21,16 @@ use crate::format::{self, FORMATS, FormatError, Formats};
 // to a free number.
 #[derive(Clone)]
 pub struct TaskMergePolicy {
-    formats: &'static Formats,
+    versions: &'static StoreVersions,
     on_unreadable: Option<Report>,
 }
 
-type Report = Arc<dyn Fn(&FormatError) + Send + Sync>;
+type Report = Arc<dyn Fn(&VersionError) + Send + Sync>;
 
 impl Default for TaskMergePolicy {
     fn default() -> Self {
         Self {
-            formats: &FORMATS,
+            versions: &STORE_VERSIONS,
             on_unreadable: None,
         }
     }
@@ -42,24 +43,24 @@ impl std::fmt::Debug for TaskMergePolicy {
 }
 
 impl TaskMergePolicy {
-    pub fn with_formats(mut self, formats: &'static Formats) -> Self {
-        self.formats = formats;
+    pub fn with_store_versions(mut self, versions: &'static StoreVersions) -> Self {
+        self.versions = versions;
         self
     }
 
-    // A sync that meets a format this binary cannot read stops, and nothing else hears of it but
-    // through this, so the daemon can update itself.
-    pub fn on_unreadable(mut self, report: impl Fn(&FormatError) + Send + Sync + 'static) -> Self {
+    // A sync that meets a store version this binary cannot read stops. Nothing else hears of it,
+    // so this tells the daemon, which then updates itself.
+    pub fn on_unreadable(mut self, report: impl Fn(&VersionError) + Send + Sync + 'static) -> Self {
         self.on_unreadable = Some(Arc::new(report));
         self
     }
 
-    fn readable(&self, side: &dyn Snapshot) -> Result<Option<u32>, BackendError> {
-        let Some(format) = format::format_of(side)? else {
+    fn readable(&self, side: &dyn Snapshot) -> Result<Option<Version>, BackendError> {
+        let Some(stored) = version::version_of(side)? else {
             return Ok(None);
         };
-        match self.formats.stored(format) {
-            Ok(_) => Ok(Some(format)),
+        match self.versions.stored(&stored) {
+            Ok(_) => Ok(Some(stored)),
             Err(problem) => {
                 if let Some(report) = &self.on_unreadable {
                     report(&problem);
@@ -72,13 +73,13 @@ impl TaskMergePolicy {
     fn raised(
         &self,
         side: &dyn Snapshot,
-        format: Option<u32>,
-        target: u32,
+        stored: Option<&Version>,
+        target: &Version,
     ) -> Result<Vec<Op>, BackendError> {
-        match format {
-            Some(format) if format < target => self
-                .formats
-                .migration(side, format, target)
+        match stored {
+            Some(stored) if stored < target => self
+                .versions
+                .migration(side, stored, target)
                 .map_err(BackendError::sync),
             _ => Ok(Vec::new()),
         }
@@ -89,23 +90,23 @@ impl TaskMergePolicy {
 type File = (String, Vec<u8>);
 
 impl MergePolicy for TaskMergePolicy {
-    // Both sides move to the newer of their two formats. Two daemons that migrate the same store
-    // write the same bytes, so their merge holds no conflict.
+    // Both sides move to the newer of their two store versions. Two daemons that migrate the same
+    // store write the same bytes, so their merge holds no conflict.
     fn align(
         &self,
         base: &dyn Snapshot,
         ours: &dyn Snapshot,
         theirs: &dyn Snapshot,
     ) -> Result<Alignment, BackendError> {
-        let (ours_format, theirs_format) = (self.readable(ours)?, self.readable(theirs)?);
-        let Some(target) = ours_format.max(theirs_format) else {
+        let (ours_version, theirs_version) = (self.readable(ours)?, self.readable(theirs)?);
+        let Some(target) = ours_version.clone().max(theirs_version.clone()) else {
             return Ok(Alignment::default());
         };
-        let base_format = format::format_of(base)?;
+        let base_version = version::version_of(base)?;
         Ok(Alignment {
-            base: self.raised(base, base_format, target)?,
-            ours: self.raised(ours, ours_format, target)?,
-            theirs: self.raised(theirs, theirs_format, target)?,
+            base: self.raised(base, base_version.as_ref(), &target)?,
+            ours: self.raised(ours, ours_version.as_ref(), &target)?,
+            theirs: self.raised(theirs, theirs_version.as_ref(), &target)?,
         })
     }
 

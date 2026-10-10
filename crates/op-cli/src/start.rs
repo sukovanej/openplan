@@ -30,11 +30,11 @@ pub fn init(
 
 // A repository that kept its tasks in `.plan/` beside the code moves them out: onto the tasks branch
 // with the history of `.plan/`, or into a local directory with a history of its own. Tasks that
-// already live there move to the store format of this openplan.
+// already live there move to the store version of this openplan.
 pub fn migrate(root: &Path, daemon_url: Option<&str>, backend: Option<BackendKind>) -> Result<()> {
     let checkout = match Location::find(root, None) {
         Err(OpenError::NeedsMigration(checkout)) => checkout,
-        Ok(_) if backend.is_none() => return migrate_format(root, daemon_url),
+        Ok(_) if backend.is_none() => return migrate_store_version(root, daemon_url),
         Ok(location) => bail!(
             "{} already keeps its tasks {}; there is nothing to migrate",
             location.root.display(),
@@ -84,16 +84,16 @@ pub fn migrate(root: &Path, daemon_url: Option<&str>, backend: Option<BackendKin
     Ok(())
 }
 
-fn migrate_format(root: &Path, daemon_url: Option<&str>) -> Result<()> {
+fn migrate_store_version(root: &Path, daemon_url: Option<&str>) -> Result<()> {
     let migration = crate::plan::Plan::resolve(root, daemon_url)?.migrate()?;
     match migration.from {
         Some(from) => println!(
-            "migrated the tasks of {} from store format {from} to format {}",
-            migration.project, migration.format
+            "migrated the tasks of {} from store version {from} to {}",
+            migration.project, migration.version
         ),
         None => println!(
-            "the tasks of {} already use store format {}; there is nothing to migrate",
-            migration.project, migration.format
+            "the tasks of {} already use store version {}; there is nothing to migrate",
+            migration.project, migration.version
         ),
     }
     Ok(())

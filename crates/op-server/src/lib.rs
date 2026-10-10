@@ -694,7 +694,7 @@ pub(crate) fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, A
             project.name()
         )));
     }
-    match project.unreadable_format() {
+    match project.unreadable_version() {
         None => Ok(project),
         Some(problem) => Err(TrackerError::from(problem).into()),
     }
@@ -960,16 +960,16 @@ async fn rename_project(
     Ok(Json(view))
 }
 
-// A daemon migrates a store by itself when a release reads the new format. Before that, only this
-// request migrates it.
+// A daemon migrates a store by itself when a release reads the new store version. Before that,
+// only this request migrates it.
 #[utoipa::path(
     post,
     path = "/api/projects/{project}/migrate",
     params(("project" = String, Path, description = "Project name")),
     responses(
-        (status = 200, description = "The tasks are in the format this daemon writes", body = Migration),
+        (status = 200, description = "The tasks are in the store version this daemon writes", body = Migration),
         (status = 404, description = "No such project", body = ApiErrorBody),
-        (status = 409, description = "The project has no tasks yet, or this daemon cannot read their format", body = ApiErrorBody),
+        (status = 409, description = "The project has no tasks yet, or this daemon cannot read their store version", body = ApiErrorBody),
         (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
     )
 )]
@@ -985,8 +985,8 @@ async fn migrate_project(
         project.catch_up();
         Ok(Migration {
             project: project.name(),
-            from,
-            format: project.tracker().formats().current(),
+            from: from.map(|version| version.to_string()),
+            version: project.tracker().store_versions().current().to_string(),
         })
     })
     .await?;
@@ -1155,7 +1155,7 @@ impl From<TrackerError> for ApiError {
             | TrackerError::TagReferenced { .. }
             | TrackerError::AlreadyInitialized(_)
             | TrackerError::NotInitialized
-            | TrackerError::Format(_)
+            | TrackerError::Version(_)
             | TrackerError::Backend(BackendError::Contended) => StatusCode::CONFLICT,
             // The request is fine; the stored document is what has to change.
             TrackerError::MissingCreated { .. }

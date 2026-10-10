@@ -33,7 +33,7 @@ pub enum TrackerError {
     #[error(transparent)]
     Config(#[from] ConfigError),
     #[error(transparent)]
-    Format(#[from] crate::format::FormatError),
+    Version(#[from] crate::version::VersionError),
     #[error(transparent)]
     Task(#[from] op_task::TaskError),
     #[error(transparent)]

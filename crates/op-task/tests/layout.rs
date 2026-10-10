@@ -61,32 +61,34 @@ fn the_config_round_trips() {
 }
 
 #[test]
-fn a_config_without_a_format_is_format_one() {
+fn a_config_without_a_version_is_the_first_store_version() {
     assert_eq!(
-        config::format("abbreviation = \"OPP\"\n").expect("format"),
-        1
+        config::version("abbreviation = \"OPP\"\n").expect("version"),
+        config::FIRST_VERSION
     );
-    assert!(config::format("format = 0").is_err());
-    assert!(config::format("format = \"two\"").is_err());
+    assert_eq!(config::FIRST_VERSION.to_string(), "0.0.1");
+    assert!(config::version("version = \"two\"").is_err());
+    assert!(config::version("version = 2").is_err());
 }
 
 #[test]
-fn the_format_reads_from_a_config_whose_other_keys_it_does_not_know() {
-    let text = "format = 7\nproject_code = \"OPP\"\n";
-    assert_eq!(config::format(text).expect("format"), 7);
+fn the_version_reads_from_a_config_whose_other_keys_it_does_not_know() {
+    let text = "version = \"0.3.0\"\nproject_code = \"OPP\"\n";
+    assert_eq!(config::version(text).expect("version").to_string(), "0.3.0");
     assert!(Config::parse(text).is_err());
 }
 
 #[test]
-fn a_restamp_moves_only_the_format() {
+fn a_restamp_moves_only_the_version() {
+    let version = semver::Version::new(0, 0, 2);
     assert_eq!(
-        config::restamp("abbreviation = \"OPP\"\n", 2).expect("restamp"),
-        "format = 2\nabbreviation = \"OPP\"\n"
+        config::restamp("abbreviation = \"OPP\"\n", &version).expect("restamp"),
+        "version = \"0.0.2\"\nabbreviation = \"OPP\"\n"
     );
-    let restamped = config::restamp("project_code = \"OPP\"\n", 2).expect("restamp");
+    let restamped = config::restamp("project_code = \"OPP\"\n", &version).expect("restamp");
     assert_eq!(
-        config::format(&restamped).expect("format"),
-        2,
+        config::version(&restamped).expect("version"),
+        version,
         "{restamped}"
     );
     assert!(restamped.contains("project_code = \"OPP\""), "{restamped}");

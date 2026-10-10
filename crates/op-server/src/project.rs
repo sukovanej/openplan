@@ -14,7 +14,8 @@ use op_backend_local::LocalBackend;
 use op_index::Index;
 use op_task::layout::{self, Document};
 use op_tracker::{
-    FORMATS, FormatError, Formats, HistoryQuery, Stored, TaskMergePolicy, Tracker, TrackerError,
+    HistoryQuery, STORE_VERSIONS, StoreVersions, Stored, TaskMergePolicy, Tracker, TrackerError,
+    VersionError,
 };
 use tokio::sync::broadcast::error::RecvError;
 
@@ -197,7 +198,7 @@ pub(crate) fn canonical(path: &Path) -> PathBuf {
 struct Health {
     root_gone: bool,
     unreadable: Option<String>,
-    format: Option<FormatError>,
+    version_problem: Option<VersionError>,
     unsigned: bool,
     outside_unread: Option<String>,
 }
@@ -213,29 +214,29 @@ pub struct Project {
     loaded: Mutex<Option<RevisionId>>,
     sync: Mutex<Option<SyncLoop>>,
     health: Mutex<Health>,
-    // The format problem that stopped the last sync, so a merge with tasks this daemon cannot read.
-    sync_format: Arc<Mutex<Option<FormatError>>>,
+    // Why the last sync stopped: a merge with tasks in a store version this daemon cannot read.
+    sync_version: Arc<Mutex<Option<VersionError>>>,
     updates: OnceLock<Arc<SelfUpdate>>,
     root_misses: AtomicU32,
 }
 
 impl Project {
     pub fn open(name: impl Into<String>, location: Location) -> Result<Self, OpenError> {
-        Self::open_in(name, location, &FORMATS)
+        Self::open_in(name, location, &STORE_VERSIONS)
     }
 
     pub fn open_in(
         name: impl Into<String>,
         location: Location,
-        formats: &'static Formats,
+        versions: &'static StoreVersions,
     ) -> Result<Self, OpenError> {
         let signer = op_backend_git::signer(&location.root);
-        let sync_format: Arc<Mutex<Option<FormatError>>> = Arc::default();
-        let reported = Arc::clone(&sync_format);
+        let sync_version: Arc<Mutex<Option<VersionError>>> = Arc::default();
+        let reported = Arc::clone(&sync_version);
         let policy = TaskMergePolicy::default()
-            .with_formats(formats)
+            .with_store_versions(versions)
             .on_unreadable(move |problem| {
-                *reported.lock().expect("sync format poisoned") = Some(problem.clone());
+                *reported.lock().expect("sync version poisoned") = Some(problem.clone());
             });
         let backend = open_backend_with(&location, &signer, true, policy)?;
         let forge = crate::forge::of_project(&location);
@@ -246,12 +247,12 @@ impl Project {
             signer,
             tracker: Tracker::new(backend)
                 .with_forge(forge.clone())
-                .with_formats(formats),
+                .with_store_versions(versions),
             index: Mutex::new(Index::new().with_forge(forge)),
             loaded: Mutex::new(None),
             sync: Mutex::new(None),
             health: Mutex::new(Health::default()),
-            sync_format,
+            sync_version,
             updates: OnceLock::new(),
             root_misses: AtomicU32::new(0),
         };
@@ -263,7 +264,12 @@ impl Project {
     // project is dropped.
     pub(crate) fn start(self: &Arc<Self>, publisher: Publisher) {
         let _ = self.updates.set(Arc::clone(publisher.updates()));
-        if self.lock_health().format.as_ref().is_some_and(needs_update) {
+        if self
+            .lock_health()
+            .version_problem
+            .as_ref()
+            .is_some_and(needs_update)
+        {
             publisher.updates().want();
         }
         let events = self.tracker.backend().subscribe();
@@ -362,13 +368,13 @@ impl Project {
         self.record_health(result, migration);
     }
 
-    // A store of an older format moves to this daemon's format as soon as the daemon reads it, when
-    // a release reads that format. Returns why it could not.
+    // A store of an older store version moves to this daemon's store version as soon as the daemon
+    // reads it, when a release reads that store version. Returns why it could not.
     fn migrate_if_due(&self) -> Option<String> {
         let Ok(Some(Stored::Older(from))) = self.tracker.stored() else {
             return None;
         };
-        if !self.tracker.formats().migrates_by_itself() {
+        if !self.tracker.store_versions().migrates_by_itself() {
             return None;
         }
         let migrated = self
@@ -377,31 +383,32 @@ impl Project {
             .and_then(|actor| self.tracker.migrate(&actor));
         match migrated {
             Ok(_) => {
-                tracing::info!(project = %self.name(), from, to = self.tracker.formats().current(), "migrated the tasks");
+                tracing::info!(project = %self.name(), %from, to = %self.tracker.store_versions().current(), "migrated the tasks");
                 None
             }
             Err(err) => Some(format!(
-                "cannot migrate the tasks from format {from}: {err}"
+                "cannot migrate the tasks from store version {from}: {err}"
             )),
         }
     }
 
     fn record_health(&self, result: Result<Loaded, TrackerError>, migration: Option<String>) {
-        let (unreadable, format) = match result {
-            Ok(loaded) => (migration.or(loaded.unreadable), loaded.format),
+        let (unreadable, version_problem) = match result {
+            Ok(loaded) => (migration.or(loaded.unreadable), loaded.version_problem),
             Err(err) => (Some(err.to_string()), None),
         };
         if let Some(reason) = &unreadable {
             tracing::warn!(project = %self.name(), %reason, "the project cannot serve its tasks");
         }
-        if let Some(problem) = &format {
-            tracing::warn!(project = %self.name(), %problem, "the tasks use another store format");
+        if let Some(problem) = &version_problem {
+            tracing::warn!(project = %self.name(), %problem, "the tasks use another store version");
         }
         let newly_needs_update = {
             let mut health = self.lock_health();
-            let newly = format.as_ref().is_some_and(needs_update) && health.format != format;
+            let newly = version_problem.as_ref().is_some_and(needs_update)
+                && health.version_problem != version_problem;
             health.unreadable = unreadable;
-            health.format = format;
+            health.version_problem = version_problem;
             newly
         };
         if newly_needs_update && let Some(updates) = self.updates.get() {
@@ -409,22 +416,23 @@ impl Project {
         }
     }
 
-    // A store this daemon cannot read; one in an older format that it does not migrate by itself
-    // still serves its tasks.
-    pub(crate) fn unreadable_format(&self) -> Option<FormatError> {
+    // A store this daemon cannot read. A store in an older store version that the daemon does not
+    // migrate by itself still serves its tasks.
+    pub(crate) fn unreadable_version(&self) -> Option<VersionError> {
         self.lock_health()
-            .format
+            .version_problem
             .clone()
-            .filter(|problem| !matches!(problem, FormatError::Unmigrated { .. }))
+            .filter(|problem| !matches!(problem, VersionError::Unmigrated { .. }))
     }
 
-    // A sync that stopped on a format this daemon cannot read asks for an update, as an open does.
+    // A sync that stopped on a store version this daemon cannot read asks for an update, as an open
+    // does.
     pub(crate) fn synced(&self, status: &op_backend::SyncStatus) {
-        let mut sync_format = self.lock_sync_format();
+        let mut sync_version = self.lock_sync_version();
         if status.error.is_none() {
-            *sync_format = None;
+            *sync_version = None;
         }
-        if sync_format.is_some()
+        if sync_version.is_some()
             && let Some(updates) = self.updates.get()
         {
             updates.want();
@@ -499,18 +507,18 @@ impl Project {
             }
         }
         *loaded = head;
-        let formats = self.tracker.formats();
-        let format = plan.format_problem().cloned().or_else(|| {
+        let versions = self.tracker.store_versions();
+        let version_problem = plan.version_problem().cloned().or_else(|| {
             plan.migrated_from()
-                .filter(|_| !formats.migrates_by_itself())
-                .map(|from| formats.unmigrated(from))
+                .filter(|_| !versions.migrates_by_itself())
+                .map(|from| versions.unmigrated(from))
         });
         Ok(Loaded {
-            unreadable: match format {
+            unreadable: match version_problem {
                 Some(_) => None,
                 None => plan.config().err().map(|err| err.to_string()),
             },
-            format,
+            version_problem,
         })
     }
 
@@ -623,12 +631,15 @@ impl Project {
         if let Some(reason) = &health.unreadable {
             faults.push(fault(FaultKind::Unreadable, reason.clone()));
         }
-        if let Some(problem) = &health.format {
-            faults.push(self.format_fault(&project, problem));
+        if let Some(problem) = &health.version_problem {
+            faults.push(self.version_fault(&project, problem));
         }
-        let sync_format = self.lock_sync_format().clone();
-        if let Some(problem) = sync_format.as_ref().filter(|_| health.format.is_none()) {
-            faults.push(self.format_fault(&project, problem));
+        let sync_version = self.lock_sync_version().clone();
+        if let Some(problem) = sync_version
+            .as_ref()
+            .filter(|_| health.version_problem.is_none())
+        {
+            faults.push(self.version_fault(&project, problem));
         }
         if health.unsigned {
             faults.push(fault(
@@ -639,7 +650,7 @@ impl Project {
         if let Some(error) = self
             .sync_status()
             .and_then(|status| status.error)
-            .filter(|_| sync_format.is_none())
+            .filter(|_| sync_version.is_none())
         {
             faults.push(fault(
                 FaultKind::SyncFailed,
@@ -693,14 +704,14 @@ impl Project {
         moved
     }
 
-    fn format_fault(&self, project: &str, problem: &FormatError) -> Fault {
+    fn version_fault(&self, project: &str, problem: &VersionError) -> Fault {
         let (kind, message) = match problem {
-            FormatError::Newer { .. } => (
-                FaultKind::NewerFormat,
+            VersionError::Newer { .. } => (
+                FaultKind::NewerStoreVersion,
                 format!("{problem}; {}", self.update_hint()),
             ),
-            FormatError::Retired { .. } | FormatError::Unmigrated { .. } => {
-                (FaultKind::OlderFormat, problem.to_string())
+            VersionError::Retired { .. } | VersionError::Unmigrated { .. } => {
+                (FaultKind::OlderStoreVersion, problem.to_string())
             }
         };
         Fault {
@@ -722,8 +733,8 @@ impl Project {
         }
     }
 
-    fn lock_sync_format(&self) -> MutexGuard<'_, Option<FormatError>> {
-        self.sync_format.lock().expect("sync format poisoned")
+    fn lock_sync_version(&self) -> MutexGuard<'_, Option<VersionError>> {
+        self.sync_version.lock().expect("sync version poisoned")
     }
 
     fn lock_health(&self) -> MutexGuard<'_, Health> {
@@ -746,11 +757,11 @@ impl std::fmt::Debug for Project {
 
 struct Loaded {
     unreadable: Option<String>,
-    format: Option<FormatError>,
+    version_problem: Option<VersionError>,
 }
 
-fn needs_update(problem: &FormatError) -> bool {
-    matches!(problem, FormatError::Newer { .. })
+fn needs_update(problem: &VersionError) -> bool {
+    matches!(problem, VersionError::Newer { .. })
 }
 
 #[derive(Clone, Copy)]

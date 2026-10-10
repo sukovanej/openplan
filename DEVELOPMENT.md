@@ -70,25 +70,27 @@ mise run skills  # skills/ → .agents/skills/, with a symlink in .claude/skills
 mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
 ```
 
-## Store formats
+## Store versions
 
-`format` in the `config.toml` of each store tells which layout its files have. A store without
-the key is format 1. `FORMATS` in `crates/op-tracker/src/format.rs` lists the formats that this
-binary knows, oldest first.
+`version` in the `config.toml` of each store is a semver string that tells which layout its files
+have. It is not the openplan version. A store without the key is store version `0.0.1`.
+`STORE_VERSIONS` in `crates/op-tracker/src/version.rs` lists the store versions that this binary
+knows, oldest first.
 
-To change the layout, add a format to the end of `FORMATS`:
+To change the layout, add a store version to the end of `STORE_VERSIONS`:
 
-- Set `migrate` to a function that rewrites a store of the format before it. The function gets
-  the whole store and returns the writes. Give it no time, no random value, and no version: two
-  daemons that migrate the same store must write the same bytes, or their sync conflicts.
-- Set `released: None`. `mise run release` puts the version there.
-- Add a store of the old format to the tests, and check what the migration makes of it.
+- Set `migrate` to a function that rewrites a store of the version before it. The function gets
+  the whole store and returns the writes. Give it no time, no random value, and no openplan
+  version: two daemons that migrate the same store must write the same bytes, or their sync
+  conflicts.
+- Set `released: None`. `mise run release` puts the openplan version there.
+- Add a store of the old version to the tests, and check what the migration makes of it.
 
-A daemon migrates a store by itself only when a release reads the new format. Until then, a
+A daemon migrates a store by itself only when a release reads the new store version. Until then, a
 canary or a source build serves an older store read-only, and `openplan migrate` migrates it.
 
-To stop migrating from the oldest format, remove its entry, remove `migrate` from the next one,
-and add the oldest format to `retired` with the last release that migrates it.
+To stop migrating from the oldest store version, remove its entry, remove `migrate` from the next
+one, and add the oldest store version to `retired` with the last release that migrates it.
 
 ## Release
 

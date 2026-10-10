@@ -2,40 +2,41 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use op_backend::{BackendError, Op, Overlay, RevisionId, Snapshot};
-use op_task::config;
+use op_task::config::{self, FIRST_VERSION};
 use op_task::layout;
+use semver::Version;
 
 use crate::TrackerError;
 
 pub type Step = fn(&dyn Snapshot) -> Result<Vec<Op>, BackendError>;
 
-#[derive(Clone, Copy)]
-pub struct Format {
-    pub number: u32,
-    // The first release that reads the format. `None` marks a format that only canary and source
-    // builds know yet.
+#[derive(Clone)]
+pub struct StoreVersion {
+    pub version: Version,
+    // The first release that reads this store version. `None` marks a store version that only
+    // canary and source builds know yet.
     pub released: Option<&'static str>,
-    // Rewrites a store of the format before this one into this one; `None` for the oldest format.
+    // Rewrites a store of the version before this one into this one; `None` for the oldest.
     pub migrate: Option<Step>,
 }
 
-// A format that this binary no longer migrates, and the last release that still does.
-#[derive(Clone, Copy)]
+// A store version that this binary no longer migrates, and the last release that still does.
+#[derive(Clone)]
 pub struct Retired {
-    pub number: u32,
+    pub version: Version,
     pub last_release: &'static str,
 }
 
-pub struct Formats {
+pub struct StoreVersions {
     // Oldest first.
-    pub known: &'static [Format],
+    pub known: &'static [StoreVersion],
     pub retired: &'static [Retired],
 }
 
-// `mise run release` stamps its version on each format that no release reads yet.
-pub static FORMATS: Formats = Formats {
-    known: &[Format {
-        number: 1,
+// `mise run release` stamps its version on each store version that no release reads yet.
+pub static STORE_VERSIONS: StoreVersions = StoreVersions {
+    known: &[StoreVersion {
+        version: FIRST_VERSION,
         released: Some("0.0.1"),
         migrate: None,
     }],
@@ -43,15 +44,15 @@ pub static FORMATS: Formats = Formats {
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum FormatError {
+pub enum VersionError {
     #[error(
-        "these tasks use store format {format}, and this openplan reads formats up to {readable}; \
-         they need a newer openplan"
+        "these tasks use store version {stored}, and this openplan reads store versions up to \
+         {readable}; they need a newer openplan"
     )]
-    Newer { format: u32, readable: u32 },
+    Newer { stored: Version, readable: Version },
     #[error(
-        "these tasks use store format {format}, and this openplan migrates only format {oldest} \
-         and newer; {}",
+        "these tasks use store version {stored}, and this openplan migrates only store version \
+         {oldest} and newer; {}",
         match last_release {
             Some(release) => format!(
                 "run openplan {release} on this project once to migrate them, then update"
@@ -60,91 +61,92 @@ pub enum FormatError {
         }
     )]
     Retired {
-        format: u32,
-        oldest: u32,
+        stored: Version,
+        oldest: Version,
         last_release: Option<&'static str>,
     },
     #[error(
-        "these tasks use store format {format}, and this build writes format {current}, which no \
-         release reads yet, so it does not migrate them by itself; run `openplan migrate` to \
-         migrate them, and teammates then need a canary build until a release reads format \
-         {current}"
+        "these tasks use store version {stored}, and this build writes store version {current}, \
+         which no release reads yet, so it does not migrate them by itself; run `openplan \
+         migrate` to migrate them, and teammates then need a canary build until a release reads \
+         store version {current}"
     )]
-    Unmigrated { format: u32, current: u32 },
+    Unmigrated { stored: Version, current: Version },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stored {
     Current,
-    Older(u32),
+    Older(Version),
 }
 
-impl Formats {
-    pub fn current(&self) -> u32 {
-        self.newest().number
+impl StoreVersions {
+    pub fn current(&self) -> &Version {
+        &self.newest().version
     }
 
-    pub fn oldest(&self) -> u32 {
-        self.known
+    pub fn oldest(&self) -> &Version {
+        &self
+            .known
             .first()
-            .expect("a binary knows one format")
-            .number
+            .expect("a binary knows one store version")
+            .version
     }
 
-    // A daemon migrates a store by itself only to a format that a stable release reads, so a canary
-    // never moves a team's store out of reach of their releases.
+    // A daemon migrates a store by itself only to a store version that a stable release reads, so a
+    // canary never moves a team's store out of reach of their releases.
     pub fn migrates_by_itself(&self) -> bool {
         self.newest().released.is_some()
     }
 
-    pub fn stored(&self, format: u32) -> Result<Stored, FormatError> {
+    pub fn stored(&self, stored: &Version) -> Result<Stored, VersionError> {
         let current = self.current();
-        if format > current {
-            return Err(FormatError::Newer {
-                format,
-                readable: current,
+        if stored > current {
+            return Err(VersionError::Newer {
+                stored: stored.clone(),
+                readable: current.clone(),
             });
         }
-        if format < self.oldest() {
-            return Err(FormatError::Retired {
-                format,
-                oldest: self.oldest(),
+        if stored < self.oldest() {
+            return Err(VersionError::Retired {
+                stored: stored.clone(),
+                oldest: self.oldest().clone(),
                 last_release: self
                     .retired
                     .iter()
-                    .find(|retired| retired.number == format)
+                    .find(|retired| retired.version == *stored)
                     .map(|retired| retired.last_release),
             });
         }
-        Ok(match format == current {
+        Ok(match stored == current {
             true => Stored::Current,
-            false => Stored::Older(format),
+            false => Stored::Older(stored.clone()),
         })
     }
 
-    pub fn unmigrated(&self, format: u32) -> FormatError {
-        FormatError::Unmigrated {
-            format,
-            current: self.current(),
+    pub fn unmigrated(&self, stored: &Version) -> VersionError {
+        VersionError::Unmigrated {
+            stored: stored.clone(),
+            current: self.current().clone(),
         }
     }
 
-    // The writes that move a store of format `from` to format `to`, its `format` key included.
+    // The writes that move a store of version `from` to version `to`, its `version` key included.
     pub fn migration(
         &self,
         snapshot: &dyn Snapshot,
-        from: u32,
-        to: u32,
+        from: &Version,
+        to: &Version,
     ) -> Result<Vec<Op>, TrackerError> {
         let mut overlay = Overlay::new(snapshot);
-        for format in self
+        for known in self
             .known
             .iter()
-            .filter(|format| format.number > from && format.number <= to)
+            .filter(|known| known.version > *from && known.version <= *to)
         {
-            let step = format
+            let step = known
                 .migrate
-                .expect("every format after the oldest migrates from the one before it");
+                .expect("every store version after the oldest migrates from the one before it");
             let ops = step(&overlay)?;
             overlay.apply(ops);
         }
@@ -155,16 +157,16 @@ impl Formats {
         Ok(overlay.into_ops())
     }
 
-    // The store as this binary reads it: a store of an older format reads as if migrated, and
+    // The store as this binary reads it: a store of an older version reads as if migrated, and
     // `migrated_from` says from which. A store this binary cannot read stays as it is.
     pub fn view(&self, snapshot: Arc<dyn Snapshot>) -> Result<View, TrackerError> {
-        let stored = format_of(&*snapshot)?.map(|format| self.stored(format));
+        let stored = version_of(&*snapshot)?.map(|version| self.stored(&version));
         match stored {
-            Some(Ok(Stored::Older(format))) => {
-                let ops = self.migration(&*snapshot, format, self.current())?;
+            Some(Ok(Stored::Older(version))) => {
+                let ops = self.migration(&*snapshot, &version, self.current())?;
                 Ok(View {
                     snapshot: Arc::new(Migrated::new(snapshot, ops)),
-                    migrated_from: Some(format),
+                    migrated_from: Some(version),
                     problem: None,
                 })
             }
@@ -181,25 +183,25 @@ impl Formats {
         }
     }
 
-    fn newest(&self) -> &Format {
-        self.known.last().expect("a binary knows one format")
+    fn newest(&self) -> &StoreVersion {
+        self.known.last().expect("a binary knows one store version")
     }
 }
 
 pub struct View {
     pub snapshot: Arc<dyn Snapshot>,
-    pub migrated_from: Option<u32>,
-    pub problem: Option<FormatError>,
+    pub migrated_from: Option<Version>,
+    pub problem: Option<VersionError>,
 }
 
-// A config that does not parse has no format; the config error says why.
-pub(crate) fn format_of(snapshot: &dyn Snapshot) -> Result<Option<u32>, BackendError> {
+// A config that does not parse has no version; the config error says why.
+pub(crate) fn version_of(snapshot: &dyn Snapshot) -> Result<Option<Version>, BackendError> {
     Ok(snapshot
         .read_text(layout::CONFIG)?
-        .and_then(|text| config::format(&text).ok()))
+        .and_then(|text| config::version(&text).ok()))
 }
 
-// A store of an older format with its migration applied in memory. It keeps the revision of the
+// A store of an older version with its migration applied in memory. It keeps the revision of the
 // store it reads, so a reader can tell where it stands.
 struct Migrated {
     base: Arc<dyn Snapshot>,

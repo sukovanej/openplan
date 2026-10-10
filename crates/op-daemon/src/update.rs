@@ -102,8 +102,8 @@ impl Updater {
         }
     }
 
-    // A stable daemon that is up to date and still cannot read a store meets a format that only a
-    // canary build writes.
+    // A stable daemon that is up to date and still cannot read a store meets a store version that
+    // only a canary build writes.
     fn newest_reads_none(&self) -> String {
         match self.channel() {
             Channel::Stable => format!(

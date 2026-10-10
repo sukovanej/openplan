@@ -7,11 +7,12 @@ use op_backend_git::{GitBackend, Options};
 use op_backend_local::LocalBackend;
 use op_task::{Status, Task, Timestamp};
 use op_tracker::{
-    FORMATS, Format, FormatError, Formats, HistoryQuery, Retired, TaskMergePolicy, Tracker,
-    TrackerError,
+    HistoryQuery, Retired, STORE_VERSIONS, StoreVersion, StoreVersions, TaskMergePolicy, Tracker,
+    TrackerError, VersionError,
 };
+use semver::Version;
 
-// Format 2 of these tests spells the status `todo` as `backlog`.
+// Store version 0.0.2 of these tests spells the status `todo` as `backlog`.
 fn backlog_for_todo(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
     let mut ops = Vec::new();
     for path in snapshot.list("tasks")? {
@@ -24,17 +25,17 @@ fn backlog_for_todo(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
     Ok(ops)
 }
 
-const FIRST: Format = Format {
-    number: 1,
+const FIRST: StoreVersion = StoreVersion {
+    version: Version::new(0, 0, 1),
     released: Some("0.0.1"),
     migrate: None,
 };
 
-static RELEASED: Formats = Formats {
+static RELEASED: StoreVersions = StoreVersions {
     known: &[
         FIRST,
-        Format {
-            number: 2,
+        StoreVersion {
+            version: Version::new(0, 0, 2),
             released: Some("0.0.9"),
             migrate: Some(backlog_for_todo),
         },
@@ -42,11 +43,11 @@ static RELEASED: Formats = Formats {
     retired: &[],
 };
 
-static UNRELEASED: Formats = Formats {
+static UNRELEASED: StoreVersions = StoreVersions {
     known: &[
         FIRST,
-        Format {
-            number: 2,
+        StoreVersion {
+            version: Version::new(0, 0, 2),
             released: None,
             migrate: Some(backlog_for_todo),
         },
@@ -54,14 +55,14 @@ static UNRELEASED: Formats = Formats {
     retired: &[],
 };
 
-static RETIRING: Formats = Formats {
-    known: &[Format {
-        number: 2,
+static RETIRING: StoreVersions = StoreVersions {
+    known: &[StoreVersion {
+        version: Version::new(0, 0, 2),
         released: Some("0.0.9"),
         migrate: None,
     }],
     retired: &[Retired {
-        number: 1,
+        version: Version::new(0, 0, 1),
         last_release: "0.0.9",
     }],
 };
@@ -80,7 +81,7 @@ struct Store {
 }
 
 impl Store {
-    // A format 1 store with one task in `todo`.
+    // A store of version 0.0.1 with one task in `todo`.
     fn first() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         let backend: Arc<dyn Backend> = Arc::new(
@@ -100,8 +101,8 @@ impl Store {
         Self { _dir: dir, backend }
     }
 
-    fn tracker(&self, formats: &'static Formats) -> Tracker {
-        Tracker::new(Arc::clone(&self.backend)).with_formats(formats)
+    fn tracker(&self, versions: &'static StoreVersions) -> Tracker {
+        Tracker::new(Arc::clone(&self.backend)).with_store_versions(versions)
     }
 
     fn config(&self) -> String {
@@ -125,9 +126,13 @@ fn status(tracker: &Tracker) -> Status {
 }
 
 #[test]
-fn a_store_starts_in_the_newest_format() {
+fn a_store_starts_in_the_newest_store_version() {
     let store = Store::first();
-    assert_eq!(store.config(), "format = 1\nabbreviation = \"OPP\"\n");
+    assert_eq!(
+        store.config(),
+        "version = \"0.0.1\"
+abbreviation = \"OPP\"\n"
+    );
 }
 
 #[test]
@@ -136,24 +141,27 @@ fn an_older_store_reads_as_migrated_and_refuses_a_write_until_it_migrates() {
     let tracker = store.tracker(&RELEASED);
 
     let plan = tracker.plan().expect("plan");
-    assert_eq!(plan.migrated_from(), Some(1));
+    assert_eq!(plan.migrated_from(), Some(&Version::new(0, 0, 1)));
     assert_eq!(status(&tracker), Status::Backlog);
     let refused = tracker.create_task(&actor(), &Task::new("Next", Status::Todo, stamp()));
     assert!(
         matches!(
             refused,
-            Err(TrackerError::Format(FormatError::Unmigrated {
-                format: 1,
-                current: 2,
-                ..
-            }))
+            Err(TrackerError::Version(VersionError::Unmigrated { .. }))
         ),
         "{refused:?}"
     );
 
-    assert_eq!(tracker.migrate(&actor()).expect("migrate"), Some(1));
+    assert_eq!(
+        tracker.migrate(&actor()).expect("migrate"),
+        Some(Version::new(0, 0, 1))
+    );
 
-    assert_eq!(store.config(), "format = 2\nabbreviation = \"OPP\"\n");
+    assert_eq!(
+        store.config(),
+        "version = \"0.0.2\"
+abbreviation = \"OPP\"\n"
+    );
     assert_eq!(tracker.plan().expect("plan").migrated_from(), None);
     assert_eq!(status(&tracker), Status::Backlog);
     assert_eq!(tracker.migrate(&actor()).expect("migrate again"), None);
@@ -171,12 +179,12 @@ fn the_history_names_the_migration_and_reads_older_revisions_as_migrated() {
     let entries = tracker.history(&HistoryQuery::default()).expect("history");
     assert_eq!(
         entries[0].revision.message,
-        "Migrate the tasks from format 1 to format 2"
+        "Migrate the tasks from store version 0.0.1 to 0.0.2"
     );
     let described = tracker.describe(&entries[0]).expect("describe");
     assert_eq!(
         described.lines(None, None),
-        vec!["Migrate the tasks from format 1 to format 2"]
+        vec!["Migrate the tasks from store version 0.0.1 to 0.0.2"]
     );
     assert_eq!(
         tracker
@@ -193,28 +201,28 @@ fn the_history_names_the_migration_and_reads_older_revisions_as_migrated() {
 }
 
 #[test]
-fn a_store_of_a_newer_format_names_the_release_it_needs() {
+fn a_store_of_a_newer_store_version_names_the_release_it_needs() {
     let store = Store::first();
     store.tracker(&RELEASED).migrate(&actor()).expect("migrate");
-    let tracker = store.tracker(&FORMATS);
+    let tracker = store.tracker(&STORE_VERSIONS);
 
     let problem = tracker.plan().expect("plan").config().map(drop);
-    let Err(TrackerError::Format(problem)) = problem else {
+    let Err(TrackerError::Version(problem)) = problem else {
         panic!("{problem:?}");
     };
     assert_eq!(
         problem.to_string(),
-        "these tasks use store format 2, and this openplan reads formats up to 1; they need a \
+        "these tasks use store version 0.0.2, and this openplan reads store versions up to 0.0.1; they need a \
          newer openplan"
     );
     assert!(matches!(
         tracker.update_task(&actor(), 1, |_| Ok(())),
-        Err(TrackerError::Format(FormatError::Newer { .. }))
+        Err(TrackerError::Version(VersionError::Newer { .. }))
     ));
 }
 
 #[test]
-fn a_retired_format_names_the_last_release_that_migrates_it() {
+fn a_retired_store_version_names_the_last_release_that_migrates_it() {
     let store = Store::first();
     let problem = store
         .tracker(&RETIRING)
@@ -222,18 +230,18 @@ fn a_retired_format_names_the_last_release_that_migrates_it() {
         .expect("plan")
         .config()
         .map(drop);
-    let Err(TrackerError::Format(problem)) = problem else {
+    let Err(TrackerError::Version(problem)) = problem else {
         panic!("{problem:?}");
     };
     assert_eq!(
         problem.to_string(),
-        "these tasks use store format 1, and this openplan migrates only format 2 and newer; \
+        "these tasks use store version 0.0.1, and this openplan migrates only store version 0.0.2 and newer; \
          run openplan 0.0.9 on this project once to migrate them, then update"
     );
 }
 
 #[test]
-fn only_a_released_format_migrates_by_itself() {
+fn only_a_released_store_version_migrates_by_itself() {
     assert!(RELEASED.migrates_by_itself());
     assert!(!UNRELEASED.migrates_by_itself());
 }
@@ -260,13 +268,18 @@ fn a_migration_depends_on_the_store_alone() {
 }
 
 #[test]
-fn every_format_after_the_oldest_migrates_from_the_one_before() {
-    for formats in [&FORMATS, &RELEASED, &UNRELEASED, &RETIRING] {
-        for (at, format) in formats.known.iter().enumerate() {
-            assert_eq!(format.migrate.is_some(), at > 0, "format {}", format.number);
+fn every_store_version_after_the_oldest_migrates_from_the_one_before() {
+    for versions in [&STORE_VERSIONS, &RELEASED, &UNRELEASED, &RETIRING] {
+        for (at, known) in versions.known.iter().enumerate() {
+            assert_eq!(
+                known.migrate.is_some(),
+                at > 0,
+                "store version {}",
+                known.version
+            );
         }
-        for pair in formats.known.windows(2) {
-            assert_eq!(pair[1].number, pair[0].number + 1);
+        for pair in versions.known.windows(2) {
+            assert!(pair[0].version < pair[1].version);
         }
     }
 }
@@ -289,30 +302,40 @@ struct Member {
     backend: Arc<GitBackend>,
 }
 
-fn open(root: &Path, name: &str, formats: &'static Formats, policy: TaskMergePolicy) -> Member {
+fn open(
+    root: &Path,
+    name: &str,
+    versions: &'static StoreVersions,
+    policy: TaskMergePolicy,
+) -> Member {
     let backend = Arc::new(
         GitBackend::open(
             root.join(name),
             Options::new(
-                Arc::new(policy.with_formats(formats)),
+                Arc::new(policy.with_store_versions(versions)),
                 Signer::fixed(Actor::new("openplan")),
             ),
         )
         .expect("open"),
     );
     Member {
-        tracker: Tracker::new(backend.clone()).with_formats(formats),
+        tracker: Tracker::new(backend.clone()).with_store_versions(versions),
         backend,
     }
 }
 
-fn join(root: &Path, name: &str, formats: &'static Formats, policy: TaskMergePolicy) -> Member {
+fn join(
+    root: &Path,
+    name: &str,
+    versions: &'static StoreVersions,
+    policy: TaskMergePolicy,
+) -> Member {
     let remote = root.join("remote.git");
     git(
         root,
         &["clone", "--quiet", remote.to_str().expect("utf-8"), name],
     );
-    open(root, name, formats, policy)
+    open(root, name, versions, policy)
 }
 
 impl Member {
@@ -327,14 +350,14 @@ impl Member {
     }
 }
 
-// Alice starts the tasks in format 1, and Bob migrates them to format 2 and pushes. Alice then
-// writes a task in format 1 before her next sync.
+// Alice starts the tasks in store version 0.0.1, and Bob migrates them to 0.0.2 and pushes.
+// Alice then writes a task in 0.0.1 before her next sync.
 fn diverged(root: &Path, alice_policy: TaskMergePolicy) -> Member {
     git(
         root,
         &["init", "--quiet", "--bare", "-b", "main", "remote.git"],
     );
-    let alice = join(root, "alice", &FORMATS, alice_policy);
+    let alice = join(root, "alice", &STORE_VERSIONS, alice_policy);
     alice
         .tracker
         .init(&actor(), "OPP".parse().expect("abbreviation"))
@@ -345,7 +368,7 @@ fn diverged(root: &Path, alice_policy: TaskMergePolicy) -> Member {
     bob.sync().expect("sync");
     bob.tracker.migrate(&actor()).expect("migrate");
     bob.sync().expect("sync");
-    alice.create("Written in format 1");
+    alice.create("Written in store version 0.0.1");
     alice
 }
 
@@ -367,9 +390,9 @@ fn a_sync_migrates_the_older_side_before_it_merges() {
 }
 
 #[test]
-fn a_sync_stops_on_a_format_this_binary_cannot_read_and_says_so() {
+fn a_sync_stops_on_a_store_version_this_binary_cannot_read_and_says_so() {
     let root = tempfile::tempdir().expect("tempdir");
-    let heard: Arc<Mutex<Option<FormatError>>> = Arc::default();
+    let heard: Arc<Mutex<Option<VersionError>>> = Arc::default();
     let reported = Arc::clone(&heard);
     let alice = diverged(
         root.path(),
@@ -381,12 +404,12 @@ fn a_sync_stops_on_a_format_this_binary_cannot_read_and_says_so() {
     let stopped = alice.sync();
 
     assert!(
-        matches!(&stopped, Err(BackendError::Sync(reason)) if reason.contains("store format 2")),
+        matches!(&stopped, Err(BackendError::Sync(reason)) if reason.contains("store version 0.0.2")),
         "{stopped:?}"
     );
     assert!(matches!(
         heard.lock().expect("lock").as_ref(),
-        Some(FormatError::Newer { format: 2, .. })
+        Some(VersionError::Newer { .. })
     ));
     let plan = alice.tracker.plan().expect("plan");
     assert_eq!(plan.numbers().count(), 2, "the local tasks stay");

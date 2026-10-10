@@ -12,28 +12,31 @@ use op_task::content::{self, Text};
 use op_task::layout;
 use op_task::tag::Tag;
 use op_task::{Abbreviation, PartialMetadata, Task, parse_partial};
+use semver::Version;
 
 mod describe;
 mod docs;
 mod error;
 mod files;
-mod format;
 mod message;
 mod plan;
 mod policy;
+mod version;
 
-pub use describe::{Described, DocChange, FieldChange, FormatChange, TagChange, TaskChange};
+pub use describe::{Described, DocChange, FieldChange, TagChange, TaskChange, VersionChange};
 pub use docs::{DocMoves, doc_moves};
 pub use error::TrackerError;
-pub use format::{FORMATS, Format, FormatError, Formats, Retired, Step, Stored};
 pub use plan::Plan;
 pub use policy::TaskMergePolicy;
+pub use version::{
+    Retired, STORE_VERSIONS, Step, StoreVersion, StoreVersions, Stored, VersionError,
+};
 
 #[derive(Clone)]
 pub struct Tracker {
     backend: Arc<dyn Backend>,
     forge: Option<Forge>,
-    formats: &'static Formats,
+    versions: &'static StoreVersions,
 }
 
 #[derive(Debug, Clone)]
@@ -66,17 +69,17 @@ impl Tracker {
         Self {
             backend,
             forge: None,
-            formats: &FORMATS,
+            versions: &STORE_VERSIONS,
         }
     }
 
-    pub fn with_formats(mut self, formats: &'static Formats) -> Self {
-        self.formats = formats;
+    pub fn with_store_versions(mut self, versions: &'static StoreVersions) -> Self {
+        self.versions = versions;
         self
     }
 
-    pub fn formats(&self) -> &'static Formats {
-        self.formats
+    pub fn store_versions(&self) -> &'static StoreVersions {
+        self.versions
     }
 
     // The repository of the project, so a revision names a pull request of it by the number alone.
@@ -94,11 +97,11 @@ impl Tracker {
     }
 
     pub fn plan(&self) -> Result<Plan, TrackerError> {
-        Plan::read_in(self.backend.head()?, self.formats)
+        Plan::read_in(self.backend.head()?, self.versions)
     }
 
     pub fn plan_at(&self, revision: &RevisionId) -> Result<Plan, TrackerError> {
-        Plan::read_in(self.backend.at(revision)?, self.formats)
+        Plan::read_in(self.backend.at(revision)?, self.versions)
     }
 
     pub(crate) fn write<T>(
@@ -107,12 +110,12 @@ impl Tracker {
         mut write: impl FnMut(&Plan) -> Result<(Vec<Op>, T), TrackerError>,
     ) -> Result<(Option<Committed>, T), TrackerError> {
         self.backend.transact(actor, |snapshot: Arc<dyn Snapshot>| {
-            let plan = Plan::read_in(snapshot, self.formats)?;
-            if let Some(problem) = plan.format_problem() {
+            let plan = Plan::read_in(snapshot, self.versions)?;
+            if let Some(problem) = plan.version_problem() {
                 return Err(problem.clone().into());
             }
-            if let Some(format) = plan.migrated_from() {
-                return Err(self.formats.unmigrated(format).into());
+            if let Some(stored) = plan.migrated_from() {
+                return Err(self.versions.unmigrated(stored).into());
             }
             let (ops, value) = write(&plan)?;
             let message = message::of(&plan, &ops, self.forge.as_ref())?;
@@ -142,7 +145,7 @@ impl Tracker {
             }
             let mut ops = vec![Op::put(
                 layout::CONFIG,
-                Config::new(self.formats.current(), abbreviation).to_file_string(),
+                Config::new(self.versions.current().clone(), abbreviation).to_file_string(),
             )];
             if plan.tag_names().is_empty() {
                 for tag in op_task::tag::defaults() {
@@ -156,28 +159,28 @@ impl Tracker {
 
     // Reads the config alone, so a check after every write costs one read.
     pub fn stored(&self) -> Result<Option<Stored>, TrackerError> {
-        match format::format_of(&*self.backend.head()?)? {
-            Some(format) => Ok(Some(self.formats.stored(format)?)),
+        match version::version_of(&*self.backend.head()?)? {
+            Some(stored) => Ok(Some(self.versions.stored(&stored)?)),
             None => Ok(None),
         }
     }
 
-    // Moves a store of an older format to this binary's format, in one revision. Returns the
-    // format it moved the store from; `None` where the store already had this one.
-    pub fn migrate(&self, actor: &Actor) -> Result<Option<u32>, TrackerError> {
-        let current = self.formats.current();
+    // Moves a store of an older store version to this binary's store version, in one revision.
+    // Returns the version it moved the store from; `None` where the store already had this one.
+    pub fn migrate(&self, actor: &Actor) -> Result<Option<Version>, TrackerError> {
+        let current = self.versions.current();
         let (_, from) = self
             .backend
             .transact(actor, |snapshot: Arc<dyn Snapshot>| {
-                let Some(format) = format::format_of(&*snapshot)? else {
+                let Some(stored) = version::version_of(&*snapshot)? else {
                     return Err(TrackerError::NotInitialized);
                 };
-                let Stored::Older(from) = self.formats.stored(format)? else {
+                let Stored::Older(from) = self.versions.stored(&stored)? else {
                     return Ok((Edit::new(String::new(), Vec::new()), None));
                 };
-                let ops = self.formats.migration(&*snapshot, from, current)?;
+                let ops = self.versions.migration(&*snapshot, &from, current)?;
                 Ok((
-                    Edit::new(describe::migration_line(from, current), ops),
+                    Edit::new(describe::migration_line(&from, current), ops),
                     Some(from),
                 ))
             })?;
@@ -509,8 +512,8 @@ impl Tracker {
     // Read from the documents themselves, not from the message: a revision that another tool wrote
     // says what it changes in its own words, or in none. A merge is described against its first
     // parent.
-    // A side in an older format reads as migrated, so each change reads in this binary's terms, and
-    // a migration reads as one line rather than as an edit of every document it rewrote.
+    // A side in an older store version reads as migrated, so each change reads in this binary's
+    // terms, and a migration reads as one line rather than as an edit of each document it rewrote.
     pub fn describe(&self, entry: &LogEntry) -> Result<Described, TrackerError> {
         let revision = &entry.revision;
         let parent = revision.parents.first();
@@ -519,20 +522,20 @@ impl Tracker {
             None => Ok(None),
         };
         let raw_after = |path: &str| self.backend.read_at(&revision.id, path);
-        let (from, to) = (format_of(&raw_before)?, format_of(&raw_after)?);
-        let current = self.formats.current();
-        let migrated = |revision: &RevisionId, format: Option<u32>| match format {
-            Some(format) if format < current => match self.backend.at(revision) {
+        let (from, to) = (version_of(&raw_before)?, version_of(&raw_after)?);
+        let current = self.versions.current();
+        let migrated = |revision: &RevisionId, stored: Option<&Version>| match stored {
+            Some(stored) if stored < current => match self.backend.at(revision) {
                 Err(BackendError::UnknownRevision(_)) => Ok(None),
-                snapshot => Ok::<_, TrackerError>(Some(self.formats.view(snapshot?)?.snapshot)),
+                snapshot => Ok::<_, TrackerError>(Some(self.versions.view(snapshot?)?.snapshot)),
             },
             _ => Ok(None),
         };
         let before_view = match parent {
-            Some(parent) => migrated(parent, from)?,
+            Some(parent) => migrated(parent, from.as_ref())?,
             None => None,
         };
-        let after_view = migrated(&revision.id, to)?;
+        let after_view = migrated(&revision.id, to.as_ref())?;
         let before = |path: &str| match &before_view {
             Some(view) => view.read(path),
             None => raw_before(path),
@@ -555,15 +558,15 @@ impl Tracker {
         let moved_from = match revision.parents.as_slice() {
             [first, _, ..] if adds_a_task => match self.backend.at(first) {
                 Err(BackendError::UnknownRevision(_)) => None,
-                snapshot => Some(self.formats.view(snapshot?)?.snapshot),
+                snapshot => Some(self.versions.view(snapshot?)?.snapshot),
             },
             _ => None,
         };
         let mut described = describe::describe(&changes, &before, &after, moved_from.as_deref())?;
-        described.format = from
+        described.version = from
             .zip(to)
             .filter(|(from, to)| from != to)
-            .map(|(from, to)| FormatChange { from, to });
+            .map(|(from, to)| VersionChange { from, to });
         Ok(described)
     }
 
@@ -601,9 +604,9 @@ impl Tracker {
     }
 }
 
-fn format_of(read: describe::Read<'_>) -> Result<Option<u32>, BackendError> {
+fn version_of(read: describe::Read<'_>) -> Result<Option<Version>, BackendError> {
     Ok(read(layout::CONFIG)?
-        .and_then(|bytes| config::format(&String::from_utf8_lossy(&bytes)).ok()))
+        .and_then(|bytes| config::version(&String::from_utf8_lossy(&bytes)).ok()))
 }
 
 // A shallow clone holds its oldest revisions without their parents, and a missing parent reads as

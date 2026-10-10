@@ -123,10 +123,10 @@ grep -q "^## \[$version\]" CHANGELOG.md \
   || { echo "release: write the '## [$version]' section in CHANGELOG.md first" >&2; exit 1; }
 
 cargo set-version --workspace "$version"
-# From this release on, a daemon migrates a store to these formats by itself.
-perl -pi -e "s/released: None,/released: Some(\"$version\"),/" crates/op-tracker/src/format.rs
+# From this release on, a daemon migrates a store to these store versions by itself.
+perl -pi -e "s/released: None,/released: Some(\"$version\"),/" crates/op-tracker/src/version.rs
 
-git add Cargo.toml Cargo.lock CHANGELOG.md crates/op-tracker/src/format.rs
+git add Cargo.toml Cargo.lock CHANGELOG.md crates/op-tracker/src/version.rs
 git commit --quiet -m "chore(release): v$version"
 
 echo "Next: merge this commit into main, then run:"

@@ -32,7 +32,7 @@ pub fn run(root: &Path, keys: &[String], json: bool) -> Result<ExitCode> {
     backend.refresh()?;
     let tracker = Tracker::new(backend);
     let plan = tracker.plan()?;
-    if let Some(problem) = plan.format_problem() {
+    if let Some(problem) = plan.version_problem() {
         return Err(problem.clone().into());
     }
     let mut index = Index::new();
