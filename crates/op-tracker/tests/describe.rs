@@ -6,7 +6,9 @@ use op_forge::{Forge, ForgeKind};
 use op_task::comment::NewComment;
 use op_task::tag::Tag;
 use op_task::{Abbreviation, Status, Task, Timestamp};
-use op_tracker::{Described, FieldChange, HistoryQuery, TagChange, TaskChange, Tracker};
+use op_tracker::{
+    ConfigChange, Described, FieldChange, HistoryQuery, TagChange, TaskChange, Tracker,
+};
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -247,7 +249,61 @@ fn the_start_names_the_project_and_its_tags() {
         message,
         "Start the OPP tasks\n\ntag bug: create\ntag draft: create\ntag feature: create"
     );
-    assert_eq!(described.config, Some(ChangeKind::Added));
+    assert_eq!(
+        described.config,
+        Some(ConfigChange {
+            kind: ChangeKind::Added,
+            from: None,
+            to: Some(abbreviation()),
+        })
+    );
+}
+
+#[test]
+fn a_new_abbreviation_names_both_spellings_of_the_keys() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    let number = create(tracker, "A");
+    let web: Abbreviation = "WEB".parse().expect("abbreviation");
+    tracker.set_abbreviation(&actor(), web).expect("set");
+    let (message, described) = newest(tracker);
+    assert_eq!(message, "Change the task keys from OPP to WEB");
+    assert_eq!(
+        described.config,
+        Some(ConfigChange {
+            kind: ChangeKind::Modified,
+            from: Some(abbreviation()),
+            to: Some(web),
+        })
+    );
+    assert_eq!(
+        described.lines(Some(web), None),
+        vec!["Change the task keys from OPP to WEB"]
+    );
+
+    tracker
+        .update_task(&actor(), number, |task| {
+            task.set_status(Status::Done);
+            Ok(())
+        })
+        .expect("update");
+    assert_eq!(newest(tracker).0, "WEB-1: status → done");
+}
+
+#[test]
+fn a_config_edit_that_keeps_the_abbreviation_is_an_edit_of_the_file() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    foreign_write(
+        tracker,
+        "Reformat",
+        vec![Op::put("config.toml", "abbreviation = 'OPP'\n")],
+    );
+    let (_, described) = newest(tracker);
+    assert_eq!(
+        described.lines(Some(abbreviation()), None),
+        vec!["config.toml: edit"]
+    );
 }
 
 #[test]

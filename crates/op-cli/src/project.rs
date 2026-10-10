@@ -7,6 +7,7 @@ use serde::Serialize;
 
 use crate::ProjectCommand;
 use crate::daemon::daemon_base_url;
+use crate::plan::Plan;
 
 // The daemon owns `registry.toml` and is its only writer, so every one of these commands asks it
 // rather than edit the file. A command that finds no daemon starts one.
@@ -18,6 +19,11 @@ pub fn run(command: ProjectCommand, root: &Path, daemon_url: Option<&str>) -> Re
         ProjectCommand::Add { path } => add(&client, &base_url, path.as_deref(), root),
         ProjectCommand::Remove { name } => remove(&client, &base_url, &name),
         ProjectCommand::Rename { from, to } => rename(&client, &base_url, &from, &to),
+        ProjectCommand::Abbreviation { abbreviation } => {
+            let view = Plan::resolve(root, daemon_url)?.set_abbreviation(&abbreviation)?;
+            println!("the task keys now start with {}", view.abbreviation);
+            Ok(())
+        }
     }
 }
 

@@ -4,8 +4,9 @@ use std::time::Duration;
 use op_api::{
     ApiErrorBody, BackendKind, Comment, CreateComment, CreateDoc, CreateTag, CreateTask,
     DaemonInfo, DocDetail, DocListItem, DocPatch, Fault, HistoryEntry, Migration, ProjectView,
-    Refusal, RegisterProject, RenameProject, SearchHit, SyncResult, SyncView, TagPatch, TagView,
-    TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView, WriteTaskFile,
+    Refusal, RegisterProject, RenameProject, SearchHit, SetAbbreviation, SyncResult, SyncView,
+    TagPatch, TagView, TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView,
+    WriteTaskFile,
 };
 use reqwest::Url;
 use reqwest::blocking::{RequestBuilder, Response};
@@ -336,6 +337,22 @@ impl Client {
             .map_err(|_| unusable(base_url))?
             .push("migrate");
         self.json(self.write(self.http.post(url)))
+    }
+
+    pub fn set_abbreviation(
+        &self,
+        base_url: &str,
+        project: &str,
+        abbreviation: &str,
+    ) -> Result<ProjectView, ClientError> {
+        let mut url = projects_url(base_url, project)?;
+        url.path_segments_mut()
+            .map_err(|_| unusable(base_url))?
+            .push("abbreviation");
+        let body = SetAbbreviation {
+            abbreviation: abbreviation.to_owned(),
+        };
+        self.json(self.write(self.http.put(url)).json(&body))
     }
 
     pub fn shutdown(&self, base_url: &str) -> bool {

@@ -22,7 +22,9 @@ mod plan;
 mod policy;
 mod version;
 
-pub use describe::{Described, DocChange, FieldChange, TagChange, TaskChange, VersionChange};
+pub use describe::{
+    ConfigChange, Described, DocChange, FieldChange, TagChange, TaskChange, VersionChange,
+};
 pub use docs::{DocMoves, doc_moves};
 pub use error::TrackerError;
 pub use plan::Plan;
@@ -187,6 +189,29 @@ impl Tracker {
                 ))
             })?;
         Ok(from)
+    }
+
+    // Task files and links hold numbers and paths, not keys, so only the config changes.
+    pub fn set_abbreviation(
+        &self,
+        actor: &Actor,
+        abbreviation: Abbreviation,
+    ) -> Result<Option<Committed>, TrackerError> {
+        let (committed, ()) = self.write(actor, |plan| {
+            if plan.config()?.abbreviation == abbreviation {
+                return Err(TrackerError::Invalid(format!(
+                    "the task keys already start with {abbreviation}"
+                )));
+            }
+            Ok((
+                vec![Op::put(
+                    layout::CONFIG,
+                    Config::new(self.versions.current(), abbreviation).to_file_string(),
+                )],
+                (),
+            ))
+        })?;
+        Ok(committed)
     }
 
     pub fn create_task(&self, actor: &Actor, task: &Task) -> Result<Created, TrackerError> {

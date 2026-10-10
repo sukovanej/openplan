@@ -69,3 +69,8 @@ pub struct Migration {
     pub from: Option<u32>,
     pub version: u32,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SetAbbreviation {
+    pub abbreviation: String,
+}
