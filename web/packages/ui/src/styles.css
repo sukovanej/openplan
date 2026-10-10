@@ -134,6 +134,7 @@
   --success: oklch(0.696 0.17 162.48);
   --warning: oklch(0.769 0.188 70.08);
   --info: oklch(0.685 0.169 237.323);
+  --accent-line: oklch(0.707 0.165 254.624);
 
   --change-added: oklch(0.696 0.17 162.48);
   --change-modified: oklch(0.685 0.169 237.323);
@@ -147,6 +148,7 @@
   --prose-marker: oklch(0.48 0 0);
 
   --status-backlog-text: oklch(0.707 0.022 261.325);
+  --status-todo: oklch(0.707 0.165 254.624);
   --status-todo-text: oklch(0.809 0.105 251.813);
   --status-in-progress-text: oklch(0.879 0.169 91.605);
   --status-in-review-text: oklch(0.808 0.114 19.571);
