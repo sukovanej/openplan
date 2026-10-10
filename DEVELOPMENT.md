@@ -70,6 +70,26 @@ mise run skills  # skills/ → .agents/skills/, with a symlink in .claude/skills
 mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
 ```
 
+## Store formats
+
+`format` in the `config.toml` of each store tells which layout its files have. A store without
+the key is format 1. `FORMATS` in `crates/op-tracker/src/format.rs` lists the formats that this
+binary knows, oldest first.
+
+To change the layout, add a format to the end of `FORMATS`:
+
+- Set `migrate` to a function that rewrites a store of the format before it. The function gets
+  the whole store and returns the writes. Give it no time, no random value, and no version: two
+  daemons that migrate the same store must write the same bytes, or their sync conflicts.
+- Set `released: None`. `mise run release` puts the version there.
+- Add a store of the old format to the tests, and check what the migration makes of it.
+
+A daemon migrates a store by itself only when a release reads the new format. Until then, a
+canary or a source build serves an older store read-only, and `openplan migrate` migrates it.
+
+To stop migrating from the oldest format, remove its entry, remove `migrate` from the next one,
+and add the oldest format to `retired` with the last release that migrates it.
+
 ## Release
 
 The product version is `version` in `[workspace.package]`, and it follows

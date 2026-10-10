@@ -109,10 +109,19 @@ export type Refusal = "tag_referenced" | "tag_unregistered"
 export const Refusal = Schema.Literals(["tag_referenced", "tag_unregistered"]).annotate({ identifier: "Refusal" })
 export type StopReason = "stop" | "update"
 export const StopReason = Schema.Literals(["stop", "update"]).annotate({ identifier: "StopReason" })
-export type FaultKind = "root_gone" | "unreadable" | "no_identity" | "sync_failed" | "outside_changes_unread"
+export type FaultKind =
+  | "root_gone"
+  | "unreadable"
+  | "newer_format"
+  | "older_format"
+  | "no_identity"
+  | "sync_failed"
+  | "outside_changes_unread"
 export const FaultKind = Schema.Literals([
   "root_gone",
   "unreadable",
+  "newer_format",
+  "older_format",
   "no_identity",
   "sync_failed",
   "outside_changes_unread",
@@ -145,6 +154,18 @@ export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed
 })
 export type DocText = { readonly body: string; readonly title: string }
 export const DocText = Schema.Struct({ body: Schema.String, title: Schema.String }).annotate({ identifier: "DocText" })
+export type Migration = { readonly format: number; readonly from?: number; readonly project: string }
+export const Migration = Schema.Struct({
+  format: Schema.Number.annotate({ format: "int32" })
+    .check(Schema.isInt().annotate({ expected: "an integer" }))
+    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  from: Schema.optionalKey(
+    Schema.Number.annotate({ format: "int32" })
+      .check(Schema.isInt().annotate({ expected: "an integer" }))
+      .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  ),
+  project: Schema.String,
+}).annotate({ identifier: "Migration" })
 export type DocumentDiff =
   | { readonly diff: string; readonly kind: "text"; readonly truncated: boolean }
   | { readonly kind: "binary" }
@@ -1087,6 +1108,14 @@ export type ProjectHistory404 = ApiErrorBody
 export const ProjectHistory404 = ApiErrorBody
 export type ProjectHistory503 = ApiErrorBody
 export const ProjectHistory503 = ApiErrorBody
+export type MigrateProject200 = Migration
+export const MigrateProject200 = Migration
+export type MigrateProject404 = ApiErrorBody
+export const MigrateProject404 = ApiErrorBody
+export type MigrateProject409 = ApiErrorBody
+export const MigrateProject409 = ApiErrorBody
+export type MigrateProject503 = ApiErrorBody
+export const MigrateProject503 = ApiErrorBody
 export type RevisionDiffParams = { readonly path: string; readonly from?: string | null }
 export const RevisionDiffParams = Schema.Struct({
   path: Schema.String,
@@ -1816,6 +1845,26 @@ export const make = (
                 "2xx": decodeSuccess(ProjectHistory200),
                 "404": decodeError("ProjectHistory404", ProjectHistory404),
                 "503": decodeError("ProjectHistory503", ProjectHistory503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    migrateProject: (project, options: Parameters<TasksClient["migrateProject"]>[1]) =>
+      __makePathRequest(
+        HttpClientRequest.post,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/migrate",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            withResponse(options?.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(MigrateProject200),
+                "404": decodeError("MigrateProject404", MigrateProject404),
+                "409": decodeError("MigrateProject409", MigrateProject409),
+                "503": decodeError("MigrateProject503", MigrateProject503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -2766,6 +2815,30 @@ export interface TasksClient {
       | SchemaError
       | TasksClientError<"ProjectHistory404", typeof ProjectHistory404.Type>
       | TasksClientError<"ProjectHistory503", typeof ProjectHistory503.Type>
+    >
+  }
+  readonly migrateProject: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof MigrateProject200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"MigrateProject404", typeof MigrateProject404.Type>
+      | TasksClientError<"MigrateProject409", typeof MigrateProject409.Type>
+      | TasksClientError<"MigrateProject503", typeof MigrateProject503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly config?: Config | undefined } | undefined,
+    ): Effect.Effect<
+      WithOptionalResponse<typeof MigrateProject200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"MigrateProject404", typeof MigrateProject404.Type>
+      | TasksClientError<"MigrateProject409", typeof MigrateProject409.Type>
+      | TasksClientError<"MigrateProject503", typeof MigrateProject503.Type>
     >
   }
   readonly revisionDiff: {

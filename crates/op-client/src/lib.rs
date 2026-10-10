@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use op_api::{
     ApiErrorBody, BackendKind, Comment, CreateComment, CreateDoc, CreateTag, CreateTask,
-    DaemonInfo, DocDetail, DocListItem, DocPatch, Fault, HistoryEntry, ProjectView, Refusal,
-    RegisterProject, RenameProject, SearchHit, SyncResult, SyncView, TagPatch, TagView,
+    DaemonInfo, DocDetail, DocListItem, DocPatch, Fault, HistoryEntry, Migration, ProjectView,
+    Refusal, RegisterProject, RenameProject, SearchHit, SyncResult, SyncView, TagPatch, TagView,
     TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView, WriteTaskFile,
 };
 use reqwest::Url;
@@ -328,6 +328,14 @@ impl Client {
             name: to.to_owned(),
         };
         self.json(self.http.patch(projects_url(base_url, from)?).json(&body))
+    }
+
+    pub fn migrate_project(&self, base_url: &str, project: &str) -> Result<Migration, ClientError> {
+        let mut url = projects_url(base_url, project)?;
+        url.path_segments_mut()
+            .map_err(|_| unusable(base_url))?
+            .push("migrate");
+        self.json(self.write(self.http.post(url)))
     }
 
     pub fn shutdown(&self, base_url: &str) -> bool {

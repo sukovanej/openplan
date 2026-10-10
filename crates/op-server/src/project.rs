@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, RwLock, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock, Weak};
 use std::time::Duration;
 
 use op_api::{BackendKind, ChangeEvent, Fault, FaultKind, Forge, ProjectView, Rfc3339, SyncView};
@@ -13,10 +13,12 @@ use op_backend_git::GitBackend;
 use op_backend_local::LocalBackend;
 use op_index::Index;
 use op_task::layout::{self, Document};
-use op_tracker::{HistoryQuery, TaskMergePolicy, Tracker, TrackerError};
+use op_tracker::{
+    FORMATS, FormatError, Formats, HistoryQuery, Stored, TaskMergePolicy, Tracker, TrackerError,
+};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::Publisher;
+use crate::{Publisher, SelfUpdate};
 
 pub const STORE_DIR: &str = ".plan";
 
@@ -131,10 +133,19 @@ pub fn open_backend(
     signer: &Signer,
     watch: bool,
 ) -> Result<Arc<dyn Backend>, OpenError> {
+    open_backend_with(location, signer, watch, TaskMergePolicy::default())
+}
+
+fn open_backend_with(
+    location: &Location,
+    signer: &Signer,
+    watch: bool,
+    policy: TaskMergePolicy,
+) -> Result<Arc<dyn Backend>, OpenError> {
     Ok(match location.kind {
         BackendKind::Git => Arc::new(GitBackend::open(
             &location.root,
-            op_backend_git::Options::new(Arc::new(TaskMergePolicy), signer.clone()),
+            op_backend_git::Options::new(Arc::new(policy), signer.clone()),
         )?),
         BackendKind::Local => Arc::new(LocalBackend::open(
             location.root.join(STORE_DIR),
@@ -186,6 +197,7 @@ pub(crate) fn canonical(path: &Path) -> PathBuf {
 struct Health {
     root_gone: bool,
     unreadable: Option<String>,
+    format: Option<FormatError>,
     unsigned: bool,
     outside_unread: Option<String>,
 }
@@ -201,24 +213,46 @@ pub struct Project {
     loaded: Mutex<Option<RevisionId>>,
     sync: Mutex<Option<SyncLoop>>,
     health: Mutex<Health>,
+    // The format problem that stopped the last sync, so a merge with tasks this daemon cannot read.
+    sync_format: Arc<Mutex<Option<FormatError>>>,
+    updates: OnceLock<Arc<SelfUpdate>>,
     root_misses: AtomicU32,
 }
 
 impl Project {
     pub fn open(name: impl Into<String>, location: Location) -> Result<Self, OpenError> {
+        Self::open_in(name, location, &FORMATS)
+    }
+
+    pub fn open_in(
+        name: impl Into<String>,
+        location: Location,
+        formats: &'static Formats,
+    ) -> Result<Self, OpenError> {
         let signer = op_backend_git::signer(&location.root);
-        let backend = open_backend(&location, &signer, true)?;
+        let sync_format: Arc<Mutex<Option<FormatError>>> = Arc::default();
+        let reported = Arc::clone(&sync_format);
+        let policy = TaskMergePolicy::default()
+            .with_formats(formats)
+            .on_unreadable(move |problem| {
+                *reported.lock().expect("sync format poisoned") = Some(problem.clone());
+            });
+        let backend = open_backend_with(&location, &signer, true, policy)?;
         let forge = crate::forge::of_project(&location);
         let project = Self {
             name: RwLock::new(name.into()),
             path: location.root.clone(),
             location,
             signer,
-            tracker: Tracker::new(backend).with_forge(forge.clone()),
+            tracker: Tracker::new(backend)
+                .with_forge(forge.clone())
+                .with_formats(formats),
             index: Mutex::new(Index::new().with_forge(forge)),
             loaded: Mutex::new(None),
             sync: Mutex::new(None),
             health: Mutex::new(Health::default()),
+            sync_format,
+            updates: OnceLock::new(),
             root_misses: AtomicU32::new(0),
         };
         project.reload();
@@ -228,6 +262,10 @@ impl Project {
     // The event pump holds the project weakly, so it ends with the backend's event channel once the
     // project is dropped.
     pub(crate) fn start(self: &Arc<Self>, publisher: Publisher) {
+        let _ = self.updates.set(Arc::clone(publisher.updates()));
+        if self.lock_health().format.as_ref().is_some_and(needs_update) {
+            publisher.updates().want();
+        }
         let events = self.tracker.backend().subscribe();
         let project = Arc::downgrade(self);
         std::thread::spawn(move || pump(project, events, publisher));
@@ -311,31 +349,91 @@ impl Project {
 
     // Reads every task again and dates each one from the log.
     pub fn reload(&self) {
+        let migration = self.migrate_if_due();
         let result = self.load(Scope::Everything);
-        self.record_health(result);
+        self.record_health(result, migration);
     }
 
     // Reads only what moved between the revision the index holds and the head, and nothing when
     // the head did not move. A write and the event pump both call it for the same move.
     pub(crate) fn catch_up(&self) {
+        let migration = self.migrate_if_due();
         let result = self.load(Scope::Moved);
-        self.record_health(result);
+        self.record_health(result, migration);
     }
 
-    fn record_health(&self, result: Result<Option<String>, TrackerError>) {
-        let unreadable = match &result {
-            Ok(plan_error) => plan_error.clone(),
-            Err(err) => Some(err.to_string()),
+    // A store of an older format moves to this daemon's format as soon as the daemon reads it, when
+    // a release reads that format. Returns why it could not.
+    fn migrate_if_due(&self) -> Option<String> {
+        let Ok(Some(Stored::Older(from))) = self.tracker.stored() else {
+            return None;
+        };
+        if !self.tracker.formats().migrates_by_itself() {
+            return None;
+        }
+        let migrated = self
+            .sign()
+            .map_err(TrackerError::from)
+            .and_then(|actor| self.tracker.migrate(&actor));
+        match migrated {
+            Ok(_) => {
+                tracing::info!(project = %self.name(), from, to = self.tracker.formats().current(), "migrated the tasks");
+                None
+            }
+            Err(err) => Some(format!(
+                "cannot migrate the tasks from format {from}: {err}"
+            )),
+        }
+    }
+
+    fn record_health(&self, result: Result<Loaded, TrackerError>, migration: Option<String>) {
+        let (unreadable, format) = match result {
+            Ok(loaded) => (migration.or(loaded.unreadable), loaded.format),
+            Err(err) => (Some(err.to_string()), None),
         };
         if let Some(reason) = &unreadable {
             tracing::warn!(project = %self.name(), %reason, "the project cannot serve its tasks");
         }
-        self.lock_health().unreadable = unreadable;
+        if let Some(problem) = &format {
+            tracing::warn!(project = %self.name(), %problem, "the tasks use another store format");
+        }
+        let newly_needs_update = {
+            let mut health = self.lock_health();
+            let newly = format.as_ref().is_some_and(needs_update) && health.format != format;
+            health.unreadable = unreadable;
+            health.format = format;
+            newly
+        };
+        if newly_needs_update && let Some(updates) = self.updates.get() {
+            updates.want();
+        }
+    }
+
+    // A store this daemon cannot read; one in an older format that it does not migrate by itself
+    // still serves its tasks.
+    pub(crate) fn unreadable_format(&self) -> Option<FormatError> {
+        self.lock_health()
+            .format
+            .clone()
+            .filter(|problem| !matches!(problem, FormatError::Unmigrated { .. }))
+    }
+
+    // A sync that stopped on a format this daemon cannot read asks for an update, as an open does.
+    pub(crate) fn synced(&self, status: &op_backend::SyncStatus) {
+        let mut sync_format = self.lock_sync_format();
+        if status.error.is_none() {
+            *sync_format = None;
+        }
+        if sync_format.is_some()
+            && let Some(updates) = self.updates.get()
+        {
+            updates.want();
+        }
     }
 
     // The head is read under the index lock: two writes that reload at once could otherwise finish
     // in the other order and leave the index on the older head.
-    fn load(&self, scope: Scope) -> Result<Option<String>, TrackerError> {
+    fn load(&self, scope: Scope) -> Result<Loaded, TrackerError> {
         let mut index = self.index();
         let plan = self.tracker.plan()?;
         let mut loaded = self.loaded.lock().expect("loaded mutex poisoned");
@@ -401,7 +499,19 @@ impl Project {
             }
         }
         *loaded = head;
-        Ok(plan.config().err().map(|err| err.to_string()))
+        let formats = self.tracker.formats();
+        let format = plan.format_problem().cloned().or_else(|| {
+            plan.migrated_from()
+                .filter(|_| !formats.migrates_by_itself())
+                .map(|from| formats.unmigrated(from))
+        });
+        Ok(Loaded {
+            unreadable: match format {
+                Some(_) => None,
+                None => plan.config().err().map(|err| err.to_string()),
+            },
+            format,
+        })
     }
 
     fn last_changed(
@@ -513,13 +623,24 @@ impl Project {
         if let Some(reason) = &health.unreadable {
             faults.push(fault(FaultKind::Unreadable, reason.clone()));
         }
+        if let Some(problem) = &health.format {
+            faults.push(self.format_fault(&project, problem));
+        }
+        let sync_format = self.lock_sync_format().clone();
+        if let Some(problem) = sync_format.as_ref().filter(|_| health.format.is_none()) {
+            faults.push(self.format_fault(&project, problem));
+        }
         if health.unsigned {
             faults.push(fault(
                 FaultKind::NoIdentity,
                 BackendError::NoIdentity.to_string(),
             ));
         }
-        if let Some(error) = self.sync_status().and_then(|status| status.error) {
+        if let Some(error) = self
+            .sync_status()
+            .and_then(|status| status.error)
+            .filter(|_| sync_format.is_none())
+        {
             faults.push(fault(
                 FaultKind::SyncFailed,
                 format!("the last sync failed: {error}"),
@@ -572,6 +693,46 @@ impl Project {
         moved
     }
 
+    fn format_fault(&self, project: &str, problem: &FormatError) -> Fault {
+        let (kind, message) = match problem {
+            FormatError::Newer { requires, .. } => (
+                FaultKind::NewerFormat,
+                format!("{problem}; {}", self.update_hint(requires.as_deref())),
+            ),
+            FormatError::Retired { .. } | FormatError::Unmigrated { .. } => {
+                (FaultKind::OlderFormat, problem.to_string())
+            }
+        };
+        Fault {
+            project: project.to_owned(),
+            kind,
+            message,
+        }
+    }
+
+    // Only a canary reads a format that no release reads yet, and its version says so.
+    fn update_hint(&self, requires: Option<&str>) -> String {
+        let command = match requires.is_some_and(|version| version.contains('-')) {
+            true => "`openplan update --canary`",
+            false => "`openplan update`",
+        };
+        let updates = self.updates.get();
+        match (
+            updates.and_then(|updates| updates.outcome()),
+            updates.is_some_and(|updates| updates.automatic()),
+        ) {
+            (Some(outcome), _) => {
+                format!("the update check installed no newer openplan ({outcome}); run {command}")
+            }
+            (None, true) => "the daemon is looking for an update now".to_owned(),
+            (None, false) => format!("run {command}"),
+        }
+    }
+
+    fn lock_sync_format(&self) -> MutexGuard<'_, Option<FormatError>> {
+        self.sync_format.lock().expect("sync format poisoned")
+    }
+
     fn lock_health(&self) -> MutexGuard<'_, Health> {
         self.health.lock().expect("health mutex poisoned")
     }
@@ -588,6 +749,15 @@ impl std::fmt::Debug for Project {
             .field("path", &self.path)
             .finish_non_exhaustive()
     }
+}
+
+struct Loaded {
+    unreadable: Option<String>,
+    format: Option<FormatError>,
+}
+
+fn needs_update(problem: &FormatError) -> bool {
+    matches!(problem, FormatError::Newer { .. })
 }
 
 #[derive(Clone, Copy)]
@@ -645,9 +815,12 @@ fn pump(
         };
         match event {
             BackendEvent::HeadMoved(moved) => project.moved(&moved, &publisher),
-            BackendEvent::Sync(_) => publisher.publish(ChangeEvent::SyncChanged {
-                project: project.name(),
-            }),
+            BackendEvent::Sync(status) => {
+                project.synced(&status);
+                publisher.publish(ChangeEvent::SyncChanged {
+                    project: project.name(),
+                })
+            }
         }
         publisher.report(&project);
     }

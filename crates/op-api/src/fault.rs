@@ -18,6 +18,12 @@ pub enum FaultKind {
     RootGone,
     // The tasks or the project config do not parse.
     Unreadable,
+    // The tasks use a store format that only a newer openplan reads. The daemon serves none of
+    // them, and it looks for an update.
+    NewerFormat,
+    // The tasks use an older store format that this daemon does not migrate by itself. It serves
+    // them, and it refuses each write.
+    OlderFormat,
     // Git `user.name` signs every write, so with none set, no write is made.
     NoIdentity,
     SyncFailed,

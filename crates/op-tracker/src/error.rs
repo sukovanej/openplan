@@ -33,6 +33,8 @@ pub enum TrackerError {
     #[error(transparent)]
     Config(#[from] ConfigError),
     #[error(transparent)]
+    Format(#[from] crate::format::FormatError),
+    #[error(transparent)]
     Task(#[from] op_task::TaskError),
     #[error(transparent)]
     InvalidColor(#[from] op_task::tag::ParseColorError),

@@ -6,7 +6,7 @@ use op_backend::{
 };
 use op_forge::Forge;
 use op_task::comment::{self, NewComment};
-use op_task::config::Config;
+use op_task::config::{Config, Header};
 use op_task::conflict::{self, Labels};
 use op_task::content::{self, Text};
 use op_task::layout;
@@ -17,13 +17,15 @@ mod describe;
 mod docs;
 mod error;
 mod files;
+mod format;
 mod message;
 mod plan;
 mod policy;
 
-pub use describe::{Described, DocChange, FieldChange, TagChange, TaskChange};
+pub use describe::{Described, DocChange, FieldChange, FormatChange, TagChange, TaskChange};
 pub use docs::{DocMoves, doc_moves};
 pub use error::TrackerError;
+pub use format::{FORMATS, Format, FormatError, Formats, Retired, Step, Stored};
 pub use plan::Plan;
 pub use policy::TaskMergePolicy;
 
@@ -31,6 +33,7 @@ pub use policy::TaskMergePolicy;
 pub struct Tracker {
     backend: Arc<dyn Backend>,
     forge: Option<Forge>,
+    formats: &'static Formats,
 }
 
 #[derive(Debug, Clone)]
@@ -63,7 +66,17 @@ impl Tracker {
         Self {
             backend,
             forge: None,
+            formats: &FORMATS,
         }
+    }
+
+    pub fn with_formats(mut self, formats: &'static Formats) -> Self {
+        self.formats = formats;
+        self
+    }
+
+    pub fn formats(&self) -> &'static Formats {
+        self.formats
     }
 
     // The repository of the project, so a revision names a pull request of it by the number alone.
@@ -81,11 +94,11 @@ impl Tracker {
     }
 
     pub fn plan(&self) -> Result<Plan, TrackerError> {
-        Plan::read(self.backend.head()?)
+        Plan::read_in(self.backend.head()?, self.formats)
     }
 
     pub fn plan_at(&self, revision: &RevisionId) -> Result<Plan, TrackerError> {
-        Plan::read(self.backend.at(revision)?)
+        Plan::read_in(self.backend.at(revision)?, self.formats)
     }
 
     pub(crate) fn write<T>(
@@ -94,7 +107,13 @@ impl Tracker {
         mut write: impl FnMut(&Plan) -> Result<(Vec<Op>, T), TrackerError>,
     ) -> Result<(Option<Committed>, T), TrackerError> {
         self.backend.transact(actor, |snapshot: Arc<dyn Snapshot>| {
-            let plan = Plan::read(snapshot)?;
+            let plan = Plan::read_in(snapshot, self.formats)?;
+            if let Some(problem) = plan.format_problem() {
+                return Err(problem.clone().into());
+            }
+            if let Some(format) = plan.migrated_from() {
+                return Err(self.formats.unmigrated(format).into());
+            }
             let (ops, value) = write(&plan)?;
             let message = message::of(&plan, &ops, self.forge.as_ref())?;
             Ok((Edit::new(message, ops), value))
@@ -123,7 +142,7 @@ impl Tracker {
             }
             let mut ops = vec![Op::put(
                 layout::CONFIG,
-                Config::new(abbreviation).to_file_string(),
+                Config::new(self.formats.header(), abbreviation).to_file_string(),
             )];
             if plan.tag_names().is_empty() {
                 for tag in op_task::tag::defaults() {
@@ -133,6 +152,36 @@ impl Tracker {
             Ok((ops, ()))
         })?;
         Ok(committed)
+    }
+
+    // Reads the config alone, so a check after every write costs one read.
+    pub fn stored(&self) -> Result<Option<Stored>, TrackerError> {
+        match format::header_of(&*self.backend.head()?)? {
+            Some(header) => Ok(Some(self.formats.stored(&header)?)),
+            None => Ok(None),
+        }
+    }
+
+    // Moves a store of an older format to this binary's format, in one revision. Returns the
+    // format it moved the store from; `None` where the store already had this one.
+    pub fn migrate(&self, actor: &Actor) -> Result<Option<u32>, TrackerError> {
+        let current = self.formats.current();
+        let (_, from) = self
+            .backend
+            .transact(actor, |snapshot: Arc<dyn Snapshot>| {
+                let Some(header) = format::header_of(&*snapshot)? else {
+                    return Err(TrackerError::NotInitialized);
+                };
+                let Stored::Older(from) = self.formats.stored(&header)? else {
+                    return Ok((Edit::new(String::new(), Vec::new()), None));
+                };
+                let ops = self.formats.migration(&*snapshot, from, current)?;
+                Ok((
+                    Edit::new(describe::migration_line(from, current), ops),
+                    Some(from),
+                ))
+            })?;
+        Ok(from)
     }
 
     pub fn create_task(&self, actor: &Actor, task: &Task) -> Result<Created, TrackerError> {
@@ -460,29 +509,62 @@ impl Tracker {
     // Read from the documents themselves, not from the message: a revision that another tool wrote
     // says what it changes in its own words, or in none. A merge is described against its first
     // parent.
+    // A side in an older format reads as migrated, so each change reads in this binary's terms, and
+    // a migration reads as one line rather than as an edit of every document it rewrote.
     pub fn describe(&self, entry: &LogEntry) -> Result<Described, TrackerError> {
         let revision = &entry.revision;
-        let before = |path: &str| match revision.parents.first() {
+        let parent = revision.parents.first();
+        let raw_before = |path: &str| match parent {
             Some(parent) => absent_when_unknown(self.backend.read_at(parent, path)),
             None => Ok(None),
         };
-        let after = |path: &str| self.backend.read_at(&revision.id, path);
-        let adds_a_task = entry.changes.iter().any(|change| {
+        let raw_after = |path: &str| self.backend.read_at(&revision.id, path);
+        let (from, to) = (format_of(&raw_before)?, format_of(&raw_after)?);
+        let current = self.formats.current();
+        let migrated = |revision: &RevisionId, format: Option<u32>| match format {
+            Some(format) if format < current => match self.backend.at(revision) {
+                Err(BackendError::UnknownRevision(_)) => Ok(None),
+                snapshot => Ok::<_, TrackerError>(Some(self.formats.view(snapshot?)?.snapshot)),
+            },
+            _ => Ok(None),
+        };
+        let before_view = match parent {
+            Some(parent) => migrated(parent, from)?,
+            None => None,
+        };
+        let after_view = migrated(&revision.id, to)?;
+        let before = |path: &str| match &before_view {
+            Some(view) => view.read(path),
+            None => raw_before(path),
+        };
+        let after = |path: &str| match &after_view {
+            Some(view) => view.read(path),
+            None => raw_after(path),
+        };
+        let mut changes = Vec::new();
+        for change in &entry.changes {
+            let rewritten_alike = (before_view.is_some() || after_view.is_some())
+                && before(&change.path)? == after(&change.path)?;
+            if !rewritten_alike {
+                changes.push(change.clone());
+            }
+        }
+        let adds_a_task = changes.iter().any(|change| {
             change.kind == ChangeKind::Added && layout::task_number(&change.path).is_some()
         });
         let moved_from = match revision.parents.as_slice() {
             [first, _, ..] if adds_a_task => match self.backend.at(first) {
                 Err(BackendError::UnknownRevision(_)) => None,
-                snapshot => Some(snapshot?),
+                snapshot => Some(self.formats.view(snapshot?)?.snapshot),
             },
             _ => None,
         };
-        Ok(describe::describe(
-            &entry.changes,
-            &before,
-            &after,
-            moved_from.as_deref(),
-        )?)
+        let mut described = describe::describe(&changes, &before, &after, moved_from.as_deref())?;
+        described.format = from
+            .zip(to)
+            .filter(|(from, to)| from != to)
+            .map(|(from, to)| FormatChange { from, to });
+        Ok(described)
     }
 
     // `None` where the revision leaves the document as its first parent had it. `before` names the
@@ -517,6 +599,12 @@ impl Tracker {
             false => Ok(None),
         }
     }
+}
+
+fn format_of(read: describe::Read<'_>) -> Result<Option<u32>, BackendError> {
+    Ok(read(layout::CONFIG)?
+        .and_then(|bytes| Header::parse(&String::from_utf8_lossy(&bytes)).ok())
+        .map(|header| header.format))
 }
 
 // A shallow clone holds its oldest revisions without their parents, and a missing parent reads as

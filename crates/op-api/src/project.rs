@@ -59,3 +59,13 @@ pub struct RegisterProject {
 pub struct RenameProject {
     pub name: String,
 }
+
+// `from` is absent where the tasks already had `format`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Migration {
+    pub project: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub from: Option<u32>,
+    pub format: u32,
+}

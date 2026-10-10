@@ -31,8 +31,12 @@ pub fn run(root: &Path, keys: &[String], json: bool) -> Result<ExitCode> {
     // pass the files as they were.
     backend.refresh()?;
     let tracker = Tracker::new(backend);
+    let plan = tracker.plan()?;
+    if let Some(problem) = plan.format_problem() {
+        return Err(problem.clone().into());
+    }
     let mut index = Index::new();
-    index.load(&tracker.plan()?)?;
+    index.load(&plan)?;
     let wanted = wanted(&index, keys)?;
     let mut tasks = 0;
     for row in index

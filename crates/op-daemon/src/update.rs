@@ -115,30 +115,47 @@ pub(crate) async fn keep_updated(
     home: Arc<Home>,
     state: AppState,
 ) {
+    let asking = state.self_update();
     let updater = match updater {
         Ok(updater) => updater,
         Err(reason) => {
             tracing::info!(%reason, "no automatic updates");
             record(&home, format!("no automatic updates: {reason}"));
-            return;
+            loop {
+                asking.wanted().await;
+                asking.record(format!("no automatic updates: {reason}"));
+                state.report_faults();
+            }
         }
     };
-    tokio::time::sleep(FIRST_CHECK).await;
+    let mut wait = FIRST_CHECK;
     loop {
-        match check(&updater, &home, &state).await {
+        asking.set_automatic(home.read_update().auto);
+        state.report_faults();
+        // A project that needs a newer openplan asks for the check at once.
+        let asked = tokio::select! {
+            () = tokio::time::sleep(wait) => false,
+            () = asking.wanted() => true,
+        };
+        wait = INTERVAL;
+        let outcome = match check(&updater, &home, &state).await {
             Ok(Checked::Installed(version)) => {
                 tracing::info!(%version, "installed a new release; starting again on it");
                 return;
             }
             Ok(Checked::Stopping) => return,
-            Ok(Checked::UpToDate | Checked::Off) => {}
+            Ok(Checked::UpToDate) => updater.up_to_date(),
+            Ok(Checked::Off) => "automatic updates are off".to_owned(),
             Err(err) => {
                 let error = format!("{err:#}");
                 tracing::warn!(%error, "the update failed; the daemon keeps its version");
                 record(&home, format!("failed: {error}"));
+                format!("the update failed: {error}")
             }
+        };
+        if asked {
+            asking.record(outcome);
         }
-        tokio::time::sleep(INTERVAL).await;
     }
 }
 
