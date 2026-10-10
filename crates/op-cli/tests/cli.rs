@@ -2223,3 +2223,37 @@ fn a_doc_name_the_normalizer_cannot_spell_is_refused() {
         stderr(&out)
     );
 }
+
+#[test]
+fn project_abbreviation_gives_every_task_a_key_with_the_new_letters() {
+    let project = Project::local();
+    let id = ok(project.run(&["tasks", "create", "Wire the parser"]))
+        .trim()
+        .to_owned();
+    assert_eq!(id, "OPP-1");
+
+    let changed = ok(project.run(&["project", "abbreviation", "WEB"]));
+
+    assert_eq!(changed.trim(), "the task keys now start with WEB");
+    assert!(ok(project.run(&["tasks", "list"])).contains("WEB-1"));
+    assert!(!project.run(&["tasks", "show", "OPP-1"]).status.success());
+    let history = ok(project.run(&["history", "--limit", "1"]));
+    assert!(
+        history.contains("Change the task keys from OPP to WEB"),
+        "{history}"
+    );
+
+    let refused = project.run(&["project", "abbreviation", "WEB"]);
+    assert!(!refused.status.success());
+    assert!(
+        stderr(&refused).contains("the task keys already start with WEB"),
+        "{}",
+        stderr(&refused)
+    );
+    let refused = project.run(&["project", "abbreviation", "web"]);
+    assert!(
+        stderr(&refused).contains("use exactly three uppercase letters"),
+        "{}",
+        stderr(&refused)
+    );
+}

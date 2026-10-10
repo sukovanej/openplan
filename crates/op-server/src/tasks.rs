@@ -5,11 +5,11 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use op_api::{
-    ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask, DocChange, DocumentChange,
-    DocumentChangeKind, FieldChange, Flow, FlowQuery, Forge, HistoryEntry, KeyError, Metadata,
-    PullRequestView, RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch,
-    TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot,
-    TaskSummary, TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
+    AbbreviationChange, ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask,
+    DocChange, DocumentChange, DocumentChangeKind, FieldChange, Flow, FlowQuery, Forge,
+    HistoryEntry, KeyError, Metadata, PullRequestView, RevisionView, SearchHit, Status, SyncResult,
+    SyncView, TagChange, TagPatch, TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem,
+    TaskPatch, TaskSnapshot, TaskSummary, TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
 };
 use op_backend::{Change, ChangeKind, Committed, LogEntry, RevisionId};
 use op_task::{Abbreviation, Task, layout};
@@ -641,6 +641,13 @@ pub(crate) fn history(
                     .collect(),
                 tags: described.tags.into_iter().map(tag_change).collect(),
                 docs: described.docs.into_iter().map(doc_change).collect(),
+                abbreviation: described
+                    .config
+                    .and_then(|config| config.new_abbreviation())
+                    .map(|(from, to)| AbbreviationChange {
+                        from: from.to_string(),
+                        to: to.to_string(),
+                    }),
                 changes: entry
                     .changes
                     .into_iter()

@@ -2,7 +2,14 @@ import { type InfiniteData, useInfiniteQuery, useQuery } from "@tanstack/react-q
 import { Effect } from "effect"
 import type { HttpClient } from "effect/http"
 
-import type { DocChange, DocumentChange, HistoryEntry, TagChange, TaskChange } from "@openplan/api-client"
+import type {
+  AbbreviationChange,
+  DocChange,
+  DocumentChange,
+  HistoryEntry,
+  TagChange,
+  TaskChange,
+} from "@openplan/api-client"
 import { docPath, docRevisionPath, revisionPath, taskPath } from "@openplan/task-ui"
 
 import {
@@ -152,15 +159,25 @@ export function useChangeDiff(project: string, revision: string, target: DiffTar
   })
 }
 
-// The daemon reads the tasks, the tags, and the docs into changes of their own, and this is the rest,
-// such as the config and the assets.
+// The daemon's `layout::CONFIG`, the document that holds the abbreviation.
+const CONFIG = "config.toml"
+
+// The daemon reads the tasks, the tags, the docs, and a new abbreviation into changes of their own, and
+// this is the rest, such as the assets.
 export const otherChanges = (entry: HistoryEntry): ReadonlyArray<DocumentChange> =>
-  entry.changes.filter((change) => change.task === undefined && change.tag === undefined && change.doc === undefined)
+  entry.changes.filter(
+    (change) =>
+      change.task === undefined &&
+      change.tag === undefined &&
+      change.doc === undefined &&
+      (entry.abbreviation === undefined || change.path !== CONFIG),
+  )
 
 export const taskChangeOf = (entry: HistoryEntry, id: string): TaskChange | undefined =>
   entry.tasks.find((change) => change.task === id)
 
 export type ActivityRow =
+  | { readonly kind: "abbreviation"; readonly change: AbbreviationChange }
   | { readonly kind: "task"; readonly change: TaskChange }
   | { readonly kind: "tag"; readonly change: TagChange }
   | { readonly kind: "doc"; readonly change: DocChange }
@@ -172,6 +189,7 @@ export const SHOWN_CHANGES = 12
 
 export function activityRows(entry: HistoryEntry): ReadonlyArray<ActivityRow> {
   const rows: ReadonlyArray<ActivityRow> = [
+    ...(entry.abbreviation === undefined ? [] : [{ kind: "abbreviation", change: entry.abbreviation } as const]),
     ...entry.tasks.map((change) => ({ kind: "task", change }) as const),
     ...entry.tags.map((change) => ({ kind: "tag", change }) as const),
     ...entry.docs.map((change) => ({ kind: "doc", change }) as const),
@@ -217,6 +235,8 @@ export function docChangePath(
 // key.
 export function diffTarget(entry: HistoryEntry, row: ActivityRow): DiffTarget | undefined {
   switch (row.kind) {
+    case "abbreviation":
+      return { path: CONFIG }
     case "task": {
       const renumbered = row.change.fields?.find((field) => field.field === "number")
       return moved(

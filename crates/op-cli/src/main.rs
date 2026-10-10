@@ -391,6 +391,9 @@ enum ProjectCommand {
     Remove { name: String },
     /// Give a project a new name; its URLs change with it
     Rename { from: String, to: String },
+    /// Change the three uppercase letters every task key of this project starts with. Each task
+    /// keeps its number, and the old keys name no task
+    Abbreviation { abbreviation: String },
 }
 
 #[derive(Subcommand)]

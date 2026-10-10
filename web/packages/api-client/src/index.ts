@@ -123,6 +123,10 @@ export type Rfc3339 = string
 export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
 export type RenameProject = { readonly name: string }
 export const RenameProject = Schema.Struct({ name: Schema.String }).annotate({ identifier: "RenameProject" })
+export type SetAbbreviation = { readonly abbreviation: string }
+export const SetAbbreviation = Schema.Struct({ abbreviation: Schema.String }).annotate({
+  identifier: "SetAbbreviation",
+})
 export type CreateDoc = { readonly body?: string | null; readonly name: string; readonly parent?: string | null }
 export const CreateDoc = Schema.Struct({
   body: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
@@ -139,6 +143,10 @@ export const DocPatch = Schema.Struct({
   name: Schema.optionalKey(Schema.String),
   parent: Schema.optionalKey(Schema.Union([Schema.String, Schema.Null])),
 }).annotate({ identifier: "DocPatch" })
+export type AbbreviationChange = { readonly from: string; readonly to: string }
+export const AbbreviationChange = Schema.Struct({ from: Schema.String, to: Schema.String }).annotate({
+  identifier: "AbbreviationChange",
+})
 export type DocumentChangeKind = "added" | "modified" | "removed"
 export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed"]).annotate({
   identifier: "DocumentChangeKind",
@@ -685,6 +693,7 @@ export const Metadata = Schema.Union(
   { mode: "oneOf" },
 ).annotate({ identifier: "Metadata" })
 export type HistoryEntry = {
+  readonly abbreviation?: AbbreviationChange
   readonly changes: ReadonlyArray<DocumentChange>
   readonly docs: ReadonlyArray<DocChange>
   readonly revision: RevisionView
@@ -693,6 +702,7 @@ export type HistoryEntry = {
   readonly tasks: ReadonlyArray<TaskChange>
 }
 export const HistoryEntry = Schema.Struct({
+  abbreviation: Schema.optionalKey(AbbreviationChange),
   changes: Schema.Array(DocumentChange),
   docs: Schema.Array(DocChange),
   revision: RevisionView,
@@ -975,6 +985,18 @@ export type RenameProject409 = ApiErrorBody
 export const RenameProject409 = ApiErrorBody
 export type RenameProject503 = ApiErrorBody
 export const RenameProject503 = ApiErrorBody
+export type SetAbbreviationRequestJson = SetAbbreviation
+export const SetAbbreviationRequestJson = SetAbbreviation
+export type SetAbbreviation200 = ProjectView
+export const SetAbbreviation200 = ProjectView
+export type SetAbbreviation400 = ApiErrorBody
+export const SetAbbreviation400 = ApiErrorBody
+export type SetAbbreviation404 = ApiErrorBody
+export const SetAbbreviation404 = ApiErrorBody
+export type SetAbbreviation409 = ApiErrorBody
+export const SetAbbreviation409 = ApiErrorBody
+export type SetAbbreviation503 = ApiErrorBody
+export const SetAbbreviation503 = ApiErrorBody
 export type GetBoard200 = Board
 export const GetBoard200 = Board
 export type GetBoard404 = ApiErrorBody
@@ -1596,6 +1618,28 @@ export const make = (
                 "404": decodeError("RenameProject404", RenameProject404),
                 "409": decodeError("RenameProject409", RenameProject409),
                 "503": decodeError("RenameProject503", RenameProject503),
+                orElse: unexpectedStatus,
+              }),
+            ),
+          ),
+        ),
+      ),
+    setAbbreviation: (project, options: Parameters<TasksClient["setAbbreviation"]>[1]) =>
+      __makePathRequest(
+        HttpClientRequest.put,
+        [project],
+        () => "/api/projects/" + __encodePathParam(project) + "/abbreviation",
+      ).pipe(
+        Effect.flatMap((request) =>
+          request.pipe(
+            HttpClientRequest.bodyJsonUnsafe(options.payload),
+            withResponse(options.config)(
+              HttpClientResponse.matchStatus({
+                "2xx": decodeSuccess(SetAbbreviation200),
+                "400": decodeError("SetAbbreviation400", SetAbbreviation400),
+                "404": decodeError("SetAbbreviation404", SetAbbreviation404),
+                "409": decodeError("SetAbbreviation409", SetAbbreviation409),
+                "503": decodeError("SetAbbreviation503", SetAbbreviation503),
                 orElse: unexpectedStatus,
               }),
             ),
@@ -2504,6 +2548,32 @@ export interface TasksClient {
       | TasksClientError<"RenameProject404", typeof RenameProject404.Type>
       | TasksClientError<"RenameProject409", typeof RenameProject409.Type>
       | TasksClientError<"RenameProject503", typeof RenameProject503.Type>
+    >
+  }
+  readonly setAbbreviation: {
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof SetAbbreviationRequestJson.Encoded; readonly config: Config },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof SetAbbreviation200.Type, Config>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"SetAbbreviation400", typeof SetAbbreviation400.Type>
+      | TasksClientError<"SetAbbreviation404", typeof SetAbbreviation404.Type>
+      | TasksClientError<"SetAbbreviation409", typeof SetAbbreviation409.Type>
+      | TasksClientError<"SetAbbreviation503", typeof SetAbbreviation503.Type>
+    >
+    <Config extends OperationConfig | undefined = undefined>(
+      project: string,
+      options: { readonly payload: typeof SetAbbreviationRequestJson.Encoded; readonly config?: Config | undefined },
+    ): Effect.Effect<
+      WithOptionalResponse<typeof SetAbbreviation200.Type, Config | undefined>,
+      | HttpClientError.HttpClientError
+      | SchemaError
+      | TasksClientError<"SetAbbreviation400", typeof SetAbbreviation400.Type>
+      | TasksClientError<"SetAbbreviation404", typeof SetAbbreviation404.Type>
+      | TasksClientError<"SetAbbreviation409", typeof SetAbbreviation409.Type>
+      | TasksClientError<"SetAbbreviation503", typeof SetAbbreviation503.Type>
     >
   }
   readonly getBoard: {

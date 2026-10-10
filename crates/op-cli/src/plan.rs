@@ -135,6 +135,13 @@ impl Plan {
             .collect())
     }
 
+    pub fn set_abbreviation(&self, abbreviation: &str) -> Result<ProjectView> {
+        served(
+            self.client
+                .set_abbreviation(&self.base_url, &self.project, abbreviation),
+        )
+    }
+
     pub fn docs(&self) -> Result<Vec<DocListItem>> {
         served(self.client.docs(&self.base_url, &self.project))
     }

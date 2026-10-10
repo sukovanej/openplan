@@ -60,6 +60,16 @@ pub struct HistoryEntry {
     pub tasks: Vec<TaskChange>,
     pub tags: Vec<TagChange>,
     pub docs: Vec<DocChange>,
+    // The revision changed the letters that every task key starts with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub abbreviation: Option<AbbreviationChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AbbreviationChange {
+    pub from: String,
+    pub to: String,
 }
 
 // One task, even where a new title moved it to a file with a new name.

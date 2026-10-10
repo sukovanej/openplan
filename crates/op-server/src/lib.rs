@@ -17,7 +17,7 @@ use axum::{
 };
 use op_api::{
     ApiErrorBody, ChangeEvent, DaemonInfo, Fault, FlowCycles, KeyError, ProjectView, Refusal,
-    RegisterProject, RenameProject, SourcePosition, StopReason, WriteError,
+    RegisterProject, RenameProject, SetAbbreviation, SourcePosition, StopReason, WriteError,
 };
 use op_backend::{Actor, BackendError};
 use op_tracker::TrackerError;
@@ -590,6 +590,7 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(list_faults))
         .routes(routes!(list_projects, register_project))
         .routes(routes!(delete_project, rename_project))
+        .routes(routes!(set_abbreviation))
         .routes(routes!(tasks::list_tasks, tasks::create_task))
         .routes(routes!(tasks::get_board))
         .routes(routes!(tasks::get_merged_board))
@@ -934,6 +935,42 @@ async fn rename_project(
     let renaming = state.clone();
     let view = blocking(move || Ok(renaming.rename_project(&project, &body.name)?)).await?;
     state.publisher.publish(ChangeEvent::ProjectsChanged);
+    Ok(Json(view))
+}
+
+// Task files and links hold numbers, not keys, so every task keeps its number under the new
+// letters, and an old key names no task.
+#[utoipa::path(
+    put,
+    path = "/api/projects/{project}/abbreviation",
+    params(("project" = String, Path, description = "Project name")),
+    request_body = SetAbbreviation,
+    responses(
+        (status = 200, description = "The task keys start with the new letters", body = ProjectView),
+        (status = 400, description = "Not three uppercase letters, or the current abbreviation", body = ApiErrorBody),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 409, description = "The project has no tasks yet", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn set_abbreviation(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+    headers: HeaderMap,
+    Json(body): Json<SetAbbreviation>,
+) -> Result<Json<ProjectView>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let actor = actor_of(&state, &headers, &project)?;
+    let view = blocking(move || {
+        let abbreviation = body
+            .abbreviation
+            .parse::<op_task::Abbreviation>()
+            .map_err(|_| ProjectsError::BadAbbreviation(body.abbreviation.clone()))?;
+        project.tracker().set_abbreviation(&actor, abbreviation)?;
+        project.catch_up();
+        Ok(project.view())
+    })
+    .await?;
     Ok(Json(view))
 }
 

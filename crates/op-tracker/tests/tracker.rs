@@ -91,6 +91,40 @@ fn init_writes_the_config_and_the_default_tags_once() {
 }
 
 #[test]
+fn a_new_abbreviation_rewrites_only_the_config() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    let number = create(tracker, "A");
+    let before = tracker.plan().expect("plan").raw(number).expect("raw");
+    assert!(
+        tracker
+            .set_abbreviation(&actor(), "WEB".parse().expect("abbr"))
+            .expect("set")
+            .is_some()
+    );
+    let plan = tracker.plan().expect("plan");
+    assert_eq!(plan.abbreviation().expect("abbr").as_str(), "WEB");
+    assert_eq!(plan.raw(number).expect("raw"), before);
+}
+
+#[test]
+fn a_new_abbreviation_refuses_the_current_one_and_a_project_without_tasks() {
+    let fixture = started();
+    assert!(matches!(
+        fixture
+            .tracker
+            .set_abbreviation(&actor(), "OPP".parse().expect("abbr")),
+        Err(TrackerError::Invalid(reason)) if reason.contains("already start with OPP")
+    ));
+    assert!(matches!(
+        fresh()
+            .tracker
+            .set_abbreviation(&actor(), "WEB".parse().expect("abbr")),
+        Err(TrackerError::NotInitialized)
+    ));
+}
+
+#[test]
 fn a_task_needs_a_started_project() {
     let fixture = fresh();
     let result = fixture

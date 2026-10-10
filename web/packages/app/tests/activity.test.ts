@@ -173,11 +173,20 @@ describe("the activity", () => {
         tags: [],
         docs: [],
       },
+      {
+        revision: revision("abba000011112222"),
+        changes: [{ path: "config.toml", kind: "modified" }],
+        summary: [],
+        tasks: [],
+        tags: [],
+        docs: [],
+        abbreviation: { from: "OPP", to: "WEB" },
+      },
     ]
     const root = await show()
     await tick()
 
-    const [first, second] = revisions(root)
+    const [first, second, third] = revisions(root)
     expect(first.textContent?.match(/Milan/g)).toHaveLength(1)
     expect(first.querySelector("[aria-label='via claude-code']")).not.toBeNull()
     expect(first.querySelector("time")?.compareDocumentPosition(first.querySelector("ul")!)).toBe(
@@ -185,6 +194,7 @@ describe("the activity", () => {
     )
     expect(lines(first)).toEqual(["TodoDone+ServerOPP-1Ship it", "DeletedOPP-2Doomed", "RenamedbackendServer"])
     expect(lines(second)).toEqual(["Editedconfig.toml"])
+    expect(lines(third)).toEqual(["Task keysOPPWEB"])
     expect(root.querySelector("table")).toBeNull()
   })
 

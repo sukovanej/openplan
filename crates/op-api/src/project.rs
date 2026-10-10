@@ -59,3 +59,8 @@ pub struct RegisterProject {
 pub struct RenameProject {
     pub name: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SetAbbreviation {
+    pub abbreviation: String,
+}
