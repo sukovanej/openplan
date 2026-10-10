@@ -6,6 +6,8 @@ tags:
 - daemon
 - feature
 - ui
+pull_requests:
+- https://github.com/sukovanej/openplan/pull/254
 ---
 # Change the project abbreviation through the CLI and show the change in the activity page
 
