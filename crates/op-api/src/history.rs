@@ -63,11 +63,11 @@ pub struct HistoryEntry {
     // The revision changed the letters that every task key starts with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
-    pub abbreviation: Option<AbbreviationChange>,
+    pub project_code: Option<ProjectCodeChange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct AbbreviationChange {
+pub struct ProjectCodeChange {
     pub from: String,
     pub to: String,
 }

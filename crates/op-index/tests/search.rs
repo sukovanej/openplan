@@ -5,7 +5,7 @@ use op_backend::{Actor, Change, ChangeKind, LogEntry, MemorySnapshot, Revision, 
 use op_index::Index;
 use op_tracker::Plan;
 
-const CONFIG: &str = "abbreviation = \"OPP\"\n";
+const CONFIG: &str = "project_code = \"OPP\"\n";
 
 fn task(title: &str) -> String {
     format!("---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# {title}\n")

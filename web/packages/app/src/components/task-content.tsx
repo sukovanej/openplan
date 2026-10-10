@@ -204,7 +204,7 @@ interface TextContentProps {
   self: { task?: string; doc?: string }
   noun: { title: string; body: string; empty: string }
   problems: ReadonlyArray<Problem>
-  abbreviation: string
+  projectCode: string
   meta: (saveNote: ReactNode) => ReactNode
 }
 
@@ -217,7 +217,7 @@ function TextContent({
   self,
   noun,
   problems,
-  abbreviation,
+  projectCode,
   meta,
 }: TextContentProps) {
   const navigate = useNavigate()
@@ -262,7 +262,7 @@ function TextContent({
         <BodyEditor
           ref={editor}
           project={project}
-          abbreviation={abbreviation}
+          projectCode={projectCode}
           markdown={shown.description}
           onChange={(next) => edit({ ...text, description: next })}
           onSave={save}
@@ -285,7 +285,7 @@ export function TaskContent({
   title,
   description,
   problems,
-  abbreviation,
+  projectCode,
   meta,
 }: {
   project: string
@@ -293,7 +293,7 @@ export function TaskContent({
   title: string
   description: string
   problems: ReadonlyArray<Problem>
-  abbreviation: string
+  projectCode: string
   meta: (saveNote: ReactNode) => ReactNode
 }) {
   const client = useQueryClient()
@@ -314,7 +314,7 @@ export function TaskContent({
       self={{ task: id }}
       noun={TASK_NOUN}
       problems={problems}
-      abbreviation={abbreviation}
+      projectCode={projectCode}
       meta={meta}
     />
   )
@@ -324,12 +324,12 @@ export function TaskContent({
 export function DocContent({
   project,
   doc,
-  abbreviation,
+  projectCode,
   meta,
 }: {
   project: string
   doc: DocDetail
-  abbreviation: string
+  projectCode: string
   meta: (saveNote: ReactNode) => ReactNode
 }) {
   const client = useQueryClient()
@@ -359,7 +359,7 @@ export function DocContent({
       self={{ doc: doc.name }}
       noun={DOC_NOUN}
       problems={doc.problems}
-      abbreviation={abbreviation}
+      projectCode={projectCode}
       meta={meta}
     />
   )

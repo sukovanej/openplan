@@ -62,7 +62,7 @@ import { useDetailAction } from "../lib/detail-actions"
 import { type DetailRow, detailRows } from "../lib/detail-rows"
 import { errorText } from "../lib/format"
 import { taskChangeOf, useTaskHistory, useTaskRevision } from "../lib/history"
-import { useAbbreviation } from "../lib/projects"
+import { useProjectCode } from "../lib/projects"
 import { boardKey, mergedBoardKey, taskKey, tasksKey, useProjectMutation } from "../lib/query-client"
 import { isOverLiveTask } from "../lib/revision-navigation"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
@@ -136,7 +136,7 @@ function TaskDetailView({
   task: TaskDetail | TaskListItem
   detail: TaskDetail | null
 }) {
-  const abbreviation = useAbbreviation(project)
+  const projectCode = useProjectCode(project)
   // One cursor walks the three lists in document order, so `j`, `k` and Enter reach every row on the
   // page. Each section renders a slice of it and offsets its own rows into it.
   const rows = useMemo(() => detailRows(project, detail), [project, detail])
@@ -207,7 +207,7 @@ function TaskDetailView({
           </PanelHeader>
           <PanelBody className="p-6 max-md:p-4">
             <ConflictBanner project={project} id={task.id} metadata={task.metadata} count={task.conflicts} />
-            {detail === null || abbreviation === undefined ? (
+            {detail === null || projectCode === undefined ? (
               <>
                 <ProblemBanner problems={task.problems} />
                 <TaskTitle title={task.title} />
@@ -221,7 +221,7 @@ function TaskDetailView({
                 title={detail.title}
                 description={detail.description}
                 problems={task.problems}
-                abbreviation={abbreviation}
+                projectCode={projectCode}
                 meta={meta}
               />
             )}
@@ -255,7 +255,7 @@ function TaskDetailView({
           <RefSection project={project} title="Blocks" rows={rows.blocks} cursor={index} />
           <SubtasksSection project={project} id={task.id} rows={rows.subtasks} cursor={index} ready={detail !== null} />
           {detail !== null && (
-            <CommentThread project={project} comments={detail.comments ?? NO_COMMENTS} abbreviation={abbreviation} />
+            <CommentThread project={project} comments={detail.comments ?? NO_COMMENTS} projectCode={projectCode} />
           )}
           {detail !== null && <TaskHistory project={project} id={task.id} selected={undefined} />}
         </>
@@ -363,7 +363,7 @@ function RevisionNotice({
 }
 
 function Snapshot({ project, task, entry }: { project: string; task: TaskSnapshot; entry: HistoryEntry | undefined }) {
-  const abbreviation = useAbbreviation(project)
+  const projectCode = useProjectCode(project)
   const { byName: tags } = useTags(project)
   return (
     <>
@@ -381,12 +381,12 @@ function Snapshot({ project, task, entry }: { project: string; task: TaskSnapsho
       <TaskBodyWithConflicts
         segments={bodySegments(task.description)}
         project={project}
-        abbreviation={abbreviation}
+        projectCode={projectCode}
         proseClassName={PROSE}
         data-keys-ignore
       />
       {task.comments !== undefined && (
-        <CommentThread project={project} comments={task.comments} abbreviation={abbreviation} />
+        <CommentThread project={project} comments={task.comments} projectCode={projectCode} />
       )}
     </>
   )

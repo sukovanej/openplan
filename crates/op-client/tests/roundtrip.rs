@@ -335,7 +335,7 @@ fn projects_register_rename_and_leave_through_the_daemon() {
         .unwrap();
     assert!(created);
     assert_eq!(view.backend, BackendKind::Local);
-    assert_eq!(view.abbreviation, "OPP");
+    assert_eq!(view.project_code, "OPP");
     assert_eq!(
         PathBuf::from(&view.root),
         dir.path().canonicalize().unwrap()

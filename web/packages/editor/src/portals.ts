@@ -3,10 +3,10 @@ import { createContext, type ReactNode, useContext } from "react"
 
 export interface EditorScope {
   readonly project: string
-  readonly abbreviation: string
+  readonly projectCode: string
 }
 
-export const EditorScopeContext = createContext<EditorScope>({ project: "", abbreviation: "" })
+export const EditorScopeContext = createContext<EditorScope>({ project: "", projectCode: "" })
 
 export const useEditorScope = (): EditorScope => useContext(EditorScopeContext)
 

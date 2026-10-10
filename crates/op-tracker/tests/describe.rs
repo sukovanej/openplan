@@ -5,7 +5,7 @@ use op_backend_local::{LocalBackend, Options};
 use op_forge::{Forge, ForgeKind};
 use op_task::comment::NewComment;
 use op_task::tag::Tag;
-use op_task::{Abbreviation, Status, Task, Timestamp};
+use op_task::{ProjectCode, Status, Task, Timestamp};
 use op_tracker::{
     ConfigChange, Described, FieldChange, HistoryQuery, TagChange, TaskChange, Tracker,
 };
@@ -23,8 +23,8 @@ fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().expect("time")
 }
 
-fn abbreviation() -> Abbreviation {
-    "OPP".parse().expect("abbreviation")
+fn project_code() -> ProjectCode {
+    "OPP".parse().expect("project_code")
 }
 
 fn started() -> Fixture {
@@ -35,7 +35,7 @@ fn started() -> Fixture {
     )
     .expect("open");
     let tracker = Tracker::new(Arc::new(backend));
-    tracker.init(&actor(), abbreviation()).expect("init");
+    tracker.init(&actor(), project_code()).expect("init");
     Fixture { _dir: dir, tracker }
 }
 
@@ -119,7 +119,7 @@ fn a_revision_another_tool_wrote_is_described_from_its_documents() {
         }]
     );
     assert_eq!(
-        described.lines(Some(abbreviation()), None),
+        described.lines(Some(project_code()), None),
         vec![
             "OPP-2: status → done, dependencies → OPP-1, tags → bug, title → \"New title\", \
              description"
@@ -144,7 +144,7 @@ fn a_pull_request_is_linked_and_unlinked_by_its_short_form() {
     )
     .expect("open");
     let tracker = Tracker::new(Arc::new(backend)).with_forge(Some(github("sukovanej/openplan")));
-    tracker.init(&actor(), abbreviation()).expect("init");
+    tracker.init(&actor(), project_code()).expect("init");
     let number = create(&tracker, "Parser");
     let own = "https://github.com/sukovanej/openplan/pull/214".to_owned();
     let other = "https://github.com/rust-lang/cargo/pull/1234".to_owned();
@@ -172,7 +172,7 @@ fn a_pull_request_is_linked_and_unlinked_by_its_short_form() {
     let (message, described) = newest(&tracker);
     assert_eq!(message, "OPP-1: unlinked #214");
     assert_eq!(
-        described.lines(Some(abbreviation()), None),
+        described.lines(Some(project_code()), None),
         vec!["OPP-1: unlinked sukovanej/openplan#214"]
     );
 }
@@ -254,25 +254,25 @@ fn the_start_names_the_project_and_its_tags() {
         Some(ConfigChange {
             kind: ChangeKind::Added,
             from: None,
-            to: Some(abbreviation()),
+            to: Some(project_code()),
         })
     );
 }
 
 #[test]
-fn a_new_abbreviation_names_both_spellings_of_the_keys() {
+fn a_new_project_code_names_both_spellings_of_the_keys() {
     let fixture = started();
     let tracker = &fixture.tracker;
     let number = create(tracker, "A");
-    let web: Abbreviation = "WEB".parse().expect("abbreviation");
-    tracker.set_abbreviation(&actor(), web).expect("set");
+    let web: ProjectCode = "WEB".parse().expect("project_code");
+    tracker.set_project_code(&actor(), web).expect("set");
     let (message, described) = newest(tracker);
     assert_eq!(message, "Change the task keys from OPP to WEB");
     assert_eq!(
         described.config,
         Some(ConfigChange {
             kind: ChangeKind::Modified,
-            from: Some(abbreviation()),
+            from: Some(project_code()),
             to: Some(web),
         })
     );
@@ -291,17 +291,17 @@ fn a_new_abbreviation_names_both_spellings_of_the_keys() {
 }
 
 #[test]
-fn a_config_edit_that_keeps_the_abbreviation_is_an_edit_of_the_file() {
+fn a_config_edit_that_keeps_the_project_code_is_an_edit_of_the_file() {
     let fixture = started();
     let tracker = &fixture.tracker;
     foreign_write(
         tracker,
         "Reformat",
-        vec![Op::put("config.toml", "abbreviation = 'OPP'\n")],
+        vec![Op::put("config.toml", "project_code = 'OPP'\n")],
     );
     let (_, described) = newest(tracker);
     assert_eq!(
-        described.lines(Some(abbreviation()), None),
+        described.lines(Some(project_code()), None),
         vec!["config.toml: edit"]
     );
 }

@@ -19,9 +19,9 @@ pub fn run(command: ProjectCommand, root: &Path, daemon_url: Option<&str>) -> Re
         ProjectCommand::Add { path } => add(&client, &base_url, path.as_deref(), root),
         ProjectCommand::Remove { name } => remove(&client, &base_url, &name),
         ProjectCommand::Rename { from, to } => rename(&client, &base_url, &from, &to),
-        ProjectCommand::Abbreviation { abbreviation } => {
-            let view = Plan::resolve(root, daemon_url)?.set_abbreviation(&abbreviation)?;
-            println!("the task keys now start with {}", view.abbreviation);
+        ProjectCommand::Code { project_code } => {
+            let view = Plan::resolve(root, daemon_url)?.set_project_code(&project_code)?;
+            println!("the task keys now start with {}", view.project_code);
             Ok(())
         }
     }
@@ -60,7 +60,7 @@ fn list(client: &Client, base_url: &str, json: bool) -> Result<()> {
         println!(
             "{:<width$}  {}  {:<5}  {}",
             view.name,
-            view.abbreviation,
+            view.project_code,
             view.backend.as_str(),
             view.root
         );

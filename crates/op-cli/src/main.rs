@@ -48,8 +48,8 @@ enum Command {
         backend: Option<Backend>,
         /// The three uppercase letters every task key starts with, like OPP in OPP-42; omit to
         /// join the tasks on the git remote
-        #[arg(long)]
-        abbreviation: Option<String>,
+        #[arg(long, alias = "abbreviation")]
+        project_code: Option<String>,
     },
     /// Move the tasks of a repository that keeps them in .plan/ beside the code
     Migrate {
@@ -393,7 +393,7 @@ enum ProjectCommand {
     Rename { from: String, to: String },
     /// Change the three uppercase letters every task key of this project starts with. Each task
     /// keeps its number, and the old keys name no task
-    Abbreviation { abbreviation: String },
+    Code { project_code: String },
 }
 
 #[derive(Subcommand)]
@@ -446,12 +446,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Init {
             backend,
-            abbreviation,
+            project_code,
         } => start::init(
             root,
             daemon_url,
             backend.map(Backend::kind),
-            abbreviation.as_deref(),
+            project_code.as_deref(),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Migrate { backend } => {

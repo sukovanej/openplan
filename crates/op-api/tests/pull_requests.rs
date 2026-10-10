@@ -3,7 +3,7 @@ use op_api::{
     WriteError, render_task_file,
 };
 use op_task::content::split;
-use op_task::{Abbreviation, Status, Task, Timestamp};
+use op_task::{ProjectCode, Status, Task, Timestamp};
 
 const OWN: &str = "https://github.com/sukovanej/openplan/pull/214";
 const OTHER: &str = "https://github.com/rust-lang/cargo/pull/1234";
@@ -12,7 +12,7 @@ fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().unwrap()
 }
 
-fn abbreviation() -> Abbreviation {
+fn project_code() -> ProjectCode {
     "OPP".parse().unwrap()
 }
 
@@ -31,7 +31,7 @@ fn task(pull_requests: &[&str]) -> Task {
 }
 
 fn patched(task: &mut Task, patch: TaskPatch) -> Result<(), WriteError> {
-    patch.apply(task, abbreviation(), Some(&project()))
+    patch.apply(task, project_code(), Some(&project()))
 }
 
 fn entries(entries: &[&str]) -> Vec<String> {
@@ -49,7 +49,7 @@ fn create_takes_an_address_or_a_number_of_the_project_repository() {
         pull_requests: entries(&["#214", "https://github.com/rust-lang/cargo/pull/1234/files"]),
         body: None,
     }
-    .into_task(stamp(), abbreviation(), Some(&project()))
+    .into_task(stamp(), project_code(), Some(&project()))
     .unwrap();
 
     assert_eq!(created.frontmatter.pull_requests, [OTHER, OWN]);
@@ -126,7 +126,7 @@ fn a_number_is_refused_in_a_project_with_no_forge() {
         add_pull_requests: entries(&["214"]),
         ..TaskPatch::default()
     }
-    .apply(&mut task, abbreviation(), None);
+    .apply(&mut task, project_code(), None);
 
     assert_eq!(
         refused,
@@ -167,7 +167,7 @@ fn a_view_names_the_repository_only_when_it_is_another_one() {
 #[test]
 fn a_rendered_file_carries_the_pull_requests_the_task_holds() {
     let task = task(&[OWN, OTHER]);
-    let metadata = Metadata::from_frontmatter(&task.frontmatter, abbreviation());
+    let metadata = Metadata::from_frontmatter(&task.frontmatter, project_code());
     let rendered = render_task_file(
         &metadata,
         &task.title().unwrap_or_default(),

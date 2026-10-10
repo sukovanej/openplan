@@ -86,7 +86,7 @@ function BoardState({ board }: { board: UseQueryResult<Board> }) {
 }
 
 // The keys the id column is sized by, laid under the real one so every cell is as wide as the
-// widest. Characters are not width — an abbreviation is proportional, and only the digits are
+// widest. Characters are not width — a project code is proportional, and only the digits are
 // tabular — and a merged board carries a key from every project. Within one project the count does
 // decide it, because only the digits vary there; so one candidate per project sizes the column
 // exactly, and that is a handful of spans rather than one per row.

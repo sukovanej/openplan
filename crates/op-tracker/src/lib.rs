@@ -11,7 +11,7 @@ use op_task::conflict::{self, Labels};
 use op_task::content::{self, Text};
 use op_task::layout;
 use op_task::tag::Tag;
-use op_task::{Abbreviation, PartialMetadata, Task, parse_partial};
+use op_task::{PartialMetadata, ProjectCode, Task, parse_partial};
 
 mod describe;
 mod docs;
@@ -106,16 +106,16 @@ impl Tracker {
     pub fn init(
         &self,
         actor: &Actor,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
     ) -> Result<Option<Committed>, TrackerError> {
         let (committed, ()) = self.write(actor, |plan| {
             match plan.config() {
-                Ok(config) if config.abbreviation == abbreviation => {
+                Ok(config) if config.project_code == project_code => {
                     return Ok((Vec::new(), ()));
                 }
                 Ok(config) => {
                     return Err(TrackerError::AlreadyInitialized(
-                        config.abbreviation.to_string(),
+                        config.project_code.to_string(),
                     ));
                 }
                 Err(TrackerError::NotInitialized) => {}
@@ -123,7 +123,7 @@ impl Tracker {
             }
             let mut ops = vec![Op::put(
                 layout::CONFIG,
-                Config::new(abbreviation).to_file_string(),
+                Config::new(project_code).to_file_string(),
             )];
             if plan.tag_names().is_empty() {
                 for tag in op_task::tag::defaults() {
@@ -136,21 +136,21 @@ impl Tracker {
     }
 
     // Task files and links hold numbers and paths, not keys, so only the config changes.
-    pub fn set_abbreviation(
+    pub fn set_project_code(
         &self,
         actor: &Actor,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
     ) -> Result<Option<Committed>, TrackerError> {
         let (committed, ()) = self.write(actor, |plan| {
-            if plan.config()?.abbreviation == abbreviation {
+            if plan.config()?.project_code == project_code {
                 return Err(TrackerError::Invalid(format!(
-                    "the task keys already start with {abbreviation}"
+                    "the task keys already start with {project_code}"
                 )));
             }
             Ok((
                 vec![Op::put(
                     layout::CONFIG,
-                    Config::new(abbreviation).to_file_string(),
+                    Config::new(project_code).to_file_string(),
                 )],
                 (),
             ))

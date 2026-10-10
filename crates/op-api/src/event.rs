@@ -11,7 +11,7 @@ pub enum ChangeEvent {
     DocChanged { project: String, name: String },
     // A tag was registered, recolored, re-described, renamed, or deleted.
     TagsChanged { project: String },
-    // Membership, a rename, a status change, or a new abbreviation.
+    // Membership, a rename, a status change, or a new project code.
     ProjectsChanged,
     // A sync with the remote ran, whether it moved anything or failed.
     SyncChanged { project: String },

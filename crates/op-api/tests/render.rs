@@ -1,4 +1,4 @@
-use op_api::{Abbreviation, Metadata, render_task_file};
+use op_api::{Metadata, ProjectCode, render_task_file};
 use op_task::content::split;
 use op_task::{Status, Task, Timestamp};
 
@@ -6,12 +6,12 @@ fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().unwrap()
 }
 
-fn abbreviation() -> Abbreviation {
+fn project_code() -> ProjectCode {
     "OPP".parse().unwrap()
 }
 
 fn rendered(task: &Task) -> String {
-    let metadata = Metadata::from_frontmatter(&task.frontmatter, abbreviation());
+    let metadata = Metadata::from_frontmatter(&task.frontmatter, project_code());
     let title = task.title().unwrap_or_default();
     render_task_file(&metadata, &title, &split(&task.body), &[]).unwrap()
 }

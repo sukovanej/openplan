@@ -180,7 +180,7 @@ describe("the activity", () => {
         tasks: [],
         tags: [],
         docs: [],
-        abbreviation: { from: "OPP", to: "WEB" },
+        project_code: { from: "OPP", to: "WEB" },
       },
     ]
     const root = await show()

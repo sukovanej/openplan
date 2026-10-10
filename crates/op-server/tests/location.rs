@@ -65,7 +65,7 @@ fn a_store_copied_by_hand_is_local() {
     std::fs::create_dir(dir.path().join(STORE_DIR)).unwrap();
     std::fs::write(
         dir.path().join(STORE_DIR).join("config.toml"),
-        "abbreviation = \"OPP\"\n",
+        "project_code = \"OPP\"\n",
     )
     .unwrap();
 
@@ -82,7 +82,7 @@ fn tasks_beside_the_code_need_a_migration() {
     std::fs::create_dir_all(checkout.join(STORE_DIR).join("tasks")).unwrap();
     std::fs::write(
         checkout.join(STORE_DIR).join("config.toml"),
-        "abbreviation = \"OPP\"\n",
+        "project_code = \"OPP\"\n",
     )
     .unwrap();
     repository(&checkout);

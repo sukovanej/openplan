@@ -4,7 +4,7 @@ use std::time::Duration;
 use op_api::{
     ApiErrorBody, BackendKind, Comment, CreateComment, CreateDoc, CreateTag, CreateTask,
     DaemonInfo, DocDetail, DocListItem, DocPatch, Fault, HistoryEntry, ProjectView, Refusal,
-    RegisterProject, RenameProject, SearchHit, SetAbbreviation, SyncResult, SyncView, TagPatch,
+    RegisterProject, RenameProject, SearchHit, SetProjectCode, SyncResult, SyncView, TagPatch,
     TagView, TaskAtRevision, TaskDetail, TaskListItem, TaskPatch, TaskTreeView, WriteTaskFile,
 };
 use reqwest::Url;
@@ -290,18 +290,18 @@ impl Client {
     }
 
     // The bool says whether this call is what registered the project; the daemon answers 200 for one
-    // it already serves. An abbreviation starts the project's tasks.
+    // it already serves. A project code starts the project's tasks.
     pub fn register_project(
         &self,
         base_url: &str,
         path: &Path,
         backend: Option<BackendKind>,
-        abbreviation: Option<&str>,
+        project_code: Option<&str>,
     ) -> Result<(ProjectView, bool), ClientError> {
         let body = RegisterProject {
             path: path.display().to_string(),
             backend,
-            abbreviation: abbreviation.map(str::to_owned),
+            project_code: project_code.map(str::to_owned),
         };
         let response = accepted(send(
             self.write(self.http.post(format!("{base_url}/api/projects")))
@@ -330,18 +330,18 @@ impl Client {
         self.json(self.http.patch(projects_url(base_url, from)?).json(&body))
     }
 
-    pub fn set_abbreviation(
+    pub fn set_project_code(
         &self,
         base_url: &str,
         project: &str,
-        abbreviation: &str,
+        project_code: &str,
     ) -> Result<ProjectView, ClientError> {
         let mut url = projects_url(base_url, project)?;
         url.path_segments_mut()
             .map_err(|_| unusable(base_url))?
-            .push("abbreviation");
-        let body = SetAbbreviation {
-            abbreviation: abbreviation.to_owned(),
+            .push("project-code");
+        let body = SetProjectCode {
+            project_code: project_code.to_owned(),
         };
         self.json(self.write(self.http.put(url)).json(&body))
     }

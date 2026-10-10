@@ -2,13 +2,13 @@ use op_task::doc::{
     Doc, DocError, PartialDocMetadata, body_doc_names, joined, normalize_name, parse_partial,
     rewrite_parent,
 };
-use op_task::{Abbreviation, Timestamp};
+use op_task::{ProjectCode, Timestamp};
 
 fn at() -> Timestamp {
     "2026-09-14T10:00:00Z".parse().unwrap()
 }
 
-fn abbreviation() -> Abbreviation {
+fn project_code() -> ProjectCode {
     "OPP".parse().unwrap()
 }
 
@@ -65,7 +65,7 @@ fn a_partial_read_yields_the_title_of_a_file_the_model_would_reject() {
 #[test]
 fn a_body_names_docs_by_their_path_or_their_name_and_tasks_by_their_key() {
     let names = body_doc_names(
-        Some(abbreviation()),
+        Some(project_code()),
         "docs",
         "see [[./architecture.md]], [[OPP-42]], [[storage#Layout]] and [[Some Title]]",
     );
@@ -78,11 +78,11 @@ fn a_body_names_docs_by_their_path_or_their_name_and_tasks_by_their_key() {
 fn a_path_names_a_doc_only_when_it_resolves_into_the_docs() {
     let body = "see [[./00042-notes.md]] and [[../docs/design.md]]";
     assert_eq!(
-        body_doc_names(Some(abbreviation()), "docs", body),
+        body_doc_names(Some(project_code()), "docs", body),
         vec!["00042-notes".to_owned(), "design".to_owned()]
     );
     assert_eq!(
-        body_doc_names(Some(abbreviation()), "tasks", body),
+        body_doc_names(Some(project_code()), "tasks", body),
         vec!["design".to_owned()]
     );
 }
@@ -91,7 +91,7 @@ fn a_path_names_a_doc_only_when_it_resolves_into_the_docs() {
 // reading it as a doc would name a doc nobody could have written.
 #[test]
 fn bare_digits_name_no_doc() {
-    assert!(body_doc_names(Some(abbreviation()), "docs", "see [[42]] and [[042]]").is_empty());
+    assert!(body_doc_names(Some(project_code()), "docs", "see [[42]] and [[042]]").is_empty());
 }
 
 #[test]

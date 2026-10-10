@@ -14,15 +14,15 @@ pub fn init(
     root: &Path,
     daemon_url: Option<&str>,
     backend: Option<BackendKind>,
-    abbreviation: Option<&str>,
+    project_code: Option<&str>,
 ) -> Result<()> {
     let path = std::fs::canonicalize(root)
         .with_context(|| format!("no such directory: {}", root.display()))?;
-    let view = register(&path, daemon_url, backend, abbreviation)?;
+    let view = register(&path, daemon_url, backend, project_code)?;
     println!(
         "{} keeps its {} tasks {}",
         view.name,
-        view.abbreviation,
+        view.project_code,
         place(&view)
     );
     Ok(())
@@ -66,7 +66,7 @@ pub fn migrate(root: &Path, daemon_url: Option<&str>, backend: Option<BackendKin
     println!(
         "{} keeps its {} tasks {}",
         view.name,
-        view.abbreviation,
+        view.project_code,
         place(&view)
     );
     match kind {
@@ -86,11 +86,11 @@ fn register(
     path: &Path,
     daemon_url: Option<&str>,
     backend: Option<BackendKind>,
-    abbreviation: Option<&str>,
+    project_code: Option<&str>,
 ) -> Result<ProjectView> {
     let client = Client::default().with_identity(crate::author::identity(path));
     let base_url = daemon_base_url(&client, daemon_url)?;
-    let (view, _) = client.register_project(&base_url, path, backend, abbreviation)?;
+    let (view, _) = client.register_project(&base_url, path, backend, project_code)?;
     Ok(view)
 }
 

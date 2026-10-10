@@ -9,7 +9,7 @@ use op_api::{
     DocSnapshot, FieldUpdate, HistoryEntry, WriteDocText,
 };
 use op_backend::RevisionId;
-use op_task::Abbreviation;
+use op_task::ProjectCode;
 use op_tracker::TrackerError;
 
 use crate::tasks::{PageQuery, ReadQuery, history, history_query};
@@ -140,7 +140,7 @@ pub(crate) async fn create_doc(
     let created = op_task::now();
     let detail = blocking(move || {
         let doc = body
-            .into_doc(created, project.abbreviation()?)
+            .into_doc(created, project.project_code()?)
             .map_err(|err| ApiError::bad_request(err.to_string()))?;
         let created = project.tracker().create_doc(&actor, &doc)?;
         project.written(created.committed.as_ref());
@@ -218,7 +218,7 @@ pub(crate) async fn patch_doc(
             .body
             .as_deref()
             .map(|body| {
-                op_api::body_from_keys(project.abbreviation()?, body).map_err(ApiError::from)
+                op_api::body_from_keys(project.project_code()?, body).map_err(ApiError::from)
             })
             .transpose()?;
         let updated = project.tracker().update_doc(&actor, &name, |doc| {
@@ -269,7 +269,7 @@ pub(crate) async fn write_doc_text(
     let project = project_of(&state, &project)?;
     let actor = actor_of(&state, &headers, &project)?;
     let detail = blocking(move || {
-        let (base, text) = body.into_texts(project.abbreviation()?)?;
+        let (base, text) = body.into_texts(project.project_code()?)?;
         let updated = project
             .tracker()
             .edit_doc_text(&actor, &name, &base, &text)?;
@@ -339,27 +339,27 @@ pub(crate) async fn doc_revision(
 ) -> Result<Json<DocAtRevision>, ApiError> {
     let project = project_of(&state, &project)?;
     let view = blocking(move || {
-        let abbreviation = project.abbreviation()?;
+        let project_code = project.project_code()?;
         let raw = project
             .tracker()
             .doc_at(&name, &RevisionId::new(revision.clone()))?;
         Ok(DocAtRevision {
             name,
             revision,
-            doc: raw.map(|raw| doc_snapshot(&raw, abbreviation)),
+            doc: raw.map(|raw| doc_snapshot(&raw, project_code)),
         })
     })
     .await?;
     Ok(Json(view))
 }
 
-fn doc_snapshot(raw: &str, abbreviation: Abbreviation) -> DocSnapshot {
+fn doc_snapshot(raw: &str, project_code: ProjectCode) -> DocSnapshot {
     let partial = op_task::doc::parse_partial(raw);
     DocSnapshot {
         title: partial.title.clone().unwrap_or_default(),
         metadata: DocMetadata::from_partial(&partial.metadata, &partial.conflicts),
         body: op_api::body_to_keys(
-            abbreviation,
+            project_code,
             op_task::layout::DOCS,
             &op_task::doc::content(&partial.body),
         ),

@@ -5,7 +5,7 @@ const MAX_MATCHES = 8
 
 // A query is a key search only once it carries a whole prefix and its separator, so pasting `OPP-42`
 // finds that task while `o`, `op`, and `opp` stay title searches — every id starts with the
-// abbreviation, so treating those as key matches would swallow the entire list. Case-insensitive: the
+// project code, so treating those as key matches would swallow the entire list. Case-insensitive: the
 // prefix is the only part a typist has to shout.
 const KEY_QUERY = /^[A-Za-z]{3}-[0-9]*$/
 

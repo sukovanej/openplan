@@ -9,7 +9,7 @@ use op_task::conflict::{self, Labels};
 use op_task::doc::Doc;
 use op_task::layout::{self, Document};
 use op_task::reference::relative;
-use op_task::{Abbreviation, Task, merge, parse_partial, three_way};
+use op_task::{ProjectCode, Task, merge, parse_partial, three_way};
 
 // Sync runs unattended, so every conflict gets an answer and nothing a person wrote is lost. A field
 // or lines that both sides changed differently keep both versions in the task, with the published
@@ -286,17 +286,17 @@ fn task_numbers(snapshot: &dyn Snapshot) -> Result<BTreeMap<u64, String>, Backen
         .collect())
 }
 
-fn abbreviation(snapshot: &dyn Snapshot) -> Result<Option<Abbreviation>, BackendError> {
+fn project_code(snapshot: &dyn Snapshot) -> Result<Option<ProjectCode>, BackendError> {
     Ok(snapshot
         .read_text(layout::CONFIG)?
         .and_then(|text| Config::parse(&text).ok())
-        .map(|config| config.abbreviation))
+        .map(|config| config.project_code))
 }
 
 fn keys(snapshot: &dyn Snapshot) -> Result<impl Fn(u64) -> String + use<>, BackendError> {
-    let abbreviation = abbreviation(snapshot)?;
-    Ok(move |number: u64| match abbreviation {
-        Some(abbreviation) => abbreviation.format_key(number),
+    let project_code = project_code(snapshot)?;
+    Ok(move |number: u64| match project_code {
+        Some(project_code) => project_code.format_key(number),
         None => number.to_string(),
     })
 }

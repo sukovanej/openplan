@@ -17,7 +17,7 @@ pub mod tag;
 
 const SLUG_MAX: usize = 32;
 const ID_DIGITS: usize = 5;
-const ABBREVIATION_LEN: usize = 3;
+const PROJECT_CODE_LEN: usize = 3;
 
 // Task files are hand-written and diffed, so a stored timestamp carries whole seconds — the clock's
 // sub-second tail is noise no reader of a task file wants.
@@ -155,35 +155,35 @@ pub fn parse_id(id: &str) -> Option<u64> {
 // `<ABBR>-<number>` — is the id everywhere above the store, so one number reads as one key across
 // the API, the CLI, and the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Abbreviation([u8; ABBREVIATION_LEN]);
+pub struct ProjectCode([u8; PROJECT_CODE_LEN]);
 
 #[derive(Debug, thiserror::Error)]
 #[error("must be exactly three uppercase letters")]
-pub struct ParseAbbreviationError;
+pub struct ParseProjectCodeError;
 
-impl std::str::FromStr for Abbreviation {
-    type Err = ParseAbbreviationError;
+impl std::str::FromStr for ProjectCode {
+    type Err = ParseProjectCodeError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let letters: [u8; ABBREVIATION_LEN] = text
+        let letters: [u8; PROJECT_CODE_LEN] = text
             .as_bytes()
             .try_into()
-            .map_err(|_| ParseAbbreviationError)?;
+            .map_err(|_| ParseProjectCodeError)?;
         letters
             .iter()
             .all(u8::is_ascii_uppercase)
             .then_some(Self(letters))
-            .ok_or(ParseAbbreviationError)
+            .ok_or(ParseProjectCodeError)
     }
 }
 
-impl std::fmt::Display for Abbreviation {
+impl std::fmt::Display for ProjectCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl Abbreviation {
+impl ProjectCode {
     pub fn as_str(&self) -> &str {
         std::str::from_utf8(&self.0).expect("uppercase ASCII letters are UTF-8")
     }
@@ -222,7 +222,7 @@ pub(crate) fn with_section(target: &str, reference: &str) -> String {
 pub fn is_key_shaped(text: &str) -> bool {
     match text.split_once('-') {
         Some((prefix, number)) => {
-            prefix.len() == ABBREVIATION_LEN
+            prefix.len() == PROJECT_CODE_LEN
                 && prefix.bytes().all(|b| b.is_ascii_uppercase())
                 && parse_id(number).is_some()
         }
@@ -304,8 +304,8 @@ pub fn ref_id(reference: &str) -> Option<u64> {
 
 // The task a `[[…]]` in a body under `dir` names: a path to its file, or this store's key. A bare
 // number is not one of them, because above the store the key is the whole id.
-pub fn body_ref_id(abbreviation: Abbreviation, dir: &str, reference: &str) -> Option<u64> {
-    match reference::body_target(Some(abbreviation), dir, reference)? {
+pub fn body_ref_id(project_code: ProjectCode, dir: &str, reference: &str) -> Option<u64> {
+    match reference::body_target(Some(project_code), dir, reference)? {
         reference::Target::Task(number) => Some(number),
         reference::Target::Doc(_) => None,
     }

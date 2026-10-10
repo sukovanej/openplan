@@ -245,9 +245,9 @@ fn written(plan: &Plan, name: &str, doc: &Doc) -> Result<Vec<Op>, TrackerError> 
             name: doc.name.clone(),
         });
     }
-    let abbreviation = plan.abbreviation().ok();
+    let project_code = plan.project_code().ok();
     let relinked =
-        |dir: &str, text: &str| files::relinked_doc(abbreviation, dir, text, name, &doc.name);
+        |dir: &str, text: &str| files::relinked_doc(project_code, dir, text, name, &doc.name);
     let mut renamed = doc.clone();
     renamed.body = relinked(layout::DOCS, &doc.body);
     let mut ops = vec![

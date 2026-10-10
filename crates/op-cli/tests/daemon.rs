@@ -64,11 +64,11 @@ impl Daemon {
 
 // `.plan/` with a config, and one task when `task` names its title. Outside any git repository, so
 // no daemon serves it until a command registers it.
-fn task_store(abbreviation: &str, task: Option<&str>) -> TempDir {
+fn task_store(project_code: &str, task: Option<&str>) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     write(
         &dir.path().join(".plan/config.toml"),
-        &format!("abbreviation = \"{abbreviation}\"\n"),
+        &format!("project_code = \"{project_code}\"\n"),
     );
     std::fs::create_dir_all(dir.path().join(".plan/tasks")).unwrap();
     if let Some(title) = task {
@@ -99,7 +99,7 @@ fn parse_pid(text: &str) -> Option<u32> {
     rest[..end].parse().ok()
 }
 
-// `openplan project list` prints one line per project — name, abbreviation, backend, root — and
+// `openplan project list` prints one line per project — name, project code, backend, root — and
 // indents the reason a demoted one is not served under it.
 fn projects(daemon: &Daemon) -> Vec<(String, String)> {
     let text = ok(daemon.run(&["project", "list"]));
@@ -837,7 +837,7 @@ fn project_add_refuses_a_directory_with_no_tasks() {
 
     assert!(!out.status.success());
     assert!(
-        stderr(&out).contains("openplan init --abbreviation"),
+        stderr(&out).contains("openplan init --project-code"),
         "{}",
         stderr(&out)
     );
@@ -943,7 +943,7 @@ fn project_list_marks_a_demoted_project_with_its_reason() {
 
     write(
         &daemon.root_path().join(".plan/config.toml"),
-        "abbreviation = \"not valid\"\n",
+        "project_code = \"not valid\"\n",
     );
 
     let mut listed = String::new();
@@ -995,7 +995,7 @@ fn concurrent_first_writes_register_one_project() {
 fn a_local_store_above_a_checkout_answers_for_it() {
     let home = Home::new();
     let outer = tempfile::tempdir().unwrap();
-    ok(home.run(outer.path(), &["init", "--abbreviation", "OUT"]));
+    ok(home.run(outer.path(), &["init", "--project-code", "OUT"]));
     let inner = outer.path().join("repo");
     git_repo(&inner);
 

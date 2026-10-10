@@ -13,7 +13,7 @@ fn plan(files: &[(&str, &str)]) -> Plan {
     Plan::read(Arc::new(MemorySnapshot::new(None, documents))).expect("plan")
 }
 
-const CONFIG: (&str, &str) = ("config.toml", "abbreviation = \"OPP\"\n");
+const CONFIG: (&str, &str) = ("config.toml", "project_code = \"OPP\"\n");
 const PARENT: (&str, &str) = (
     "tasks/00001-parent.md",
     "---\nstatus: todo\ncreated: 2026-01-01T00:00:00Z\n---\n# Parent\n\nSee [[./00002-child.md]].\n\n## Comments\n\n### 2026-01-02T00:00:00Z by Ada\n\n> Hello.\n",
@@ -50,7 +50,7 @@ fn a_load_follows_the_plan_it_is_given() {
     assert!(!index.contains(1));
     assert_eq!(index.max_number(), Some(2));
     index
-        .load(&plan(&[("config.toml", "abbreviation = \"WEB\"\n"), CHILD]))
+        .load(&plan(&[("config.toml", "project_code = \"WEB\"\n"), CHILD]))
         .expect("load");
     assert_eq!(index.detail("p", 2).expect("detail").id, "WEB-2");
     index.load(&plan(&[CHILD])).expect("load");
