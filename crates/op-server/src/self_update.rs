@@ -31,7 +31,8 @@ impl SelfUpdate {
         self.automatic.load(Ordering::Relaxed)
     }
 
-    // What the check that a project asked for found, when it installed nothing.
+    // What a person can do after a check that a project asked for installed nothing. Only the
+    // daemon knows its update channel, so it says it in full.
     pub fn record(&self, outcome: String) {
         *self.lock_outcome() = Some(outcome);
     }

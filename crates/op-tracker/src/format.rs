@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use op_backend::{BackendError, Op, Overlay, RevisionId, Snapshot};
-use op_task::config::{self, Header};
+use op_task::config;
 use op_task::layout;
 
 use crate::TrackerError;
@@ -46,17 +46,9 @@ pub static FORMATS: Formats = Formats {
 pub enum FormatError {
     #[error(
         "these tasks use store format {format}, and this openplan reads formats up to {readable}; \
-         {}",
-        match requires {
-            Some(version) => format!("they need openplan {version} or newer"),
-            None => "they need a newer openplan".to_owned(),
-        }
+         they need a newer openplan"
     )]
-    Newer {
-        format: u32,
-        readable: u32,
-        requires: Option<String>,
-    },
+    Newer { format: u32, readable: u32 },
     #[error(
         "these tasks use store format {format}, and this openplan migrates only format {oldest} \
          and newer; {}",
@@ -75,13 +67,10 @@ pub enum FormatError {
     #[error(
         "these tasks use store format {format}, and this build writes format {current}, which no \
          release reads yet, so it does not migrate them by itself; run `openplan migrate` to \
-         migrate them, and teammates then need openplan {requires} or newer"
+         migrate them, and teammates then need a canary build until a release reads format \
+         {current}"
     )]
-    Unmigrated {
-        format: u32,
-        current: u32,
-        requires: String,
-    },
+    Unmigrated { format: u32, current: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,33 +97,28 @@ impl Formats {
         self.newest().released.is_some()
     }
 
-    pub fn header(&self) -> Header {
-        self.header_of(self.current())
-    }
-
-    pub fn stored(&self, header: &Header) -> Result<Stored, FormatError> {
+    pub fn stored(&self, format: u32) -> Result<Stored, FormatError> {
         let current = self.current();
-        if header.format > current {
+        if format > current {
             return Err(FormatError::Newer {
-                format: header.format,
+                format,
                 readable: current,
-                requires: header.requires.clone(),
             });
         }
-        if header.format < self.oldest() {
+        if format < self.oldest() {
             return Err(FormatError::Retired {
-                format: header.format,
+                format,
                 oldest: self.oldest(),
                 last_release: self
                     .retired
                     .iter()
-                    .find(|retired| retired.number == header.format)
+                    .find(|retired| retired.number == format)
                     .map(|retired| retired.last_release),
             });
         }
-        Ok(match header.format == current {
+        Ok(match format == current {
             true => Stored::Current,
-            false => Stored::Older(header.format),
+            false => Stored::Older(format),
         })
     }
 
@@ -142,11 +126,10 @@ impl Formats {
         FormatError::Unmigrated {
             format,
             current: self.current(),
-            requires: self.requires_of(self.current()),
         }
     }
 
-    // The writes that move a store of format `from` to format `to`, header included.
+    // The writes that move a store of format `from` to format `to`, its `format` key included.
     pub fn migration(
         &self,
         snapshot: &dyn Snapshot,
@@ -166,7 +149,7 @@ impl Formats {
             overlay.apply(ops);
         }
         if let Some(text) = overlay.read_text(layout::CONFIG)? {
-            let stamped = config::restamp(&text, &self.header_of(to))?;
+            let stamped = config::restamp(&text, to)?;
             overlay.set(layout::CONFIG, Some(stamped.into_bytes()));
         }
         Ok(overlay.into_ops())
@@ -175,7 +158,7 @@ impl Formats {
     // The store as this binary reads it: a store of an older format reads as if migrated, and
     // `migrated_from` says from which. A store this binary cannot read stays as it is.
     pub fn view(&self, snapshot: Arc<dyn Snapshot>) -> Result<View, TrackerError> {
-        let stored = header_of(&*snapshot)?.map(|header| self.stored(&header));
+        let stored = format_of(&*snapshot)?.map(|format| self.stored(format));
         match stored {
             Some(Ok(Stored::Older(format))) => {
                 let ops = self.migration(&*snapshot, format, self.current())?;
@@ -201,23 +184,6 @@ impl Formats {
     fn newest(&self) -> &Format {
         self.known.last().expect("a binary knows one format")
     }
-
-    fn header_of(&self, format: u32) -> Header {
-        Header {
-            format,
-            requires: Some(self.requires_of(format)),
-        }
-    }
-
-    // The release that first reads the format, or this build for a format no release reads yet.
-    fn requires_of(&self, format: u32) -> String {
-        self.known
-            .iter()
-            .find(|known| known.number == format)
-            .and_then(|known| known.released)
-            .unwrap_or(env!("CARGO_PKG_VERSION"))
-            .to_owned()
-    }
 }
 
 pub struct View {
@@ -226,11 +192,11 @@ pub struct View {
     pub problem: Option<FormatError>,
 }
 
-// A config that does not parse has no header; the config error says why.
-pub(crate) fn header_of(snapshot: &dyn Snapshot) -> Result<Option<Header>, BackendError> {
+// A config that does not parse has no format; the config error says why.
+pub(crate) fn format_of(snapshot: &dyn Snapshot) -> Result<Option<u32>, BackendError> {
     Ok(snapshot
         .read_text(layout::CONFIG)?
-        .and_then(|text| Header::parse(&text).ok()))
+        .and_then(|text| config::format(&text).ok()))
 }
 
 // A store of an older format with its migration applied in memory. It keeps the revision of the

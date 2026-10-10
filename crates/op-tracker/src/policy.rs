@@ -55,11 +55,11 @@ impl TaskMergePolicy {
     }
 
     fn readable(&self, side: &dyn Snapshot) -> Result<Option<u32>, BackendError> {
-        let Some(header) = format::header_of(side)? else {
+        let Some(format) = format::format_of(side)? else {
             return Ok(None);
         };
-        match self.formats.stored(&header) {
-            Ok(_) => Ok(Some(header.format)),
+        match self.formats.stored(format) {
+            Ok(_) => Ok(Some(format)),
             Err(problem) => {
                 if let Some(report) = &self.on_unreadable {
                     report(&problem);
@@ -101,7 +101,7 @@ impl MergePolicy for TaskMergePolicy {
         let Some(target) = ours_format.max(theirs_format) else {
             return Ok(Alignment::default());
         };
-        let base_format = format::header_of(base)?.map(|header| header.format);
+        let base_format = format::format_of(base)?;
         Ok(Alignment {
             base: self.raised(base, base_format, target)?,
             ours: self.raised(ours, ours_format, target)?,

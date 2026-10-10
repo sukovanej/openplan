@@ -6,7 +6,7 @@ use op_backend::{
 };
 use op_forge::Forge;
 use op_task::comment::{self, NewComment};
-use op_task::config::{Config, Header};
+use op_task::config::{self, Config};
 use op_task::conflict::{self, Labels};
 use op_task::content::{self, Text};
 use op_task::layout;
@@ -142,7 +142,7 @@ impl Tracker {
             }
             let mut ops = vec![Op::put(
                 layout::CONFIG,
-                Config::new(self.formats.header(), abbreviation).to_file_string(),
+                Config::new(self.formats.current(), abbreviation).to_file_string(),
             )];
             if plan.tag_names().is_empty() {
                 for tag in op_task::tag::defaults() {
@@ -156,8 +156,8 @@ impl Tracker {
 
     // Reads the config alone, so a check after every write costs one read.
     pub fn stored(&self) -> Result<Option<Stored>, TrackerError> {
-        match format::header_of(&*self.backend.head()?)? {
-            Some(header) => Ok(Some(self.formats.stored(&header)?)),
+        match format::format_of(&*self.backend.head()?)? {
+            Some(format) => Ok(Some(self.formats.stored(format)?)),
             None => Ok(None),
         }
     }
@@ -169,10 +169,10 @@ impl Tracker {
         let (_, from) = self
             .backend
             .transact(actor, |snapshot: Arc<dyn Snapshot>| {
-                let Some(header) = format::header_of(&*snapshot)? else {
+                let Some(format) = format::format_of(&*snapshot)? else {
                     return Err(TrackerError::NotInitialized);
                 };
-                let Stored::Older(from) = self.formats.stored(&header)? else {
+                let Stored::Older(from) = self.formats.stored(format)? else {
                     return Ok((Edit::new(String::new(), Vec::new()), None));
                 };
                 let ops = self.formats.migration(&*snapshot, from, current)?;
@@ -603,8 +603,7 @@ impl Tracker {
 
 fn format_of(read: describe::Read<'_>) -> Result<Option<u32>, BackendError> {
     Ok(read(layout::CONFIG)?
-        .and_then(|bytes| Header::parse(&String::from_utf8_lossy(&bytes)).ok())
-        .map(|header| header.format))
+        .and_then(|bytes| config::format(&String::from_utf8_lossy(&bytes)).ok()))
 }
 
 // A shallow clone holds its oldest revisions without their parents, and a missing parent reads as

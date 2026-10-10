@@ -52,7 +52,7 @@ static UNRELEASED: Formats = Formats {
     retired: &[],
 };
 
-const NEWER: &str = "format = 2\nrequires = \"0.0.9\"\nabbreviation = \"OPP\"\n";
+const NEWER: &str = "format = 2\nabbreviation = \"OPP\"\n";
 
 async fn faults(state: &AppState) -> Vec<Value> {
     json_of(state, "/api/faults")
@@ -96,32 +96,12 @@ async fn a_newer_format_serves_no_task_and_says_which_release_reads_it() {
     assert_eq!(faults[0]["kind"], "newer_format");
     assert_eq!(
         faults[0]["message"],
-        "these tasks use store format 2, and this openplan reads formats up to 1; they need \
-         openplan 0.0.9 or newer; run `openplan update`"
+        "these tasks use store format 2, and this openplan reads formats up to 1; they need a \
+         newer openplan; run `openplan update`"
     );
     let tasks = send(&state, "GET", "/api/projects/test/tasks", None).await;
     assert_eq!(tasks.status(), StatusCode::CONFLICT);
     assert!(message_of(&body_json(tasks).await).contains("store format 2"));
-}
-
-#[tokio::test]
-async fn a_format_only_a_canary_reads_names_the_canary_update() {
-    let (_dir, state) = local_state();
-    seed(
-        &state,
-        &[(
-            "config.toml",
-            "format = 2\nrequires = \"0.0.9-canary.4\"\nabbreviation = \"OPP\"\n",
-        )],
-    );
-    let message = faults(&state).await[0]["message"].clone();
-    assert!(
-        message
-            .as_str()
-            .unwrap()
-            .ends_with("run `openplan update --canary`"),
-        "{message}"
-    );
 }
 
 #[tokio::test]
@@ -144,13 +124,15 @@ async fn a_newer_format_asks_the_daemon_to_update_and_reports_how_it_went() {
             .ends_with("the daemon is looking for an update now"),
         "{message}"
     );
-    updates.record("openplan 0.0.8 is the newest release".to_owned());
+    let outcome = "openplan 0.0.8 is the newest release, and only a canary build reads them; \
+                   run `openplan update --canary`";
+    updates.record(outcome.to_owned());
     let message = faults(&state).await[0]["message"].clone();
     assert!(
-        message.as_str().unwrap().ends_with(
-            "the update check installed no newer openplan (openplan 0.0.8 is the newest \
-             release); run `openplan update`"
-        ),
+        message
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("newer openplan; {outcome}")),
         "{message}"
     );
 }
@@ -160,10 +142,7 @@ async fn a_daemon_migrates_an_older_store_by_itself_when_a_release_reads_the_new
     let dir = tempfile::tempdir().unwrap();
     let state = reopened(dir.path(), &RELEASED);
 
-    assert_eq!(
-        config(&state),
-        "format = 2\nrequires = \"0.0.9\"\nabbreviation = \"OPP\"\n"
-    );
+    assert_eq!(config(&state), "format = 2\nabbreviation = \"OPP\"\n");
     assert!(faults(&state).await.is_empty());
     let task = json_of(&state, "/api/projects/test/tasks/OPP-1").await;
     assert_eq!(task["metadata"]["status"], "backlog");

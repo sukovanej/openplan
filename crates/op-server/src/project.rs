@@ -695,9 +695,9 @@ impl Project {
 
     fn format_fault(&self, project: &str, problem: &FormatError) -> Fault {
         let (kind, message) = match problem {
-            FormatError::Newer { requires, .. } => (
+            FormatError::Newer { .. } => (
                 FaultKind::NewerFormat,
-                format!("{problem}; {}", self.update_hint(requires.as_deref())),
+                format!("{problem}; {}", self.update_hint()),
             ),
             FormatError::Retired { .. } | FormatError::Unmigrated { .. } => {
                 (FaultKind::OlderFormat, problem.to_string())
@@ -710,22 +710,15 @@ impl Project {
         }
     }
 
-    // Only a canary reads a format that no release reads yet, and its version says so.
-    fn update_hint(&self, requires: Option<&str>) -> String {
-        let command = match requires.is_some_and(|version| version.contains('-')) {
-            true => "`openplan update --canary`",
-            false => "`openplan update`",
-        };
+    fn update_hint(&self) -> String {
         let updates = self.updates.get();
         match (
             updates.and_then(|updates| updates.outcome()),
             updates.is_some_and(|updates| updates.automatic()),
         ) {
-            (Some(outcome), _) => {
-                format!("the update check installed no newer openplan ({outcome}); run {command}")
-            }
+            (Some(outcome), _) => outcome,
             (None, true) => "the daemon is looking for an update now".to_owned(),
-            (None, false) => format!("run {command}"),
+            (None, false) => "run `openplan update`".to_owned(),
         }
     }
 

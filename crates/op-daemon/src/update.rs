@@ -102,6 +102,22 @@ impl Updater {
         }
     }
 
+    // A stable daemon that is up to date and still cannot read a store meets a format that only a
+    // canary build writes.
+    fn newest_reads_none(&self) -> String {
+        match self.channel() {
+            Channel::Stable => format!(
+                "openplan {} is the newest release, and only a canary build reads them; run \
+                 `openplan update --canary`",
+                self.installed
+            ),
+            Channel::Canary => format!(
+                "openplan {} is the newest canary build, and it does not read them either",
+                self.installed
+            ),
+        }
+    }
+
     fn up_to_date(&self) -> String {
         match self.channel() {
             Channel::Stable => format!("openplan {} is the newest release", self.installed),
@@ -123,7 +139,9 @@ pub(crate) async fn keep_updated(
             record(&home, format!("no automatic updates: {reason}"));
             loop {
                 asking.wanted().await;
-                asking.record(format!("no automatic updates: {reason}"));
+                asking.record(format!(
+                    "this openplan does not update itself ({reason}); install a newer openplan"
+                ));
                 state.report_faults();
             }
         }
@@ -144,13 +162,13 @@ pub(crate) async fn keep_updated(
                 return;
             }
             Ok(Checked::Stopping) => return,
-            Ok(Checked::UpToDate) => updater.up_to_date(),
-            Ok(Checked::Off) => "automatic updates are off".to_owned(),
+            Ok(Checked::UpToDate) => updater.newest_reads_none(),
+            Ok(Checked::Off) => "automatic updates are off; run `openplan update`".to_owned(),
             Err(err) => {
                 let error = format!("{err:#}");
                 tracing::warn!(%error, "the update failed; the daemon keeps its version");
                 record(&home, format!("failed: {error}"));
-                format!("the update failed: {error}")
+                format!("the update failed ({error}); run `openplan update`")
             }
         };
         if asked {

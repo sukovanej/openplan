@@ -1,4 +1,4 @@
-use op_task::config::{self, Config, Header};
+use op_task::config::{self, Config};
 use op_task::layout::{self, Document};
 
 #[test]
@@ -62,46 +62,31 @@ fn the_config_round_trips() {
 
 #[test]
 fn a_config_without_a_format_is_format_one() {
-    let header = Header::parse("abbreviation = \"OPP\"\n").expect("header");
     assert_eq!(
-        header,
-        Header {
-            format: 1,
-            requires: None
-        }
+        config::format("abbreviation = \"OPP\"\n").expect("format"),
+        1
     );
-    assert!(Header::parse("format = 0").is_err());
-    assert!(Header::parse("format = \"two\"").is_err());
-    assert!(Header::parse("requires = 9").is_err());
+    assert!(config::format("format = 0").is_err());
+    assert!(config::format("format = \"two\"").is_err());
 }
 
 #[test]
-fn a_header_reads_from_a_config_whose_other_keys_it_does_not_know() {
-    let text = "format = 7\nrequires = \"2.0.0\"\nproject_code = \"OPP\"\n";
-    assert_eq!(
-        Header::parse(text).expect("header"),
-        Header {
-            format: 7,
-            requires: Some("2.0.0".to_owned())
-        }
-    );
+fn the_format_reads_from_a_config_whose_other_keys_it_does_not_know() {
+    let text = "format = 7\nproject_code = \"OPP\"\n";
+    assert_eq!(config::format(text).expect("format"), 7);
     assert!(Config::parse(text).is_err());
 }
 
 #[test]
-fn a_restamp_moves_only_the_header() {
-    let header = Header {
-        format: 2,
-        requires: Some("0.0.9".to_owned()),
-    };
+fn a_restamp_moves_only_the_format() {
     assert_eq!(
-        config::restamp("abbreviation = \"OPP\"\n", &header).expect("restamp"),
-        "format = 2\nrequires = \"0.0.9\"\nabbreviation = \"OPP\"\n"
+        config::restamp("abbreviation = \"OPP\"\n", 2).expect("restamp"),
+        "format = 2\nabbreviation = \"OPP\"\n"
     );
-    let restamped = config::restamp("project_code = \"OPP\"\n", &header).expect("restamp");
+    let restamped = config::restamp("project_code = \"OPP\"\n", 2).expect("restamp");
     assert_eq!(
-        Header::parse(&restamped).expect("header"),
-        header,
+        config::format(&restamped).expect("format"),
+        2,
         "{restamped}"
     );
     assert!(restamped.contains("project_code = \"OPP\""), "{restamped}");

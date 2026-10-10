@@ -127,10 +127,7 @@ fn status(tracker: &Tracker) -> Status {
 #[test]
 fn a_store_starts_in_the_newest_format() {
     let store = Store::first();
-    assert_eq!(
-        store.config(),
-        "format = 1\nrequires = \"0.0.1\"\nabbreviation = \"OPP\"\n"
-    );
+    assert_eq!(store.config(), "format = 1\nabbreviation = \"OPP\"\n");
 }
 
 #[test]
@@ -156,10 +153,7 @@ fn an_older_store_reads_as_migrated_and_refuses_a_write_until_it_migrates() {
 
     assert_eq!(tracker.migrate(&actor()).expect("migrate"), Some(1));
 
-    assert_eq!(
-        store.config(),
-        "format = 2\nrequires = \"0.0.9\"\nabbreviation = \"OPP\"\n"
-    );
+    assert_eq!(store.config(), "format = 2\nabbreviation = \"OPP\"\n");
     assert_eq!(tracker.plan().expect("plan").migrated_from(), None);
     assert_eq!(status(&tracker), Status::Backlog);
     assert_eq!(tracker.migrate(&actor()).expect("migrate again"), None);
@@ -210,8 +204,8 @@ fn a_store_of_a_newer_format_names_the_release_it_needs() {
     };
     assert_eq!(
         problem.to_string(),
-        "these tasks use store format 2, and this openplan reads formats up to 1; they need \
-         openplan 0.0.9 or newer"
+        "these tasks use store format 2, and this openplan reads formats up to 1; they need a \
+         newer openplan"
     );
     assert!(matches!(
         tracker.update_task(&actor(), 1, |_| Ok(())),
@@ -242,16 +236,27 @@ fn a_retired_format_names_the_last_release_that_migrates_it() {
 fn only_a_released_format_migrates_by_itself() {
     assert!(RELEASED.migrates_by_itself());
     assert!(!UNRELEASED.migrates_by_itself());
-    let store = Store::first();
-    store
+}
+
+// Two daemons that migrate one store before they sync must write the same bytes, whichever build
+// each of them runs.
+#[test]
+fn a_migration_depends_on_the_store_alone() {
+    let (released, unreleased) = (Store::first(), Store::first());
+    released
+        .tracker(&RELEASED)
+        .migrate(&actor())
+        .expect("migrate");
+    unreleased
         .tracker(&UNRELEASED)
         .migrate(&actor())
         .expect("an explicit migration");
-    assert!(
-        store
-            .config()
-            .contains(&format!("requires = \"{}\"", env!("CARGO_PKG_VERSION")))
-    );
+    let task = |store: &Store| {
+        let plan = store.tracker(&RELEASED).plan().expect("plan");
+        plan.raw(1).expect("raw")
+    };
+    assert_eq!(released.config(), unreleased.config());
+    assert_eq!(task(&released), task(&unreleased));
 }
 
 #[test]

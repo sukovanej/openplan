@@ -72,7 +72,7 @@ fn init_outside_a_repository_starts_a_local_directory() {
     assert!(store.join(".history.sqlite").is_file());
     assert_eq!(
         std::fs::read_to_string(store.join("config.toml")).unwrap(),
-        "format = 1\nrequires = \"0.0.1\"\nabbreviation = \"LOC\"\n"
+        "format = 1\nabbreviation = \"LOC\"\n"
     );
     let id = ok(home.run(dir.path(), &["tasks", "create", "Ship it"]));
     assert_eq!(id.trim(), "LOC-1");
