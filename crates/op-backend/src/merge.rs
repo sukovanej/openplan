@@ -26,7 +26,26 @@ pub struct Resolution {
     pub notes: Vec<String>,
 }
 
+// The ops that bring each side to one layout before the merge compares them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Alignment {
+    pub base: Vec<Op>,
+    pub ours: Vec<Op>,
+    pub theirs: Vec<Op>,
+}
+
 pub trait MergePolicy: Send + Sync {
+    // Two sides in different layouts would merge line by line into a mix of both. An error stops
+    // the sync and keeps both sides as they are.
+    fn align(
+        &self,
+        _base: &dyn Snapshot,
+        _ours: &dyn Snapshot,
+        _theirs: &dyn Snapshot,
+    ) -> Result<Alignment, BackendError> {
+        Ok(Alignment::default())
+    }
+
     // `ops` apply on top of `merged`. Sync runs unattended, so every conflict needs an answer.
     fn resolve(&self, input: &MergeInput<'_>) -> Result<Resolution, BackendError>;
 }
@@ -41,6 +60,12 @@ impl MergePolicy for PreferTheirs {
 }
 
 // The ops that turn `theirs` into the merge of both sides.
+fn aligned(side: &dyn Snapshot, ops: Vec<Op>) -> Overlay<'_> {
+    let mut overlay = Overlay::new(side);
+    overlay.apply(ops);
+    overlay
+}
+
 pub fn merge(
     base: &dyn Snapshot,
     ours: &dyn Snapshot,
@@ -48,8 +73,15 @@ pub fn merge(
     tips: Tips<'_>,
     policy: &dyn MergePolicy,
 ) -> Result<Resolution, BackendError> {
+    let alignment = policy.align(base, ours, theirs)?;
+    let base = &aligned(base, alignment.base);
+    let ours = &aligned(ours, alignment.ours);
+    let theirs_aligned = aligned(theirs, alignment.theirs.clone());
     let ours_changed = diff(base, ours)?;
+    // The caller applies the ops to the raw `theirs`, so they carry its alignment too.
     let mut merged = Overlay::new(theirs);
+    merged.apply(alignment.theirs);
+    let theirs = &theirs_aligned;
     let mut conflicts = Vec::new();
     for change in &ours_changed {
         let path = &change.path;

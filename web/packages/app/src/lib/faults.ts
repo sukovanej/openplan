@@ -18,7 +18,7 @@ export function useFaults(): ReadonlyArray<Fault> {
 }
 
 // A project with one of these cannot show its tasks, so its pages say why instead.
-const DEMOTING: ReadonlyArray<FaultKind> = ["root_gone", "unreadable"]
+const DEMOTING: ReadonlyArray<FaultKind> = ["root_gone", "unreadable", "newer_store_version"]
 
 export function demotedReason(faults: ReadonlyArray<Fault>, project: string): string | undefined {
   return faults.find((fault) => fault.project === project && DEMOTING.includes(fault.kind))?.message

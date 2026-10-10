@@ -16,8 +16,8 @@ use axum::{
     },
 };
 use op_api::{
-    ApiErrorBody, ChangeEvent, DaemonInfo, Fault, FlowCycles, KeyError, ProjectView, Refusal,
-    RegisterProject, RenameProject, SourcePosition, StopReason, WriteError,
+    ApiErrorBody, ChangeEvent, DaemonInfo, Fault, FlowCycles, KeyError, Migration, ProjectView,
+    Refusal, RegisterProject, RenameProject, SourcePosition, StopReason, WriteError,
 };
 use op_backend::{Actor, BackendError};
 use op_tracker::TrackerError;
@@ -41,12 +41,14 @@ mod forge;
 mod project;
 mod registry;
 mod revision_diff;
+mod self_update;
 mod tasks;
 pub use drawing::DrawingCache;
 pub use project::{Location, OpenError, Project, STORE_DIR, open_backend, sync_view};
 pub use registry::{
     ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError, canonical, same_path, unique_name,
 };
+pub use self_update::SelfUpdate;
 
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = 256;
 // How many published events a reconnecting client can catch up on before it must read everything
@@ -99,6 +101,7 @@ pub(crate) struct Publisher {
     // The faults of each project as the last `FaultsChanged` left them. A project with none is
     // absent.
     faults: Arc<Mutex<BTreeMap<String, Vec<Fault>>>>,
+    updates: Arc<SelfUpdate>,
 }
 
 // `boot` tells two daemon lifetimes apart, so a cursor from before a restart is never read as one
@@ -117,7 +120,12 @@ impl Publisher {
                 recent: Mutex::new((0, VecDeque::new())),
             }),
             faults: Arc::new(Mutex::new(BTreeMap::new())),
+            updates: Arc::new(SelfUpdate::default()),
         }
+    }
+
+    pub fn updates(&self) -> &Arc<SelfUpdate> {
+        &self.updates
     }
 
     pub fn report(&self, project: &Project) {
@@ -246,6 +254,17 @@ impl AppState {
     pub fn with_health(mut self, info: DaemonInfo) -> Self {
         self.health = Some(Arc::new(info));
         self
+    }
+
+    pub fn self_update(&self) -> Arc<SelfUpdate> {
+        Arc::clone(self.publisher.updates())
+    }
+
+    // An update check that a project asked for changes what its fault says.
+    pub fn report_faults(&self) {
+        for project in self.projects() {
+            self.publisher.report(&project);
+        }
     }
 
     pub fn project(&self, name: &str) -> Option<Arc<Project>> {
@@ -590,6 +609,7 @@ fn documented() -> OpenApiRouter<AppState> {
         .routes(routes!(list_faults))
         .routes(routes!(list_projects, register_project))
         .routes(routes!(delete_project, rename_project))
+        .routes(routes!(migrate_project))
         .routes(routes!(tasks::list_tasks, tasks::create_task))
         .routes(routes!(tasks::get_board))
         .routes(routes!(tasks::get_merged_board))
@@ -668,12 +688,15 @@ pub(crate) fn project_of(state: &AppState, name: &str) -> Result<Arc<Project>, A
             format!("no such project: {name}; {}", registered(state)),
         )
     })?;
-    match project.blocked() {
-        None => Ok(project),
-        Some(reason) => Err(ApiError::unavailable(format!(
+    if let Some(reason) = project.blocked() {
+        return Err(ApiError::unavailable(format!(
             "project {} is not being served: {reason}",
             project.name()
-        ))),
+        )));
+    }
+    match project.unreadable_version() {
+        None => Ok(project),
+        Some(problem) => Err(TrackerError::from(problem).into()),
     }
 }
 
@@ -937,6 +960,40 @@ async fn rename_project(
     Ok(Json(view))
 }
 
+// A daemon migrates a store by itself when a release reads the new store version. Before that,
+// only this request migrates it.
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project}/migrate",
+    params(("project" = String, Path, description = "Project name")),
+    responses(
+        (status = 200, description = "The tasks are in the store version this daemon writes", body = Migration),
+        (status = 404, description = "No such project", body = ApiErrorBody),
+        (status = 409, description = "The project has no tasks yet, or this daemon cannot read their store version", body = ApiErrorBody),
+        (status = 503, description = "The project is registered but not being served", body = ApiErrorBody)
+    )
+)]
+async fn migrate_project(
+    State(state): State<AppState>,
+    Path(project): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Migration>, ApiError> {
+    let project = project_of(&state, &project)?;
+    let actor = actor_of(&state, &headers, &project)?;
+    let migration = blocking(move || {
+        let from = project.tracker().migrate(&actor)?;
+        project.catch_up();
+        Ok(Migration {
+            project: project.name(),
+            from: from.map(|version| version.to_string()),
+            version: project.tracker().store_versions().current().to_string(),
+        })
+    })
+    .await?;
+    state.report_faults();
+    Ok(Json(migration))
+}
+
 async fn admin_shutdown(State(state): State<AppState>, headers: HeaderMap) -> Response {
     // A header a cross-site form POST cannot set without a preflight, so a page the user browses
     // cannot shut the daemon down.
@@ -1098,6 +1155,7 @@ impl From<TrackerError> for ApiError {
             | TrackerError::TagReferenced { .. }
             | TrackerError::AlreadyInitialized(_)
             | TrackerError::NotInitialized
+            | TrackerError::Version(_)
             | TrackerError::Backend(BackendError::Contended) => StatusCode::CONFLICT,
             // The request is fine; the stored document is what has to change.
             TrackerError::MissingCreated { .. }

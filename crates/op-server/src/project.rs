@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, RwLock, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock, Weak};
 use std::time::Duration;
 
 use op_api::{BackendKind, ChangeEvent, Fault, FaultKind, Forge, ProjectView, Rfc3339, SyncView};
@@ -13,10 +13,13 @@ use op_backend_git::GitBackend;
 use op_backend_local::LocalBackend;
 use op_index::Index;
 use op_task::layout::{self, Document};
-use op_tracker::{HistoryQuery, TaskMergePolicy, Tracker, TrackerError};
+use op_tracker::{
+    HistoryQuery, STORE_VERSIONS, StoreVersions, Stored, TaskMergePolicy, Tracker, TrackerError,
+    VersionError,
+};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::Publisher;
+use crate::{Publisher, SelfUpdate};
 
 pub const STORE_DIR: &str = ".plan";
 
@@ -131,10 +134,19 @@ pub fn open_backend(
     signer: &Signer,
     watch: bool,
 ) -> Result<Arc<dyn Backend>, OpenError> {
+    open_backend_with(location, signer, watch, TaskMergePolicy::default())
+}
+
+fn open_backend_with(
+    location: &Location,
+    signer: &Signer,
+    watch: bool,
+    policy: TaskMergePolicy,
+) -> Result<Arc<dyn Backend>, OpenError> {
     Ok(match location.kind {
         BackendKind::Git => Arc::new(GitBackend::open(
             &location.root,
-            op_backend_git::Options::new(Arc::new(TaskMergePolicy), signer.clone()),
+            op_backend_git::Options::new(Arc::new(policy), signer.clone()),
         )?),
         BackendKind::Local => Arc::new(LocalBackend::open(
             location.root.join(STORE_DIR),
@@ -186,6 +198,7 @@ pub(crate) fn canonical(path: &Path) -> PathBuf {
 struct Health {
     root_gone: bool,
     unreadable: Option<String>,
+    version_problem: Option<VersionError>,
     unsigned: bool,
     outside_unread: Option<String>,
 }
@@ -201,24 +214,46 @@ pub struct Project {
     loaded: Mutex<Option<RevisionId>>,
     sync: Mutex<Option<SyncLoop>>,
     health: Mutex<Health>,
+    // Why the last sync stopped: a merge with tasks in a store version this daemon cannot read.
+    sync_version: Arc<Mutex<Option<VersionError>>>,
+    updates: OnceLock<Arc<SelfUpdate>>,
     root_misses: AtomicU32,
 }
 
 impl Project {
     pub fn open(name: impl Into<String>, location: Location) -> Result<Self, OpenError> {
+        Self::open_in(name, location, &STORE_VERSIONS)
+    }
+
+    pub fn open_in(
+        name: impl Into<String>,
+        location: Location,
+        versions: &'static StoreVersions,
+    ) -> Result<Self, OpenError> {
         let signer = op_backend_git::signer(&location.root);
-        let backend = open_backend(&location, &signer, true)?;
+        let sync_version: Arc<Mutex<Option<VersionError>>> = Arc::default();
+        let reported = Arc::clone(&sync_version);
+        let policy = TaskMergePolicy::default()
+            .with_store_versions(versions)
+            .on_unreadable(move |problem| {
+                *reported.lock().expect("sync version poisoned") = Some(problem.clone());
+            });
+        let backend = open_backend_with(&location, &signer, true, policy)?;
         let forge = crate::forge::of_project(&location);
         let project = Self {
             name: RwLock::new(name.into()),
             path: location.root.clone(),
             location,
             signer,
-            tracker: Tracker::new(backend).with_forge(forge.clone()),
+            tracker: Tracker::new(backend)
+                .with_forge(forge.clone())
+                .with_store_versions(versions),
             index: Mutex::new(Index::new().with_forge(forge)),
             loaded: Mutex::new(None),
             sync: Mutex::new(None),
             health: Mutex::new(Health::default()),
+            sync_version,
+            updates: OnceLock::new(),
             root_misses: AtomicU32::new(0),
         };
         project.reload();
@@ -228,6 +263,15 @@ impl Project {
     // The event pump holds the project weakly, so it ends with the backend's event channel once the
     // project is dropped.
     pub(crate) fn start(self: &Arc<Self>, publisher: Publisher) {
+        let _ = self.updates.set(Arc::clone(publisher.updates()));
+        if self
+            .lock_health()
+            .version_problem
+            .as_ref()
+            .is_some_and(needs_update)
+        {
+            publisher.updates().want();
+        }
         let events = self.tracker.backend().subscribe();
         let project = Arc::downgrade(self);
         std::thread::spawn(move || pump(project, events, publisher));
@@ -311,31 +355,93 @@ impl Project {
 
     // Reads every task again and dates each one from the log.
     pub fn reload(&self) {
+        let migration = self.migrate_if_due();
         let result = self.load(Scope::Everything);
-        self.record_health(result);
+        self.record_health(result, migration);
     }
 
     // Reads only what moved between the revision the index holds and the head, and nothing when
     // the head did not move. A write and the event pump both call it for the same move.
     pub(crate) fn catch_up(&self) {
+        let migration = self.migrate_if_due();
         let result = self.load(Scope::Moved);
-        self.record_health(result);
+        self.record_health(result, migration);
     }
 
-    fn record_health(&self, result: Result<Option<String>, TrackerError>) {
-        let unreadable = match &result {
-            Ok(plan_error) => plan_error.clone(),
-            Err(err) => Some(err.to_string()),
+    // A store of an older store version moves to this daemon's store version as soon as the daemon
+    // reads it, when a release reads that store version. Returns why it could not.
+    fn migrate_if_due(&self) -> Option<String> {
+        let Ok(Some(Stored::Older(from))) = self.tracker.stored() else {
+            return None;
+        };
+        if !self.tracker.store_versions().migrates_by_itself() {
+            return None;
+        }
+        let migrated = self
+            .sign()
+            .map_err(TrackerError::from)
+            .and_then(|actor| self.tracker.migrate(&actor));
+        match migrated {
+            Ok(_) => {
+                tracing::info!(project = %self.name(), %from, to = %self.tracker.store_versions().current(), "migrated the tasks");
+                None
+            }
+            Err(err) => Some(format!(
+                "cannot migrate the tasks from store version {from}: {err}"
+            )),
+        }
+    }
+
+    fn record_health(&self, result: Result<Loaded, TrackerError>, migration: Option<String>) {
+        let (unreadable, version_problem) = match result {
+            Ok(loaded) => (migration.or(loaded.unreadable), loaded.version_problem),
+            Err(err) => (Some(err.to_string()), None),
         };
         if let Some(reason) = &unreadable {
             tracing::warn!(project = %self.name(), %reason, "the project cannot serve its tasks");
         }
-        self.lock_health().unreadable = unreadable;
+        if let Some(problem) = &version_problem {
+            tracing::warn!(project = %self.name(), %problem, "the tasks use another store version");
+        }
+        let newly_needs_update = {
+            let mut health = self.lock_health();
+            let newly = version_problem.as_ref().is_some_and(needs_update)
+                && health.version_problem != version_problem;
+            health.unreadable = unreadable;
+            health.version_problem = version_problem;
+            newly
+        };
+        if newly_needs_update && let Some(updates) = self.updates.get() {
+            updates.want();
+        }
+    }
+
+    // A store this daemon cannot read. A store in an older store version that the daemon does not
+    // migrate by itself still serves its tasks.
+    pub(crate) fn unreadable_version(&self) -> Option<VersionError> {
+        self.lock_health()
+            .version_problem
+            .clone()
+            .filter(|problem| !matches!(problem, VersionError::Unmigrated { .. }))
+    }
+
+    // A sync that stopped on a store version this daemon cannot read asks for an update, as an open
+    // does.
+    pub(crate) fn synced(&self, status: &op_backend::SyncStatus) {
+        let mut sync_version = self.lock_sync_version();
+        if status.error.is_none() {
+            *sync_version = None;
+        }
+        if sync_version.is_some()
+            && let Some(updates) = self.updates.get()
+        {
+            updates.want();
+        }
     }
 
     // The head is read under the index lock: two writes that reload at once could otherwise finish
     // in the other order and leave the index on the older head.
-    fn load(&self, scope: Scope) -> Result<Option<String>, TrackerError> {
+    fn load(&self, scope: Scope) -> Result<Loaded, TrackerError> {
         let mut index = self.index();
         let plan = self.tracker.plan()?;
         let mut loaded = self.loaded.lock().expect("loaded mutex poisoned");
@@ -401,7 +507,19 @@ impl Project {
             }
         }
         *loaded = head;
-        Ok(plan.config().err().map(|err| err.to_string()))
+        let versions = self.tracker.store_versions();
+        let version_problem = plan.version_problem().cloned().or_else(|| {
+            plan.migrated_from()
+                .filter(|_| !versions.migrates_by_itself())
+                .map(|from| versions.unmigrated(from))
+        });
+        Ok(Loaded {
+            unreadable: match version_problem {
+                Some(_) => None,
+                None => plan.config().err().map(|err| err.to_string()),
+            },
+            version_problem,
+        })
     }
 
     fn last_changed(
@@ -513,13 +631,27 @@ impl Project {
         if let Some(reason) = &health.unreadable {
             faults.push(fault(FaultKind::Unreadable, reason.clone()));
         }
+        if let Some(problem) = &health.version_problem {
+            faults.push(self.version_fault(&project, problem));
+        }
+        let sync_version = self.lock_sync_version().clone();
+        if let Some(problem) = sync_version
+            .as_ref()
+            .filter(|_| health.version_problem.is_none())
+        {
+            faults.push(self.version_fault(&project, problem));
+        }
         if health.unsigned {
             faults.push(fault(
                 FaultKind::NoIdentity,
                 BackendError::NoIdentity.to_string(),
             ));
         }
-        if let Some(error) = self.sync_status().and_then(|status| status.error) {
+        if let Some(error) = self
+            .sync_status()
+            .and_then(|status| status.error)
+            .filter(|_| sync_version.is_none())
+        {
             faults.push(fault(
                 FaultKind::SyncFailed,
                 format!("the last sync failed: {error}"),
@@ -572,6 +704,39 @@ impl Project {
         moved
     }
 
+    fn version_fault(&self, project: &str, problem: &VersionError) -> Fault {
+        let (kind, message) = match problem {
+            VersionError::Newer { .. } => (
+                FaultKind::NewerStoreVersion,
+                format!("{problem}; {}", self.update_hint()),
+            ),
+            VersionError::Retired { .. } | VersionError::Unmigrated { .. } => {
+                (FaultKind::OlderStoreVersion, problem.to_string())
+            }
+        };
+        Fault {
+            project: project.to_owned(),
+            kind,
+            message,
+        }
+    }
+
+    fn update_hint(&self) -> String {
+        let updates = self.updates.get();
+        match (
+            updates.and_then(|updates| updates.outcome()),
+            updates.is_some_and(|updates| updates.automatic()),
+        ) {
+            (Some(outcome), _) => outcome,
+            (None, true) => "the daemon is looking for an update now".to_owned(),
+            (None, false) => "run `openplan update`".to_owned(),
+        }
+    }
+
+    fn lock_sync_version(&self) -> MutexGuard<'_, Option<VersionError>> {
+        self.sync_version.lock().expect("sync version poisoned")
+    }
+
     fn lock_health(&self) -> MutexGuard<'_, Health> {
         self.health.lock().expect("health mutex poisoned")
     }
@@ -588,6 +753,15 @@ impl std::fmt::Debug for Project {
             .field("path", &self.path)
             .finish_non_exhaustive()
     }
+}
+
+struct Loaded {
+    unreadable: Option<String>,
+    version_problem: Option<VersionError>,
+}
+
+fn needs_update(problem: &VersionError) -> bool {
+    matches!(problem, VersionError::Newer { .. })
 }
 
 #[derive(Clone, Copy)]
@@ -645,9 +819,12 @@ fn pump(
         };
         match event {
             BackendEvent::HeadMoved(moved) => project.moved(&moved, &publisher),
-            BackendEvent::Sync(_) => publisher.publish(ChangeEvent::SyncChanged {
-                project: project.name(),
-            }),
+            BackendEvent::Sync(status) => {
+                project.synced(&status);
+                publisher.publish(ChangeEvent::SyncChanged {
+                    project: project.name(),
+                })
+            }
         }
         publisher.report(&project);
     }

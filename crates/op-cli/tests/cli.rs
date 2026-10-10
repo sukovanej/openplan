@@ -1909,6 +1909,26 @@ fn lint_clean_project_exits_zero() {
 }
 
 #[test]
+fn lint_refuses_tasks_of_a_newer_store_version() {
+    let store = LintStore::new();
+    store.put(
+        "config.toml",
+        "version = \"9.0.0\"\nabbreviation = \"OPP\"\n",
+    );
+    store.put("tasks/00001-clean.md", VALID);
+
+    let out = store.lint(&[]);
+
+    assert!(!out.status.success(), "{}", combined(&out));
+    assert!(
+        stderr(&out).contains("these tasks use store version 9.0.0")
+            && stderr(&out).contains("they need a newer openplan"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn lint_reports_a_problem_by_its_task_and_fails() {
     let store = LintStore::new();
     store.put("tasks/00001-clean.md", VALID);

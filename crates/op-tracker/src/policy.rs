@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use op_backend::{
-    BackendError, ChangeKind, MergeInput, MergePolicy, Overlay, Resolution, Revision, Snapshot,
-    Tips,
+    Alignment, BackendError, ChangeKind, MergeInput, MergePolicy, Op, Overlay, Resolution,
+    Revision, Snapshot, Tips,
 };
 use op_task::config::Config;
 use op_task::conflict::{self, Labels};
@@ -10,18 +11,105 @@ use op_task::doc::Doc;
 use op_task::layout::{self, Document};
 use op_task::reference::relative;
 use op_task::{Abbreviation, Task, merge, parse_partial, three_way};
+use semver::Version;
+
+use crate::version::{self, STORE_VERSIONS, StoreVersions, VersionError};
 
 // Sync runs unattended, so every conflict gets an answer and nothing a person wrote is lost. A field
 // or lines that both sides changed differently keep both versions in the task, with the published
 // one in force until a person or an agent picks. A task whose number another task took first moves
 // to a free number.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct TaskMergePolicy;
+#[derive(Clone)]
+pub struct TaskMergePolicy {
+    versions: &'static StoreVersions,
+    on_unreadable: Option<Report>,
+}
+
+type Report = Arc<dyn Fn(&VersionError) + Send + Sync>;
+
+impl Default for TaskMergePolicy {
+    fn default() -> Self {
+        Self {
+            versions: &STORE_VERSIONS,
+            on_unreadable: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for TaskMergePolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TaskMergePolicy").finish_non_exhaustive()
+    }
+}
+
+impl TaskMergePolicy {
+    pub fn with_store_versions(mut self, versions: &'static StoreVersions) -> Self {
+        self.versions = versions;
+        self
+    }
+
+    // A sync that meets a store version this binary cannot read stops. Nothing else hears of it,
+    // so this tells the daemon, which then updates itself.
+    pub fn on_unreadable(mut self, report: impl Fn(&VersionError) + Send + Sync + 'static) -> Self {
+        self.on_unreadable = Some(Arc::new(report));
+        self
+    }
+
+    fn readable(&self, side: &dyn Snapshot) -> Result<Option<Version>, BackendError> {
+        let Some(stored) = version::version_of(side)? else {
+            return Ok(None);
+        };
+        match self.versions.stored(&stored) {
+            Ok(_) => Ok(Some(stored)),
+            Err(problem) => {
+                if let Some(report) = &self.on_unreadable {
+                    report(&problem);
+                }
+                Err(BackendError::sync(problem))
+            }
+        }
+    }
+
+    fn raised(
+        &self,
+        side: &dyn Snapshot,
+        stored: Option<&Version>,
+        target: &Version,
+    ) -> Result<Vec<Op>, BackendError> {
+        match stored {
+            Some(stored) if stored < target => self
+                .versions
+                .migration(side, stored, target)
+                .map_err(BackendError::sync),
+            _ => Ok(Vec::new()),
+        }
+    }
+}
 
 // A task file: its path and its text.
 type File = (String, Vec<u8>);
 
 impl MergePolicy for TaskMergePolicy {
+    // Both sides move to the newer of their two store versions. Two daemons that migrate the same
+    // store write the same bytes, so their merge holds no conflict.
+    fn align(
+        &self,
+        base: &dyn Snapshot,
+        ours: &dyn Snapshot,
+        theirs: &dyn Snapshot,
+    ) -> Result<Alignment, BackendError> {
+        let (ours_version, theirs_version) = (self.readable(ours)?, self.readable(theirs)?);
+        let Some(target) = ours_version.clone().max(theirs_version.clone()) else {
+            return Ok(Alignment::default());
+        };
+        let base_version = version::version_of(base)?;
+        Ok(Alignment {
+            base: self.raised(base, base_version.as_ref(), &target)?,
+            ours: self.raised(ours, ours_version.as_ref(), &target)?,
+            theirs: self.raised(theirs, theirs_version.as_ref(), &target)?,
+        })
+    }
+
     fn resolve(&self, input: &MergeInput<'_>) -> Result<Resolution, BackendError> {
         let labels = labels(input.tips);
         let mut state = Overlay::new(input.merged);

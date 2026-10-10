@@ -51,7 +51,8 @@ enum Command {
         #[arg(long)]
         abbreviation: Option<String>,
     },
-    /// Move the tasks of a repository that keeps them in .plan/ beside the code
+    /// Move the tasks of a repository that keeps them in .plan/ beside the code, or move the
+    /// tasks to the store version of this openplan
     Migrate {
         /// Where the tasks go; omit for the git ref refs/openplan/tasks with the history of .plan/
         #[arg(long, value_enum)]

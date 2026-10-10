@@ -4028,6 +4028,7 @@ dependencies = [
  "op-task",
  "op-tracker",
  "rust-embed",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",
@@ -4050,6 +4051,7 @@ version = "0.0.7"
 dependencies = [
  "jiff",
  "op-md",
+ "semver",
  "serde",
  "serde_yaml",
  "thiserror 2.0.21",
@@ -4067,6 +4069,7 @@ dependencies = [
  "op-forge",
  "op-md",
  "op-task",
+ "semver",
  "serde_yaml",
  "tempfile",
  "thiserror 2.0.21",

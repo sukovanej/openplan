@@ -1,10 +1,12 @@
+use std::cmp::Ordering;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use op_api::{DaemonInfo, ProjectView};
 use op_daemon::{Control, Started, StopOutcome, UpdateRecord, base_url, default_port, now_unix};
 use op_server::{Location, same_path};
+use semver::Version;
 use serde::Serialize;
 
 pub fn start(port: u16) -> Result<()> {
@@ -152,9 +154,32 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
             Ok(base)
         }
         None => {
-            let info = Control::resolve()?.ensure(default_port()?)?.into_info();
-            Ok(base_url(info.port))
+            let control = Control::resolve()?;
+            let info = control.ensure(default_port()?)?.into_info();
+            Ok(base_url(on_this_version(&control, info)?.port))
         }
+    }
+}
+
+// The CLI and the daemon speak one API, and a release can change it. A newer CLI starts the daemon
+// again on itself. An older one refuses, because a restart from it would take the daemon back.
+fn on_this_version(control: &Control, info: DaemonInfo) -> Result<DaemonInfo> {
+    let ours = Version::parse(env!("CARGO_PKG_VERSION")).context("the built-in version")?;
+    let Ok(theirs) = Version::parse(&info.version) else {
+        return Ok(info);
+    };
+    match ours.cmp(&theirs) {
+        Ordering::Equal => Ok(info),
+        Ordering::Greater => {
+            control.stop()?;
+            let started = control.ensure(info.port)?.into_info();
+            eprintln!("restarted the daemon on openplan {ours}; it ran {theirs}");
+            Ok(started)
+        }
+        Ordering::Less => bail!(
+            "this openplan is {ours}, and the daemon runs the newer {theirs}; run the newer \
+             openplan, or update this one with `openplan update`"
+        ),
     }
 }
 

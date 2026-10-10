@@ -72,7 +72,7 @@ fn init_outside_a_repository_starts_a_local_directory() {
     assert!(store.join(".history.sqlite").is_file());
     assert_eq!(
         std::fs::read_to_string(store.join("config.toml")).unwrap(),
-        "abbreviation = \"LOC\"\n"
+        "version = \"0.0.1\"\nabbreviation = \"LOC\"\n"
     );
     let id = ok(home.run(dir.path(), &["tasks", "create", "Ship it"]));
     assert_eq!(id.trim(), "LOC-1");
@@ -413,7 +413,13 @@ fn migrate_to_a_local_directory_keeps_the_files_where_they_are() {
 fn migrate_refuses_a_project_with_nothing_to_migrate() {
     let project = Project::git();
 
-    let out = project.run(&["migrate"]);
+    let current = ok(project.run(&["migrate"]));
+    assert!(
+        current.contains("already use store version 0.0.1; there is nothing to migrate"),
+        "{current}"
+    );
+
+    let out = project.run(&["migrate", "--backend", "git"]);
 
     assert!(!out.status.success(), "{}", stdout(&out));
     assert!(
@@ -426,7 +432,7 @@ fn migrate_refuses_a_project_with_nothing_to_migrate() {
     );
 
     let local = Project::local();
-    let out = local.run(&["migrate"]);
+    let out = local.run(&["migrate", "--backend", "local"]);
     assert!(!out.status.success());
     assert!(
         stderr(&out).contains("nothing to migrate"),

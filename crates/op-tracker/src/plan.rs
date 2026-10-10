@@ -9,7 +9,10 @@ use op_task::layout::{self, Document};
 use op_task::tag::{Tag, normalize_name};
 use op_task::{Abbreviation, Task};
 
+use semver::Version;
+
 use crate::TrackerError;
+use crate::version::{STORE_VERSIONS, StoreVersions, VersionError};
 
 // The tasks, tags, and docs of one revision, typed. Cheap to hold: the documents stay in the snapshot
 // until a caller reads one.
@@ -22,10 +25,21 @@ pub struct Plan {
     shadowed: BTreeMap<u64, Vec<String>>,
     tags: BTreeSet<String>,
     docs: BTreeSet<String>,
+    migrated_from: Option<Version>,
+    version_problem: Option<VersionError>,
 }
 
 impl Plan {
     pub fn read(snapshot: Arc<dyn Snapshot>) -> Result<Self, TrackerError> {
+        Self::read_in(snapshot, &STORE_VERSIONS)
+    }
+
+    pub fn read_in(
+        snapshot: Arc<dyn Snapshot>,
+        versions: &StoreVersions,
+    ) -> Result<Self, TrackerError> {
+        let view = versions.view(snapshot)?;
+        let snapshot = view.snapshot;
         let config = snapshot
             .read_text(layout::CONFIG)?
             .map(|text| Config::parse(&text));
@@ -66,7 +80,18 @@ impl Plan {
             shadowed,
             tags,
             docs,
+            migrated_from: view.migrated_from,
+            version_problem: view.problem,
         })
+    }
+
+    // The store version on disk, where this plan reads the store migrated in memory.
+    pub fn migrated_from(&self) -> Option<&Version> {
+        self.migrated_from.as_ref()
+    }
+
+    pub fn version_problem(&self) -> Option<&VersionError> {
+        self.version_problem.as_ref()
     }
 
     pub fn snapshot(&self) -> &Arc<dyn Snapshot> {
@@ -82,6 +107,9 @@ impl Plan {
     }
 
     pub fn config(&self) -> Result<&Config, TrackerError> {
+        if let Some(problem) = &self.version_problem {
+            return Err(problem.clone().into());
+        }
         match &self.config {
             None => Err(TrackerError::NotInitialized),
             Some(Ok(config)) => Ok(config),

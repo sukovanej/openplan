@@ -6,16 +6,24 @@ use op_task::layout::{self, Document};
 use op_task::{
     Abbreviation, FieldResult, PartialFrontmatter, PartialMetadata, PartialTask, Status, comment,
 };
+use semver::Version;
 
 pub(crate) type Read<'a> = &'a dyn Fn(&str) -> Result<Option<Vec<u8>>, BackendError>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Described {
+    pub version: Option<VersionChange>,
     pub config: Option<ChangeKind>,
     pub tags: Vec<TagChange>,
     pub tasks: Vec<TaskChange>,
     pub docs: Vec<DocChange>,
     pub others: Vec<Change>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionChange {
+    pub from: Version,
+    pub to: Version,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -454,7 +462,10 @@ impl Described {
             None => number.to_string(),
         };
         let mut lines = Vec::new();
-        if let Some(kind) = self.config {
+        if let Some(change) = &self.version {
+            lines.push(migration_line(&change.from, &change.to));
+        }
+        if let Some(kind) = self.config.filter(|_| self.version.is_none()) {
             lines.push(match (kind, abbreviation) {
                 (ChangeKind::Added, Some(abbreviation)) => {
                     format!("Start the {abbreviation} tasks")
@@ -487,6 +498,10 @@ impl Described {
         }
         lines
     }
+}
+
+pub(crate) fn migration_line(from: &Version, to: &Version) -> String {
+    format!("Migrate the tasks from store version {from} to {to}")
 }
 
 fn verb(kind: ChangeKind) -> &'static str {
