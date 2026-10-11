@@ -72,9 +72,9 @@ mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
 
 ## Store versions
 
-`version` in the `config.toml` of each store is a semver string that tells which layout its files
-have. It is not the openplan version. A store without the key is store version `0.0.1`. Store
-version `0.0.2` adds the key and nothing else, so a store of `0.0.2` or newer always has it.
+`version` in the `config.toml` of each store is a whole number that tells which layout its files
+have. It is not the openplan version. A store without the key is store version 1. Store version 2
+adds the key and nothing else, so a store of version 2 or newer always has it.
 `STORE_VERSIONS` in `crates/op-tracker/src/version.rs` lists the store versions that this binary
 knows, oldest first.
 
@@ -87,11 +87,20 @@ To change the layout, add a store version to the end of `STORE_VERSIONS`:
 - Set `released: None`. `mise run release` puts the openplan version there.
 - Add a store of the old version to the tests, and check what the migration makes of it.
 
-A daemon migrates a store by itself only when a release reads the new store version. Until then, a
-canary or a source build serves an older store read-only, and `openplan migrate` migrates it.
+A daemon reads an older store as migrated in memory, and it writes the migration at the next
+write. It migrates by itself only as far as a release reads. Until a release reads the newest
+store version, a canary or a source build refuses each write to an older store, and
+`openplan migrate` migrates it on request.
 
 To stop migrating from the oldest store version, remove its entry, remove `migrate` from the next
 one, and add the oldest store version to `retired` with the last release that migrates it.
+
+## API version
+
+`API_VERSION` in `crates/op-api/src/daemon.rs` names the HTTP API. A CLI that finds a daemon of
+a lower API version starts the daemon again on itself, and a CLI of a lower API version refuses.
+Raise `API_VERSION` with each change of the HTTP API. The test `the_api_version_moves_with_the_api`
+fails when the OpenAPI spec changes, and it prints the new `API_SPEC_SHA256` to set.
 
 ## Release
 

@@ -107,7 +107,7 @@ impl Updater {
     fn newest_reads_none(&self) -> String {
         match self.channel() {
             Channel::Stable => format!(
-                "openplan {} is the newest release, and only a canary build reads them; run \
+                "openplan {} is the newest release, and only a canary build reads them. Run \
                  `openplan update --canary`",
                 self.installed
             ),
@@ -140,7 +140,7 @@ pub(crate) async fn keep_updated(
             loop {
                 asking.wanted().await;
                 asking.record(format!(
-                    "this openplan does not update itself ({reason}); install a newer openplan"
+                    "This openplan does not update itself ({reason}). Install a newer openplan"
                 ));
                 state.report_faults();
             }
@@ -163,12 +163,12 @@ pub(crate) async fn keep_updated(
             }
             Ok(Checked::Stopping) => return,
             Ok(Checked::UpToDate) => updater.newest_reads_none(),
-            Ok(Checked::Off) => "automatic updates are off; run `openplan update`".to_owned(),
+            Ok(Checked::Off) => "Automatic updates are off. Run `openplan update`".to_owned(),
             Err(err) => {
                 let error = format!("{err:#}");
                 tracing::warn!(%error, "the update failed; the daemon keeps its version");
                 record(&home, format!("failed: {error}"));
-                format!("the update failed ({error}); run `openplan update`")
+                format!("The update failed ({error}). Run `openplan update`")
             }
         };
         if asked {

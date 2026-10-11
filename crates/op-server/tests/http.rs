@@ -54,6 +54,7 @@ async fn health_reports_identity_when_set() {
         port: 9,
         version: "9.9.9".to_owned(),
         started_at: 5,
+        api: op_api::API_VERSION,
     };
     let (_dir, state) = local_state();
     let response = send(&state.with_health(info.clone()), "GET", "/health", None).await;

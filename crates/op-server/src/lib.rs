@@ -985,8 +985,8 @@ async fn migrate_project(
         project.catch_up();
         Ok(Migration {
             project: project.name(),
-            from: from.map(|version| version.to_string()),
-            version: project.tracker().store_versions().current().to_string(),
+            from,
+            version: project.tracker().store_versions().current(),
         })
     })
     .await?;

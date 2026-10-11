@@ -114,6 +114,7 @@ export type FaultKind =
   | "unreadable"
   | "newer_store_version"
   | "older_store_version"
+  | "retired_store_version"
   | "no_identity"
   | "sync_failed"
   | "outside_changes_unread"
@@ -122,6 +123,7 @@ export const FaultKind = Schema.Literals([
   "unreadable",
   "newer_store_version",
   "older_store_version",
+  "retired_store_version",
   "no_identity",
   "sync_failed",
   "outside_changes_unread",
@@ -152,17 +154,28 @@ export type DocumentChangeKind = "added" | "modified" | "removed"
 export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed"]).annotate({
   identifier: "DocumentChangeKind",
 })
-export type StoreVersionChange = { readonly from: string; readonly to: string }
-export const StoreVersionChange = Schema.Struct({ from: Schema.String, to: Schema.String }).annotate({
-  identifier: "StoreVersionChange",
-})
+export type StoreVersionChange = { readonly from: number; readonly to: number }
+export const StoreVersionChange = Schema.Struct({
+  from: Schema.Number.annotate({ format: "int32" })
+    .check(Schema.isInt().annotate({ expected: "an integer" }))
+    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  to: Schema.Number.annotate({ format: "int32" })
+    .check(Schema.isInt().annotate({ expected: "an integer" }))
+    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+}).annotate({ identifier: "StoreVersionChange" })
 export type DocText = { readonly body: string; readonly title: string }
 export const DocText = Schema.Struct({ body: Schema.String, title: Schema.String }).annotate({ identifier: "DocText" })
-export type Migration = { readonly from?: string; readonly project: string; readonly version: string }
+export type Migration = { readonly from?: number; readonly project: string; readonly version: number }
 export const Migration = Schema.Struct({
-  from: Schema.optionalKey(Schema.String),
+  from: Schema.optionalKey(
+    Schema.Number.annotate({ format: "int32" })
+      .check(Schema.isInt().annotate({ expected: "an integer" }))
+      .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  ),
   project: Schema.String,
-  version: Schema.String,
+  version: Schema.Number.annotate({ format: "int32" })
+    .check(Schema.isInt().annotate({ expected: "an integer" }))
+    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
 }).annotate({ identifier: "Migration" })
 export type DocumentDiff =
   | { readonly diff: string; readonly kind: "text"; readonly truncated: boolean }
@@ -227,12 +240,18 @@ export const TaskTreeView = Schema.Struct({
   tree: TaskTree,
 }).annotate({ identifier: "TaskTreeView" })
 export type DaemonInfo = {
+  readonly api?: number
   readonly pid: number
   readonly port: number
   readonly started_at: number
   readonly version: string
 }
 export const DaemonInfo = Schema.Struct({
+  api: Schema.optionalKey(
+    Schema.Number.annotate({ format: "int32" })
+      .check(Schema.isInt().annotate({ expected: "an integer" }))
+      .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  ),
   pid: Schema.Number.annotate({ format: "int32" })
     .check(Schema.isInt().annotate({ expected: "an integer" }))
     .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),

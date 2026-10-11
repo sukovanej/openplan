@@ -22,7 +22,6 @@ impl SelfUpdate {
         self.wanted.notified().await;
     }
 
-    // Whether the daemon installs a release by itself; the daemon sets it before each check.
     pub fn set_automatic(&self, automatic: bool) {
         self.automatic.store(automatic, Ordering::Relaxed);
     }

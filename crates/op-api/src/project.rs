@@ -66,6 +66,6 @@ pub struct Migration {
     pub project: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]
-    pub from: Option<String>,
-    pub version: String,
+    pub from: Option<u32>,
+    pub version: u32,
 }

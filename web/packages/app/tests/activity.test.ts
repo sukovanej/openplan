@@ -180,7 +180,7 @@ describe("the activity", () => {
         tasks: [],
         tags: [],
         docs: [],
-        store_version: { from: "0.0.1", to: "0.0.2" },
+        store_version: { from: 1, to: 2 },
       },
     ]
     const root = await show()
@@ -194,7 +194,7 @@ describe("the activity", () => {
     )
     expect(lines(first)).toEqual(["TodoDone+ServerOPP-1Ship it", "DeletedOPP-2Doomed", "RenamedbackendServer"])
     expect(lines(second)).toEqual(["Editedconfig.toml"])
-    expect(lines(third)).toEqual(["Store version0.0.10.0.2"])
+    expect(lines(third)).toEqual(["Store version12"])
     expect(root.querySelector("table")).toBeNull()
   })
 

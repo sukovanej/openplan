@@ -9,8 +9,6 @@ use op_task::layout::{self, Document};
 use op_task::tag::{Tag, normalize_name};
 use op_task::{Abbreviation, Task};
 
-use semver::Version;
-
 use crate::TrackerError;
 use crate::version::{STORE_VERSIONS, StoreVersions, VersionError};
 
@@ -25,7 +23,7 @@ pub struct Plan {
     shadowed: BTreeMap<u64, Vec<String>>,
     tags: BTreeSet<String>,
     docs: BTreeSet<String>,
-    migrated_from: Option<Version>,
+    migrated_from: Option<u32>,
     version_problem: Option<VersionError>,
 }
 
@@ -85,9 +83,8 @@ impl Plan {
         })
     }
 
-    // The store version on disk, where this plan reads the store migrated in memory.
-    pub fn migrated_from(&self) -> Option<&Version> {
-        self.migrated_from.as_ref()
+    pub fn migrated_from(&self) -> Option<u32> {
+        self.migrated_from
     }
 
     pub fn version_problem(&self) -> Option<&VersionError> {

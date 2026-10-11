@@ -24,6 +24,9 @@ pub enum FaultKind {
     // The tasks use an older store version that this daemon does not migrate by itself. It serves
     // them, and it refuses each write.
     OlderStoreVersion,
+    // The tasks use a store version so old that this daemon no longer migrates it. The daemon
+    // serves none of them.
+    RetiredStoreVersion,
     // Git `user.name` signs every write, so with none set, no write is made.
     NoIdentity,
     SyncFailed,

@@ -14,7 +14,7 @@ use op_backend_local::LocalBackend;
 use op_index::Index;
 use op_task::layout::{self, Document};
 use op_tracker::{
-    HistoryQuery, STORE_VERSIONS, StoreVersions, Stored, TaskMergePolicy, Tracker, TrackerError,
+    HistoryQuery, STORE_VERSIONS, StoreVersions, TaskMergePolicy, Tracker, TrackerError,
     VersionError,
 };
 use tokio::sync::broadcast::error::RecvError;
@@ -214,9 +214,9 @@ pub struct Project {
     loaded: Mutex<Option<RevisionId>>,
     sync: Mutex<Option<SyncLoop>>,
     health: Mutex<Health>,
-    // Why the last sync stopped: a merge with tasks in a store version this daemon cannot read.
-    sync_version: Arc<Mutex<Option<VersionError>>>,
-    updates: OnceLock<Arc<SelfUpdate>>,
+    sync_version: Arc<Mutex<SyncVersion>>,
+    // Shared with the merge policy, which runs on the sync thread.
+    updates: Arc<OnceLock<Arc<SelfUpdate>>>,
     root_misses: AtomicU32,
 }
 
@@ -231,12 +231,19 @@ impl Project {
         versions: &'static StoreVersions,
     ) -> Result<Self, OpenError> {
         let signer = op_backend_git::signer(&location.root);
-        let sync_version: Arc<Mutex<Option<VersionError>>> = Arc::default();
-        let reported = Arc::clone(&sync_version);
+        let sync_version: Arc<Mutex<SyncVersion>> = Arc::default();
+        let updates: Arc<OnceLock<Arc<SelfUpdate>>> = Arc::default();
+        let (reported, asking) = (Arc::clone(&sync_version), Arc::clone(&updates));
         let policy = TaskMergePolicy::default()
             .with_store_versions(versions)
             .on_unreadable(move |problem| {
-                *reported.lock().expect("sync version poisoned") = Some(problem.clone());
+                let newly = reported.lock().expect("sync version poisoned").met(problem);
+                if newly
+                    && needs_update(problem)
+                    && let Some(updates) = asking.get()
+                {
+                    updates.want();
+                }
             });
         let backend = open_backend_with(&location, &signer, true, policy)?;
         let forge = crate::forge::of_project(&location);
@@ -253,7 +260,7 @@ impl Project {
             sync: Mutex::new(None),
             health: Mutex::new(Health::default()),
             sync_version,
-            updates: OnceLock::new(),
+            updates,
             root_misses: AtomicU32::new(0),
         };
         project.reload();
@@ -355,46 +362,20 @@ impl Project {
 
     // Reads every task again and dates each one from the log.
     pub fn reload(&self) {
-        let migration = self.migrate_if_due();
         let result = self.load(Scope::Everything);
-        self.record_health(result, migration);
+        self.record_health(result);
     }
 
     // Reads only what moved between the revision the index holds and the head, and nothing when
     // the head did not move. A write and the event pump both call it for the same move.
     pub(crate) fn catch_up(&self) {
-        let migration = self.migrate_if_due();
         let result = self.load(Scope::Moved);
-        self.record_health(result, migration);
+        self.record_health(result);
     }
 
-    // A store of an older store version moves to this daemon's store version as soon as the daemon
-    // reads it, when a release reads that store version. Returns why it could not.
-    fn migrate_if_due(&self) -> Option<String> {
-        let Ok(Some(Stored::Older(from))) = self.tracker.stored() else {
-            return None;
-        };
-        if !self.tracker.store_versions().migrates_by_itself() {
-            return None;
-        }
-        let migrated = self
-            .sign()
-            .map_err(TrackerError::from)
-            .and_then(|actor| self.tracker.migrate(&actor));
-        match migrated {
-            Ok(_) => {
-                tracing::info!(project = %self.name(), %from, to = %self.tracker.store_versions().current(), "migrated the tasks");
-                None
-            }
-            Err(err) => Some(format!(
-                "cannot migrate the tasks from store version {from}: {err}"
-            )),
-        }
-    }
-
-    fn record_health(&self, result: Result<Loaded, TrackerError>, migration: Option<String>) {
+    fn record_health(&self, result: Result<Loaded, TrackerError>) {
         let (unreadable, version_problem) = match result {
-            Ok(loaded) => (migration.or(loaded.unreadable), loaded.version_problem),
+            Ok(loaded) => (loaded.unreadable, loaded.version_problem),
             Err(err) => (Some(err.to_string()), None),
         };
         if let Some(reason) = &unreadable {
@@ -425,18 +406,8 @@ impl Project {
             .filter(|problem| !matches!(problem, VersionError::Unmigrated { .. }))
     }
 
-    // A sync that stopped on a store version this daemon cannot read asks for an update, as an open
-    // does.
     pub(crate) fn synced(&self, status: &op_backend::SyncStatus) {
-        let mut sync_version = self.lock_sync_version();
-        if status.error.is_none() {
-            *sync_version = None;
-        }
-        if sync_version.is_some()
-            && let Some(updates) = self.updates.get()
-        {
-            updates.want();
-        }
+        self.lock_sync_version().synced(status);
     }
 
     // The head is read under the index lock: two writes that reload at once could otherwise finish
@@ -508,9 +479,10 @@ impl Project {
         }
         *loaded = head;
         let versions = self.tracker.store_versions();
+        // A write moves the store as far as a release reads by itself, and no further.
         let version_problem = plan.version_problem().cloned().or_else(|| {
             plan.migrated_from()
-                .filter(|_| !versions.migrates_by_itself())
+                .filter(|_| versions.newest_released() < versions.current())
                 .map(|from| versions.unmigrated(from))
         });
         Ok(Loaded {
@@ -634,7 +606,7 @@ impl Project {
         if let Some(problem) = &health.version_problem {
             faults.push(self.version_fault(&project, problem));
         }
-        let sync_version = self.lock_sync_version().clone();
+        let sync_version = self.lock_sync_version().problem.clone();
         if let Some(problem) = sync_version
             .as_ref()
             .filter(|_| health.version_problem.is_none())
@@ -708,11 +680,10 @@ impl Project {
         let (kind, message) = match problem {
             VersionError::Newer { .. } => (
                 FaultKind::NewerStoreVersion,
-                format!("{problem}; {}", self.update_hint()),
+                format!("{problem}. {}", self.update_hint()),
             ),
-            VersionError::Retired { .. } | VersionError::Unmigrated { .. } => {
-                (FaultKind::OlderStoreVersion, problem.to_string())
-            }
+            VersionError::Retired { .. } => (FaultKind::RetiredStoreVersion, problem.to_string()),
+            VersionError::Unmigrated { .. } => (FaultKind::OlderStoreVersion, problem.to_string()),
         };
         Fault {
             project: project.to_owned(),
@@ -728,12 +699,12 @@ impl Project {
             updates.is_some_and(|updates| updates.automatic()),
         ) {
             (Some(outcome), _) => outcome,
-            (None, true) => "the daemon is looking for an update now".to_owned(),
-            (None, false) => "run `openplan update`".to_owned(),
+            (None, true) => "The daemon is looking for an update now".to_owned(),
+            (None, false) => "Run `openplan update`".to_owned(),
         }
     }
 
-    fn lock_sync_version(&self) -> MutexGuard<'_, Option<VersionError>> {
+    fn lock_sync_version(&self) -> MutexGuard<'_, SyncVersion> {
         self.sync_version.lock().expect("sync version poisoned")
     }
 
@@ -752,6 +723,38 @@ impl std::fmt::Debug for Project {
             .field("name", &self.name())
             .field("path", &self.path)
             .finish_non_exhaustive()
+    }
+}
+
+// The store version problem that stopped a sync. It lasts while each sync stops on it again.
+#[derive(Default)]
+struct SyncVersion {
+    problem: Option<VersionError>,
+}
+
+impl SyncVersion {
+    // True for a problem that the last syncs did not meet, so a sync asks for an update once.
+    fn met(&mut self, problem: &VersionError) -> bool {
+        let newly = self.problem.as_ref() != Some(problem);
+        self.problem = Some(problem.clone());
+        newly
+    }
+
+    // The sync thread meets the problem before the event pump reads the status of that sync, so
+    // the status error says whether the sync stopped on it.
+    fn synced(&mut self, status: &op_backend::SyncStatus) {
+        if status.syncing {
+            return;
+        }
+        let stopped_on_it = self.problem.as_ref().is_some_and(|problem| {
+            status
+                .error
+                .as_ref()
+                .is_some_and(|error| error.contains(&problem.to_string()))
+        });
+        if !stopped_on_it {
+            self.problem = None;
+        }
     }
 }
 

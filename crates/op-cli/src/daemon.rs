@@ -6,7 +6,6 @@ use anyhow::{Context, Result, bail};
 use op_api::{DaemonInfo, ProjectView};
 use op_daemon::{Control, Started, StopOutcome, UpdateRecord, base_url, default_port, now_unix};
 use op_server::{Location, same_path};
-use semver::Version;
 use serde::Serialize;
 
 pub fn start(port: u16) -> Result<()> {
@@ -161,24 +160,30 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
     }
 }
 
-// The CLI and the daemon speak one API, and a release can change it. A newer CLI starts the daemon
-// again on itself. An older one refuses, because a restart from it would take the daemon back.
+// A daemon keeps running when its binary changes on disk. A newer CLI starts the daemon again on
+// itself. An older one refuses, because a restart from it would take the daemon back to an API that
+// a newer client may need.
 fn on_this_version(control: &Control, info: DaemonInfo) -> Result<DaemonInfo> {
-    let ours = Version::parse(env!("CARGO_PKG_VERSION")).context("the built-in version")?;
-    let Ok(theirs) = Version::parse(&info.version) else {
-        return Ok(info);
-    };
-    match ours.cmp(&theirs) {
+    match op_api::API_VERSION.cmp(&info.api) {
         Ordering::Equal => Ok(info),
         Ordering::Greater => {
-            control.stop()?;
+            control.stop_if(info.pid)?;
             let started = control.ensure(info.port)?.into_info();
-            eprintln!("restarted the daemon on openplan {ours}; it ran {theirs}");
-            Ok(started)
+            if started.pid != info.pid && started.api == op_api::API_VERSION {
+                eprintln!(
+                    "restarted the daemon on openplan {}; it ran {}",
+                    env!("CARGO_PKG_VERSION"),
+                    info.version
+                );
+            }
+            on_this_version(control, started)
         }
         Ordering::Less => bail!(
-            "this openplan is {ours}, and the daemon runs the newer {theirs}; run the newer \
-             openplan, or update this one with `openplan update`"
+            "this openplan speaks API {}, and the daemon (openplan {}) speaks API {}. Update this \
+             openplan with `openplan update`, or run a newer openplan",
+            op_api::API_VERSION,
+            info.version,
+            info.api
         ),
     }
 }

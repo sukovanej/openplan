@@ -12,7 +12,6 @@ use op_task::content::{self, Text};
 use op_task::layout;
 use op_task::tag::Tag;
 use op_task::{Abbreviation, PartialMetadata, Task, parse_partial};
-use semver::Version;
 
 mod describe;
 mod docs;
@@ -109,12 +108,8 @@ impl Tracker {
         actor: &Actor,
         mut write: impl FnMut(&Plan) -> Result<(Vec<Op>, T), TrackerError>,
     ) -> Result<(Option<Committed>, T), TrackerError> {
-        // The migration goes in a revision of its own, so the history shows it apart from the write.
-        if self.versions.migrates_by_itself()
-            && let Ok(Some(Stored::Older(_))) = self.stored()
-        {
-            self.migrate(actor)?;
-        }
+        // A migration goes in a revision of its own, so the history shows it apart from the write.
+        self.migrate_to(actor, self.versions.newest_released())?;
         self.backend.transact(actor, |snapshot: Arc<dyn Snapshot>| {
             let plan = Plan::read_in(snapshot, self.versions)?;
             if let Some(problem) = plan.version_problem() {
@@ -151,7 +146,7 @@ impl Tracker {
             }
             let mut ops = vec![Op::put(
                 layout::CONFIG,
-                Config::new(self.versions.current().clone(), abbreviation).to_file_string(),
+                Config::new(self.versions.current(), abbreviation).to_file_string(),
             )];
             if plan.tag_names().is_empty() {
                 for tag in op_task::tag::defaults() {
@@ -163,30 +158,31 @@ impl Tracker {
         Ok(committed)
     }
 
-    // Reads the config alone, so a check after every write costs one read.
-    pub fn stored(&self) -> Result<Option<Stored>, TrackerError> {
-        match version::version_of(&*self.backend.head()?)? {
-            Some(stored) => Ok(Some(self.versions.stored(&stored)?)),
-            None => Ok(None),
+    pub fn migrate(&self, actor: &Actor) -> Result<Option<u32>, TrackerError> {
+        if version::version_of(&*self.backend.head()?)?.is_none() {
+            return Err(TrackerError::NotInitialized);
         }
+        self.migrate_to(actor, self.versions.current())
     }
 
-    // Moves a store of an older store version to this binary's store version, in one revision.
-    // Returns the version it moved the store from; `None` where the store already had this one.
-    pub fn migrate(&self, actor: &Actor) -> Result<Option<Version>, TrackerError> {
-        let current = self.versions.current();
+    fn migrate_to(&self, actor: &Actor, target: u32) -> Result<Option<u32>, TrackerError> {
         let (_, from) = self
             .backend
             .transact(actor, |snapshot: Arc<dyn Snapshot>| {
+                let nothing =
+                    || Ok::<_, TrackerError>((Edit::new(String::new(), Vec::new()), None));
                 let Some(stored) = version::version_of(&*snapshot)? else {
-                    return Err(TrackerError::NotInitialized);
+                    return nothing();
                 };
-                let Stored::Older(from) = self.versions.stored(&stored)? else {
-                    return Ok((Edit::new(String::new(), Vec::new()), None));
+                let Stored::Older(from) = self.versions.stored(stored)? else {
+                    return nothing();
                 };
-                let ops = self.versions.migration(&*snapshot, &from, current)?;
+                if from >= target {
+                    return nothing();
+                }
+                let ops = self.versions.migration(&*snapshot, from, target)?;
                 Ok((
-                    Edit::new(describe::migration_line(&from, current), ops),
+                    Edit::new(describe::migration_line(from, target), ops),
                     Some(from),
                 ))
             })?;
@@ -530,7 +526,7 @@ impl Tracker {
         let raw_after = |path: &str| self.backend.read_at(&revision.id, path);
         let (from, to) = (version_of(&raw_before)?, version_of(&raw_after)?);
         let current = self.versions.current();
-        let migrated = |revision: &RevisionId, stored: Option<&Version>| match stored {
+        let migrated = |revision: &RevisionId, stored: Option<u32>| match stored {
             Some(stored) if stored < current => match self.backend.at(revision) {
                 Err(BackendError::UnknownRevision(_)) => Ok(None),
                 snapshot => Ok::<_, TrackerError>(Some(self.versions.view(snapshot?)?.snapshot)),
@@ -538,10 +534,10 @@ impl Tracker {
             _ => Ok(None),
         };
         let before_view = match parent {
-            Some(parent) => migrated(parent, from.as_ref())?,
+            Some(parent) => migrated(parent, from)?,
             None => None,
         };
-        let after_view = migrated(&revision.id, to.as_ref())?;
+        let after_view = migrated(&revision.id, to)?;
         let before = |path: &str| match &before_view {
             Some(view) => view.read(path),
             None => raw_before(path),
@@ -570,9 +566,16 @@ impl Tracker {
         };
         let mut described = describe::describe(&changes, &before, &after, moved_from.as_deref())?;
         // Only a hand edit moves a store to an older version, and that reads as an edit of the config.
+        // A merge with a side that migrated already shows that side's migration in the history.
+        let migrated_on_a_side = revision.parents.iter().skip(1).any(|other| {
+            matches!(
+                version_of(&|path| absent_when_unknown(self.backend.read_at(other, path))),
+                Ok(version) if version == to
+            )
+        });
         described.version = from
             .zip(to)
-            .filter(|(from, to)| from < to)
+            .filter(|(from, to)| from < to && !migrated_on_a_side)
             .map(|(from, to)| VersionChange { from, to });
         Ok(described)
     }
@@ -611,7 +614,7 @@ impl Tracker {
     }
 }
 
-fn version_of(read: describe::Read<'_>) -> Result<Option<Version>, BackendError> {
+fn version_of(read: describe::Read<'_>) -> Result<Option<u32>, BackendError> {
     Ok(read(layout::CONFIG)?
         .and_then(|bytes| config::version(&String::from_utf8_lossy(&bytes)).ok()))
 }

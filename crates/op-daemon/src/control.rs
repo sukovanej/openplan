@@ -133,7 +133,19 @@ impl Control {
         let Some(info) = self.home.read_info() else {
             return Ok(StopOutcome::NotRunning);
         };
+        self.stop_daemon(info)
+    }
 
+    // Another process may have started a daemon again since the caller read `pid`, and that one
+    // stays.
+    pub fn stop_if(&self, pid: u32) -> Result<StopOutcome> {
+        match self.home.read_info() {
+            Some(info) if info.pid == pid => self.stop_daemon(info),
+            _ => Ok(StopOutcome::NotRunning),
+        }
+    }
+
+    fn stop_daemon(&self, info: DaemonInfo) -> Result<StopOutcome> {
         if self.home.lock_is_free()? {
             self.home.clear_info();
             return Ok(StopOutcome::RemovedStale { pid: info.pid });

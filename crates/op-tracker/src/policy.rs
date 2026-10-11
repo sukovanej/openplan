@@ -11,7 +11,6 @@ use op_task::doc::Doc;
 use op_task::layout::{self, Document};
 use op_task::reference::relative;
 use op_task::{Abbreviation, Task, merge, parse_partial, three_way};
-use semver::Version;
 
 use crate::version::{self, STORE_VERSIONS, StoreVersions, VersionError};
 
@@ -55,11 +54,11 @@ impl TaskMergePolicy {
         self
     }
 
-    fn readable(&self, side: &dyn Snapshot) -> Result<Option<Version>, BackendError> {
+    fn readable(&self, side: &dyn Snapshot) -> Result<Option<u32>, BackendError> {
         let Some(stored) = version::version_of(side)? else {
             return Ok(None);
         };
-        match self.versions.stored(&stored) {
+        match self.versions.stored(stored) {
             Ok(_) => Ok(Some(stored)),
             Err(problem) => {
                 if let Some(report) = &self.on_unreadable {
@@ -73,8 +72,8 @@ impl TaskMergePolicy {
     fn raised(
         &self,
         side: &dyn Snapshot,
-        stored: Option<&Version>,
-        target: &Version,
+        stored: Option<u32>,
+        target: u32,
     ) -> Result<Vec<Op>, BackendError> {
         match stored {
             Some(stored) if stored < target => self
@@ -99,14 +98,14 @@ impl MergePolicy for TaskMergePolicy {
         theirs: &dyn Snapshot,
     ) -> Result<Alignment, BackendError> {
         let (ours_version, theirs_version) = (self.readable(ours)?, self.readable(theirs)?);
-        let Some(target) = ours_version.clone().max(theirs_version.clone()) else {
+        let Some(target) = ours_version.max(theirs_version) else {
             return Ok(Alignment::default());
         };
         let base_version = version::version_of(base)?;
         Ok(Alignment {
-            base: self.raised(base, base_version.as_ref(), &target)?,
-            ours: self.raised(ours, ours_version.as_ref(), &target)?,
-            theirs: self.raised(theirs, theirs_version.as_ref(), &target)?,
+            base: self.raised(base, base_version, target)?,
+            ours: self.raised(ours, ours_version, target)?,
+            theirs: self.raised(theirs, theirs_version, target)?,
         })
     }
 

@@ -59,13 +59,13 @@ impl MergePolicy for PreferTheirs {
     }
 }
 
-// The ops that turn `theirs` into the merge of both sides.
 fn aligned(side: &dyn Snapshot, ops: Vec<Op>) -> Overlay<'_> {
     let mut overlay = Overlay::new(side);
     overlay.apply(ops);
     overlay
 }
 
+// The ops that turn `theirs` into the merge of both sides.
 pub fn merge(
     base: &dyn Snapshot,
     ours: &dyn Snapshot,

@@ -1,5 +1,6 @@
 mod common;
 
+use std::path::Path;
 use std::time::Duration;
 
 use axum::http::StatusCode;
@@ -7,8 +8,7 @@ use common::*;
 use op_api::BackendKind;
 use op_backend::{BackendError, Op, Snapshot};
 use op_server::{AppState, Location, Project};
-use op_tracker::{STORE_VERSIONS, StoreVersion, StoreVersions};
-use semver::Version;
+use op_tracker::{Retired, STORE_VERSIONS, StoreVersion, StoreVersions};
 use serde_json::{Value, json};
 
 fn backlog_for_todo(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
@@ -23,37 +23,46 @@ fn backlog_for_todo(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
     Ok(ops)
 }
 
-const FIRST: StoreVersion = StoreVersion {
-    version: Version::new(0, 0, 2),
-    released: Some("0.0.2"),
+const TWO: StoreVersion = StoreVersion {
+    number: 2,
+    released: Some("0.0.1"),
     migrate: None,
 };
 
+const THREE: StoreVersion = StoreVersion {
+    number: 3,
+    released: Some("0.0.9"),
+    migrate: Some(backlog_for_todo),
+};
+
 static RELEASED: StoreVersions = StoreVersions {
-    known: &[
-        FIRST,
-        StoreVersion {
-            version: Version::new(0, 0, 3),
-            released: Some("0.0.9"),
-            migrate: Some(backlog_for_todo),
-        },
-    ],
+    known: &[TWO, THREE],
     retired: &[],
 };
 
 static UNRELEASED: StoreVersions = StoreVersions {
     known: &[
-        FIRST,
+        TWO,
         StoreVersion {
-            version: Version::new(0, 0, 3),
             released: None,
-            migrate: Some(backlog_for_todo),
+            ..THREE
         },
     ],
     retired: &[],
 };
 
-const NEWER: &str = "version = \"0.0.3\"\nabbreviation = \"OPP\"\n";
+static RETIRING: StoreVersions = StoreVersions {
+    known: &[StoreVersion {
+        migrate: None,
+        ..THREE
+    }],
+    retired: &[Retired {
+        number: 2,
+        last_release: "0.0.9",
+    }],
+};
+
+const NEWER: &str = "abbreviation = \"OPP\"\nversion = 3\n";
 
 async fn faults(state: &AppState) -> Vec<Value> {
     json_of(state, "/api/faults")
@@ -63,8 +72,8 @@ async fn faults(state: &AppState) -> Vec<Value> {
         .clone()
 }
 
-// A store of version 0.0.2 with one task in `todo`, opened again by a daemon that knows `versions`.
-fn reopened(dir: &std::path::Path, versions: &'static StoreVersions) -> AppState {
+// A store of version 2 with one task in `todo`, opened again by a daemon that knows `versions`.
+fn reopened(dir: &Path, versions: &'static StoreVersions) -> AppState {
     let first = local_project(PROJECT, dir, "OPP");
     first
         .tracker()
@@ -86,8 +95,14 @@ fn config(state: &AppState) -> String {
         .unwrap()
 }
 
+async fn refused(state: &AppState, method: &str, uri: &str, body: Option<Value>) -> String {
+    let response = send(state, method, uri, body).await;
+    assert_eq!(response.status(), StatusCode::CONFLICT, "{method} {uri}");
+    message_of(&body_json(response).await)
+}
+
 #[tokio::test]
-async fn a_newer_store_version_serves_no_task_and_says_which_release_reads_it() {
+async fn a_newer_store_version_serves_no_task_and_says_what_to_do() {
     let (_dir, state) = local_state();
     create(&state, "Ship it").await;
     seed(&state, &[("config.toml", NEWER)]);
@@ -97,12 +112,11 @@ async fn a_newer_store_version_serves_no_task_and_says_which_release_reads_it() 
     assert_eq!(faults[0]["kind"], "newer_store_version");
     assert_eq!(
         faults[0]["message"],
-        "these tasks use store version 0.0.3, and this openplan reads store versions up to 0.0.2; they need a \
-         newer openplan; run `openplan update`"
+        "these tasks use store version 3, and this openplan reads store versions up to 2. They \
+         need a newer openplan. Run `openplan update`"
     );
-    let tasks = send(&state, "GET", "/api/projects/test/tasks", None).await;
-    assert_eq!(tasks.status(), StatusCode::CONFLICT);
-    assert!(message_of(&body_json(tasks).await).contains("store version 0.0.3"));
+    let message = refused(&state, "GET", "/api/projects/test/tasks", None).await;
+    assert!(message.contains("store version 3"), "{message}");
 }
 
 #[tokio::test]
@@ -122,39 +136,68 @@ async fn a_newer_store_version_asks_the_daemon_to_update_and_reports_how_it_went
         message
             .as_str()
             .unwrap()
-            .ends_with("the daemon is looking for an update now"),
+            .ends_with("They need a newer openplan. The daemon is looking for an update now"),
         "{message}"
     );
-    let outcome = "openplan 0.0.8 is the newest release, and only a canary build reads them; \
-                   run `openplan update --canary`";
+    let outcome = "openplan 0.0.8 is the newest release, and only a canary build reads them. Run \
+                   `openplan update --canary`";
     updates.record(outcome.to_owned());
     let message = faults(&state).await[0]["message"].clone();
-    assert!(
-        message
-            .as_str()
-            .unwrap()
-            .ends_with(&format!("newer openplan; {outcome}")),
-        "{message}"
-    );
+    assert!(message.as_str().unwrap().ends_with(outcome), "{message}");
 }
 
 #[tokio::test]
-async fn a_daemon_migrates_an_older_store_by_itself_when_a_release_reads_the_new_store_version() {
+async fn a_retired_store_version_serves_no_task_and_hides_the_project() {
     let dir = tempfile::tempdir().unwrap();
-    let state = reopened(dir.path(), &RELEASED);
+    let state = reopened(dir.path(), &RETIRING);
+
+    let faults = faults(&state).await;
+    assert_eq!(faults[0]["kind"], "retired_store_version", "{faults:?}");
+    let message = refused(&state, "GET", "/api/projects/test/tasks", None).await;
+    assert!(message.contains("Run openplan 0.0.9"), "{message}");
+}
+
+#[tokio::test]
+async fn a_store_from_before_the_store_versions_migrates_at_the_first_write_only() {
+    let (_dir, state) = local_state();
+    seed(&state, &[("config.toml", "abbreviation = \"OPP\"\n")]);
 
     assert_eq!(
         config(&state),
-        "version = \"0.0.3\"\nabbreviation = \"OPP\"\n"
+        "abbreviation = \"OPP\"\n",
+        "a read writes nothing"
     );
+    assert!(faults(&state).await.is_empty());
+    create(&state, "Ship it").await;
+
+    assert_eq!(config(&state), "abbreviation = \"OPP\"\nversion = 2\n");
+    let history = json_of(&state, "/api/projects/test/history").await;
+    let migration = history
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry.get("store_version").is_some())
+        .expect("a migration in the history");
+    assert_eq!(
+        migration["summary"],
+        json!(["Migrate the tasks from store version 1 to 2"])
+    );
+    assert_eq!(migration["store_version"], json!({ "from": 1, "to": 2 }));
+}
+
+#[tokio::test]
+async fn a_daemon_migrates_an_older_store_at_a_write_when_a_release_reads_the_new_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = reopened(dir.path(), &RELEASED);
+
+    assert_eq!(config(&state), "abbreviation = \"OPP\"\nversion = 2\n");
     assert!(faults(&state).await.is_empty());
     let task = json_of(&state, "/api/projects/test/tasks/OPP-1").await;
     assert_eq!(task["metadata"]["status"], "backlog");
-    let history = json_of(&state, "/api/projects/test/history").await;
-    assert_eq!(
-        history[0]["summary"],
-        json!(["Migrate the tasks from store version 0.0.2 to 0.0.3"])
-    );
+
+    create(&state, "Next").await;
+
+    assert_eq!(config(&state), "abbreviation = \"OPP\"\nversion = 3\n");
 }
 
 #[tokio::test]
@@ -162,7 +205,6 @@ async fn a_canary_serves_an_older_store_read_only_until_someone_migrates_it() {
     let dir = tempfile::tempdir().unwrap();
     let state = reopened(dir.path(), &UNRELEASED);
 
-    assert!(config(&state).starts_with("version = \"0.0.2\"\n"));
     let faults_before = faults(&state).await;
     assert_eq!(
         faults_before[0]["kind"], "older_store_version",
@@ -170,21 +212,20 @@ async fn a_canary_serves_an_older_store_read_only_until_someone_migrates_it() {
     );
     let task = json_of(&state, "/api/projects/test/tasks/OPP-1").await;
     assert_eq!(task["metadata"]["status"], "backlog");
-    let refused = send(
+    let message = refused(
         &state,
         "POST",
         "/api/projects/test/tasks",
         Some(json!({ "title": "Next" })),
     )
     .await;
-    assert_eq!(refused.status(), StatusCode::CONFLICT);
-    assert!(message_of(&body_json(refused).await).contains("run `openplan migrate`"));
+    assert!(message.contains("Run `openplan migrate`"), "{message}");
 
     let migrated = send(&state, "POST", "/api/projects/test/migrate", None).await;
     assert_eq!(migrated.status(), StatusCode::OK);
     assert_eq!(
         body_json(migrated).await,
-        json!({ "project": "test", "from": "0.0.2", "version": "0.0.3" })
+        json!({ "project": "test", "from": 2, "version": 3 })
     );
     assert!(faults(&state).await.is_empty());
     create(&state, "Next").await;
@@ -197,29 +238,70 @@ async fn a_migration_of_a_store_in_the_current_store_version_changes_nothing() {
     assert_eq!(migrated.status(), StatusCode::OK);
     assert_eq!(
         body_json(migrated).await,
-        json!({ "project": "test", "version": STORE_VERSIONS.current().to_string() })
+        json!({ "project": "test", "version": STORE_VERSIONS.current() })
     );
 }
 
+fn clone(root: &Path, name: &str) -> std::path::PathBuf {
+    let remote = root.join("remote.git");
+    git(root, &["clone", "-q", remote.to_str().unwrap(), name]);
+    let path = root.join(name);
+    identify(&path);
+    path
+}
+
+// A sync that meets a newer store version asks for an update once, and the fault goes when a sync
+// fails for another reason.
 #[tokio::test]
-async fn a_daemon_adds_the_version_key_to_a_store_from_before_the_store_versions() {
-    let (_dir, state) = local_state();
+async fn a_sync_that_meets_a_newer_store_version_asks_for_an_update_once() {
+    let root = tempfile::tempdir().unwrap();
+    git(
+        root.path(),
+        &["init", "-q", "--bare", "-b", "main", "remote.git"],
+    );
+    let alice = AppState::new([started(
+        open(PROJECT, &clone(root.path(), "alice"), BackendKind::Git),
+        "OPP",
+    )]);
+    create(&alice, "Shared").await;
+    send(&alice, "POST", "/api/projects/test/sync", None).await;
+    let bob_path = clone(root.path(), "bob");
+    let bob = AppState::new([Project::open_in(
+        PROJECT,
+        Location::find(&bob_path, Some(BackendKind::Git)).unwrap(),
+        &RELEASED,
+    )
+    .unwrap()]);
+    send(&bob, "POST", "/api/projects/test/sync", None).await;
+    create(&bob, "From Bob").await;
+    send(&bob, "POST", "/api/projects/test/sync", None).await;
+    create(&alice, "From Alice").await;
+    alice.start_projects();
+    let updates = alice.self_update();
 
-    seed(&state, &[("config.toml", "abbreviation = \"OPP\"\n")]);
+    send(&alice, "POST", "/api/projects/test/sync", None).await;
 
-    assert_eq!(
-        config(&state),
-        "version = \"0.0.2\"\nabbreviation = \"OPP\"\n"
+    tokio::time::timeout(Duration::from_secs(5), updates.wanted())
+        .await
+        .expect("the sync asks for an update");
+    until(|| async {
+        let faults = faults(&alice).await;
+        faults.len() == 1 && faults[0]["kind"] == "newer_store_version"
+    })
+    .await;
+    send(&alice, "POST", "/api/projects/test/sync", None).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), updates.wanted())
+            .await
+            .is_err(),
+        "a sync that meets the same store version asks no more"
     );
-    assert!(faults(&state).await.is_empty());
-    let history = json_of(&state, "/api/projects/test/history").await;
-    assert_eq!(
-        history[0]["summary"],
-        json!(["Migrate the tasks from store version 0.0.1 to 0.0.2"])
-    );
-    assert_eq!(
-        history[0]["store_version"],
-        json!({ "from": "0.0.1", "to": "0.0.2" })
-    );
-    assert!(history[1].get("store_version").is_none(), "{}", history[1]);
+
+    std::fs::rename(root.path().join("remote.git"), root.path().join("gone.git")).unwrap();
+    send(&alice, "POST", "/api/projects/test/sync", None).await;
+    until(|| async {
+        let faults = faults(&alice).await;
+        faults.len() == 1 && faults[0]["kind"] == "sync_failed"
+    })
+    .await;
 }

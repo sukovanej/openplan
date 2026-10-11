@@ -68,8 +68,8 @@ pub struct HistoryEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct StoreVersionChange {
-    pub from: String,
-    pub to: String,
+    pub from: u32,
+    pub to: u32,
 }
 
 // One task, even where a new title moved it to a file with a new name.

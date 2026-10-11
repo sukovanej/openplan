@@ -6,7 +6,6 @@ use op_task::layout::{self, Document};
 use op_task::{
     Abbreviation, FieldResult, PartialFrontmatter, PartialMetadata, PartialTask, Status, comment,
 };
-use semver::Version;
 
 pub(crate) type Read<'a> = &'a dyn Fn(&str) -> Result<Option<Vec<u8>>, BackendError>;
 
@@ -20,10 +19,10 @@ pub struct Described {
     pub others: Vec<Change>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VersionChange {
-    pub from: Version,
-    pub to: Version,
+    pub from: u32,
+    pub to: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -462,8 +461,8 @@ impl Described {
             None => number.to_string(),
         };
         let mut lines = Vec::new();
-        if let Some(change) = &self.version {
-            lines.push(migration_line(&change.from, &change.to));
+        if let Some(change) = self.version {
+            lines.push(migration_line(change.from, change.to));
         }
         if let Some(kind) = self.config.filter(|_| self.version.is_none()) {
             lines.push(match (kind, abbreviation) {
@@ -500,7 +499,7 @@ impl Described {
     }
 }
 
-pub(crate) fn migration_line(from: &Version, to: &Version) -> String {
+pub(crate) fn migration_line(from: u32, to: u32) -> String {
     format!("Migrate the tasks from store version {from} to {to}")
 }
 

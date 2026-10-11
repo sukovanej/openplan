@@ -642,8 +642,8 @@ pub(crate) fn history(
                 tags: described.tags.into_iter().map(tag_change).collect(),
                 docs: described.docs.into_iter().map(doc_change).collect(),
                 store_version: described.version.map(|change| StoreVersionChange {
-                    from: change.from.to_string(),
-                    to: change.to.to_string(),
+                    from: change.from,
+                    to: change.to,
                 }),
                 changes: entry
                     .changes
