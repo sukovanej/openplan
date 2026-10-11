@@ -73,7 +73,8 @@ mise run icons   # → crates/op-gui/icons/ and web/packages/app/public/
 ## Store versions
 
 `version` in the `config.toml` of each store is a semver string that tells which layout its files
-have. It is not the openplan version. A store without the key is store version `0.0.1`.
+have. It is not the openplan version. A store without the key is store version `0.0.1`. Store
+version `0.0.2` adds the key and nothing else, so a store of `0.0.2` or newer always has it.
 `STORE_VERSIONS` in `crates/op-tracker/src/version.rs` lists the store versions that this binary
 knows, oldest first.
 

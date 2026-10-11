@@ -109,6 +109,12 @@ impl Tracker {
         actor: &Actor,
         mut write: impl FnMut(&Plan) -> Result<(Vec<Op>, T), TrackerError>,
     ) -> Result<(Option<Committed>, T), TrackerError> {
+        // The migration goes in a revision of its own, so the history shows it apart from the write.
+        if self.versions.migrates_by_itself()
+            && let Ok(Some(Stored::Older(_))) = self.stored()
+        {
+            self.migrate(actor)?;
+        }
         self.backend.transact(actor, |snapshot: Arc<dyn Snapshot>| {
             let plan = Plan::read_in(snapshot, self.versions)?;
             if let Some(problem) = plan.version_problem() {

@@ -24,8 +24,8 @@ fn backlog_for_todo(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
 }
 
 const FIRST: StoreVersion = StoreVersion {
-    version: Version::new(0, 0, 1),
-    released: Some("0.0.1"),
+    version: Version::new(0, 0, 2),
+    released: Some("0.0.2"),
     migrate: None,
 };
 
@@ -33,7 +33,7 @@ static RELEASED: StoreVersions = StoreVersions {
     known: &[
         FIRST,
         StoreVersion {
-            version: Version::new(0, 0, 2),
+            version: Version::new(0, 0, 3),
             released: Some("0.0.9"),
             migrate: Some(backlog_for_todo),
         },
@@ -45,7 +45,7 @@ static UNRELEASED: StoreVersions = StoreVersions {
     known: &[
         FIRST,
         StoreVersion {
-            version: Version::new(0, 0, 2),
+            version: Version::new(0, 0, 3),
             released: None,
             migrate: Some(backlog_for_todo),
         },
@@ -53,8 +53,7 @@ static UNRELEASED: StoreVersions = StoreVersions {
     retired: &[],
 };
 
-const NEWER: &str = "version = \"0.0.2\"
-abbreviation = \"OPP\"\n";
+const NEWER: &str = "version = \"0.0.3\"\nabbreviation = \"OPP\"\n";
 
 async fn faults(state: &AppState) -> Vec<Value> {
     json_of(state, "/api/faults")
@@ -64,7 +63,7 @@ async fn faults(state: &AppState) -> Vec<Value> {
         .clone()
 }
 
-// A store of version 0.0.1 with one task in `todo`, opened again by a daemon that knows `versions`.
+// A store of version 0.0.2 with one task in `todo`, opened again by a daemon that knows `versions`.
 fn reopened(dir: &std::path::Path, versions: &'static StoreVersions) -> AppState {
     let first = local_project(PROJECT, dir, "OPP");
     first
@@ -98,12 +97,12 @@ async fn a_newer_store_version_serves_no_task_and_says_which_release_reads_it() 
     assert_eq!(faults[0]["kind"], "newer_store_version");
     assert_eq!(
         faults[0]["message"],
-        "these tasks use store version 0.0.2, and this openplan reads store versions up to 0.0.1; they need a \
+        "these tasks use store version 0.0.3, and this openplan reads store versions up to 0.0.2; they need a \
          newer openplan; run `openplan update`"
     );
     let tasks = send(&state, "GET", "/api/projects/test/tasks", None).await;
     assert_eq!(tasks.status(), StatusCode::CONFLICT);
-    assert!(message_of(&body_json(tasks).await).contains("store version 0.0.2"));
+    assert!(message_of(&body_json(tasks).await).contains("store version 0.0.3"));
 }
 
 #[tokio::test]
@@ -146,8 +145,7 @@ async fn a_daemon_migrates_an_older_store_by_itself_when_a_release_reads_the_new
 
     assert_eq!(
         config(&state),
-        "version = \"0.0.2\"
-abbreviation = \"OPP\"\n"
+        "version = \"0.0.3\"\nabbreviation = \"OPP\"\n"
     );
     assert!(faults(&state).await.is_empty());
     let task = json_of(&state, "/api/projects/test/tasks/OPP-1").await;
@@ -155,7 +153,7 @@ abbreviation = \"OPP\"\n"
     let history = json_of(&state, "/api/projects/test/history").await;
     assert_eq!(
         history[0]["summary"],
-        json!(["Migrate the tasks from store version 0.0.1 to 0.0.2"])
+        json!(["Migrate the tasks from store version 0.0.2 to 0.0.3"])
     );
 }
 
@@ -164,10 +162,7 @@ async fn a_canary_serves_an_older_store_read_only_until_someone_migrates_it() {
     let dir = tempfile::tempdir().unwrap();
     let state = reopened(dir.path(), &UNRELEASED);
 
-    assert!(config(&state).starts_with(
-        "version = \"0.0.1\"
-"
-    ));
+    assert!(config(&state).starts_with("version = \"0.0.2\"\n"));
     let faults_before = faults(&state).await;
     assert_eq!(
         faults_before[0]["kind"], "older_store_version",
@@ -189,7 +184,7 @@ async fn a_canary_serves_an_older_store_read_only_until_someone_migrates_it() {
     assert_eq!(migrated.status(), StatusCode::OK);
     assert_eq!(
         body_json(migrated).await,
-        json!({ "project": "test", "from": "0.0.1", "version": "0.0.2" })
+        json!({ "project": "test", "from": "0.0.2", "version": "0.0.3" })
     );
     assert!(faults(&state).await.is_empty());
     create(&state, "Next").await;
@@ -203,5 +198,23 @@ async fn a_migration_of_a_store_in_the_current_store_version_changes_nothing() {
     assert_eq!(
         body_json(migrated).await,
         json!({ "project": "test", "version": STORE_VERSIONS.current().to_string() })
+    );
+}
+
+#[tokio::test]
+async fn a_daemon_adds_the_version_key_to_a_store_from_before_the_store_versions() {
+    let (_dir, state) = local_state();
+
+    seed(&state, &[("config.toml", "abbreviation = \"OPP\"\n")]);
+
+    assert_eq!(
+        config(&state),
+        "version = \"0.0.2\"\nabbreviation = \"OPP\"\n"
+    );
+    assert!(faults(&state).await.is_empty());
+    let history = json_of(&state, "/api/projects/test/history").await;
+    assert_eq!(
+        history[0]["summary"],
+        json!(["Migrate the tasks from store version 0.0.1 to 0.0.2"])
     );
 }

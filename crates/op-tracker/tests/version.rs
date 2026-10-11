@@ -12,7 +12,7 @@ use op_tracker::{
 };
 use semver::Version;
 
-// Store version 0.0.2 of these tests spells the status `todo` as `backlog`.
+// Store version 0.0.3 of these tests spells the status `todo` as `backlog`.
 fn backlog_for_todo(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
     let mut ops = Vec::new();
     for path in snapshot.list("tasks")? {
@@ -26,8 +26,8 @@ fn backlog_for_todo(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
 }
 
 const FIRST: StoreVersion = StoreVersion {
-    version: Version::new(0, 0, 1),
-    released: Some("0.0.1"),
+    version: Version::new(0, 0, 2),
+    released: Some("0.0.2"),
     migrate: None,
 };
 
@@ -35,7 +35,7 @@ static RELEASED: StoreVersions = StoreVersions {
     known: &[
         FIRST,
         StoreVersion {
-            version: Version::new(0, 0, 2),
+            version: Version::new(0, 0, 3),
             released: Some("0.0.9"),
             migrate: Some(backlog_for_todo),
         },
@@ -47,7 +47,7 @@ static UNRELEASED: StoreVersions = StoreVersions {
     known: &[
         FIRST,
         StoreVersion {
-            version: Version::new(0, 0, 2),
+            version: Version::new(0, 0, 3),
             released: None,
             migrate: Some(backlog_for_todo),
         },
@@ -57,12 +57,12 @@ static UNRELEASED: StoreVersions = StoreVersions {
 
 static RETIRING: StoreVersions = StoreVersions {
     known: &[StoreVersion {
-        version: Version::new(0, 0, 2),
+        version: Version::new(0, 0, 3),
         released: Some("0.0.9"),
         migrate: None,
     }],
     retired: &[Retired {
-        version: Version::new(0, 0, 1),
+        version: Version::new(0, 0, 2),
         last_release: "0.0.9",
     }],
 };
@@ -81,7 +81,7 @@ struct Store {
 }
 
 impl Store {
-    // A store of version 0.0.1 with one task in `todo`.
+    // A store of version 0.0.2 with one task in `todo`.
     fn first() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         let backend: Arc<dyn Backend> = Arc::new(
@@ -130,19 +130,50 @@ fn a_store_starts_in_the_newest_store_version() {
     let store = Store::first();
     assert_eq!(
         store.config(),
-        "version = \"0.0.1\"
-abbreviation = \"OPP\"\n"
+        "version = \"0.0.2\"\nabbreviation = \"OPP\"\n"
     );
 }
 
 #[test]
-fn an_older_store_reads_as_migrated_and_refuses_a_write_until_it_migrates() {
+fn an_older_store_reads_as_migrated_and_migrates_before_a_write() {
     let store = Store::first();
     let tracker = store.tracker(&RELEASED);
 
     let plan = tracker.plan().expect("plan");
-    assert_eq!(plan.migrated_from(), Some(&Version::new(0, 0, 1)));
+    assert_eq!(plan.migrated_from(), Some(&Version::new(0, 0, 2)));
     assert_eq!(status(&tracker), Status::Backlog);
+
+    tracker
+        .create_task(&actor(), &Task::new("Next", Status::Todo, stamp()))
+        .expect("a write migrates the store first");
+
+    assert_eq!(
+        store.config(),
+        "version = \"0.0.3\"\nabbreviation = \"OPP\"\n"
+    );
+    assert_eq!(tracker.plan().expect("plan").migrated_from(), None);
+    let messages: Vec<String> = tracker
+        .history(&HistoryQuery::default())
+        .expect("history")
+        .into_iter()
+        .take(2)
+        .map(|entry| entry.revision.message)
+        .collect();
+    assert_eq!(
+        messages,
+        vec![
+            "OPP-2: create \"Next\"",
+            "Migrate the tasks from store version 0.0.2 to 0.0.3"
+        ]
+    );
+    assert_eq!(tracker.migrate(&actor()).expect("migrate again"), None);
+}
+
+#[test]
+fn an_older_store_refuses_a_write_until_someone_migrates_it_to_an_unreleased_version() {
+    let store = Store::first();
+    let tracker = store.tracker(&UNRELEASED);
+
     let refused = tracker.create_task(&actor(), &Task::new("Next", Status::Todo, stamp()));
     assert!(
         matches!(
@@ -154,20 +185,39 @@ fn an_older_store_reads_as_migrated_and_refuses_a_write_until_it_migrates() {
 
     assert_eq!(
         tracker.migrate(&actor()).expect("migrate"),
-        Some(Version::new(0, 0, 1))
+        Some(Version::new(0, 0, 2))
     );
-
-    assert_eq!(
-        store.config(),
-        "version = \"0.0.2\"
-abbreviation = \"OPP\"\n"
-    );
-    assert_eq!(tracker.plan().expect("plan").migrated_from(), None);
-    assert_eq!(status(&tracker), Status::Backlog);
-    assert_eq!(tracker.migrate(&actor()).expect("migrate again"), None);
     tracker
         .create_task(&actor(), &Task::new("Next", Status::Todo, stamp()))
         .expect("a write after the migration");
+}
+
+#[test]
+fn a_store_from_before_the_store_versions_gets_the_version_key() {
+    let store = Store::first();
+    store
+        .backend
+        .commit(&actor(), &mut |_| {
+            Ok(op_backend::Edit::new(
+                "Write the config of an older openplan",
+                vec![Op::put("config.toml", "abbreviation = \"OPP\"\n")],
+            ))
+        })
+        .expect("commit");
+    let tracker = Tracker::new(Arc::clone(&store.backend));
+    assert_eq!(
+        tracker.plan().expect("plan").migrated_from(),
+        Some(&Version::new(0, 0, 1))
+    );
+
+    tracker
+        .update_task(&actor(), 1, |_| Ok(()))
+        .expect("a write migrates the store first");
+
+    assert_eq!(
+        store.config(),
+        "version = \"0.0.2\"\nabbreviation = \"OPP\"\n"
+    );
 }
 
 #[test]
@@ -179,12 +229,12 @@ fn the_history_names_the_migration_and_reads_older_revisions_as_migrated() {
     let entries = tracker.history(&HistoryQuery::default()).expect("history");
     assert_eq!(
         entries[0].revision.message,
-        "Migrate the tasks from store version 0.0.1 to 0.0.2"
+        "Migrate the tasks from store version 0.0.2 to 0.0.3"
     );
     let described = tracker.describe(&entries[0]).expect("describe");
     assert_eq!(
         described.lines(None, None),
-        vec!["Migrate the tasks from store version 0.0.1 to 0.0.2"]
+        vec!["Migrate the tasks from store version 0.0.2 to 0.0.3"]
     );
     assert_eq!(
         tracker
@@ -212,7 +262,7 @@ fn a_store_of_a_newer_store_version_names_the_release_it_needs() {
     };
     assert_eq!(
         problem.to_string(),
-        "these tasks use store version 0.0.2, and this openplan reads store versions up to 0.0.1; they need a \
+        "these tasks use store version 0.0.3, and this openplan reads store versions up to 0.0.2; they need a \
          newer openplan"
     );
     assert!(matches!(
@@ -235,7 +285,7 @@ fn a_retired_store_version_names_the_last_release_that_migrates_it() {
     };
     assert_eq!(
         problem.to_string(),
-        "these tasks use store version 0.0.1, and this openplan migrates only store version 0.0.2 and newer; \
+        "these tasks use store version 0.0.2, and this openplan migrates only store version 0.0.3 and newer; \
          run openplan 0.0.9 on this project once to migrate them, then update"
     );
 }
@@ -350,8 +400,8 @@ impl Member {
     }
 }
 
-// Alice starts the tasks in store version 0.0.1, and Bob migrates them to 0.0.2 and pushes.
-// Alice then writes a task in 0.0.1 before her next sync.
+// Alice starts the tasks in store version 0.0.2, and Bob migrates them to 0.0.3 and pushes.
+// Alice then writes a task in 0.0.2 before her next sync.
 fn diverged(root: &Path, alice_policy: TaskMergePolicy) -> Member {
     git(
         root,
@@ -368,7 +418,7 @@ fn diverged(root: &Path, alice_policy: TaskMergePolicy) -> Member {
     bob.sync().expect("sync");
     bob.tracker.migrate(&actor()).expect("migrate");
     bob.sync().expect("sync");
-    alice.create("Written in store version 0.0.1");
+    alice.create("Written in store version 0.0.2");
     alice
 }
 
@@ -404,7 +454,7 @@ fn a_sync_stops_on_a_store_version_this_binary_cannot_read_and_says_so() {
     let stopped = alice.sync();
 
     assert!(
-        matches!(&stopped, Err(BackendError::Sync(reason)) if reason.contains("store version 0.0.2")),
+        matches!(&stopped, Err(BackendError::Sync(reason)) if reason.contains("store version 0.0.3")),
         "{stopped:?}"
     );
     assert!(matches!(

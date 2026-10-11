@@ -35,13 +35,27 @@ pub struct StoreVersions {
 
 // `mise run release` stamps its version on each store version that no release reads yet.
 pub static STORE_VERSIONS: StoreVersions = StoreVersions {
-    known: &[StoreVersion {
-        version: FIRST_VERSION,
-        released: Some("0.0.1"),
-        migrate: None,
-    }],
+    known: &[
+        StoreVersion {
+            version: FIRST_VERSION,
+            released: Some("0.0.1"),
+            migrate: None,
+        },
+        // Every release reads it, because a release from before the store versions ignores the
+        // `version` key.
+        StoreVersion {
+            version: Version::new(0, 0, 2),
+            released: Some("0.0.1"),
+            migrate: Some(with_the_version_key),
+        },
+    ],
     retired: &[],
 };
+
+// The migration itself writes the `version` key, and that key is all that store version 0.0.2 adds.
+fn with_the_version_key(_: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
+    Ok(Vec::new())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum VersionError {
