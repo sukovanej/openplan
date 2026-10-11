@@ -231,7 +231,10 @@ fn init_in_a_clone_joins_the_tasks_on_the_remote() {
 // alone, and a change to one task.
 fn repository_with_plan(root: &Path) {
     git_repo(root);
-    write(&root.join(".plan/config.toml"), "project_code = \"OPP\"\nversion = 3\n");
+    write(
+        &root.join(".plan/config.toml"),
+        "project_code = \"OPP\"\nversion = 3\n",
+    );
     write(
         &root.join(".plan/tasks/00001-alpha.md"),
         "---\nstatus: todo\ncreated: 2001-01-01T00:00:00Z\n---\n# Alpha\n",
