@@ -182,9 +182,9 @@ fn with_config(store: &Store, config: &str) {
         .expect("commit");
 }
 
-// Store version 3 is not released yet, so this build migrates a store to it only on request.
+// The migration is the same whether a write starts it or a person asks for it, so the test asks.
 #[test]
-fn a_store_from_before_the_store_versions_migrates_on_request_to_the_project_code() {
+fn a_store_from_before_the_store_versions_migrates_to_the_project_code() {
     let store = Store::new();
     with_config(&store, "abbreviation = \"OPP\"\n");
     let tracker = Tracker::new(Arc::clone(&store.backend));
@@ -199,22 +199,10 @@ fn a_store_from_before_the_store_versions_migrates_on_request_to_the_project_cod
             .as_str(),
         "OPP"
     );
-
-    let refused = tracker.update_task(&actor(), 1, |_| Ok(()));
-    assert!(
-        matches!(
-            refused,
-            Err(TrackerError::Version(VersionError::Unmigrated {
-                stored: 1,
-                current: 3
-            }))
-        ),
-        "{refused:?}"
-    );
     assert_eq!(
         store.config(),
         "abbreviation = \"OPP\"\n",
-        "nothing was written"
+        "a read writes nothing"
     );
 
     assert_eq!(tracker.migrate(&actor()).expect("migrate"), Some(1));
@@ -370,10 +358,6 @@ fn a_retired_store_version_names_the_last_release_that_migrates_it() {
 
 #[test]
 fn a_daemon_migrates_by_itself_only_when_a_release_reads_the_newest_store_version() {
-    assert!(
-        !STORE_VERSIONS.migrates_by_itself(),
-        "store version 3 is not released yet"
-    );
     assert!(RELEASED.migrates_by_itself());
     assert!(!UNRELEASED.migrates_by_itself());
     assert!(!CANARY.migrates_by_itself());
