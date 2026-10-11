@@ -152,6 +152,10 @@ export type DocumentChangeKind = "added" | "modified" | "removed"
 export const DocumentChangeKind = Schema.Literals(["added", "modified", "removed"]).annotate({
   identifier: "DocumentChangeKind",
 })
+export type StoreVersionChange = { readonly from: string; readonly to: string }
+export const StoreVersionChange = Schema.Struct({ from: Schema.String, to: Schema.String }).annotate({
+  identifier: "StoreVersionChange",
+})
 export type DocText = { readonly body: string; readonly title: string }
 export const DocText = Schema.Struct({ body: Schema.String, title: Schema.String }).annotate({ identifier: "DocText" })
 export type Migration = { readonly from?: string; readonly project: string; readonly version: string }
@@ -703,6 +707,7 @@ export type HistoryEntry = {
   readonly changes: ReadonlyArray<DocumentChange>
   readonly docs: ReadonlyArray<DocChange>
   readonly revision: RevisionView
+  readonly store_version?: StoreVersionChange
   readonly summary: ReadonlyArray<string>
   readonly tags: ReadonlyArray<TagChange>
   readonly tasks: ReadonlyArray<TaskChange>
@@ -711,6 +716,7 @@ export const HistoryEntry = Schema.Struct({
   changes: Schema.Array(DocumentChange),
   docs: Schema.Array(DocChange),
   revision: RevisionView,
+  store_version: Schema.optionalKey(StoreVersionChange),
   summary: Schema.Array(Schema.String),
   tags: Schema.Array(TagChange),
   tasks: Schema.Array(TaskChange),

@@ -569,9 +569,10 @@ impl Tracker {
             _ => None,
         };
         let mut described = describe::describe(&changes, &before, &after, moved_from.as_deref())?;
+        // Only a hand edit moves a store to an older version, and that reads as an edit of the config.
         described.version = from
             .zip(to)
-            .filter(|(from, to)| from != to)
+            .filter(|(from, to)| from < to)
             .map(|(from, to)| VersionChange { from, to });
         Ok(described)
     }

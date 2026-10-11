@@ -217,4 +217,9 @@ async fn a_daemon_adds_the_version_key_to_a_store_from_before_the_store_versions
         history[0]["summary"],
         json!(["Migrate the tasks from store version 0.0.1 to 0.0.2"])
     );
+    assert_eq!(
+        history[0]["store_version"],
+        json!({ "from": "0.0.1", "to": "0.0.2" })
+    );
+    assert!(history[1].get("store_version").is_none(), "{}", history[1]);
 }

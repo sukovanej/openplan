@@ -88,6 +88,14 @@ describe("the rows of a revision in the activity", () => {
     expect(rows).toHaveLength(SHOWN_CHANGES + 1)
     expect(rows.at(-1)).toEqual({ kind: "more", count: 3 })
   })
+
+  it("shows a migration as a row of its own, in place of the config", () => {
+    const storeVersion = { from: "0.0.1", to: "0.0.2" }
+    const migrated = { ...entry("r", [{ path: "config.toml", kind: "modified" }]), store_version: storeVersion }
+    const rows = activityRows(migrated)
+    expect(rows).toEqual([{ kind: "store_version", change: storeVersion }])
+    expect(diffTarget(migrated, rows[0])).toEqual({ path: "config.toml" })
+  })
 })
 
 describe("where a change leads", () => {
