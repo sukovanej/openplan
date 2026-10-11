@@ -157,9 +157,9 @@ async fn a_retired_store_version_serves_no_task_and_hides_the_project() {
     assert!(message.contains("Run openplan 0.0.9"), "{message}");
 }
 
-// Store version 3 is not released yet, so this build migrates a store to it only on request.
+// The migration is the same whether a write starts it or a person asks for it, so the test asks.
 #[tokio::test]
-async fn a_store_from_before_the_store_versions_serves_its_tasks_and_migrates_on_request() {
+async fn a_store_from_before_the_store_versions_serves_its_tasks_and_migrates() {
     let (_dir, state) = local_state();
     create(&state, "Ship it").await;
     seed(&state, &[("config.toml", "abbreviation = \"OPP\"\n")]);
@@ -169,20 +169,8 @@ async fn a_store_from_before_the_store_versions_serves_its_tasks_and_migrates_on
         "abbreviation = \"OPP\"\n",
         "a read writes nothing"
     );
-    let faults_before = faults(&state).await;
-    assert_eq!(
-        faults_before[0]["kind"], "older_store_version",
-        "{faults_before:?}"
-    );
     let task = json_of(&state, "/api/projects/test/tasks/OPP-1").await;
     assert_eq!(task["title"], "Ship it");
-    refused(
-        &state,
-        "POST",
-        "/api/projects/test/tasks",
-        Some(json!({ "title": "Next" })),
-    )
-    .await;
 
     let migrated = send(&state, "POST", "/api/projects/test/migrate", None).await;
     assert_eq!(

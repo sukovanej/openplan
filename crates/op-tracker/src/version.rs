@@ -47,7 +47,7 @@ pub static STORE_VERSIONS: StoreVersions = StoreVersions {
         },
         StoreVersion {
             number: 3,
-            released: None,
+            released: Some("0.0.8"),
             migrate: Some(with_the_project_code_key),
         },
     ],

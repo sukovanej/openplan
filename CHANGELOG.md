@@ -5,7 +5,9 @@ All notable changes to openplan are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.7...main)
+## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.8...main)
+
+## [0.0.8](https://github.com/sukovanej/openplan/compare/v0.0.7...v0.0.8) - 2026-10-11
 
 ### Added
 
@@ -15,11 +17,32 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   creates the task and opens its page. `⇧⌘⏎` creates it and keeps the dialog open for the next
   task, with the same project and tags. The dialog keeps the draft when you
   close it.
+- `openplan project code XYZ` changes the letters that every task key starts with,
+  for example from `OPP-42` to `XYZ-42`. Each task keeps its number. The activity
+  page shows the change as one row.
+- The tasks of each project record a store version in `config.toml`. openplan
+  reads an older store and migrates it at the first write, in a revision of its
+  own. The activity page shows the migration as one row.
+- A store that only a newer openplan reads gives a fault, and the daemon looks
+  for an update at once.
+- `openplan migrate` also moves the tasks to the store version of this openplan.
 
 ### Changed
 
 - The shortcut badges use the UI font. On a Mac they show a chord the way macOS
   does, for example `⇧⌘⏎`.
+- The abbreviation is now the project code. Start the tasks with
+  `openplan init --project-code ABC`. `--abbreviation` still works. The HTTP API
+  and `openplan project list --json` name the field `project_code`.
+- This release moves the tasks of each project to store version 3 at the first
+  write. A release before 0.0.8 cannot read them after that, so update each
+  openplan that shares the tasks.
+- The CLI checks the API version of the daemon. A newer CLI starts the daemon
+  again on itself. An older CLI stops and says which openplan to update.
+
+### Fixed
+
+- Blue text is easy to see in the dark theme.
 
 ## [0.0.7](https://github.com/sukovanej/openplan/compare/v0.0.6...v0.0.7) - 2026-10-08
 
