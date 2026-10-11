@@ -50,14 +50,14 @@ fn a_task_path_carries_its_number_and_title() {
 
 #[test]
 fn the_config_round_trips() {
-    let config = Config::parse("abbreviation = \"OPP\"\n").expect("config");
-    assert_eq!(config.abbreviation.as_str(), "OPP");
+    let config = Config::parse("project_code = \"OPP\"\n").expect("config");
+    assert_eq!(config.project_code.as_str(), "OPP");
     assert_eq!(
         Config::parse(&config.to_file_string()).expect("config"),
         config
     );
     assert!(Config::parse("").is_err());
-    assert!(Config::parse("abbreviation = \"op\"").is_err());
+    assert!(Config::parse("project_code = \"op\"").is_err());
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn a_config_without_a_version_is_the_first_store_version() {
 
 #[test]
 fn the_version_reads_from_a_config_whose_other_keys_it_does_not_know() {
-    let text = "version = 7\nproject_code = \"OPP\"\n";
+    let text = "version = 7\nletters = \"OPP\"\n";
     assert_eq!(config::version(text).expect("version"), 7);
     assert!(Config::parse(text).is_err());
 }
@@ -98,9 +98,27 @@ fn a_restamp_moves_only_the_version_and_keeps_every_other_key() {
 
 #[test]
 fn a_new_config_reads_as_a_restamped_one() {
-    let config = Config::new(2, "OPP".parse().expect("abbreviation"));
+    let config = Config::new(3, "OPP".parse().expect("project_code"));
     assert_eq!(
         config.to_file_string(),
-        config::restamp("abbreviation = \"OPP\"\n", 2).expect("restamp")
+        config::restamp("project_code = \"OPP\"\n", 3).expect("restamp")
+    );
+}
+
+#[test]
+fn a_rename_of_a_key_keeps_its_value_and_every_other_key() {
+    assert_eq!(
+        config::renamed(
+            "abbreviation = \"OPP\"\nlater = 1\n",
+            "abbreviation",
+            "project_code"
+        )
+        .expect("rename"),
+        "later = 1\nproject_code = \"OPP\"\n"
+    );
+    assert_eq!(
+        config::renamed("project_code = \"OPP\"\n", "abbreviation", "project_code")
+            .expect("rename"),
+        "project_code = \"OPP\"\n"
     );
 }

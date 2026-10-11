@@ -29,12 +29,12 @@ const type = (textarea: HTMLTextAreaElement, text: string) =>
   })
 
 function resolved(onResolve: (text: string) => void) {
-  return render(<BodyConflict project="openplan" abbreviation="OPP" conflict={conflict} onResolve={onResolve} />)
+  return render(<BodyConflict project="openplan" projectCode="OPP" conflict={conflict} onResolve={onResolve} />)
 }
 
 describe("BodyConflict", () => {
   it("renders each version as markdown under its label, the published one in force", () => {
-    const container = render(<BodyConflict project="openplan" abbreviation="OPP" conflict={conflict} />)
+    const container = render(<BodyConflict project="openplan" projectCode="OPP" conflict={conflict} />)
     const versions = [...container.querySelectorAll("[role=group]")]
     expect(versions.map((each) => each.getAttribute("aria-label"))).toEqual(["Ann (a1b2c3d)", "Ben (e4f5a6b)"])
     expect(versions[0].querySelector("strong")?.textContent).toBe("OAuth")
@@ -43,7 +43,7 @@ describe("BodyConflict", () => {
   })
 
   it("offers no button when nothing can resolve the block", () => {
-    const container = render(<BodyConflict project="openplan" abbreviation="OPP" conflict={conflict} />)
+    const container = render(<BodyConflict project="openplan" projectCode="OPP" conflict={conflict} />)
     expect(container.querySelectorAll("button")).toHaveLength(0)
   })
 
@@ -81,7 +81,7 @@ describe("BodyConflict", () => {
 
   it("holds its buttons while a resolve is on its way", () => {
     const container = render(
-      <BodyConflict project="openplan" abbreviation="OPP" conflict={conflict} onResolve={() => {}} pending />,
+      <BodyConflict project="openplan" projectCode="OPP" conflict={conflict} onResolve={() => {}} pending />,
     )
     expect(named(container, "Keep both")?.disabled).toBe(true)
     expect(named(container, "Edit")?.disabled).toBe(true)
@@ -94,7 +94,7 @@ describe("TaskBodyWithConflicts", () => {
     const container = render(
       <TaskBodyWithConflicts
         project="openplan"
-        abbreviation="OPP"
+        projectCode="OPP"
         segments={bodySegments(`## Login\n\n${BLOCK}\nThe end.\n`)}
         onResolve={(block, text) => sent.push([block, text])}
       />,
@@ -107,7 +107,7 @@ describe("TaskBodyWithConflicts", () => {
 
   it("renders a body without blocks as one body", () => {
     const container = render(
-      <TaskBodyWithConflicts project="openplan" abbreviation="OPP" segments={bodySegments("Just text.\n")} />,
+      <TaskBodyWithConflicts project="openplan" projectCode="OPP" segments={bodySegments("Just text.\n")} />,
     )
     expect(container.querySelectorAll("article")).toHaveLength(1)
     expect(container.querySelector("section")).toBeNull()

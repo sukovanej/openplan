@@ -343,7 +343,7 @@ async fn a_fault_that_starts_or_ends_is_announced() {
     assert_eq!(faults[0]["project"], PROJECT);
     assert_eq!(faults[0]["kind"], "unreadable");
 
-    write_config(&state, "abbreviation = \"OPP\"\n");
+    write_config(&state, "project_code = \"OPP\"\nversion = 3\n");
     events.find("faults_changed").await;
     assert_eq!(json_of(&state, "/api/faults").await, json!([]));
 }

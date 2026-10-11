@@ -17,7 +17,7 @@ use wiring::{nodes, wire};
 
 // Which tasks the flow grows from. Values of one field are alternatives, and the fields narrow each
 // other; an empty field puts no condition of its own. A named task carries its project, because two
-// stores can commit the same abbreviation and a bare key would then name two tasks.
+// stores can commit the same project code and a bare key would then name two tasks.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FlowQuery {
     pub projects: Vec<String>,

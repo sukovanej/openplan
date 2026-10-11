@@ -9,14 +9,14 @@ use op_api::{
 };
 use op_backend::{Actor, Change, ChangeKind, LogEntry, Timestamp};
 use op_task::reference::{self, Target};
-use op_task::{Abbreviation, FieldError, layout};
+use op_task::{FieldError, ProjectCode, layout};
 use op_tracker::{Plan, TrackerError, doc_moves};
 
 use crate::problems::{Place, Unpathed};
 
 #[derive(Debug, Default)]
 pub struct Index {
-    abbreviation: Option<Abbreviation>,
+    project_code: Option<ProjectCode>,
     forge: Option<Forge>,
     tasks: BTreeMap<u64, Entry>,
     task_paths: BTreeMap<u64, String>,
@@ -74,13 +74,13 @@ impl Index {
 
     // Parses again only the tasks whose text changed since the last load.
     pub fn load(&mut self, plan: &Plan) -> Result<(), TrackerError> {
-        let abbreviation = plan.abbreviation().ok();
-        if abbreviation != self.abbreviation {
+        let project_code = plan.project_code().ok();
+        if project_code != self.project_code {
             self.tasks.clear();
             self.docs.clear();
-            self.abbreviation = abbreviation;
+            self.project_code = project_code;
         }
-        let Some(abbreviation) = abbreviation else {
+        let Some(project_code) = project_code else {
             self.tasks.clear();
             self.problems.clear();
             self.docs.clear();
@@ -97,7 +97,7 @@ impl Index {
             {
                 continue;
             }
-            self.tasks.insert(number, Entry::parse(text, abbreviation));
+            self.tasks.insert(number, Entry::parse(text, project_code));
         }
         self.task_paths = plan.paths().clone();
         self.problems = self.find_problems(plan.tag_names(), plan.shadowed());
@@ -107,9 +107,9 @@ impl Index {
     // Reads again only the tasks `numbers` names. The problems span tasks, so they cover all again.
     pub fn update(&mut self, plan: &Plan, numbers: &BTreeSet<u64>) -> Result<(), TrackerError> {
         let held = self
-            .abbreviation
-            .filter(|held| plan.abbreviation().ok() == Some(*held));
-        let Some(abbreviation) = held else {
+            .project_code
+            .filter(|held| plan.project_code().ok() == Some(*held));
+        let Some(project_code) = held else {
             return self.load(plan);
         };
         for &number in numbers {
@@ -126,7 +126,7 @@ impl Index {
                 .get(&number)
                 .is_none_or(|entry| entry.raw != text)
             {
-                self.tasks.insert(number, Entry::parse(text, abbreviation));
+                self.tasks.insert(number, Entry::parse(text, project_code));
             }
         }
         self.task_paths = plan.paths().clone();
@@ -210,19 +210,19 @@ impl Index {
         self.authors.contains_key(&number)
     }
 
-    pub fn abbreviation(&self) -> Option<Abbreviation> {
-        self.abbreviation
+    pub fn project_code(&self) -> Option<ProjectCode> {
+        self.project_code
     }
 
     pub fn key(&self, number: u64) -> String {
-        match self.abbreviation {
-            Some(abbreviation) => abbreviation.format_key(number),
+        match self.project_code {
+            Some(project_code) => project_code.format_key(number),
             None => number.to_string(),
         }
     }
 
     pub fn number(&self, key: &str) -> Option<u64> {
-        self.abbreviation?.parse_key(key)
+        self.project_code?.parse_key(key)
     }
 
     pub fn contains(&self, number: u64) -> bool {
@@ -272,12 +272,12 @@ impl Index {
         })
     }
 
-    // Without the store's abbreviation no reference can be spelled as a key, so they keep the
+    // Without the store's project code no reference can be spelled as a key, so they keep the
     // spelling of the file.
     fn description_of(&self, body: &str) -> String {
         let description = op_task::content::split(&op_task::comment::strip(body));
-        match self.abbreviation {
-            Some(abbreviation) => op_api::body_to_keys(abbreviation, layout::TASKS, &description),
+        match self.project_code {
+            Some(project_code) => op_api::body_to_keys(project_code, layout::TASKS, &description),
             None => description,
         }
     }
@@ -392,7 +392,7 @@ impl Index {
 }
 
 impl Entry {
-    fn parse(raw: String, abbreviation: Abbreviation) -> Self {
+    fn parse(raw: String, project_code: ProjectCode) -> Self {
         let partial = op_task::parse_partial(&raw);
         let title = partial.title.clone().unwrap_or_default();
         let conflicts = partial.conflict_count();
@@ -403,9 +403,9 @@ impl Entry {
             .count();
         let body_refs = op_task::body_ref_spans(&text)
             .into_iter()
-            .filter_map(|(_, inner)| op_task::body_ref_id(abbreviation, layout::TASKS, inner))
+            .filter_map(|(_, inner)| op_task::body_ref_id(project_code, layout::TASKS, inner))
             .collect();
-        let mut unpathed = Unpathed::in_text(Some(abbreviation), layout::TASKS, &text);
+        let mut unpathed = Unpathed::in_text(Some(project_code), layout::TASKS, &text);
         let spellings = reference::frontmatter_spellings(&raw);
         let fields = spellings
             .parent
@@ -429,11 +429,11 @@ impl Entry {
                     })
                 }),
         );
-        let metadata = Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation);
+        let metadata = Metadata::from_partial(partial.metadata, &partial.conflicts, project_code);
         Self {
             titles,
             body_refs,
-            doc_refs: op_task::doc::body_doc_names(Some(abbreviation), layout::TASKS, &text),
+            doc_refs: op_task::doc::body_doc_names(Some(project_code), layout::TASKS, &text),
             unpathed,
             comment_problems: op_task::comment::problems(&partial.body),
             diagram_problems: diagram_problems(&raw),

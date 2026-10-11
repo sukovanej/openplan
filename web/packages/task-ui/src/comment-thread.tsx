@@ -12,11 +12,11 @@ import { TaskBody } from "./task-body"
 export function CommentThread({
   project,
   comments,
-  abbreviation,
+  projectCode,
 }: {
   project: string
   comments: ReadonlyArray<Comment>
-  abbreviation: string | undefined
+  projectCode: string | undefined
 }) {
   return (
     <Section title="Comments" count={comments.length}>
@@ -36,7 +36,7 @@ export function CommentThread({
               <TaskBody
                 project={project}
                 markdown={comment.text}
-                abbreviation={abbreviation}
+                projectCode={projectCode}
                 className="text-[15px] leading-6"
                 data-keys-ignore
               />

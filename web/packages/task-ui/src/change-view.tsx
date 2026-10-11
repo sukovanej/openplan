@@ -21,6 +21,7 @@ import {
 import { Fragment, type ReactNode } from "react"
 
 import type {
+  ProjectCodeChange,
   DocChange,
   DocumentChangeKind,
   FieldChange,
@@ -222,6 +223,20 @@ export function StoreVersionChangeView({ change, className }: { change: StoreVer
       <span className="inline-flex flex-wrap items-center gap-1.5">
         <Layers aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
         <span>Store version</span>
+        <span className="font-mono text-xs">{change.from}</span>
+        <ArrowRight aria-label="to" className="text-muted-foreground size-3.5 shrink-0" />
+        <span className="font-mono text-xs">{change.to}</span>
+      </span>
+    </Changes>
+  )
+}
+
+export function ProjectCodeChangeView({ change, className }: { change: ProjectCodeChange; className?: string }) {
+  return (
+    <Changes className={className}>
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <Hash aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+        <span>Task keys</span>
         <span className="font-mono text-xs">{change.from}</span>
         <ArrowRight aria-label="to" className="text-muted-foreground size-3.5 shrink-0" />
         <span className="font-mono text-xs">{change.to}</span>

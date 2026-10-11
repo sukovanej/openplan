@@ -11,7 +11,7 @@ use op_task::conflict::{self, Labels};
 use op_task::content::{self, Text};
 use op_task::layout;
 use op_task::tag::Tag;
-use op_task::{Abbreviation, PartialMetadata, Task, parse_partial};
+use op_task::{PartialMetadata, ProjectCode, Task, parse_partial};
 
 mod describe;
 mod docs;
@@ -22,7 +22,9 @@ mod plan;
 mod policy;
 mod version;
 
-pub use describe::{Described, DocChange, FieldChange, TagChange, TaskChange, VersionChange};
+pub use describe::{
+    ConfigChange, Described, DocChange, FieldChange, TagChange, TaskChange, VersionChange,
+};
 pub use docs::{DocMoves, doc_moves};
 pub use error::TrackerError;
 pub use plan::Plan;
@@ -109,7 +111,9 @@ impl Tracker {
         mut write: impl FnMut(&Plan) -> Result<(Vec<Op>, T), TrackerError>,
     ) -> Result<(Option<Committed>, T), TrackerError> {
         // A migration goes in a revision of its own, so the history shows it apart from the write.
-        self.migrate_to(actor, self.versions.newest_released())?;
+        if self.versions.migrates_by_itself() {
+            self.migrate_to(actor, self.versions.current())?;
+        }
         self.backend.transact(actor, |snapshot: Arc<dyn Snapshot>| {
             let plan = Plan::read_in(snapshot, self.versions)?;
             if let Some(problem) = plan.version_problem() {
@@ -129,16 +133,16 @@ impl Tracker {
     pub fn init(
         &self,
         actor: &Actor,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
     ) -> Result<Option<Committed>, TrackerError> {
         let (committed, ()) = self.write(actor, |plan| {
             match plan.config() {
-                Ok(config) if config.abbreviation == abbreviation => {
+                Ok(config) if config.project_code == project_code => {
                     return Ok((Vec::new(), ()));
                 }
                 Ok(config) => {
                     return Err(TrackerError::AlreadyInitialized(
-                        config.abbreviation.to_string(),
+                        config.project_code.to_string(),
                     ));
                 }
                 Err(TrackerError::NotInitialized) => {}
@@ -146,7 +150,7 @@ impl Tracker {
             }
             let mut ops = vec![Op::put(
                 layout::CONFIG,
-                Config::new(self.versions.current(), abbreviation).to_file_string(),
+                Config::new(self.versions.current(), project_code).to_file_string(),
             )];
             if plan.tag_names().is_empty() {
                 for tag in op_task::tag::defaults() {
@@ -187,6 +191,29 @@ impl Tracker {
                 ))
             })?;
         Ok(from)
+    }
+
+    // Task files and links hold numbers and paths, not keys, so only the config changes.
+    pub fn set_project_code(
+        &self,
+        actor: &Actor,
+        project_code: ProjectCode,
+    ) -> Result<Option<Committed>, TrackerError> {
+        let (committed, ()) = self.write(actor, |plan| {
+            if plan.config()?.project_code == project_code {
+                return Err(TrackerError::Invalid(format!(
+                    "the task keys already start with {project_code}"
+                )));
+            }
+            Ok((
+                vec![Op::put(
+                    layout::CONFIG,
+                    Config::new(self.versions.current(), project_code).to_file_string(),
+                )],
+                (),
+            ))
+        })?;
+        Ok(committed)
     }
 
     pub fn create_task(&self, actor: &Actor, task: &Task) -> Result<Created, TrackerError> {
@@ -546,10 +573,10 @@ impl Tracker {
             Some(view) => view.read(path),
             None => raw_after(path),
         };
+        let migrates = from.zip(to).is_some_and(|(from, to)| from < to);
         let mut changes = Vec::new();
         for change in &entry.changes {
-            let rewritten_alike = (before_view.is_some() || after_view.is_some())
-                && before(&change.path)? == after(&change.path)?;
+            let rewritten_alike = migrates && before(&change.path)? == after(&change.path)?;
             if !rewritten_alike {
                 changes.push(change.clone());
             }

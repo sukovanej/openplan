@@ -88,9 +88,9 @@ To change the layout, add a store version to the end of `STORE_VERSIONS`:
 - Add a store of the old version to the tests, and check what the migration makes of it.
 
 A daemon reads an older store as migrated in memory, and it writes the migration at the next
-write. It migrates by itself only as far as a release reads. Until a release reads the newest
-store version, a canary or a source build refuses each write to an older store, and
-`openplan migrate` migrates it on request.
+write. It migrates by itself only when a release reads the newest store version. Until then, a
+canary or a source build refuses each write to an older store, and `openplan migrate` migrates it
+on request.
 
 To stop migrating from the oldest store version, remove its entry, remove `migrate` from the next
 one, and add the oldest store version to `retired` with the last release that migrates it.

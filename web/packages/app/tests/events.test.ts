@@ -141,7 +141,7 @@ it("faults_changed re-reads only the faults", () => {
   expect(calls).toEqual({ ...quiet, faults: 1 })
 })
 
-// The event names no project, and an abbreviation spells every id on screen, so the project list
+// The event names no project, and a project code spells every id on screen, so the project list
 // and every read there is are re-read.
 it("projects_changed re-reads the projects and everything on screen", () => {
   const { inv, calls } = spy()

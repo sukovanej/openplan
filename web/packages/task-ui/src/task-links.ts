@@ -22,13 +22,13 @@ const DOC_FILE = /^\.\.\/docs\/([^/]+)\.md$/
 // A body's references name tasks of the store the body lives in, so they resolve in that project.
 export interface TaskLinkSource {
   readonly project: string
-  readonly abbreviation: string | undefined
+  readonly projectCode: string | undefined
 }
 
-function refKey(target: string, abbreviation: string): string | null {
+function refKey(target: string, projectCode: string): string | null {
   const file = TASK_FILE.exec(target)
-  if (file !== null) return `${abbreviation}-${Number(file[1])}`
-  const prefix = `${abbreviation}-`
+  if (file !== null) return `${projectCode}-${Number(file[1])}`
+  const prefix = `${projectCode}-`
   return target.startsWith(prefix) && NUMBER.test(target.slice(prefix.length)) ? target : null
 }
 
@@ -44,11 +44,11 @@ export type Referenced =
   | { readonly kind: "task"; readonly id: string; readonly section: string | undefined }
   | { readonly kind: "doc"; readonly name: string; readonly section: string | undefined }
 
-// The text between `[[` and `]]`, resolved in the store `abbreviation` names: this store's key names
+// The text between `[[` and `]]`, resolved in the store `projectCode` names: this store's key names
 // a task, and a doc name names a doc.
-export function referenced(inner: string, abbreviation: string): Referenced | null {
+export function referenced(inner: string, projectCode: string): Referenced | null {
   const { id: target, section } = taskReference(inner.trim())
-  const id = refKey(target, abbreviation)
+  const id = refKey(target, projectCode)
   if (id !== null) return { kind: "task", id, section }
   const name = DOC_FILE.exec(target)?.[1] ?? target
   return DOC_NAME.test(name) && !DIGITS.test(name) ? { kind: "doc", name, section } : null
@@ -64,16 +64,16 @@ export function taskRefMatches(value: string): Iterable<RegExpExecArray> {
   return value.matchAll(TASK_REF)
 }
 
-// Without the store's abbreviation nothing can be told from another store's spelling, so every
+// Without the store's project code nothing can be told from another store's spelling, so every
 // reference stays literal until the config arrives — and re-renders once it has.
 export function splitTaskRefs(value: string, source: TaskLinkSource): Array<Text | Link> | null {
-  const { project, abbreviation } = source
-  if (abbreviation === undefined) return null
+  const { project, projectCode } = source
+  if (projectCode === undefined) return null
   const nodes: Array<Text | Link> = []
   let last = 0
   for (const match of taskRefMatches(value)) {
     const inner = match[1].trim()
-    const reference = referenced(inner, abbreviation)
+    const reference = referenced(inner, projectCode)
     if (reference === null) continue
     const url = referencePath(project, reference)
     const start = match.index

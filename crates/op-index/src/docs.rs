@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashSet};
 use op_api::{DocChild, DocDetail, DocListItem, DocMetadata, Problem, ProblemCode, updated_field};
 use op_backend::Timestamp;
 use op_task::reference::{self, Target};
-use op_task::{Abbreviation, FieldError, FieldResult, layout};
+use op_task::{FieldError, FieldResult, ProjectCode, layout};
 use op_tracker::{Plan, TrackerError};
 
 use crate::Index;
@@ -24,12 +24,12 @@ pub(crate) struct DocEntry {
 }
 
 impl DocEntry {
-    fn parse(raw: String, abbreviation: Option<Abbreviation>) -> Self {
+    fn parse(raw: String, project_code: Option<ProjectCode>) -> Self {
         let partial = op_task::doc::parse_partial(&raw);
         let text = op_task::conflict::published(&partial.body);
         let targets: Vec<Target> = op_task::body_ref_spans(&text)
             .into_iter()
-            .filter_map(|(_, inner)| reference::body_target(abbreviation, layout::DOCS, inner))
+            .filter_map(|(_, inner)| reference::body_target(project_code, layout::DOCS, inner))
             .collect();
         Self {
             title: partial.title.clone().unwrap_or_default(),
@@ -51,7 +51,7 @@ impl DocEntry {
                     Target::Task(_) => None,
                 })
                 .collect(),
-            unpathed: Unpathed::in_text(abbreviation, layout::DOCS, &text),
+            unpathed: Unpathed::in_text(project_code, layout::DOCS, &text),
             raw,
         }
     }
@@ -91,7 +91,7 @@ impl Index {
     fn put_doc(&mut self, name: String, text: String) {
         if self.docs.get(&name).is_none_or(|entry| entry.raw != text) {
             self.docs
-                .insert(name, DocEntry::parse(text, self.abbreviation));
+                .insert(name, DocEntry::parse(text, self.project_code));
         }
     }
 
@@ -211,11 +211,11 @@ impl Index {
         })
     }
 
-    // Without the store's abbreviation no reference can be spelled as a key, so the body keeps the
+    // Without the store's project code no reference can be spelled as a key, so the body keeps the
     // spelling of the file.
     fn body_of(&self, content: &str) -> String {
-        match self.abbreviation {
-            Some(abbreviation) => op_api::body_to_keys(abbreviation, layout::DOCS, content),
+        match self.project_code {
+            Some(project_code) => op_api::body_to_keys(project_code, layout::DOCS, content),
             None => content.to_owned(),
         }
     }

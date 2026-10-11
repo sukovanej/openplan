@@ -234,7 +234,7 @@ impl Project {
             root: tempfile::tempdir().unwrap(),
         };
         git_repo(project.path());
-        let mut args = vec!["init", "--abbreviation", "OPP"];
+        let mut args = vec!["init", "--project-code", "OPP"];
         args.extend_from_slice(backend);
         ok(project.run(&args));
         project
@@ -356,7 +356,7 @@ impl Remote {
             &["remote", "add", "origin", self.origin().to_str().unwrap()],
         );
         git(&root, &["push", "-q", "origin", "main"]);
-        ok(self.run(&root, &["init", "--abbreviation", "OPP"]));
+        ok(self.run(&root, &["init", "--project-code", "OPP"]));
         ok(self.run(&root, &["sync"]));
         root
     }

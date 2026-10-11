@@ -29,7 +29,7 @@ fn started() -> Fixture {
     .expect("open");
     let tracker = Tracker::new(Arc::new(backend));
     tracker
-        .init(&actor(), "OPP".parse().expect("abbreviation"))
+        .init(&actor(), "OPP".parse().expect("project_code"))
         .expect("init");
     Fixture { _dir: dir, tracker }
 }

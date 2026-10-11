@@ -67,11 +67,11 @@ const inlineComponents: Components = { ...components, p: ({ children }) => <>{ch
 interface BodyScope {
   project: string
   markdown: string
-  abbreviation: string | undefined
+  projectCode: string | undefined
 }
 
-function Rendered({ project, markdown, abbreviation, parts }: BodyScope & { parts: Components }) {
-  const plugins = useMemo(() => [remarkGfm, taskLinkPlugins({ project, abbreviation })], [project, abbreviation])
+function Rendered({ project, markdown, projectCode, parts }: BodyScope & { parts: Components }) {
+  const plugins = useMemo(() => [remarkGfm, taskLinkPlugins({ project, projectCode })], [project, projectCode])
   return (
     <Markdown remarkPlugins={plugins} components={parts}>
       {markdown}
@@ -84,12 +84,12 @@ function Rendered({ project, markdown, abbreviation, parts }: BodyScope & { part
 export const TaskBody = memo(function TaskBody({
   project,
   markdown,
-  abbreviation,
+  projectCode,
   ...props
 }: ComponentProps<typeof Prose> & BodyScope) {
   return (
     <Prose {...props}>
-      <Rendered project={project} markdown={markdown} abbreviation={abbreviation} parts={components} />
+      <Rendered project={project} markdown={markdown} projectCode={projectCode} parts={components} />
     </Prose>
   )
 })

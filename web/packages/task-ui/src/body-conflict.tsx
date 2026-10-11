@@ -9,7 +9,7 @@ import { TaskBody } from "./task-body"
 
 interface Markdown {
   readonly project: string
-  readonly abbreviation: string | undefined
+  readonly projectCode: string | undefined
 }
 
 function Version({ version, inForce, markdown }: { version: ConflictVersion; inForce: boolean; markdown: Markdown }) {
@@ -106,7 +106,7 @@ export function BodyConflict({
 export function TaskBodyWithConflicts({
   segments,
   project,
-  abbreviation,
+  projectCode,
   onResolve,
   pending,
   proseClassName,
@@ -118,7 +118,7 @@ export function TaskBodyWithConflicts({
     pending?: boolean
     proseClassName?: string
   }) {
-  const markdown = { project, abbreviation }
+  const markdown = { project, projectCode }
   return (
     <div {...attributes}>
       {segments.map((segment, at) =>

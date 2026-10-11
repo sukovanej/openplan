@@ -40,4 +40,4 @@ pub use write::*;
 
 pub use op_forge::{Forge, ForgeKind, PullRequestError};
 pub use op_task::tag::Color;
-pub use op_task::{Abbreviation, Status, Timestamp};
+pub use op_task::{ProjectCode, Status, Timestamp};

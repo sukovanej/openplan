@@ -1,13 +1,13 @@
 use op_api::{
     Field, FieldUpdate, FrontmatterFields, Metadata, Status, TaskPatch, TaskSummary, TaskTree,
 };
-use op_task::{Abbreviation, Task, TaskLink, Timestamp};
+use op_task::{ProjectCode, Task, TaskLink, Timestamp};
 
 fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().unwrap()
 }
 
-fn abbreviation() -> Abbreviation {
+fn project_code() -> ProjectCode {
     "OPP".parse().unwrap()
 }
 
@@ -100,7 +100,7 @@ fn patch_parent_absent_leaves_it_unchanged() {
     assert_eq!(patch.parent, FieldUpdate::Keep);
     let mut task = Task::new("T", Status::Todo, stamp());
     task.set_parent(Some(TaskLink::to(7)));
-    patch.apply(&mut task, abbreviation(), None).unwrap();
+    patch.apply(&mut task, project_code(), None).unwrap();
     assert_eq!(task.frontmatter.parent, Some(TaskLink::to(7)));
 }
 
@@ -110,7 +110,7 @@ fn patch_parent_null_clears_it() {
     assert_eq!(patch.parent, FieldUpdate::Clear);
     let mut task = Task::new("T", Status::Todo, stamp());
     task.set_parent(Some(TaskLink::to(7)));
-    patch.apply(&mut task, abbreviation(), None).unwrap();
+    patch.apply(&mut task, project_code(), None).unwrap();
     assert_eq!(task.frontmatter.parent, None);
 }
 
@@ -120,7 +120,7 @@ fn patch_parent_id_sets_it() {
         serde_json::from_value(serde_json::json!({ "parent": "OPP-1" })).unwrap();
     assert_eq!(patch.parent, FieldUpdate::Set("OPP-1".to_owned()));
     let mut task = Task::new("T", Status::Todo, stamp());
-    patch.apply(&mut task, abbreviation(), None).unwrap();
+    patch.apply(&mut task, project_code(), None).unwrap();
     assert_eq!(
         task.frontmatter.parent,
         Some(TaskLink::to(1)),

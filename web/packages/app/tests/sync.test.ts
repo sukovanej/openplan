@@ -67,7 +67,7 @@ describe("which projects sync", () => {
     name: "openplan",
     root: "/repo",
     backend: "git",
-    abbreviation: "OPP",
+    project_code: "OPP",
     sync: view(),
     ...over,
   })
@@ -107,10 +107,10 @@ vi.mock("../src/lib/api", async () => {
         root: "/repo",
         git_common_dir: "/repo/.git",
         backend: "git",
-        abbreviation: "OPP",
+        project_code: "OPP",
         sync: { remote: "origin", ahead: 1, behind: 0, syncing: false },
       },
-      { name: "notes", root: "/notes", backend: "local", abbreviation: "NTS" },
+      { name: "notes", root: "/notes", backend: "local", project_code: "NTS" },
     ]),
     listFaults: Effect.sync(() => served.faults),
     getSync: () =>

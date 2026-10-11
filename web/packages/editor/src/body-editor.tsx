@@ -27,7 +27,7 @@ export interface BodyEditorHandle {
 
 export interface BodyEditorProps {
   readonly project: string
-  readonly abbreviation: string
+  readonly projectCode: string
   // The text to show. The editor takes it in whenever it differs from what the editor holds, so the
   // owner passes a new one only when it means to replace the reader's text.
   readonly markdown: string
@@ -59,7 +59,7 @@ function difference(current: string, next: string) {
 
 export function BodyEditor({
   project,
-  abbreviation,
+  projectCode,
   markdown,
   onChange,
   onSave,
@@ -71,7 +71,7 @@ export function BodyEditor({
 }: BodyEditorProps) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView>(null)
-  const [initial] = useState(() => ({ markdown, project, abbreviation, label, empty }))
+  const [initial] = useState(() => ({ markdown, project, projectCode, label, empty }))
   const [portalHost] = useState(() => new Portals())
   const mounted = useSyncExternalStore(portalHost.subscribe, portalHost.getSnapshot)
 
@@ -96,7 +96,7 @@ export function BodyEditor({
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": initial.label, spellcheck: "true" }),
           placeholder(initial.empty),
-          livePreview(initial.abbreviation),
+          livePreview(initial.projectCode),
           completions({ search: (query) => found(query) }),
           editorKeys({ project: initial.project, save: () => saved(), navigate: (path) => went(path) }),
           EditorView.updateListener.of((update) => {
@@ -139,7 +139,7 @@ export function BodyEditor({
     [],
   )
 
-  const scope = useMemo(() => ({ project, abbreviation }), [project, abbreviation])
+  const scope = useMemo(() => ({ project, projectCode }), [project, projectCode])
 
   return (
     <EditorScopeContext.Provider value={scope}>

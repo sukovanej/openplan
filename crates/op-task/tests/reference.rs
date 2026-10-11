@@ -1,7 +1,7 @@
-use op_task::Abbreviation;
+use op_task::ProjectCode;
 use op_task::reference::{Target, body_target, relative, resolve};
 
-fn opp() -> Option<Abbreviation> {
+fn opp() -> Option<ProjectCode> {
     Some("OPP".parse().unwrap())
 }
 

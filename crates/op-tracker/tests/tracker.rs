@@ -37,7 +37,7 @@ fn started() -> Fixture {
     let fixture = fresh();
     fixture
         .tracker
-        .init(&actor(), "OPP".parse().expect("abbreviation"))
+        .init(&actor(), "OPP".parse().expect("project_code"))
         .expect("init");
     fixture
 }
@@ -73,7 +73,7 @@ fn init_writes_the_config_and_the_default_tags_once() {
             .is_some()
     );
     let plan = tracker.plan().expect("plan");
-    assert_eq!(plan.abbreviation().expect("abbr").as_str(), "OPP");
+    assert_eq!(plan.project_code().expect("abbr").as_str(), "OPP");
     assert_eq!(
         plan.tags().expect("tags").len(),
         op_task::tag::defaults().len()
@@ -87,6 +87,40 @@ fn init_writes_the_config_and_the_default_tags_once() {
     assert!(matches!(
         tracker.init(&actor(), "WEB".parse().expect("abbr")),
         Err(TrackerError::AlreadyInitialized(existing)) if existing == "OPP"
+    ));
+}
+
+#[test]
+fn a_new_project_code_rewrites_only_the_config() {
+    let fixture = started();
+    let tracker = &fixture.tracker;
+    let number = create(tracker, "A");
+    let before = tracker.plan().expect("plan").raw(number).expect("raw");
+    assert!(
+        tracker
+            .set_project_code(&actor(), "WEB".parse().expect("abbr"))
+            .expect("set")
+            .is_some()
+    );
+    let plan = tracker.plan().expect("plan");
+    assert_eq!(plan.project_code().expect("abbr").as_str(), "WEB");
+    assert_eq!(plan.raw(number).expect("raw"), before);
+}
+
+#[test]
+fn a_new_project_code_refuses_the_current_one_and_a_project_without_tasks() {
+    let fixture = started();
+    assert!(matches!(
+        fixture
+            .tracker
+            .set_project_code(&actor(), "OPP".parse().expect("abbr")),
+        Err(TrackerError::Invalid(reason)) if reason.contains("already start with OPP")
+    ));
+    assert!(matches!(
+        fresh()
+            .tracker
+            .set_project_code(&actor(), "WEB".parse().expect("abbr")),
+        Err(TrackerError::NotInitialized)
     ));
 }
 

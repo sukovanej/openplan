@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 
 import type { DocChange, HistoryEntry, RevisionView, TagChange, TagView, TaskRef } from "@openplan/api-client"
 import {
+  ProjectCodeChangeView,
   AgentMark,
   DocChangeView,
   DocumentChangeView,
@@ -122,6 +123,8 @@ const lineKey = (line: ActivityRow): string => {
   switch (line.kind) {
     case "store_version":
       return "store_version"
+    case "project_code":
+      return "project_code"
     case "task":
       return `task:${line.change.task}`
     case "tag":
@@ -275,6 +278,8 @@ function ChangeLine({
   switch (line.kind) {
     case "store_version":
       return <StoreVersionChangeView change={line.change} className={change} />
+    case "project_code":
+      return <ProjectCodeChangeView change={line.change} className={change} />
     case "task":
       return (
         <>

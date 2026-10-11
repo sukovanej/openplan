@@ -47,7 +47,7 @@ import { useDetailAction } from "../lib/detail-actions"
 import { docLabel, docMatches } from "../lib/doc-search"
 import { errorText } from "../lib/format"
 import { useDocHistory, useDocRevision } from "../lib/history"
-import { useAbbreviation } from "../lib/projects"
+import { useProjectCode } from "../lib/projects"
 import { allDocsKey, docKey, useProjectMutation } from "../lib/query-client"
 import { isOverLiveTask } from "../lib/revision-navigation"
 import { detailCursor, useDetailCursor } from "../lib/row-cursor"
@@ -94,7 +94,7 @@ function Doc({ project, name }: { project: string; name: string }) {
 }
 
 function DocView({ doc, project }: { doc: DocDetail; project: string }) {
-  const abbreviation = useAbbreviation(project)
+  const projectCode = useProjectCode(project)
 
   const rows = useMemo(() => (doc.children ?? []).map((child) => docPath(project, child.name)), [doc, project])
   const meta = (saveNote: ReactNode) => (
@@ -138,13 +138,13 @@ function DocView({ doc, project }: { doc: DocDetail; project: string }) {
           </PanelHeader>
           <PanelBody className="p-6 max-md:p-4">
             <DocConflictBanner project={project} name={doc.name} metadata={doc.metadata} count={doc.conflicts} />
-            {abbreviation === undefined ? (
+            {projectCode === undefined ? (
               <>
                 <ProblemBanner problems={doc.problems} />
                 <BodySkeleton />
               </>
             ) : (
-              <DocContent project={project} doc={doc} abbreviation={abbreviation} meta={meta} />
+              <DocContent project={project} doc={doc} projectCode={projectCode} meta={meta} />
             )}
           </PanelBody>
         </>
@@ -202,7 +202,7 @@ function DocAtRevision({ project, name, revision }: { project: string; name: str
 }
 
 function DocSnapshotView({ project, doc, at }: { project: string; doc: DocSnapshot; at: string | undefined }) {
-  const abbreviation = useAbbreviation(project)
+  const projectCode = useProjectCode(project)
   const segments = useMemo(() => bodySegments(doc.body), [doc.body])
   return (
     <>
@@ -210,7 +210,7 @@ function DocSnapshotView({ project, doc, at }: { project: string; doc: DocSnapsh
       <MetaLine className="mb-4 h-4">
         <TaskTimes created={docCreatedOf(doc.metadata)} updated={at} problems={docProblems(doc.metadata)} />
       </MetaLine>
-      <TaskBodyWithConflicts segments={segments} project={project} abbreviation={abbreviation} data-keys-ignore />
+      <TaskBodyWithConflicts segments={segments} project={project} projectCode={projectCode} data-keys-ignore />
     </>
   )
 }

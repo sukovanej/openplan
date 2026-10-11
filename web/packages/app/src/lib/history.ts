@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import type { HttpClient } from "effect/http"
 
 import type {
+  ProjectCodeChange,
   DocChange,
   DocumentChange,
   HistoryEntry,
@@ -159,18 +160,18 @@ export function useChangeDiff(project: string, revision: string, target: DiffTar
   })
 }
 
-// The daemon's `layout::CONFIG`, the document that holds the store version.
+// The daemon's `layout::CONFIG`, the document that holds the store version and the project code.
 const CONFIG = "config.toml"
 
-// The daemon reads the tasks, the tags, the docs, and a migration into changes of their own, and this
-// is the rest, such as the assets.
+// The daemon reads the tasks, the tags, the docs, a migration, and a new project code into changes of
+// their own, and this is the rest, such as the assets.
 export const otherChanges = (entry: HistoryEntry): ReadonlyArray<DocumentChange> =>
   entry.changes.filter(
     (change) =>
       change.task === undefined &&
       change.tag === undefined &&
       change.doc === undefined &&
-      (entry.store_version === undefined || change.path !== CONFIG),
+      ((entry.store_version === undefined && entry.project_code === undefined) || change.path !== CONFIG),
   )
 
 export const taskChangeOf = (entry: HistoryEntry, id: string): TaskChange | undefined =>
@@ -178,6 +179,7 @@ export const taskChangeOf = (entry: HistoryEntry, id: string): TaskChange | unde
 
 export type ActivityRow =
   | { readonly kind: "store_version"; readonly change: StoreVersionChange }
+  | { readonly kind: "project_code"; readonly change: ProjectCodeChange }
   | { readonly kind: "task"; readonly change: TaskChange }
   | { readonly kind: "tag"; readonly change: TagChange }
   | { readonly kind: "doc"; readonly change: DocChange }
@@ -190,6 +192,7 @@ export const SHOWN_CHANGES = 12
 export function activityRows(entry: HistoryEntry): ReadonlyArray<ActivityRow> {
   const rows: ReadonlyArray<ActivityRow> = [
     ...(entry.store_version === undefined ? [] : [{ kind: "store_version", change: entry.store_version } as const]),
+    ...(entry.project_code === undefined ? [] : [{ kind: "project_code", change: entry.project_code } as const]),
     ...entry.tasks.map((change) => ({ kind: "task", change }) as const),
     ...entry.tags.map((change) => ({ kind: "tag", change }) as const),
     ...entry.docs.map((change) => ({ kind: "doc", change }) as const),
@@ -236,6 +239,7 @@ export function docChangePath(
 export function diffTarget(entry: HistoryEntry, row: ActivityRow): DiffTarget | undefined {
   switch (row.kind) {
     case "store_version":
+    case "project_code":
       return { path: CONFIG }
     case "task": {
       const renumbered = row.change.fields?.find((field) => field.field === "number")

@@ -210,7 +210,7 @@ fn a_rank_outranks_a_newer_update() {
     assert_eq!(row_ids(&board, Status::Todo), vec!["ranked", "fresh"]);
 }
 
-// Two stores can commit the same abbreviation, so the same key names a different task in each.
+// Two stores can commit the same project code, so the same key names a different task in each.
 #[test]
 fn one_key_in_two_projects_is_two_rows() {
     let board = Board::build(&[

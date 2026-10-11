@@ -46,10 +46,10 @@ fn tip(clone: &Path) -> String {
 }
 
 // No sync loop runs here, so every exchange with the remote is one the test asks for.
-fn member(path: &Path, abbreviation: Option<&str>) -> AppState {
+fn member(path: &Path, project_code: Option<&str>) -> AppState {
     let project = open(PROJECT, path, op_api::BackendKind::Git);
-    let project = match abbreviation {
-        Some(abbreviation) => started(project, abbreviation),
+    let project = match project_code {
+        Some(project_code) => started(project, project_code),
         None => project,
     };
     AppState::new([project])
@@ -127,7 +127,7 @@ async fn a_sync_brings_in_the_tasks_a_teammate_pushed() {
         vec!["OPP-1"]
     );
     assert_eq!(
-        json_of(&bob, "/api/projects").await[0]["abbreviation"],
+        json_of(&bob, "/api/projects").await[0]["project_code"],
         "OPP"
     );
 
@@ -259,13 +259,13 @@ async fn starting_a_clone_joins_the_tasks_its_remote_holds() {
         &bob,
         "POST",
         "/api/projects",
-        Some(json!({ "path": bob_path, "abbreviation": "OPP" })),
+        Some(json!({ "path": bob_path, "project_code": "OPP" })),
     )
     .await;
     assert_eq!(registered.status(), StatusCode::CREATED);
     let view = body_json(registered).await;
     assert_eq!(view["backend"], "git");
-    assert_eq!(view["abbreviation"], "OPP");
+    assert_eq!(view["project_code"], "OPP");
     let name = view["name"].as_str().unwrap().to_owned();
     assert_eq!(
         ids(&json_of(&bob, &format!("/api/projects/{name}/tasks")).await),
@@ -277,13 +277,13 @@ async fn starting_a_clone_joins_the_tasks_its_remote_holds() {
         &bob,
         "POST",
         "/api/projects",
-        Some(json!({ "path": bob_path, "abbreviation": "ZZZ" })),
+        Some(json!({ "path": bob_path, "project_code": "ZZZ" })),
     )
     .await;
     assert_eq!(rival.status(), StatusCode::CONFLICT);
 }
 
-// A clone fetches no tasks by itself. Registering it without an abbreviation fetches them.
+// A clone fetches no tasks by itself. Registering it without a project code fetches them.
 #[tokio::test]
 async fn registering_a_clone_serves_the_tasks_of_its_remote() {
     let team = Team::new();

@@ -1,9 +1,9 @@
-use crate::Abbreviation;
+use crate::ProjectCode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub version: u32,
-    pub abbreviation: Abbreviation,
+    pub project_code: ProjectCode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -24,8 +24,8 @@ impl ConfigError {
     }
 }
 
-const REQUIRED: &str = "'abbreviation' required";
-const MUST_BE: &str = "'abbreviation' must be exactly three uppercase letters";
+const REQUIRED: &str = "'project_code' required";
+const MUST_BE: &str = "'project_code' must be exactly three uppercase letters";
 const VERSION_MUST_BE: &str = "'version' must be a whole number from 1";
 // A store from before the store versions has no `version` key.
 pub const FIRST_VERSION: u32 = 1;
@@ -48,21 +48,21 @@ fn version_of(table: &toml::Table) -> Result<u32, ConfigError> {
 }
 
 impl Config {
-    pub fn new(version: u32, abbreviation: Abbreviation) -> Self {
+    pub fn new(version: u32, project_code: ProjectCode) -> Self {
         Self {
             version,
-            abbreviation,
+            project_code,
         }
     }
 
     pub fn parse(text: &str) -> Result<Self, ConfigError> {
         let table = table(text)?;
         let version = version_of(&table)?;
-        match table.get("abbreviation") {
+        match table.get("project_code") {
             None => Err(ConfigError::new(REQUIRED)),
             Some(toml::Value::String(text)) => text
                 .parse()
-                .map(|abbreviation| Self::new(version, abbreviation))
+                .map(|project_code| Self::new(version, project_code))
                 .map_err(|_| ConfigError::new(MUST_BE)),
             Some(_) => Err(ConfigError::new(MUST_BE)),
         }
@@ -71,8 +71,8 @@ impl Config {
     pub fn to_file_string(&self) -> String {
         let mut table = toml::Table::new();
         table.insert(
-            "abbreviation".to_owned(),
-            toml::Value::String(self.abbreviation.to_string()),
+            "project_code".to_owned(),
+            toml::Value::String(self.project_code.to_string()),
         );
         written(table, self.version)
     }
@@ -85,6 +85,15 @@ fn table(text: &str) -> Result<toml::Table, ConfigError> {
 // Only the `version` key moves, so two binaries that know different keys write the same bytes.
 pub fn restamp(text: &str, version: u32) -> Result<String, ConfigError> {
     Ok(written(table(text)?, version))
+}
+
+// The other keys keep their values, and the result is the same for the same text.
+pub fn renamed(text: &str, from: &str, to: &str) -> Result<String, ConfigError> {
+    let mut table = table(text)?;
+    if let Some(value) = table.remove(from) {
+        table.insert(to.to_owned(), value);
+    }
+    toml::to_string(&table).map_err(|err| ConfigError::new(err.to_string()))
 }
 
 fn written(mut table: toml::Table, version: u32) -> String {
