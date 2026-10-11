@@ -29,10 +29,12 @@ pub fn init(
 }
 
 // A repository that kept its tasks in `.plan/` beside the code moves them out: onto the tasks branch
-// with the history of `.plan/`, or into a local directory with a history of its own.
+// with the history of `.plan/`, or into a local directory with a history of its own. Tasks that
+// already live there move to the store version of this openplan.
 pub fn migrate(root: &Path, daemon_url: Option<&str>, backend: Option<BackendKind>) -> Result<()> {
     let checkout = match Location::find(root, None) {
         Err(OpenError::NeedsMigration(checkout)) => checkout,
+        Ok(_) if backend.is_none() => return migrate_store_version(root, daemon_url),
         Ok(location) => bail!(
             "{} already keeps its tasks {}; there is nothing to migrate",
             location.root.display(),
@@ -47,7 +49,7 @@ pub fn migrate(root: &Path, daemon_url: Option<&str>, backend: Option<BackendKin
     if kind == BackendKind::Git {
         let location = Location::find(&checkout, Some(BackendKind::Git))?;
         let options = op_backend_git::Options::new(
-            Arc::new(TaskMergePolicy),
+            Arc::new(TaskMergePolicy::default()),
             op_backend_git::signer(&location.root),
         );
         // Opened at the checkout, so the history copied is that of the branch the caller stands on.
@@ -77,6 +79,21 @@ pub fn migrate(root: &Path, daemon_url: Option<&str>, backend: Option<BackendKin
         BackendKind::Local => println!(
             "next: stop committing {STORE_DIR}/; add it to .gitignore and remove it from the index \
              with `git rm -r --cached {STORE_DIR}`"
+        ),
+    }
+    Ok(())
+}
+
+fn migrate_store_version(root: &Path, daemon_url: Option<&str>) -> Result<()> {
+    let migration = crate::plan::Plan::resolve(root, daemon_url)?.migrate()?;
+    match migration.from {
+        Some(from) => println!(
+            "migrated the tasks of {} from store version {from} to {}",
+            migration.project, migration.version
+        ),
+        None => println!(
+            "the tasks of {} already use store version {}; there is nothing to migrate",
+            migration.project, migration.version
         ),
     }
     Ok(())

@@ -135,6 +135,10 @@ impl Plan {
             .collect())
     }
 
+    pub fn migrate(&self) -> Result<op_api::Migration> {
+        served(self.client.migrate_project(&self.base_url, &self.project))
+    }
+
     pub fn docs(&self) -> Result<Vec<DocListItem>> {
         served(self.client.docs(&self.base_url, &self.project))
     }

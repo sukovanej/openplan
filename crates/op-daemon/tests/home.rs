@@ -9,6 +9,7 @@ fn info() -> DaemonInfo {
         port: 7500,
         version: "0.1.0".to_owned(),
         started_at: 1_700_000_000,
+        api: op_api::API_VERSION,
     }
 }
 

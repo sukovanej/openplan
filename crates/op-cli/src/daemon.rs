@@ -1,6 +1,7 @@
+use std::cmp::Ordering;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use op_api::{DaemonInfo, ProjectView};
 use op_daemon::{Control, Started, StopOutcome, UpdateRecord, base_url, default_port, now_unix};
@@ -152,9 +153,38 @@ pub fn daemon_base_url(client: &op_client::Client, daemon_url: Option<&str>) -> 
             Ok(base)
         }
         None => {
-            let info = Control::resolve()?.ensure(default_port()?)?.into_info();
-            Ok(base_url(info.port))
+            let control = Control::resolve()?;
+            let info = control.ensure(default_port()?)?.into_info();
+            Ok(base_url(on_this_version(&control, info)?.port))
         }
+    }
+}
+
+// A daemon keeps running when its binary changes on disk. A newer CLI starts the daemon again on
+// itself. An older one refuses, because a restart from it would take the daemon back to an API that
+// a newer client may need.
+fn on_this_version(control: &Control, info: DaemonInfo) -> Result<DaemonInfo> {
+    match op_api::API_VERSION.cmp(&info.api) {
+        Ordering::Equal => Ok(info),
+        Ordering::Greater => {
+            control.stop_if(info.pid)?;
+            let started = control.ensure(info.port)?.into_info();
+            if started.pid != info.pid && started.api == op_api::API_VERSION {
+                eprintln!(
+                    "restarted the daemon on openplan {}; it ran {}",
+                    env!("CARGO_PKG_VERSION"),
+                    info.version
+                );
+            }
+            on_this_version(control, started)
+        }
+        Ordering::Less => bail!(
+            "this openplan speaks API {}, and the daemon (openplan {}) speaks API {}. Update this \
+             openplan with `openplan update`, or run a newer openplan",
+            op_api::API_VERSION,
+            info.version,
+            info.api
+        ),
     }
 }
 

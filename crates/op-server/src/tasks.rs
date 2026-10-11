@@ -7,9 +7,9 @@ use axum::response::{IntoResponse, Response};
 use op_api::{
     ApiErrorBody, Board, Comment, CreateComment, CreateTag, CreateTask, DocChange, DocumentChange,
     DocumentChangeKind, FieldChange, Flow, FlowQuery, Forge, HistoryEntry, KeyError, Metadata,
-    PullRequestView, RevisionView, SearchHit, Status, SyncResult, SyncView, TagChange, TagPatch,
-    TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch, TaskSnapshot,
-    TaskSummary, TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
+    PullRequestView, RevisionView, SearchHit, Status, StoreVersionChange, SyncResult, SyncView,
+    TagChange, TagPatch, TagView, TaskAtRevision, TaskChange, TaskDetail, TaskListItem, TaskPatch,
+    TaskSnapshot, TaskSummary, TaskTree, TaskTreeView, WriteTaskFile, WriteTaskText,
 };
 use op_backend::{Change, ChangeKind, Committed, LogEntry, RevisionId};
 use op_task::{Abbreviation, Task, layout};
@@ -641,6 +641,10 @@ pub(crate) fn history(
                     .collect(),
                 tags: described.tags.into_iter().map(tag_change).collect(),
                 docs: described.docs.into_iter().map(doc_change).collect(),
+                store_version: described.version.map(|change| StoreVersionChange {
+                    from: change.from,
+                    to: change.to,
+                }),
                 changes: entry
                     .changes
                     .into_iter()

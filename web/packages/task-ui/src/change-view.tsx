@@ -6,6 +6,7 @@ import {
   FileWarning,
   GitPullRequest,
   Hash,
+  Layers,
   Link2,
   type LucideIcon,
   MessageSquare,
@@ -19,7 +20,15 @@ import {
 } from "lucide-react"
 import { Fragment, type ReactNode } from "react"
 
-import type { DocChange, DocumentChangeKind, FieldChange, TagChange, TagView, TaskChange } from "@openplan/api-client"
+import type {
+  DocChange,
+  DocumentChangeKind,
+  FieldChange,
+  StoreVersionChange,
+  TagChange,
+  TagView,
+  TaskChange,
+} from "@openplan/api-client"
 import { cn } from "@openplan/ui"
 
 import { StatusBadge } from "./status"
@@ -203,6 +212,20 @@ export function DocChangeView({ change, className }: { change: DocChange; classN
   return (
     <Changes className={className}>
       <Marked icon={Type}>{renameText(change)}</Marked>
+    </Changes>
+  )
+}
+
+export function StoreVersionChangeView({ change, className }: { change: StoreVersionChange; className?: string }) {
+  return (
+    <Changes className={className}>
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <Layers aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+        <span>Store version</span>
+        <span className="font-mono text-xs">{change.from}</span>
+        <ArrowRight aria-label="to" className="text-muted-foreground size-3.5 shrink-0" />
+        <span className="font-mono text-xs">{change.to}</span>
+      </span>
     </Changes>
   )
 }

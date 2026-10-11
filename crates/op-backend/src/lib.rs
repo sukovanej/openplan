@@ -14,7 +14,7 @@ pub use backend::{
 };
 pub use error::BackendError;
 pub use events::Events;
-pub use merge::{MergeInput, MergePolicy, PreferTheirs, Resolution, Tips, merge};
+pub use merge::{Alignment, MergeInput, MergePolicy, PreferTheirs, Resolution, Tips, merge};
 pub use path::check_path;
 pub use revision::{Actor, Change, ChangeKind, Op, Revision, RevisionId};
 pub use signer::Signer;

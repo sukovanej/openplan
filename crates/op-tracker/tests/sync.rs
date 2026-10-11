@@ -49,7 +49,7 @@ impl Team {
             &["clone", "--quiet", remote.to_str().expect("utf-8"), name],
         );
         let path: PathBuf = self.root.path().join(name);
-        let policy = Arc::new(TaskMergePolicy);
+        let policy = Arc::new(TaskMergePolicy::default());
         let backend = Arc::new(
             GitBackend::open(
                 &path,

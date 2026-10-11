@@ -11,11 +11,18 @@ pub(crate) type Read<'a> = &'a dyn Fn(&str) -> Result<Option<Vec<u8>>, BackendEr
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Described {
+    pub version: Option<VersionChange>,
     pub config: Option<ChangeKind>,
     pub tags: Vec<TagChange>,
     pub tasks: Vec<TaskChange>,
     pub docs: Vec<DocChange>,
     pub others: Vec<Change>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VersionChange {
+    pub from: u32,
+    pub to: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -454,7 +461,10 @@ impl Described {
             None => number.to_string(),
         };
         let mut lines = Vec::new();
-        if let Some(kind) = self.config {
+        if let Some(change) = self.version {
+            lines.push(migration_line(change.from, change.to));
+        }
+        if let Some(kind) = self.config.filter(|_| self.version.is_none()) {
             lines.push(match (kind, abbreviation) {
                 (ChangeKind::Added, Some(abbreviation)) => {
                     format!("Start the {abbreviation} tasks")
@@ -487,6 +497,10 @@ impl Described {
         }
         lines
     }
+}
+
+pub(crate) fn migration_line(from: u32, to: u32) -> String {
+    format!("Migrate the tasks from store version {from} to {to}")
 }
 
 fn verb(kind: ChangeKind) -> &'static str {

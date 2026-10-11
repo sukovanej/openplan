@@ -136,6 +136,7 @@ async fn bind_and_serve(
         port: bound,
         version: env!("CARGO_PKG_VERSION").to_owned(),
         started_at: now_unix(),
+        api: op_api::API_VERSION,
     };
     home.write_info(&info)?;
     update::confirm_install(&home);

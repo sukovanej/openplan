@@ -9,6 +9,7 @@ import {
   DocumentChangeView,
   docRevisionPath,
   revisionPath,
+  StoreVersionChangeView,
   TagChangeView,
   TagChip,
   TaskChangeView,
@@ -119,6 +120,8 @@ const LINE = "flex min-h-6 max-w-full min-w-0 flex-wrap items-center gap-x-3 gap
 
 const lineKey = (line: ActivityRow): string => {
   switch (line.kind) {
+    case "store_version":
+      return "store_version"
     case "task":
       return `task:${line.change.task}`
     case "tag":
@@ -270,6 +273,8 @@ function ChangeLine({
 }) {
   const change = "text-foreground/80"
   switch (line.kind) {
+    case "store_version":
+      return <StoreVersionChangeView change={line.change} className={change} />
     case "task":
       return (
         <>
