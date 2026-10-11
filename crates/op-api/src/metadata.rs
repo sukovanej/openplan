@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use op_task::{Abbreviation, Status, Timestamp};
+use op_task::{ProjectCode, Status, Timestamp};
 
 use crate::field::{Field, FieldError, Rfc3339};
 use crate::keys::key_of;
@@ -46,7 +46,7 @@ impl Metadata {
     pub fn from_partial(
         partial: op_task::PartialMetadata,
         conflicts: &[op_task::FieldConflict],
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
     ) -> Self {
         match partial {
             op_task::PartialMetadata::Error(message) => Metadata::Error {
@@ -54,9 +54,9 @@ impl Metadata {
                 message,
             },
             op_task::PartialMetadata::Fields(fields) => {
-                let mut fields = fields_of(fields, abbreviation);
+                let mut fields = fields_of(fields, project_code);
                 for conflict in conflicts {
-                    let other = fields_of(conflict.other_fields(), abbreviation);
+                    let other = fields_of(conflict.other_fields(), project_code);
                     match conflict.field.as_str() {
                         "status" => {
                             fields.status = fields.status.in_conflict(other.status, conflict)
@@ -87,30 +87,30 @@ impl Metadata {
         }
     }
 
-    pub fn from_task(task: &op_task::Task, abbreviation: Abbreviation) -> Self {
+    pub fn from_task(task: &op_task::Task, project_code: ProjectCode) -> Self {
         if task.conflicts.is_empty() {
-            return Self::from_frontmatter(&task.frontmatter, abbreviation);
+            return Self::from_frontmatter(&task.frontmatter, project_code);
         }
         match task.to_file_string() {
             Ok(text) => {
                 let partial = op_task::parse_partial(&text);
-                Self::from_partial(partial.metadata, &partial.conflicts, abbreviation)
+                Self::from_partial(partial.metadata, &partial.conflicts, project_code)
             }
-            Err(_) => Self::from_frontmatter(&task.frontmatter, abbreviation),
+            Err(_) => Self::from_frontmatter(&task.frontmatter, project_code),
         }
     }
 }
 
-fn fields_of(fields: op_task::PartialFrontmatter, abbreviation: Abbreviation) -> FrontmatterFields {
+fn fields_of(fields: op_task::PartialFrontmatter, project_code: ProjectCode) -> FrontmatterFields {
     FrontmatterFields {
         status: fields.status.into(),
         created: Field::from(fields.created).map(Rfc3339),
-        parent: Field::from(fields.parent).map(|parent| parent.map(|p| key_of(abbreviation, &p))),
+        parent: Field::from(fields.parent).map(|parent| parent.map(|p| key_of(project_code, &p))),
         rank: fields.rank.into(),
         dependencies: Field::from(fields.dependencies).map(|dependencies| {
             dependencies
                 .iter()
-                .map(|d| key_of(abbreviation, d))
+                .map(|d| key_of(project_code, d))
                 .collect()
         }),
         tags: fields.tags.into(),
@@ -119,16 +119,16 @@ fn fields_of(fields: op_task::PartialFrontmatter, abbreviation: Abbreviation) ->
 }
 
 impl Metadata {
-    pub fn from_frontmatter(fm: &op_task::Frontmatter, abbreviation: Abbreviation) -> Self {
+    pub fn from_frontmatter(fm: &op_task::Frontmatter, project_code: ProjectCode) -> Self {
         Metadata::Fields(FrontmatterFields {
             status: Field::Value(fm.status),
             created: Field::Value(Rfc3339(fm.created)),
-            parent: Field::Value(fm.parent.as_ref().map(|p| key_of(abbreviation, &p.id()))),
+            parent: Field::Value(fm.parent.as_ref().map(|p| key_of(project_code, &p.id()))),
             rank: Field::Value(fm.rank.clone()),
             dependencies: Field::Value(
                 fm.dependencies
                     .iter()
-                    .map(|d| key_of(abbreviation, &d.id()))
+                    .map(|d| key_of(project_code, &d.id()))
                     .collect(),
             ),
             tags: Field::Value(fm.tags.clone()),

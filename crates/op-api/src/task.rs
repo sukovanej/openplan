@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use op_forge::{Forge, ForgeKind, PullRequest};
-use op_task::{Abbreviation, Status, Task, Timestamp};
+use op_task::{ProjectCode, Status, Task, Timestamp};
 
 use crate::comment::Comment;
 use crate::field::{Field, Rfc3339};
@@ -22,20 +22,20 @@ impl TaskSummary {
     pub fn from_partial(
         id: String,
         partial: op_task::PartialTask,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
     ) -> Self {
         Self {
             id,
             title: partial.title.unwrap_or_default(),
-            metadata: Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation),
+            metadata: Metadata::from_partial(partial.metadata, &partial.conflicts, project_code),
         }
     }
 
-    pub fn from_task(id: String, task: &Task, abbreviation: Abbreviation) -> Self {
+    pub fn from_task(id: String, task: &Task, project_code: ProjectCode) -> Self {
         Self {
             id,
             title: task.title().unwrap_or_default(),
-            metadata: Metadata::from_task(task, abbreviation),
+            metadata: Metadata::from_task(task, project_code),
         }
     }
 }
@@ -55,9 +55,9 @@ impl TaskView {
         id: String,
         partial: op_task::PartialTask,
         updated: op_task::FieldResult<Timestamp>,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
     ) -> Self {
-        let metadata = Metadata::from_partial(partial.metadata, &partial.conflicts, abbreviation);
+        let metadata = Metadata::from_partial(partial.metadata, &partial.conflicts, project_code);
         let created = metadata.created();
         Self {
             id,
@@ -74,13 +74,13 @@ impl TaskView {
         id: String,
         task: &Task,
         updated: op_task::FieldResult<Timestamp>,
-        abbreviation: Abbreviation,
+        project_code: ProjectCode,
     ) -> Self {
         Self {
             id,
             title: task.title().unwrap_or_default(),
             updated: updated_field(Some(task.frontmatter.created), updated),
-            metadata: Metadata::from_task(task, abbreviation),
+            metadata: Metadata::from_task(task, project_code),
             body: task.body.clone(),
         }
     }
@@ -216,7 +216,7 @@ pub struct TaskDetail {
 }
 
 // One task as a list row. `project` is the coordinate the key alone cannot carry: two projects can
-// use the same abbreviation, so `id` names a task only within its project.
+// use the same project code, so `id` names a task only within its project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TaskListItem {
     pub project: String,
@@ -270,7 +270,7 @@ pub struct SearchHit {
     pub matched: SearchMatch,
 }
 
-// Where a task sits. Two stores can commit the same abbreviation, so every map in the merged board
+// Where a task sits. Two stores can commit the same project code, so every map in the merged board
 // keys on this rather than on the id alone; a parent reference then resolves in the task's own
 // project, which is the only project it can name.
 pub(crate) type Coordinate<'a> = (&'a str, &'a str);

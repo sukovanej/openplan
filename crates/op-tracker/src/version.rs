@@ -45,6 +45,11 @@ pub static STORE_VERSIONS: StoreVersions = StoreVersions {
             released: Some("0.0.1"),
             migrate: Some(with_the_version_key),
         },
+        StoreVersion {
+            number: 3,
+            released: None,
+            migrate: Some(with_the_project_code_key),
+        },
     ],
     retired: &[],
 };
@@ -52,6 +57,16 @@ pub static STORE_VERSIONS: StoreVersions = StoreVersions {
 // The migration itself writes the `version` key, and that key is all that store version 2 adds.
 fn with_the_version_key(_: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
     Ok(Vec::new())
+}
+
+// Store version 3 calls the letters of the task keys the project code.
+fn with_the_project_code_key(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
+    let Some(text) = snapshot.read_text(layout::CONFIG)? else {
+        return Ok(Vec::new());
+    };
+    let renamed =
+        config::renamed(&text, "abbreviation", "project_code").map_err(BackendError::storage)?;
+    Ok(vec![Op::put(layout::CONFIG, renamed)])
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -102,14 +117,10 @@ impl StoreVersions {
             .number
     }
 
-    // A daemon moves a store by itself only as far as a stable release reads, so a canary never
-    // moves a team's store out of reach of their releases.
-    pub fn newest_released(&self) -> u32 {
-        self.known
-            .iter()
-            .rev()
-            .find(|known| known.released.is_some())
-            .map_or(self.oldest(), |known| known.number)
+    // A daemon migrates a store by itself only when a stable release reads the result, so a canary
+    // never moves a team's store out of reach of their releases.
+    pub fn migrates_by_itself(&self) -> bool {
+        self.newest().released.is_some()
     }
 
     pub fn stored(&self, stored: u32) -> Result<Stored, VersionError> {

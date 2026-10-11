@@ -24,13 +24,13 @@ fn backlog_for_todo(snapshot: &dyn Snapshot) -> Result<Vec<Op>, BackendError> {
 }
 
 const TWO: StoreVersion = StoreVersion {
-    number: 2,
+    number: 3,
     released: Some("0.0.1"),
     migrate: None,
 };
 
 const THREE: StoreVersion = StoreVersion {
-    number: 3,
+    number: 4,
     released: Some("0.0.9"),
     migrate: Some(backlog_for_todo),
 };
@@ -57,12 +57,12 @@ static RETIRING: StoreVersions = StoreVersions {
         ..THREE
     }],
     retired: &[Retired {
-        number: 2,
+        number: 3,
         last_release: "0.0.9",
     }],
 };
 
-const NEWER: &str = "abbreviation = \"OPP\"\nversion = 3\n";
+const NEWER: &str = "project_code = \"OPP\"\nversion = 4\n";
 
 async fn faults(state: &AppState) -> Vec<Value> {
     json_of(state, "/api/faults")
@@ -112,11 +112,11 @@ async fn a_newer_store_version_serves_no_task_and_says_what_to_do() {
     assert_eq!(faults[0]["kind"], "newer_store_version");
     assert_eq!(
         faults[0]["message"],
-        "these tasks use store version 3, and this openplan reads store versions up to 2. They \
+        "these tasks use store version 4, and this openplan reads store versions up to 3. They \
          need a newer openplan. Run `openplan update`"
     );
     let message = refused(&state, "GET", "/api/projects/test/tasks", None).await;
-    assert!(message.contains("store version 3"), "{message}");
+    assert!(message.contains("store version 4"), "{message}");
 }
 
 #[tokio::test]
@@ -157,9 +157,11 @@ async fn a_retired_store_version_serves_no_task_and_hides_the_project() {
     assert!(message.contains("Run openplan 0.0.9"), "{message}");
 }
 
+// Store version 3 is not released yet, so this build migrates a store to it only on request.
 #[tokio::test]
-async fn a_store_from_before_the_store_versions_migrates_at_the_first_write_only() {
+async fn a_store_from_before_the_store_versions_serves_its_tasks_and_migrates_on_request() {
     let (_dir, state) = local_state();
+    create(&state, "Ship it").await;
     seed(&state, &[("config.toml", "abbreviation = \"OPP\"\n")]);
 
     assert_eq!(
@@ -167,10 +169,30 @@ async fn a_store_from_before_the_store_versions_migrates_at_the_first_write_only
         "abbreviation = \"OPP\"\n",
         "a read writes nothing"
     );
-    assert!(faults(&state).await.is_empty());
-    create(&state, "Ship it").await;
+    let faults_before = faults(&state).await;
+    assert_eq!(
+        faults_before[0]["kind"], "older_store_version",
+        "{faults_before:?}"
+    );
+    let task = json_of(&state, "/api/projects/test/tasks/OPP-1").await;
+    assert_eq!(task["title"], "Ship it");
+    refused(
+        &state,
+        "POST",
+        "/api/projects/test/tasks",
+        Some(json!({ "title": "Next" })),
+    )
+    .await;
 
-    assert_eq!(config(&state), "abbreviation = \"OPP\"\nversion = 2\n");
+    let migrated = send(&state, "POST", "/api/projects/test/migrate", None).await;
+    assert_eq!(
+        body_json(migrated).await,
+        json!({ "project": "test", "from": 1, "version": 3 })
+    );
+
+    assert_eq!(config(&state), "project_code = \"OPP\"\nversion = 3\n");
+    assert!(faults(&state).await.is_empty());
+    create(&state, "Next").await;
     let history = json_of(&state, "/api/projects/test/history").await;
     let migration = history
         .as_array()
@@ -180,9 +202,9 @@ async fn a_store_from_before_the_store_versions_migrates_at_the_first_write_only
         .expect("a migration in the history");
     assert_eq!(
         migration["summary"],
-        json!(["Migrate the tasks from store version 1 to 2"])
+        json!(["Migrate the tasks from store version 1 to 3"])
     );
-    assert_eq!(migration["store_version"], json!({ "from": 1, "to": 2 }));
+    assert_eq!(migration["store_version"], json!({ "from": 1, "to": 3 }));
 }
 
 #[tokio::test]
@@ -190,14 +212,14 @@ async fn a_daemon_migrates_an_older_store_at_a_write_when_a_release_reads_the_ne
     let dir = tempfile::tempdir().unwrap();
     let state = reopened(dir.path(), &RELEASED);
 
-    assert_eq!(config(&state), "abbreviation = \"OPP\"\nversion = 2\n");
+    assert_eq!(config(&state), "project_code = \"OPP\"\nversion = 3\n");
     assert!(faults(&state).await.is_empty());
     let task = json_of(&state, "/api/projects/test/tasks/OPP-1").await;
     assert_eq!(task["metadata"]["status"], "backlog");
 
     create(&state, "Next").await;
 
-    assert_eq!(config(&state), "abbreviation = \"OPP\"\nversion = 3\n");
+    assert_eq!(config(&state), "project_code = \"OPP\"\nversion = 4\n");
 }
 
 #[tokio::test]
@@ -225,7 +247,7 @@ async fn a_canary_serves_an_older_store_read_only_until_someone_migrates_it() {
     assert_eq!(migrated.status(), StatusCode::OK);
     assert_eq!(
         body_json(migrated).await,
-        json!({ "project": "test", "from": 2, "version": 3 })
+        json!({ "project": "test", "from": 3, "version": 4 })
     );
     assert!(faults(&state).await.is_empty());
     create(&state, "Next").await;

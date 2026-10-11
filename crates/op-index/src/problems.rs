@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use op_api::{Problem, ProblemCode};
 
-use op_task::Abbreviation;
+use op_task::ProjectCode;
 use op_task::layout;
 use op_task::reference::{self, Target};
 
@@ -26,8 +26,8 @@ pub(crate) struct Unpathed {
 }
 
 impl Unpathed {
-    pub(crate) fn in_text(abbreviation: Option<Abbreviation>, dir: &str, text: &str) -> Vec<Self> {
-        reference::unpathed(abbreviation, dir, text)
+    pub(crate) fn in_text(project_code: Option<ProjectCode>, dir: &str, text: &str) -> Vec<Self> {
+        reference::unpathed(project_code, dir, text)
             .into_iter()
             .map(|(spelled, target)| Self {
                 place: Place::Text,

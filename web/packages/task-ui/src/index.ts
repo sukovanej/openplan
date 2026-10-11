@@ -4,7 +4,7 @@ export { type BodySegment, bodySegments, type ConflictBlock } from "./body-segme
 export { ChangeMark } from "./change-mark"
 export { isDiagramTag } from "./code-block"
 export {
-  AbbreviationChangeView,
+  ProjectCodeChangeView,
   DocChangeView,
   DocumentChangeView,
   StoreVersionChangeView,

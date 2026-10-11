@@ -33,7 +33,7 @@ pub const ROOT_POLL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
-    #[error("no tasks at {0}; start them with `openplan init --abbreviation <ABC>`")]
+    #[error("no tasks at {0}; start them with `openplan init --project-code <ABC>`")]
     NoStore(PathBuf),
     #[error(
         "{0} keeps its tasks in {STORE_DIR}/ beside the code; move them out with `openplan migrate`"
@@ -350,10 +350,10 @@ impl Project {
                 .as_ref()
                 .map(|dir| dir.display().to_string()),
             backend: self.location.kind,
-            abbreviation: self
+            project_code: self
                 .index()
-                .abbreviation()
-                .map(|abbreviation| abbreviation.to_string())
+                .project_code()
+                .map(|project_code| project_code.to_string())
                 .unwrap_or_default(),
             sync: self.sync_status().as_ref().map(sync_view),
             forge: self.forge().cloned(),
@@ -479,17 +479,18 @@ impl Project {
         }
         *loaded = head;
         let versions = self.tracker.store_versions();
-        // A write moves the store as far as a release reads by itself, and no further.
+        // A config that does not parse is the problem to fix first, whatever its store version.
+        let unreadable = match plan.version_problem() {
+            Some(_) => None,
+            None => plan.config().err().map(|err| err.to_string()),
+        };
         let version_problem = plan.version_problem().cloned().or_else(|| {
             plan.migrated_from()
-                .filter(|_| versions.newest_released() < versions.current())
+                .filter(|_| unreadable.is_none() && !versions.migrates_by_itself())
                 .map(|from| versions.unmigrated(from))
         });
         Ok(Loaded {
-            unreadable: match version_problem {
-                Some(_) => None,
-                None => plan.config().err().map(|err| err.to_string()),
-            },
+            unreadable,
             version_problem,
         })
     }

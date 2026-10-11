@@ -73,7 +73,7 @@ newest release.
 In the root of a git repository:
 
 ```sh
-openplan init --abbreviation ABC     # task keys start with ABC, as in ABC-1
+openplan init --project-code ABC     # task keys start with ABC, as in ABC-1
 npx skills add sukovanej/openplan    # let your coding agent use the tasks
 openplan tasks create "Ship the login page" --status todo
 openplan tasks set ABC-1 status in_progress
@@ -81,7 +81,7 @@ openplan open                        # the web UI in your browser
 ```
 
 To join the tasks that a teammate already pushed, clone the repository and run `openplan init`
-with no abbreviation.
+with no project code.
 
 ## Usage
 
@@ -96,6 +96,7 @@ openplan sync                        # exchange the tasks with the remote now
 openplan lint                        # find problems in the tasks and docs
 openplan server start | stop         # the background daemon on 127.0.0.1:7373
 openplan project list                # the projects the daemon serves
+openplan project code XYZ            # task keys start with XYZ from now on
 ```
 
 `openplan <command> --help` shows all options.

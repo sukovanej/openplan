@@ -139,10 +139,10 @@ impl Plan {
         served(self.client.migrate_project(&self.base_url, &self.project))
     }
 
-    pub fn set_abbreviation(&self, abbreviation: &str) -> Result<ProjectView> {
+    pub fn set_project_code(&self, project_code: &str) -> Result<ProjectView> {
         served(
             self.client
-                .set_abbreviation(&self.base_url, &self.project, abbreviation),
+                .set_project_code(&self.base_url, &self.project, project_code),
         )
     }
 

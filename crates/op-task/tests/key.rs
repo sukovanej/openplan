@@ -1,30 +1,30 @@
-use op_task::Abbreviation;
+use op_task::ProjectCode;
 
-fn opp() -> Abbreviation {
+fn opp() -> ProjectCode {
     "OPP".parse().unwrap()
 }
 
 #[test]
-fn an_abbreviation_is_exactly_three_uppercase_letters() {
+fn a_project_code_is_exactly_three_uppercase_letters() {
     for good in ["OPP", "WEB", "AAA"] {
         assert_eq!(
-            good.parse::<Abbreviation>().unwrap().as_str(),
+            good.parse::<ProjectCode>().unwrap().as_str(),
             good,
-            "{good} is a usable abbreviation"
+            "{good} is a usable project code"
         );
     }
     for bad in [
         "", "O", "OP", "OPPX", "opp", "Opp", "OP1", "OP-", "OPÉ", "O P",
     ] {
         assert!(
-            bad.parse::<Abbreviation>().is_err(),
-            "{bad:?} must not be an abbreviation"
+            bad.parse::<ProjectCode>().is_err(),
+            "{bad:?} must not be a project code"
         );
     }
 }
 
 #[test]
-fn a_key_is_the_abbreviation_and_the_number() {
+fn a_key_is_the_project_code_and_the_number() {
     assert_eq!(opp().format_key(42), "OPP-42");
     assert_eq!(opp().format_key(0), "OPP-0");
     assert_eq!(opp().parse_key("OPP-42"), Some(42));

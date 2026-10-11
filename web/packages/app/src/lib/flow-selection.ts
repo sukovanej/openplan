@@ -30,7 +30,7 @@ export function selectionParams(selection: FlowSelection): URLSearchParams {
   return params
 }
 
-// A key needs its project, because two stores can commit the same abbreviation.
+// A key needs its project, because two stores can commit the same project code.
 export function taskFlowPath(project: string, id: string): string {
   return `${FLOW_ROUTE}?${selectionParams({ ...EVERY_TASK, projects: [project], tasks: [id] })}`
 }

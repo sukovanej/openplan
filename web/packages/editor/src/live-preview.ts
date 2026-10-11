@@ -224,18 +224,18 @@ function inRenderedTable(builder: Builder, state: EditorState, at: number): bool
   return table !== null && !builder.touches(table.from, table.to)
 }
 
-function taskRefs(builder: Builder, state: EditorState, abbreviation: string): void {
+function taskRefs(builder: Builder, state: EditorState, projectCode: string): void {
   for (const match of taskRefMatches(state.doc.toString())) {
     const from = match.index
     const to = from + match[0].length
-    if (referenced(match[1], abbreviation) === null || isInCode(state, from, 1)) continue
+    if (referenced(match[1], projectCode) === null || isInCode(state, from, 1)) continue
     if (inRenderedTable(builder, state, from)) continue
     if (builder.touches(from, to)) builder.add(from, to, mark("cm-ref-source"))
     else builder.replace(from, to, Decoration.replace({ widget: new TaskRefWidget(match[1]) }))
   }
 }
 
-export function previewOf(state: EditorState, focused: boolean, abbreviation: string): Preview {
+export function previewOf(state: EditorState, focused: boolean, projectCode: string): Preview {
   const builder = new Builder(state, focused)
   for (const span of conflictSpans(state.doc)) {
     const to = state.doc.lineAt(Math.max(span.from, span.to - 1)).to
@@ -244,7 +244,7 @@ export function previewOf(state: EditorState, focused: boolean, abbreviation: st
     builder.atomic.push(Decoration.mark({}).range(span.from, to))
   }
   // Task references go before links: `[[DEM-1]]` also reads as a link to nobody.
-  taskRefs(builder, state, abbreviation)
+  taskRefs(builder, state, projectCode)
   const tree = ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state)
   tree.iterate({
     enter: (ref) => {
@@ -348,7 +348,7 @@ export function previewOf(state: EditorState, focused: boolean, abbreviation: st
   return { decorations: Decoration.set(builder.out, true), atomic: Decoration.set(builder.atomic, true) }
 }
 
-export function livePreview(abbreviation: string): Extension {
+export function livePreview(projectCode: string): Extension {
   const focused = StateField.define<boolean>({
     create: () => false,
     update: (value, tr) =>
@@ -356,14 +356,14 @@ export function livePreview(abbreviation: string): Extension {
   })
 
   const preview = StateField.define<Preview>({
-    create: (state) => previewOf(state, false, abbreviation),
+    create: (state) => previewOf(state, false, projectCode),
     update: (value, tr) => {
       const changed =
         tr.docChanged ||
         tr.selection !== undefined ||
         tr.effects.some((effect) => effect.is(setFocused) || effect.is(refresh)) ||
         syntaxTree(tr.startState) !== syntaxTree(tr.state)
-      return changed ? previewOf(tr.state, tr.state.field(focused), abbreviation) : value
+      return changed ? previewOf(tr.state, tr.state.field(focused), projectCode) : value
     },
     provide: (field) => [
       EditorView.decorations.from(field, (value) => value.decorations),

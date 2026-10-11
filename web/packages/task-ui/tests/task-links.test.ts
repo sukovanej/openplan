@@ -2,7 +2,7 @@ import { expect, it } from "vitest"
 
 import { referenced, splitTaskRefs, taskLinkPlugins } from "../src/task-links"
 
-const split = (value: string) => splitTaskRefs(value, { project: "openplan", abbreviation: "OPP" })
+const split = (value: string) => splitTaskRefs(value, { project: "openplan", projectCode: "OPP" })
 
 it("returns null when there is no reference", () => {
   expect(split("plain text with no refs")).toBeNull()
@@ -96,16 +96,16 @@ it("leaves a bare number, a padded key, and a foreign key as plain text", () => 
 
 // Until the config arrives there is no way to tell this store's key from any other, so nothing is
 // linked rather than something linked wrongly; the body re-renders once it lands.
-it("links nothing while the abbreviation is unknown", () => {
+it("links nothing while the project code is unknown", () => {
   expect(
-    splitTaskRefs("see [[OPP-42]] and [[./00001-a.md]]", { project: "openplan", abbreviation: undefined }),
+    splitTaskRefs("see [[OPP-42]] and [[./00001-a.md]]", { project: "openplan", projectCode: undefined }),
   ).toBeNull()
 })
 
 // unified is handed `[attacher, options]` and calls the attacher to get the transformer; passing a
 // transformer straight into `remarkPlugins` would have it invoked with no tree at all.
 it("attaches as a remark plugin that rewrites the tree in place", () => {
-  const [attacher, options] = taskLinkPlugins({ project: "openplan", abbreviation: "OPP" })
+  const [attacher, options] = taskLinkPlugins({ project: "openplan", projectCode: "OPP" })
   const transform = attacher(options)
   const tree = {
     type: "root",

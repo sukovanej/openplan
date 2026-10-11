@@ -21,7 +21,7 @@ import {
 import { Fragment, type ReactNode } from "react"
 
 import type {
-  AbbreviationChange,
+  ProjectCodeChange,
   DocChange,
   DocumentChangeKind,
   FieldChange,
@@ -231,7 +231,7 @@ export function StoreVersionChangeView({ change, className }: { change: StoreVer
   )
 }
 
-export function AbbreviationChangeView({ change, className }: { change: AbbreviationChange; className?: string }) {
+export function ProjectCodeChangeView({ change, className }: { change: ProjectCodeChange; className?: string }) {
   return (
     <Changes className={className}>
       <span className="inline-flex flex-wrap items-center gap-1.5">

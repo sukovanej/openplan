@@ -1,11 +1,11 @@
 use op_api::CreateTask;
-use op_task::{Abbreviation, Status, Timestamp};
+use op_task::{ProjectCode, Status, Timestamp};
 
 fn stamp() -> Timestamp {
     "2026-01-01T00:00:00Z".parse().unwrap()
 }
 
-fn abbreviation() -> Abbreviation {
+fn project_code() -> ProjectCode {
     "OPP".parse().unwrap()
 }
 
@@ -19,7 +19,7 @@ fn create(title: &str, body: Option<&str>) -> op_task::Task {
         pull_requests: Vec::new(),
         body: body.map(str::to_owned),
     }
-    .into_task(stamp(), abbreviation(), None)
+    .into_task(stamp(), project_code(), None)
     .unwrap()
 }
 
@@ -69,7 +69,7 @@ fn into_task_carries_the_tags_it_was_given_as_a_sorted_set() {
         pull_requests: Vec::new(),
         body: None,
     }
-    .into_task(stamp(), abbreviation(), None)
+    .into_task(stamp(), project_code(), None)
     .unwrap();
 
     assert_eq!(task.frontmatter.tags, vec!["backend", "wip"]);
