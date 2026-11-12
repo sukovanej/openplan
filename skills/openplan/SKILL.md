@@ -88,7 +88,15 @@ project adds its own names for the areas it splits into.
 openplan tag list                             # name, color, and meaning
 openplan tasks create "Fix the parser" --tag bug --tag daemon
 openplan tasks set <key> tags "bug, daemon"   # replaces the set; "" clears it
+openplan tag create "First release"           # prints first-release
 ```
+
+When you register or rename a tag, write its display name in sentence case:
+`Feature`, not `feature`. Use one word when one word is sufficient. For two or
+more words, separate them with spaces and start only the first word with a
+capital letter: `First release`, not `First-Release`. The CLI keeps the display
+name and prints the normalized name. Use the normalized name in `--tag` and
+`tags`.
 
 Give each task you create one kind (`bug`, `feature`, or `draft`) and each area
 name that the work touches. Read `openplan tag list` first and take the names
