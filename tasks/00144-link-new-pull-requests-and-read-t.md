@@ -59,7 +59,7 @@ A person opens pull requests too, and an agent can forget the skill step of OPP-
 - Each row of the "Pull requests" section gains the title and a state chip.
 - The pull request icon on a task list row takes the color of the state of the newest pull request.
 - When `gh` or `glab` is not installed or not logged in, the rows show with no state, and the fault control tells the person which command to run (`gh auth login`).
-- The daemon never changes the status of a task, because one merged pull request can finish only part of a task. When every linked pull request is merged and the status is not `done` or `cancelled`, the status control on the task page shows "All pull requests merged" and a "Set done" button.
+- The daemon never changes the status of a task, because one merged pull request can finish only part of a task. When every linked pull request is merged and the status is not `done` or `cancelled`, the "Pull requests" section on the task page shows "All pull requests merged" and a "Set done" button.
 
 ## Tests
 
