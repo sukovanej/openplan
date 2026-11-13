@@ -232,17 +232,17 @@ async fn a_pull_request_of_another_author_does_not_link() {
 async fn the_cursor_outlives_the_daemon() {
     let gh = FakeGh::new();
     let home = tempfile::tempdir().unwrap();
-    let cursor_file = home.path().join(op_server::CURSOR_FILE);
+    let cache_file = home.path().join(op_server::CACHE_FILE);
     std::fs::write(
-        &cursor_file,
-        json!({ "github.com/acme/widgets": {
+        &cache_file,
+        json!({ "github.com/acme/widgets": { "cursor": {
             "updated": "2026-01-01T00:00:00Z", "since": "2026-01-01T00:00:00Z", "considered": {}
-        }})
+        }}})
         .to_string(),
     )
     .unwrap();
     let (_dir, state) = github_state(PullRequestPolling {
-        cursor_file: Some(cursor_file.clone()),
+        cache_file: Some(cache_file.clone()),
         ..polling(&gh.program())
     });
     let id = create_in(&state, PROJECT, json!({ "title": "Parser" })).await;
@@ -262,15 +262,99 @@ async fn the_cursor_outlives_the_daemon() {
         "https://github.com/acme/widgets/pull/300",
         "a pull request opened while the daemon was down links"
     );
-    let kept: Value = serde_json::from_slice(&std::fs::read(&cursor_file).unwrap()).unwrap();
+    let kept: Value = serde_json::from_slice(&std::fs::read(&cache_file).unwrap()).unwrap();
     assert_eq!(
-        kept["github.com/acme/widgets"]["updated"],
+        kept["github.com/acme/widgets"]["cursor"]["updated"],
         "2026-02-01T00:00:00Z"
     );
     assert!(
         gh.calls()[0].contains("updated:>=2025-12-31T23:55:00+00:00"),
         "the search starts five minutes before the cursor: {:?}",
         gh.calls()
+    );
+}
+
+#[tokio::test]
+async fn the_states_of_the_last_run_show_with_no_state_query() {
+    let gh = FakeGh::new();
+    let home = tempfile::tempdir().unwrap();
+    let cached = PullRequestPolling {
+        cache_file: Some(home.path().join(op_server::CACHE_FILE)),
+        ..polling(&gh.program())
+    };
+    let (dir, state) = github_state(cached.clone());
+    let id = create_in(
+        &state,
+        PROJECT,
+        json!({ "title": "Parser", "pull_requests": [OWN] }),
+    )
+    .await;
+    gh.states(json!({
+        "r0": { "p214": node(214, "Fix the parser", "x", "MERGED", "ben", "2026-01-01T00:00:00Z") },
+    }));
+    state.poll_pull_requests();
+    drop(state);
+
+    let state = AppState::new([op_server::Project::open(
+        PROJECT,
+        op_server::Location::find(dir.path(), None).unwrap(),
+    )
+    .unwrap()])
+    .with_pull_request_polling(cached);
+    gh.states(json!({}));
+    let before = gh.calls().len();
+    state.poll_pull_requests();
+
+    assert_eq!(linked(&state, &id).await[0]["status"]["state"], "merged");
+    let calls = &gh.calls()[before..];
+    assert_eq!(calls.len(), 1, "only the change query: {calls:?}");
+    assert!(calls[0].contains("search("), "{calls:?}");
+}
+
+#[tokio::test]
+async fn the_state_query_goes_in_batches() {
+    let gh = FakeGh::new();
+    let (_dir, state) = github_state(polling(&gh.program()));
+    let addresses: Vec<String> = (1..=120)
+        .map(|number| format!("https://github.com/acme/widgets/pull/{number}"))
+        .collect();
+    let id = create_in(
+        &state,
+        PROJECT,
+        json!({ "title": "Parser", "pull_requests": addresses }),
+    )
+    .await;
+    let pull_requests: serde_json::Map<String, Value> = (1..=120)
+        .map(|number| {
+            (
+                format!("p{number}"),
+                node(number, "T", "x", "OPEN", "ben", "2026-01-01T00:00:00Z"),
+            )
+        })
+        .collect();
+    gh.states(json!({ "r0": pull_requests }));
+
+    state.poll_pull_requests();
+
+    let queries: Vec<String> = gh
+        .calls()
+        .into_iter()
+        .filter(|call| !call.contains("search("))
+        .collect();
+    assert_eq!(queries.len(), 3, "120 pull requests in batches of 50");
+    assert!(
+        queries
+            .iter()
+            .all(|query| query.matches("pullRequest(").count() <= 50)
+    );
+    let views = linked(&state, &id).await;
+    assert!(
+        views
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|view| view["status"]["state"] == "open"),
+        "{views}"
     );
 }
 

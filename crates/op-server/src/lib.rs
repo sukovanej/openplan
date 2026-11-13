@@ -48,7 +48,7 @@ mod tasks;
 pub use drawing::DrawingCache;
 pub use project::{Location, OpenError, Project, STORE_DIR, open_backend, sync_view};
 use pull_requests::Poller;
-pub use pull_requests::{CURSOR_FILE, PullRequestPolling};
+pub use pull_requests::{CACHE_FILE, PullRequestPolling};
 pub use registry::{
     ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError, canonical, same_path, unique_name,
 };

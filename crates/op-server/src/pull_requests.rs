@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Project, Publisher};
 
-pub const CURSOR_FILE: &str = "pull-requests.json";
+pub const CACHE_FILE: &str = "pull-requests.json";
 const DAEMON_AGENT: &str = "openplan-daemon";
 const POLL_INTERVAL: Duration = Duration::from_secs(120);
 const CLI_TIMEOUT: Duration = Duration::from_secs(30);
@@ -24,6 +24,9 @@ const CLI_POLL: Duration = Duration::from_millis(25);
 // last one by this much.
 const SEARCH_LAG: jiff::SignedDuration = jiff::SignedDuration::from_secs(300);
 const MAX_PAGES: usize = 10;
+// GitHub refuses a query that names too many nodes, so the state query of a project with many
+// links goes in batches.
+const STATE_BATCH: usize = 50;
 // A daemon that the desktop app starts gets the short PATH of launchd, which holds no Homebrew.
 const FALLBACK_DIRS: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
 
@@ -32,8 +35,8 @@ pub struct PullRequestPolling {
     pub gh: OsString,
     pub glab: OsString,
     pub interval: Duration,
-    // Absent for a state with no daemon home: the cursors then last as long as the process.
-    pub cursor_file: Option<PathBuf>,
+    // Absent for a state with no daemon home: the cache then lasts as long as the process.
+    pub cache_file: Option<PathBuf>,
 }
 
 impl Default for PullRequestPolling {
@@ -42,7 +45,7 @@ impl Default for PullRequestPolling {
             gh: program("gh"),
             glab: program("glab"),
             interval: POLL_INTERVAL,
-            cursor_file: None,
+            cache_file: None,
         }
     }
 }
@@ -68,12 +71,24 @@ fn program(name: &str) -> OsString {
 
 pub(crate) struct Poller {
     config: PullRequestPolling,
-    cursors: Mutex<BTreeMap<String, Cursor>>,
+    cache: Mutex<BTreeMap<String, Entry>>,
+}
+
+// What the daemon keeps of one project between two runs. The states and the cursor go to disk in
+// one write, because a cached state is fresh only as long as the change query covers the time
+// since the cursor.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+struct Entry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cursor: Option<Cursor>,
+    // By `PullRequest::key`, for each pull request the project links.
+    #[serde(default)]
+    states: BTreeMap<String, PullRequestStatus>,
 }
 
 // Where the last scan of a repository stopped. `since` only moves forward: a pull request created
 // before it is old, and the scan never links it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Cursor {
     updated: Timestamp,
     since: Timestamp,
@@ -111,15 +126,15 @@ impl Cursor {
 
 impl Poller {
     pub(crate) fn new(config: PullRequestPolling) -> Self {
-        let cursors = config
-            .cursor_file
+        let cache = config
+            .cache_file
             .as_deref()
             .and_then(|path| std::fs::read(path).ok())
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
         Self {
             config,
-            cursors: Mutex::new(cursors),
+            cache: Mutex::new(cache),
         }
     }
 
@@ -130,28 +145,28 @@ impl Poller {
         }
     }
 
-    fn lock_cursors(&self) -> MutexGuard<'_, BTreeMap<String, Cursor>> {
-        self.cursors.lock().expect("cursor mutex poisoned")
+    fn lock_cache(&self) -> MutexGuard<'_, BTreeMap<String, Entry>> {
+        self.cache.lock().expect("pull request cache poisoned")
     }
 
-    fn cursor(&self, forge: &Forge) -> Cursor {
-        self.lock_cursors()
-            .entry(cursor_key(forge))
-            .or_insert_with(|| Cursor::new(op_backend::now()))
-            .clone()
+    fn entry(&self, key: &str) -> Entry {
+        self.lock_cache().get(key).cloned().unwrap_or_default()
     }
 
-    fn keep(&self, forge: &Forge, cursor: Cursor) {
-        let mut cursors = self.lock_cursors();
-        cursors.insert(cursor_key(forge), cursor);
-        let Some(path) = &self.config.cursor_file else {
+    fn keep(&self, key: &str, entry: Entry) {
+        let mut cache = self.lock_cache();
+        if cache.get(key) == Some(&entry) {
+            return;
+        }
+        cache.insert(key.to_owned(), entry);
+        let Some(path) = &self.config.cache_file else {
             return;
         };
-        let written = serde_json::to_vec_pretty(&*cursors)
+        let written = serde_json::to_vec_pretty(&*cache)
             .map_err(std::io::Error::other)
             .and_then(|bytes| write_atomically(path, &bytes));
         if let Err(err) = written {
-            tracing::warn!(path = %path.display(), error = %err, "cannot keep the pull request cursors");
+            tracing::warn!(path = %path.display(), error = %err, "cannot keep the pull request cache");
         }
     }
 
@@ -160,8 +175,16 @@ impl Poller {
     }
 }
 
-fn cursor_key(forge: &Forge) -> String {
+fn repository_key(forge: &Forge) -> String {
     format!("{}/{}", forge.host, forge.repo).to_ascii_lowercase()
+}
+
+// A project with no forge still links pull requests, so its checkout names its entry.
+fn entry_key(project: &Project) -> String {
+    match project.forge() {
+        Some(forge) => repository_key(forge),
+        None => project.location().key().display().to_string(),
+    }
 }
 
 fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -212,11 +235,16 @@ pub(crate) struct Memory {
 // One poll of one project: what changed in the project repository, then each linked pull request
 // that the first query cannot see. Publishes a change for each task whose pull request changed.
 pub(crate) fn poll(project: &Project, poller: &Poller, publisher: &Publisher) {
+    let key = entry_key(project);
+    let mut entry = poller.entry(&key);
     let mut problems: HashMap<ForgeKind, CliProblem> = HashMap::new();
-    let mut changed: HashSet<String> = HashSet::new();
+    let mut changed = seed(project, &entry);
     let mut read_now: HashSet<String> = HashSet::new();
     if let Some(forge) = project.forge().cloned() {
-        match changes(poller, &forge) {
+        let cursor = entry
+            .cursor
+            .get_or_insert_with(|| Cursor::new(op_backend::now()));
+        match changes(poller, &forge, cursor.window()) {
             Ok((viewer, reads)) => {
                 for read in &reads {
                     read_now.insert(read.pull_request.key());
@@ -227,10 +255,8 @@ pub(crate) fn poll(project: &Project, poller: &Poller, publisher: &Publisher) {
                         changed.insert(read.pull_request.key());
                     }
                 }
-                let mut cursor = poller.cursor(&forge);
-                link_new(project, &mut cursor, viewer.as_deref(), &reads);
+                link_new(project, cursor, viewer.as_deref(), &reads);
                 cursor.advance(&reads);
-                poller.keep(&forge, cursor);
             }
             Err(CliError::Problem(problem)) => {
                 problems.insert(forge.kind, problem);
@@ -241,36 +267,41 @@ pub(crate) fn poll(project: &Project, poller: &Poller, publisher: &Publisher) {
         }
     }
     let wanted = wanted(project, &problems, &read_now);
-    for ((kind, host), pull_requests) in by_host(wanted) {
-        match states(poller, kind, &host, &pull_requests) {
-            Ok(states) => {
-                for (pull_request, read) in states {
-                    match read {
-                        Some(read) => {
-                            if project
-                                .index()
-                                .set_pull_request_status(&pull_request, status_of(&read))
-                            {
-                                changed.insert(pull_request.key());
+    'hosts: for ((kind, host), pull_requests) in by_host(wanted) {
+        for batch in pull_requests.chunks(STATE_BATCH) {
+            match states(poller, kind, &host, batch) {
+                Ok(states) => {
+                    for (pull_request, read) in states {
+                        match read {
+                            Some(read) => {
+                                if project
+                                    .index()
+                                    .set_pull_request_status(&pull_request, status_of(&read))
+                                {
+                                    changed.insert(pull_request.key());
+                                }
                             }
-                        }
-                        None => {
-                            project
-                                .lock_pull_requests()
-                                .missing
-                                .insert(pull_request.key());
+                            None => {
+                                project
+                                    .lock_pull_requests()
+                                    .missing
+                                    .insert(pull_request.key());
+                            }
                         }
                     }
                 }
-            }
-            Err(CliError::Problem(problem)) => {
-                problems.insert(kind, problem);
-            }
-            Err(CliError::Failed(error)) => {
-                tracing::warn!(project = %project.name(), %host, %error, "cannot read the state of pull requests");
+                Err(CliError::Problem(problem)) => {
+                    problems.insert(kind, problem);
+                    continue 'hosts;
+                }
+                Err(CliError::Failed(error)) => {
+                    tracing::warn!(project = %project.name(), %host, %error, "cannot read the state of pull requests");
+                }
             }
         }
     }
+    entry.states = linked_states(project);
+    poller.keep(&key, entry);
     project.lock_pull_requests().problems = problems;
     publisher.report(project);
     let tasks: Vec<String> = {
@@ -295,6 +326,37 @@ pub(crate) fn poll(project: &Project, poller: &Poller, publisher: &Publisher) {
     }
 }
 
+// The cached state of each link the index does not know yet: the states of the last run show
+// before the first query answers.
+fn seed(project: &Project, entry: &Entry) -> HashSet<String> {
+    let mut index = project.index();
+    let mut seeded = HashSet::new();
+    for (_, pull_request) in index.pull_request_links() {
+        let key = pull_request.key();
+        if index.pull_request_status(&pull_request).is_some() {
+            continue;
+        }
+        if let Some(status) = entry.states.get(&key)
+            && index.set_pull_request_status(&pull_request, status.clone())
+        {
+            seeded.insert(key);
+        }
+    }
+    seeded
+}
+
+fn linked_states(project: &Project) -> BTreeMap<String, PullRequestStatus> {
+    let index = project.index();
+    index
+        .pull_request_links()
+        .into_iter()
+        .filter_map(|(_, pull_request)| {
+            let status = index.pull_request_status(&pull_request)?.clone();
+            Some((pull_request.key(), status))
+        })
+        .collect()
+}
+
 // A link the daemon has not read yet, so a poll now has work to do.
 pub(crate) fn has_unread(project: &Project) -> bool {
     let memory = project.lock_pull_requests();
@@ -307,7 +369,8 @@ pub(crate) fn has_unread(project: &Project) -> bool {
 }
 
 // Each linked pull request with no known state, and each open one in another repository, which
-// the change query of the project does not cover.
+// the change query of the project does not cover. A settled one in the project repository stays
+// as the cache has it: the change query reads it again if it changes.
 fn wanted(
     project: &Project,
     problems: &HashMap<ForgeKind, CliProblem>,
@@ -318,7 +381,7 @@ fn wanted(
     let in_project = |pull_request: &PullRequest| {
         project
             .forge()
-            .is_some_and(|forge| cursor_key(forge) == cursor_key(&pull_request.forge))
+            .is_some_and(|forge| repository_key(forge) == repository_key(&pull_request.forge))
     };
     let mut seen = HashSet::new();
     index
@@ -437,8 +500,8 @@ fn link(project: &Project, number: u64, pull_request: &PullRequest) -> Result<()
 fn changes(
     poller: &Poller,
     forge: &Forge,
+    since: Timestamp,
 ) -> Result<(Option<String>, Vec<PullRequestRead>), CliError> {
-    let since = poller.cursor(forge).window();
     let mut viewer = None;
     let mut reads = Vec::new();
     let mut after: Option<String> = None;
