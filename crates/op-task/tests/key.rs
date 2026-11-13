@@ -138,3 +138,31 @@ fn a_quoted_reference_is_not_a_reference() {
 fn an_indented_code_block_is_quoted_too() {
     assert!(op_task::body_ref_spans("text\n\n    [[OPP-1]]\n").is_empty());
 }
+
+#[test]
+fn a_branch_or_a_title_names_keys_in_any_case() {
+    let code = opp();
+    assert_eq!(code.keys_in("opp-42-fix-parser"), vec![42]);
+    assert_eq!(code.keys_in("Fix the parser (OPP-42)"), vec![42]);
+    assert_eq!(
+        code.keys_in("feat/Opp-7: and OPP-9, again opp-7"),
+        vec![7, 9]
+    );
+    assert_eq!(code.keys_in("OPP-42"), vec![42]);
+}
+
+#[test]
+fn a_key_must_stand_alone() {
+    let code = opp();
+    for text in [
+        "XOPP-42",
+        "OPP-42a",
+        "OPP-042",
+        "OPP-",
+        "OPP42",
+        "WEB-42",
+        "claude/github-pr-state-530aa2",
+    ] {
+        assert_eq!(code.keys_in(text), Vec::<u64>::new(), "{text}");
+    }
+}

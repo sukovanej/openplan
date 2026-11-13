@@ -4,7 +4,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock, Weak};
 use std::time::Duration;
 
-use op_api::{BackendKind, ChangeEvent, Fault, FaultKind, Forge, ProjectView, Rfc3339, SyncView};
+use op_api::{
+    BackendKind, ChangeEvent, Fault, FaultKind, Forge, ForgeKind, ProjectView, Rfc3339, SyncView,
+};
 use op_backend::{
     Actor, Backend, BackendError, BackendEvent, Change, HeadMoved, LogQuery, Origin, RevisionId,
     Schedule, Signer, SyncLoop, SyncStatus,
@@ -19,6 +21,7 @@ use op_tracker::{
 };
 use tokio::sync::broadcast::error::RecvError;
 
+use crate::pull_requests::{self, Memory, PollLoop, Poller};
 use crate::{Publisher, SelfUpdate};
 
 pub const STORE_DIR: &str = ".plan";
@@ -218,6 +221,8 @@ pub struct Project {
     // Shared with the merge policy, which runs on the sync thread.
     updates: Arc<OnceLock<Arc<SelfUpdate>>>,
     root_misses: AtomicU32,
+    pull_requests: Mutex<Memory>,
+    pull_request_poll: Mutex<Option<PollLoop>>,
 }
 
 impl Project {
@@ -262,6 +267,8 @@ impl Project {
             sync_version,
             updates,
             root_misses: AtomicU32::new(0),
+            pull_requests: Mutex::default(),
+            pull_request_poll: Mutex::new(None),
         };
         project.reload();
         Ok(project)
@@ -269,7 +276,7 @@ impl Project {
 
     // The event pump holds the project weakly, so it ends with the backend's event channel once the
     // project is dropped.
-    pub(crate) fn start(self: &Arc<Self>, publisher: Publisher) {
+    pub(crate) fn start(self: &Arc<Self>, publisher: Publisher, poller: &Arc<Poller>) {
         let _ = self.updates.set(Arc::clone(publisher.updates()));
         if self
             .lock_health()
@@ -281,6 +288,11 @@ impl Project {
         }
         let events = self.tracker.backend().subscribe();
         let project = Arc::downgrade(self);
+        *self.lock_pull_request_poll() = Some(PollLoop::start(
+            Arc::downgrade(self),
+            Arc::clone(poller),
+            publisher.clone(),
+        ));
         std::thread::spawn(move || pump(project, events, publisher));
         *self.lock_sync() =
             SyncLoop::start(Arc::clone(self.tracker.backend()), Schedule::default());
@@ -289,6 +301,8 @@ impl Project {
     pub fn stop(&self) {
         let sync = self.lock_sync().take();
         drop(sync);
+        let poll = self.lock_pull_request_poll().take();
+        drop(poll);
     }
 
     pub fn name(&self) -> String {
@@ -574,6 +588,11 @@ impl Project {
         if moved.origin == Origin::Local {
             self.sync_soon();
         }
+        if pull_requests::has_unread(self)
+            && let Some(poll) = self.lock_pull_request_poll().as_ref()
+        {
+            poll.poll_soon();
+        }
     }
 
     // What stops this project from answering at all. A project with no tasks yet still answers, so
@@ -590,6 +609,7 @@ impl Project {
 
     pub fn faults(&self) -> Vec<Fault> {
         let project = self.name();
+        let pull_request_faults = self.pull_request_faults(&project);
         let health = self.lock_health();
         let fault = |kind, message: String| Fault {
             project: project.clone(),
@@ -636,7 +656,45 @@ impl Project {
                 format!("changes made outside openplan were not read: {error}"),
             ));
         }
+        faults.extend(pull_request_faults);
         faults
+    }
+
+    // A missing `gh` is a fault only for a project that links a pull request on GitHub.
+    fn pull_request_faults(&self, project: &str) -> Vec<Fault> {
+        let memory = self.lock_pull_requests();
+        let linked: Vec<ForgeKind> = self
+            .index()
+            .pull_request_links()
+            .into_iter()
+            .map(|(_, pull_request)| pull_request.forge.kind)
+            .collect();
+        let mut kinds: Vec<&ForgeKind> = memory
+            .problems
+            .keys()
+            .filter(|kind| linked.contains(kind))
+            .collect();
+        kinds.sort();
+        kinds
+            .into_iter()
+            .map(|kind| Fault {
+                project: project.to_owned(),
+                kind: FaultKind::PullRequestStates,
+                message: memory.problems[kind].message(*kind),
+            })
+            .collect()
+    }
+
+    pub(crate) fn lock_pull_requests(&self) -> MutexGuard<'_, Memory> {
+        self.pull_requests
+            .lock()
+            .expect("pull request memory poisoned")
+    }
+
+    fn lock_pull_request_poll(&self) -> MutexGuard<'_, Option<PollLoop>> {
+        self.pull_request_poll
+            .lock()
+            .expect("pull request poll poisoned")
     }
 
     // One watchdog tick: whether the root still exists, whether git names someone to sign a write,

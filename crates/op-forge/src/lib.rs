@@ -1,10 +1,15 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+mod state;
+pub use state::*;
+
 const GITHUB_HOST: &str = "github.com";
 const GITLAB_HOST: &str = "gitlab.com";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ForgeKind {
     Github,
@@ -129,6 +134,11 @@ impl PullRequest {
 
     pub fn is(&self, other: &PullRequest) -> bool {
         self.number == other.number && self.forge.is(&other.forge)
+    }
+
+    // Two addresses of one pull request may differ in case, so a map of pull requests keys on this.
+    pub fn key(&self) -> String {
+        self.url().to_ascii_lowercase()
     }
 
     pub fn url(&self) -> String {

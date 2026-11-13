@@ -46,6 +46,7 @@ export {
 } from "./metadata"
 export { DocParentLink, ParentLink } from "./parent-link"
 export { ProblemBadge, ProblemBanner, withoutTextProblems } from "./problem-mark"
+export { allMerged, newestPullRequestState, PullRequestStateChip, pullRequestTint } from "./pull-request-state"
 export { PullRequestsMark } from "./pull-requests-mark"
 export { RevisionMeta, shortRevision } from "./revision-meta"
 export { StatusMenu } from "./status-menu"

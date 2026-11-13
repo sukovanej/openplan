@@ -3983,7 +3983,9 @@ dependencies = [
 name = "op-forge"
 version = "0.0.8"
 dependencies = [
+ "jiff",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "utoipa",
 ]
@@ -4016,6 +4018,7 @@ dependencies = [
  "axum",
  "gix-imara-diff",
  "http-body-util",
+ "jiff",
  "op-api",
  "op-backend",
  "op-backend-git",

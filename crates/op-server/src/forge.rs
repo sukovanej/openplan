@@ -1,12 +1,11 @@
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::Command;
+use std::time::Duration;
 
 use op_api::{BackendKind, Forge};
 
 use crate::Location;
 
 const GLAB_TIMEOUT: Duration = Duration::from_secs(5);
-const GLAB_POLL: Duration = Duration::from_millis(25);
 
 // The repository of the remote the project syncs with. A project on a local directory syncs with
 // none.
@@ -25,31 +24,17 @@ fn is_gitlab_host(host: &str) -> bool {
         .is_some_and(|status| op_forge::glab_hosts(&status).contains(&host.to_owned()))
 }
 
-// `glab` writes the report to stderr in some versions and to stdout in others. The report is a few
-// lines, so the pipes hold it while this waits.
+// `glab` writes the report to stderr in some versions and to stdout in others.
 fn glab_auth_status() -> Option<String> {
-    let mut child = Command::new("glab")
-        .args(["auth", "status"])
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
-    let deadline = Instant::now() + GLAB_TIMEOUT;
-    while child.try_wait().ok()?.is_none() {
-        if Instant::now() >= deadline {
-            tracing::warn!("glab auth status gave no answer in {GLAB_TIMEOUT:?}");
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
+    let mut command = Command::new("glab");
+    command.args(["auth", "status"]).env("NO_COLOR", "1");
+    match crate::pull_requests::run(command, GLAB_TIMEOUT) {
+        Ok(output) => Some(format!("{}\n{}", output.stdout, output.stderr)),
+        Err(err) => {
+            if err.kind() == std::io::ErrorKind::TimedOut {
+                tracing::warn!("glab auth status gave no answer in {GLAB_TIMEOUT:?}");
+            }
+            None
         }
-        std::thread::sleep(GLAB_POLL);
     }
-    let output = child.wait_with_output().ok()?;
-    Some(format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    ))
 }

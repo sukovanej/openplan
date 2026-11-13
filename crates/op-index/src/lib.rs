@@ -4,8 +4,9 @@ mod docs;
 mod problems;
 
 use op_api::{
-    Author, Comment, Forge, Metadata, Problem, PullRequestView, SearchHit, SearchMatch, TaskChild,
-    TaskDetail, TaskListItem, TaskRef, hit_cmp, list_item_cmp, updated_field,
+    Author, Comment, Forge, Metadata, Problem, PullRequest, PullRequestStatus, PullRequestView,
+    SearchHit, SearchMatch, TaskChild, TaskDetail, TaskListItem, TaskRef, hit_cmp, list_item_cmp,
+    updated_field,
 };
 use op_backend::{Actor, Change, ChangeKind, LogEntry, Timestamp};
 use op_task::reference::{self, Target};
@@ -26,6 +27,8 @@ pub struct Index {
     docs: BTreeMap<String, docs::DocEntry>,
     doc_updated: HashMap<String, Timestamp>,
     doc_authors: HashMap<String, Author>,
+    // By `PullRequest::key`. The daemon reads the states from the forge and keeps them only here.
+    pull_request_states: HashMap<String, PullRequestStatus>,
 }
 
 #[derive(Debug, Clone)]
@@ -377,7 +380,38 @@ impl Index {
     }
 
     fn pull_requests_of(&self, entry: &Entry) -> Vec<PullRequestView> {
-        PullRequestView::of_addresses(entry.metadata.pull_requests(), self.forge.as_ref())
+        linked(entry)
+            .map(|pull_request| PullRequestView {
+                status: self.pull_request_states.get(&pull_request.key()).cloned(),
+                ..PullRequestView::of(&pull_request, self.forge.as_ref())
+            })
+            .collect()
+    }
+
+    // Each task with each pull request it links.
+    pub fn pull_request_links(&self) -> Vec<(u64, PullRequest)> {
+        self.tasks
+            .iter()
+            .flat_map(|(number, entry)| linked(entry).map(|pull_request| (*number, pull_request)))
+            .collect()
+    }
+
+    pub fn pull_request_status(&self, pull_request: &PullRequest) -> Option<&PullRequestStatus> {
+        self.pull_request_states.get(&pull_request.key())
+    }
+
+    // Answers whether the status changed.
+    pub fn set_pull_request_status(
+        &mut self,
+        pull_request: &PullRequest,
+        status: PullRequestStatus,
+    ) -> bool {
+        let key = pull_request.key();
+        if self.pull_request_states.get(&key) == Some(&status) {
+            return false;
+        }
+        self.pull_request_states.insert(key, status);
+        true
     }
 
     fn updated_of(&self, number: u64, entry: &Entry) -> op_api::Field<op_api::Rfc3339> {
@@ -389,6 +423,14 @@ impl Index {
                 .ok_or(FieldError::Missing),
         )
     }
+}
+
+fn linked(entry: &Entry) -> impl Iterator<Item = PullRequest> + '_ {
+    entry
+        .metadata
+        .pull_requests()
+        .iter()
+        .filter_map(|address| PullRequest::parse(address).ok())
 }
 
 impl Entry {

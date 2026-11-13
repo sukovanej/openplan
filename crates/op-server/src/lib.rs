@@ -40,12 +40,15 @@ mod docs;
 mod drawing;
 mod forge;
 mod project;
+mod pull_requests;
 mod registry;
 mod revision_diff;
 mod self_update;
 mod tasks;
 pub use drawing::DrawingCache;
 pub use project::{Location, OpenError, Project, STORE_DIR, open_backend, sync_view};
+use pull_requests::Poller;
+pub use pull_requests::{CURSOR_FILE, PullRequestPolling};
 pub use registry::{
     ProjectEntry, ProjectRegistry, REGISTRY_FILE, RegistryError, canonical, same_path, unique_name,
 };
@@ -220,6 +223,7 @@ pub struct AppState {
     health: Option<Arc<DaemonInfo>>,
     publisher: Publisher,
     drawings: Arc<DrawingCache>,
+    poller: Arc<Poller>,
 }
 
 impl AppState {
@@ -240,6 +244,19 @@ impl AppState {
             health: None,
             publisher: Publisher::new(),
             drawings: Arc::new(DrawingCache::new(DrawingCache::BUDGET)),
+            poller: Arc::new(Poller::new(PullRequestPolling::default())),
+        }
+    }
+
+    pub fn with_pull_request_polling(mut self, polling: PullRequestPolling) -> Self {
+        self.poller = Arc::new(Poller::new(polling));
+        self
+    }
+
+    // One poll of the pull requests of every project, now, on this thread.
+    pub fn poll_pull_requests(&self) {
+        for project in self.projects() {
+            pull_requests::poll(&project, &self.poller, &self.publisher);
         }
     }
 
@@ -292,7 +309,7 @@ impl AppState {
     // Each project starts listening to its backend and syncing with its remote.
     pub fn start_projects(&self) {
         for project in self.projects() {
-            project.start(self.publisher.clone());
+            project.start(self.publisher.clone(), &self.poller);
             self.publisher.report(&project);
         }
     }
@@ -386,7 +403,7 @@ impl AppState {
         };
         if created {
             tracing::info!(project = %project.name(), root = %project.path.display(), "project registered");
-            project.start(self.publisher.clone());
+            project.start(self.publisher.clone(), &self.poller);
         }
         if let Some((project_code, author)) = start {
             start_tasks(&project, project_code, &author)?;

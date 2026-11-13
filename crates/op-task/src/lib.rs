@@ -198,6 +198,41 @@ impl ProjectCode {
         parse_id(key.strip_prefix(self.as_str())?.strip_prefix('-')?)
     }
 
+    // The keys a branch name or a title names, in any case: `opp-42-fix-parser`, `Fix (OPP-42)`.
+    // A key must stand alone, so `XOPP-42` and `OPP-42a` name nothing.
+    pub fn keys_in(&self, text: &str) -> Vec<u64> {
+        let code = self.as_str().as_bytes();
+        let bytes = text.as_bytes();
+        let mut numbers = Vec::new();
+        for start in 0..bytes.len() {
+            let Some(after_code) = bytes.get(start..start + code.len()) else {
+                break;
+            };
+            let bounded = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+            if !bounded
+                || !after_code.eq_ignore_ascii_case(code)
+                || bytes.get(start + code.len()) != Some(&b'-')
+            {
+                continue;
+            }
+            let digits_from = start + code.len() + 1;
+            let digits = bytes[digits_from..]
+                .iter()
+                .take_while(|b| b.is_ascii_digit())
+                .count();
+            let end = digits_from + digits;
+            if bytes.get(end).is_some_and(u8::is_ascii_alphanumeric) {
+                continue;
+            }
+            if let Some(number) = parse_id(&text[digits_from..end])
+                && !numbers.contains(&number)
+            {
+                numbers.push(number);
+            }
+        }
+        numbers
+    }
+
     // A reference may aim at a section (`OPP-42#Design`); these carry it across the two spellings.
     pub fn format_ref(&self, reference: &str) -> Option<String> {
         let number = parse_id(ref_target(reference))?;
