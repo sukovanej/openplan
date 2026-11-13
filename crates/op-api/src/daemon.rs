@@ -51,9 +51,9 @@ pub struct DaemonInfo {
 // The HTTP API that this build serves and speaks. Raise it with each change of the API, so a CLI
 // and a daemon from two builds know whether they understand each other. A test pins it to a hash
 // of the OpenAPI spec, so a change of the spec fails until someone raises it.
-pub const API_VERSION: u32 = 2;
+pub const API_VERSION: u32 = 3;
 pub const API_SPEC_SHA256: &str =
-    "f0a172c3c8886baf93f485cfd173aaffee38e9b5cf7a25194a1ff13376f677aa";
+    "76d461bc4118d93103e795955b3ea37ba3cb9dbe3bdaef0c3a64449b65af1fb1";
 
 // Who asked for a write. The CLI sends them on every request; a request without them, such as one
 // from the web UI, is signed with the identity of the repository the daemon serves. Header values

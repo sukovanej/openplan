@@ -82,6 +82,12 @@ export const ProblemCode = Schema.Literals([
 ]).annotate({ identifier: "ProblemCode" })
 export type ForgeKind = "github" | "gitlab"
 export const ForgeKind = Schema.Literals(["github", "gitlab"]).annotate({ identifier: "ForgeKind" })
+export type PullRequestState = "open" | "draft" | "merged" | "closed"
+export const PullRequestState = Schema.Literals(["open", "draft", "merged", "closed"]).annotate({
+  identifier: "PullRequestState",
+})
+export type Rfc3339 = string
+export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
 export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "cancelled"
 export const Status = Schema.Literals(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]).annotate({
   identifier: "Status",
@@ -118,6 +124,7 @@ export type FaultKind =
   | "no_identity"
   | "sync_failed"
   | "outside_changes_unread"
+  | "pull_request_states"
 export const FaultKind = Schema.Literals([
   "root_gone",
   "unreadable",
@@ -127,11 +134,10 @@ export const FaultKind = Schema.Literals([
   "no_identity",
   "sync_failed",
   "outside_changes_unread",
+  "pull_request_states",
 ]).annotate({ identifier: "FaultKind" })
 export type BackendKind = "git" | "local"
 export const BackendKind = Schema.Literals(["git", "local"]).annotate({ identifier: "BackendKind" })
-export type Rfc3339 = string
-export const Rfc3339 = Schema.String.annotate({ format: "date-time", identifier: "Rfc3339" })
 export type RenameProject = { readonly name: string }
 export const RenameProject = Schema.Struct({ name: Schema.String }).annotate({ identifier: "RenameProject" })
 export type CreateDoc = { readonly body?: string | null; readonly name: string; readonly parent?: string | null }
@@ -311,26 +317,58 @@ export const FieldConflict_Status = Schema.Struct({
 }).annotate({ identifier: "FieldConflict_Status" })
 export type Problem = { readonly code: ProblemCode; readonly message: string }
 export const Problem = Schema.Struct({ code: ProblemCode, message: Schema.String }).annotate({ identifier: "Problem" })
-export type PullRequestView = {
-  readonly forge: ForgeKind
-  readonly number: number
-  readonly repo: string
-  readonly short: string
-  readonly url: string
-}
-export const PullRequestView = Schema.Struct({
-  forge: ForgeKind,
-  number: Schema.Number.annotate({ format: "int64" })
-    .check(Schema.isInt().annotate({ expected: "an integer" }))
-    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
-  repo: Schema.String,
-  short: Schema.String,
-  url: Schema.String,
-}).annotate({ identifier: "PullRequestView" })
 export type Forge = { readonly host: string; readonly kind: ForgeKind; readonly repo: string }
 export const Forge = Schema.Struct({ host: Schema.String, kind: ForgeKind, repo: Schema.String }).annotate({
   identifier: "Forge",
 })
+export type PullRequestStatus = {
+  readonly state: PullRequestState
+  readonly title: string
+  readonly updated_at: Rfc3339
+}
+export const PullRequestStatus = Schema.Struct({
+  state: PullRequestState,
+  title: Schema.String,
+  updated_at: Rfc3339,
+}).annotate({ identifier: "PullRequestStatus" })
+export type SyncView = {
+  readonly ahead: number
+  readonly behind: number
+  readonly last_attempt?: Rfc3339
+  readonly last_success?: Rfc3339
+  readonly remote: string
+  readonly syncing: boolean
+}
+export const SyncView = Schema.Struct({
+  ahead: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  behind: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+  ),
+  last_attempt: Schema.optionalKey(Rfc3339),
+  last_success: Schema.optionalKey(Rfc3339),
+  remote: Schema.String,
+  syncing: Schema.Boolean,
+}).annotate({ identifier: "SyncView" })
+export type RevisionView = {
+  readonly agent?: string
+  readonly at: Rfc3339
+  readonly author: string
+  readonly email?: string
+  readonly id: string
+  readonly message: string
+  readonly parents: ReadonlyArray<string>
+}
+export const RevisionView = Schema.Struct({
+  agent: Schema.optionalKey(Schema.String),
+  at: Rfc3339,
+  author: Schema.String,
+  email: Schema.optionalKey(Schema.String),
+  id: Schema.String,
+  message: Schema.String,
+  parents: Schema.Array(Schema.String),
+}).annotate({ identifier: "RevisionView" })
 export type CreateTask = {
   readonly body?: string | null
   readonly dependencies?: ReadonlyArray<string>
@@ -413,44 +451,6 @@ export const RegisterProject = Schema.Struct({
   path: Schema.String,
   project_code: Schema.optionalKey(Schema.String),
 }).annotate({ identifier: "RegisterProject" })
-export type SyncView = {
-  readonly ahead: number
-  readonly behind: number
-  readonly last_attempt?: Rfc3339
-  readonly last_success?: Rfc3339
-  readonly remote: string
-  readonly syncing: boolean
-}
-export const SyncView = Schema.Struct({
-  ahead: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-  ),
-  behind: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-    Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-  ),
-  last_attempt: Schema.optionalKey(Rfc3339),
-  last_success: Schema.optionalKey(Rfc3339),
-  remote: Schema.String,
-  syncing: Schema.Boolean,
-}).annotate({ identifier: "SyncView" })
-export type RevisionView = {
-  readonly agent?: string
-  readonly at: Rfc3339
-  readonly author: string
-  readonly email?: string
-  readonly id: string
-  readonly message: string
-  readonly parents: ReadonlyArray<string>
-}
-export const RevisionView = Schema.Struct({
-  agent: Schema.optionalKey(Schema.String),
-  at: Rfc3339,
-  author: Schema.String,
-  email: Schema.optionalKey(Schema.String),
-  id: Schema.String,
-  message: Schema.String,
-  parents: Schema.Array(Schema.String),
-}).annotate({ identifier: "RevisionView" })
 export type DocumentChange = {
   readonly doc?: string
   readonly kind: DocumentChangeKind
@@ -546,78 +546,24 @@ export const Field_Status = Schema.Union(
   ],
   { mode: "oneOf" },
 ).annotate({ identifier: "Field_Status" })
-export type FieldChange =
-  | { readonly field: "number"; readonly from: string; readonly to: string }
-  | { readonly field: "status"; readonly from: Status; readonly to: Status }
-  | { readonly field: "parent"; readonly from?: string; readonly to?: string }
-  | { readonly field: "order" }
-  | { readonly field: "dependencies"; readonly from: ReadonlyArray<string>; readonly to: ReadonlyArray<string> }
-  | { readonly field: "tags"; readonly from: ReadonlyArray<string>; readonly to: ReadonlyArray<string> }
-  | {
-      readonly field: "pull_requests"
-      readonly from: ReadonlyArray<PullRequestView>
-      readonly to: ReadonlyArray<PullRequestView>
-    }
-  | { readonly field: "title"; readonly from?: string; readonly to?: string }
-  | { readonly field: "description" }
-  | { readonly added: number; readonly field: "comments"; readonly removed: number }
-  | { readonly field: "conflicts"; readonly from: number; readonly to: number }
-  | { readonly field: "other"; readonly name: string }
-  | { readonly field: "frontmatter" }
-export const FieldChange = Schema.Union(
-  [
-    Schema.Struct({ field: Schema.Literal("number"), from: Schema.String, to: Schema.String }),
-    Schema.Struct({ field: Schema.Literal("status"), from: Status, to: Status }),
-    Schema.Struct({
-      field: Schema.Literal("parent"),
-      from: Schema.optionalKey(Schema.String),
-      to: Schema.optionalKey(Schema.String),
-    }),
-    Schema.Struct({ field: Schema.Literal("order") }),
-    Schema.Struct({
-      field: Schema.Literal("dependencies"),
-      from: Schema.Array(Schema.String),
-      to: Schema.Array(Schema.String),
-    }),
-    Schema.Struct({
-      field: Schema.Literal("tags"),
-      from: Schema.Array(Schema.String),
-      to: Schema.Array(Schema.String),
-    }),
-    Schema.Struct({
-      field: Schema.Literal("pull_requests"),
-      from: Schema.Array(PullRequestView),
-      to: Schema.Array(PullRequestView),
-    }),
-    Schema.Struct({
-      field: Schema.Literal("title"),
-      from: Schema.optionalKey(Schema.String),
-      to: Schema.optionalKey(Schema.String),
-    }),
-    Schema.Struct({ field: Schema.Literal("description") }),
-    Schema.Struct({
-      added: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-      ),
-      field: Schema.Literal("comments"),
-      removed: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-      ),
-    }),
-    Schema.Struct({
-      field: Schema.Literal("conflicts"),
-      from: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-      ),
-      to: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
-        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
-      ),
-    }),
-    Schema.Struct({ field: Schema.Literal("other"), name: Schema.String }),
-    Schema.Struct({ field: Schema.Literal("frontmatter") }),
-  ],
-  { mode: "oneOf" },
-).annotate({ identifier: "FieldChange" })
+export type PullRequestView = {
+  readonly forge: ForgeKind
+  readonly number: number
+  readonly repo: string
+  readonly short: string
+  readonly status?: PullRequestStatus
+  readonly url: string
+}
+export const PullRequestView = Schema.Struct({
+  forge: ForgeKind,
+  number: Schema.Number.annotate({ format: "int64" })
+    .check(Schema.isInt().annotate({ expected: "an integer" }))
+    .check(Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" })),
+  repo: Schema.String,
+  short: Schema.String,
+  status: Schema.optionalKey(PullRequestStatus),
+  url: Schema.String,
+}).annotate({ identifier: "PullRequestView" })
 export type ProjectView = {
   readonly backend: BackendKind
   readonly forge?: Forge
@@ -694,18 +640,78 @@ export const TaskChild = Schema.Struct({
   status: Field_Status,
   title: Schema.String,
 }).annotate({ identifier: "TaskChild" })
-export type TaskChange = {
-  readonly fields?: ReadonlyArray<FieldChange>
-  readonly kind: DocumentChangeKind
-  readonly task: string
-  readonly title?: string
-}
-export const TaskChange = Schema.Struct({
-  fields: Schema.optionalKey(Schema.Array(FieldChange)),
-  kind: DocumentChangeKind,
-  task: Schema.String,
-  title: Schema.optionalKey(Schema.String),
-}).annotate({ identifier: "TaskChange" })
+export type FieldChange =
+  | { readonly field: "number"; readonly from: string; readonly to: string }
+  | { readonly field: "status"; readonly from: Status; readonly to: Status }
+  | { readonly field: "parent"; readonly from?: string; readonly to?: string }
+  | { readonly field: "order" }
+  | { readonly field: "dependencies"; readonly from: ReadonlyArray<string>; readonly to: ReadonlyArray<string> }
+  | { readonly field: "tags"; readonly from: ReadonlyArray<string>; readonly to: ReadonlyArray<string> }
+  | {
+      readonly field: "pull_requests"
+      readonly from: ReadonlyArray<PullRequestView>
+      readonly to: ReadonlyArray<PullRequestView>
+    }
+  | { readonly field: "title"; readonly from?: string; readonly to?: string }
+  | { readonly field: "description" }
+  | { readonly added: number; readonly field: "comments"; readonly removed: number }
+  | { readonly field: "conflicts"; readonly from: number; readonly to: number }
+  | { readonly field: "other"; readonly name: string }
+  | { readonly field: "frontmatter" }
+export const FieldChange = Schema.Union(
+  [
+    Schema.Struct({ field: Schema.Literal("number"), from: Schema.String, to: Schema.String }),
+    Schema.Struct({ field: Schema.Literal("status"), from: Status, to: Status }),
+    Schema.Struct({
+      field: Schema.Literal("parent"),
+      from: Schema.optionalKey(Schema.String),
+      to: Schema.optionalKey(Schema.String),
+    }),
+    Schema.Struct({ field: Schema.Literal("order") }),
+    Schema.Struct({
+      field: Schema.Literal("dependencies"),
+      from: Schema.Array(Schema.String),
+      to: Schema.Array(Schema.String),
+    }),
+    Schema.Struct({
+      field: Schema.Literal("tags"),
+      from: Schema.Array(Schema.String),
+      to: Schema.Array(Schema.String),
+    }),
+    Schema.Struct({
+      field: Schema.Literal("pull_requests"),
+      from: Schema.Array(PullRequestView),
+      to: Schema.Array(PullRequestView),
+    }),
+    Schema.Struct({
+      field: Schema.Literal("title"),
+      from: Schema.optionalKey(Schema.String),
+      to: Schema.optionalKey(Schema.String),
+    }),
+    Schema.Struct({ field: Schema.Literal("description") }),
+    Schema.Struct({
+      added: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+      field: Schema.Literal("comments"),
+      removed: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+    }),
+    Schema.Struct({
+      field: Schema.Literal("conflicts"),
+      from: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+      to: Schema.Number.check(Schema.isInt().annotate({ expected: "an integer" })).check(
+        Schema.isGreaterThanOrEqualTo(0).annotate({ expected: "a value greater than or equal to 0" }),
+      ),
+    }),
+    Schema.Struct({ field: Schema.Literal("other"), name: Schema.String }),
+    Schema.Struct({ field: Schema.Literal("frontmatter") }),
+  ],
+  { mode: "oneOf" },
+).annotate({ identifier: "FieldChange" })
 export type Comment = {
   readonly agent?: string | null
   readonly at: Field_Rfc3339
@@ -728,26 +734,18 @@ export const Metadata = Schema.Union(
   [Schema.Struct({ kind: MetadataErrorTag, message: Schema.String }), FrontmatterFields],
   { mode: "oneOf" },
 ).annotate({ identifier: "Metadata" })
-export type HistoryEntry = {
-  readonly changes: ReadonlyArray<DocumentChange>
-  readonly docs: ReadonlyArray<DocChange>
-  readonly project_code?: ProjectCodeChange
-  readonly revision: RevisionView
-  readonly store_version?: StoreVersionChange
-  readonly summary: ReadonlyArray<string>
-  readonly tags: ReadonlyArray<TagChange>
-  readonly tasks: ReadonlyArray<TaskChange>
+export type TaskChange = {
+  readonly fields?: ReadonlyArray<FieldChange>
+  readonly kind: DocumentChangeKind
+  readonly task: string
+  readonly title?: string
 }
-export const HistoryEntry = Schema.Struct({
-  changes: Schema.Array(DocumentChange),
-  docs: Schema.Array(DocChange),
-  project_code: Schema.optionalKey(ProjectCodeChange),
-  revision: RevisionView,
-  store_version: Schema.optionalKey(StoreVersionChange),
-  summary: Schema.Array(Schema.String),
-  tags: Schema.Array(TagChange),
-  tasks: Schema.Array(TaskChange),
-}).annotate({ identifier: "HistoryEntry" })
+export const TaskChange = Schema.Struct({
+  fields: Schema.optionalKey(Schema.Array(FieldChange)),
+  kind: DocumentChangeKind,
+  task: Schema.String,
+  title: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "TaskChange" })
 export type DocListItem = {
   readonly author?: Author
   readonly conflicts: number
@@ -888,6 +886,26 @@ export const TaskSnapshot = Schema.Struct({
   raw: Schema.String,
   title: Schema.String,
 }).annotate({ identifier: "TaskSnapshot" })
+export type HistoryEntry = {
+  readonly changes: ReadonlyArray<DocumentChange>
+  readonly docs: ReadonlyArray<DocChange>
+  readonly project_code?: ProjectCodeChange
+  readonly revision: RevisionView
+  readonly store_version?: StoreVersionChange
+  readonly summary: ReadonlyArray<string>
+  readonly tags: ReadonlyArray<TagChange>
+  readonly tasks: ReadonlyArray<TaskChange>
+}
+export const HistoryEntry = Schema.Struct({
+  changes: Schema.Array(DocumentChange),
+  docs: Schema.Array(DocChange),
+  project_code: Schema.optionalKey(ProjectCodeChange),
+  revision: RevisionView,
+  store_version: Schema.optionalKey(StoreVersionChange),
+  summary: Schema.Array(Schema.String),
+  tags: Schema.Array(TagChange),
+  tasks: Schema.Array(TaskChange),
+}).annotate({ identifier: "HistoryEntry" })
 export type DocAtRevision = { readonly doc?: DocSnapshot; readonly name: string; readonly revision: string }
 export const DocAtRevision = Schema.Struct({
   doc: Schema.optionalKey(DocSnapshot),

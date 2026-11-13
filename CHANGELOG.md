@@ -7,6 +7,27 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.8...main)
 
+### Added
+
+- The daemon reads the state of each linked pull request through `gh` or
+  `glab`: open, draft, merged, or closed. The task page shows the title and the
+  state of each pull request, the task list colors the pull request icon by the
+  state of the newest one, and `openplan tasks show` prints the state and the
+  title after each address. A change shows in the web UI within two minutes,
+  with no reload.
+- When every pull request of a task is merged, the "Pull requests" section
+  shows "All pull requests merged" and a "Set done" button. The daemon never
+  changes a status by itself.
+- A pull request that you open links itself to a task when its branch or its
+  title names the task key, for example `opp-42-fix-parser` or
+  `Fix the parser (OPP-42)`. The daemon links only your own new pull requests,
+  and a link that you remove stays removed.
+- When `gh` or `glab` is not installed or not logged in, and a project links a
+  pull request on that forge, the project gets a fault that tells you which
+  command to run.
+- `OPENPLAN_GH` and `OPENPLAN_GLAB` set the program that the daemon runs to read
+  pull requests.
+
 ## [0.0.8](https://github.com/sukovanej/openplan/compare/v0.0.7...v0.0.8) - 2026-10-11
 
 ### Added

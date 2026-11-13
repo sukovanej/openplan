@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use op_forge::{Forge, ForgeKind, PullRequest};
+use op_forge::{Forge, ForgeKind, PullRequest, PullRequestState};
 use op_task::{ProjectCode, Status, Task, Timestamp};
 
 use crate::comment::Comment;
@@ -116,6 +116,17 @@ pub struct PullRequestView {
     pub repo: String,
     pub number: u64,
     pub short: String,
+    // Absent while the daemon does not know the state: no `gh` or `glab`, or no poll yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    pub status: Option<PullRequestStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PullRequestStatus {
+    pub state: PullRequestState,
+    pub title: String,
+    pub updated_at: Rfc3339,
 }
 
 impl PullRequestView {
@@ -126,6 +137,7 @@ impl PullRequestView {
             repo: pull_request.forge.repo.clone(),
             number: pull_request.number,
             short: pull_request.short(project),
+            status: None,
         }
     }
 

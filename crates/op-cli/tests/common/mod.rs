@@ -13,7 +13,10 @@ pub const AGENT: &str = "test-agent";
 // that daemon off the developer's 7373 and off every other test's port.
 pub fn openplan(home: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_openplan"));
-    cmd.env("OPENPLAN_HOME", home).env("OPENPLAN_PORT", "0");
+    cmd.env("OPENPLAN_HOME", home)
+        .env("OPENPLAN_PORT", "0")
+        .env("OPENPLAN_GH", "/nonexistent/gh")
+        .env("OPENPLAN_GLAB", "/nonexistent/glab");
     isolate_git(&mut cmd);
     let global = global_git_config(home);
     if global.is_file() {

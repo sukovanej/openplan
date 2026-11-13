@@ -33,4 +33,7 @@ pub enum FaultKind {
     // Another process wrote the tasks, or a person edited the files by hand, and the daemon could
     // not take the change in.
     OutsideChangesUnread,
+    // The project links a pull request, and `gh` or `glab` is missing or logged out, so the daemon
+    // cannot read its state.
+    PullRequestStates,
 }

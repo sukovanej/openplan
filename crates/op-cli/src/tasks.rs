@@ -293,8 +293,16 @@ fn show(root: &Path, daemon_url: Option<&str>, id: &str, json: bool) -> Result<(
             tags.join(", ")
         }
     );
-    for address in metadata.pull_requests() {
-        println!("pull request: {address}");
+    for pull_request in &detail.pull_requests {
+        match &pull_request.status {
+            Some(status) => println!(
+                "pull request: {}  {}  {}",
+                pull_request.url,
+                status.state.as_str(),
+                status.title
+            ),
+            None => println!("pull request: {}", pull_request.url),
+        }
     }
     for problem in &detail.problems {
         println!("!       {}", problem.message);

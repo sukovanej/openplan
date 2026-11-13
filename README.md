@@ -47,7 +47,10 @@ from the code branches. One person can keep them in a local directory instead.
 - **Agent skills.** `npx skills add sukovanej/openplan` installs skills for Claude Code, Codex,
   and the other agents that [skills](https://github.com/vercel-labs/skills) supports. With them,
   an agent reads and writes the tasks through the CLI.
-- **Pull requests.** Link GitHub pull requests and GitLab merge requests to a task.
+- **Pull requests.** Link GitHub pull requests and GitLab merge requests to a task. With `gh` or
+  `glab` logged in, the daemon shows whether each one is open, a draft, merged, or closed. It also
+  links a pull request that you open when its branch or title names a task key, such as
+  `opp-42-fix-parser`.
 
 <p align="center">
   <a href="assets/screenshots/list.png"><img alt="The task list" src="assets/screenshots/list.png" width="32%"></a>
@@ -104,7 +107,8 @@ openplan project code XYZ            # task keys start with XYZ from now on
 Every task command goes through the daemon and starts it if it is down. `lint` is the exception.
 It reads the tasks itself and never starts a daemon. The first command from a project registers
 it with the daemon. `OPENPLAN_HOME` sets the state directory of the daemon (default `~/.plan`).
-`OPENPLAN_PORT` sets its port (default 7373).
+`OPENPLAN_PORT` sets its port (default 7373). `OPENPLAN_GH` and `OPENPLAN_GLAB` set the program
+the daemon runs to read pull requests (default `gh` and `glab`).
 
 `openplan migrate` moves the tasks of a repository that keeps them in `.plan/` beside the code
 into the tasks ref.

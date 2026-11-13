@@ -2,8 +2,8 @@ import { Plus, X } from "lucide-react"
 import { useState } from "react"
 
 import type { Metadata, PullRequestView } from "@openplan/api-client"
-import { ForgeLink } from "@openplan/task-ui"
-import { Button, Section, TextInput } from "@openplan/ui"
+import { allMerged, fieldValue, ForgeLink, PullRequestStateChip, statusField } from "@openplan/task-ui"
+import { Button, cn, Section, TextInput } from "@openplan/ui"
 
 import { patchTask } from "../lib/api"
 import { errorText } from "../lib/format"
@@ -23,6 +23,11 @@ export function PullRequestsSection({
 }) {
   const [adding, setAdding] = useState(false)
   const unlink = useProjectMutation(project)
+  const finish = useProjectMutation(project)
+  const status = statusField(metadata)
+  const current = status === undefined ? undefined : fieldValue(status)
+  // A merged pull request may finish only part of a task, so a person decides, and the daemon never does.
+  const offerDone = allMerged(pullRequests) && current !== undefined && current !== "done" && current !== "cancelled"
   return (
     <Section
       title="Pull requests"
@@ -37,6 +42,19 @@ export function PullRequestsSection({
       }
     >
       {adding && <AddPullRequest project={project} id={id} onClose={() => setAdding(false)} />}
+      {offerDone && (
+        <div className="mb-2 flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm">
+          <span className="text-muted-foreground">All pull requests merged</span>
+          <Button
+            variant="accent"
+            className="ml-auto"
+            disabled={finish.isPending}
+            onClick={() => finish.mutate(patchTask(project, id, { status: "done" }))}
+          >
+            Set done
+          </Button>
+        </div>
+      )}
       {pullRequests.length === 0 ? (
         <p className="text-muted-foreground text-sm">No pull requests yet.</p>
       ) : (
@@ -47,18 +65,30 @@ export function PullRequestsSection({
               className="group/row hover:bg-muted/50 relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm"
             >
               {/* The link covers the row, so a click anywhere on the row opens the pull request. */}
-              <ForgeLink
-                url={each.url}
-                forge={each.forge}
-                short={each.short}
-                className="after:absolute after:inset-0"
-              />
+              <span className={cn("flex min-w-0", each.status !== undefined && "shrink-0")}>
+                <ForgeLink
+                  url={each.url}
+                  forge={each.forge}
+                  short={each.short}
+                  className="after:absolute after:inset-0"
+                />
+              </span>
+              {each.status !== undefined && (
+                <>
+                  <span className="text-muted-foreground min-w-0 truncate">{each.status.title}</span>
+                  <PullRequestStateChip state={each.status.state} className="ml-auto shrink-0" />
+                </>
+              )}
               <button
                 type="button"
                 aria-label={`Unlink ${each.short}`}
                 disabled={unlink.isPending}
                 onClick={() => unlink.mutate(patchTask(project, id, { remove_pull_requests: [each.url] }))}
-                className="text-muted-foreground hover:text-foreground relative ml-auto shrink-0 cursor-pointer opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100 max-md:opacity-100"
+                className={cn(
+                  "text-muted-foreground hover:text-foreground relative shrink-0 cursor-pointer",
+                  each.status === undefined && "ml-auto",
+                  " opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100 max-md:opacity-100",
+                )}
               >
                 <X className="size-3.5" />
               </button>

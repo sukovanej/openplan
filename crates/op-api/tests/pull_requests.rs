@@ -152,6 +152,7 @@ fn a_view_names_the_repository_only_when_it_is_another_one() {
                 repo: "rust-lang/cargo".to_owned(),
                 number: 1234,
                 short: "rust-lang/cargo#1234".to_owned(),
+                status: None,
             },
             PullRequestView {
                 url: OWN.to_owned(),
@@ -159,6 +160,7 @@ fn a_view_names_the_repository_only_when_it_is_another_one() {
                 repo: "sukovanej/openplan".to_owned(),
                 number: 214,
                 short: "#214".to_owned(),
+                status: None,
             },
         ]
     );
