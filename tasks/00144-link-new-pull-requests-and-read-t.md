@@ -74,3 +74,9 @@ In `tests/` directories only. Put a fake `gh` on `PATH`.
 - `openplan tasks show OPP-42` prints each pull request with its state.
 - A merged pull request shows as merged within two minutes, with no reload.
 - With no `gh`, the links show with no state and the project page says how to enable the states.
+
+## Comments
+
+### 2026-11-13T00:28:06Z by Milan Suk via claude-code
+
+> Not checked against a real GitLab, because no glab was available. The GitLab queries follow the GitLab GraphQL schema and have only parse tests.
