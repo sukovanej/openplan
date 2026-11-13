@@ -32,9 +32,10 @@ flowchart LR
 
 - A thread for each project, started in `Project::start` next to the sync loop, polls every two minutes. A write that links a pull request with no known state brings the poll forward.
 - Query 1 reads the pull requests of the project repository that changed since the cursor: `search(type: ISSUE, query: "repo:<repo> is:pr updated:>=<cursor - 5 min>")` on GitHub, and `mergeRequests(updatedAfter: <cursor - 5 min>)` on GitLab. Its cost does not grow with the number of links, and it is usually empty. The five-minute overlap covers the lag of the GitHub search index.
-- Query 2 reads each linked pull request whose state the daemon does not know, and each open or draft pull request in another repository. It uses one alias for each pull request in a single GraphQL query. At start, it reads every linked pull request once.
+- Query 2 reads each linked pull request whose state the daemon does not know, and each open or draft pull request in another repository. It uses one alias for each pull request, in batches of 50, because GitHub refuses a query that names too many nodes.
 - Run `gh api graphql` or `glab api graphql` as subprocesses, with a timeout and no prompt. They use the login of the person, so the daemon keeps no token.
-- Keep the states in memory. Do not store the state, the title, or the checks in the task. When a state changes, publish `task_changed` for each task that links the pull request, so the web UI fetches again.
+- Keep the states in the index. Do not store the state, the title, or the checks in the task. When a state changes, publish `task_changed` for each task that links the pull request, so the web UI fetches again.
+- Cache the states in the daemon home (`pull-requests.json`), in one entry for each project with its cursor. Write both in one atomic write. A cached state is fresh as long as query 1 covers the time since the cursor. So after a restart, the states show before the first query answers, and query 2 does not read a merged or closed pull request of the project repository again.
 
 ## The daemon finds new pull requests
 
@@ -42,7 +43,7 @@ A person opens pull requests too, and an agent can forget the skill step of OPP-
 
 - A pull request names a task when its head branch or its title has the key, for example `opp-42-fix-parser` or `Fix the parser (OPP-42)`. Match the key without case, on word boundaries. Do not read the body, because a body often names other tasks in passing.
 - Link only a pull request that the logged-in person opened. Each person's daemon links their own pull requests, so two daemons do not write the same link, and the revision names the author of the pull request.
-- Keep a cursor for each project in the daemon home (`pull-requests.json`). The daemon links a pull request only once, when it is new. When a person removes a link, the scan does not add it again.
+- Keep the cursor in the same cache entry. The daemon links a pull request only once, when it is new. When a person removes a link, the scan does not add it again.
 - On the first scan of a project, set the cursor to the current time. Do not link old pull requests.
 - The daemon writes the link as a normal revision. The author is the git user, and `via` is `openplan-daemon`.
 - When `gh` or `glab` is not installed or not logged in, and the project links a pull request on that forge, the project gets the fault `pull_request_states`. Its message gives the command to run.
