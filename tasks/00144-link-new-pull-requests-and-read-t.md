@@ -8,6 +8,8 @@ tags:
 - daemon
 - feature
 - ui
+pull_requests:
+- https://github.com/sukovanej/openplan/pull/258
 ---
 # Link new pull requests and read their state in the daemon
 
