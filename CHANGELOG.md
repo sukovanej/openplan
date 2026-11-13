@@ -27,6 +27,9 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   command to run.
 - `OPENPLAN_GH` and `OPENPLAN_GLAB` set the program that the daemon runs to read
   pull requests.
+- In the web UI, the Tasks, Docs, Activity, Tags, and Flow items in the header
+  show their keyboard shortcut when you hover over them, for example `g` `d` for
+  Docs.
 
 ## [0.0.8](https://github.com/sukovanej/openplan/compare/v0.0.7...v0.0.8) - 2026-10-11
 
