@@ -5,7 +5,9 @@ All notable changes to openplan are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.8...main)
+## [Unreleased](https://github.com/sukovanej/openplan/compare/v0.0.9...main)
+
+## [0.0.9](https://github.com/sukovanej/openplan/compare/v0.0.8...v0.0.9) - 2026-11-15
 
 ### Added
 
